@@ -49,3 +49,4 @@ temp/
 
 # Live-test fixtures (generated or downloaded, never committed)
 tests/e2e/live/.fixtures/
+.workbench/

@@ -1,11 +1,14 @@
-export interface ParsedCli {
-  command: "stdio" | "install-plugin" | "help" | "version";
-}
+export type ParsedCli =
+  | { command: "stdio" | "install-plugin" | "help" | "version" }
+  | { command: "tools"; name?: string }
+  | { command: "call"; name: string; args: Record<string, unknown> };
 
-const HELP = `lightroom-mcp — MCP bridge to Adobe Lightroom Classic
+const HELP = `lightroom-mcp — MCP bridge and CLI for Adobe Lightroom Classic
 
 USAGE
   lightroom-mcp [stdio]            Run MCP over stdio (default)
+  lightroom-mcp tools [name]       Print available tool schemas as JSON without connecting
+  lightroom-mcp call <tool> [json] Call a tool with JSON object arguments (default {})
   lightroom-mcp install-plugin     Install bundled .lrplugin into Lightroom Modules folder
   lightroom-mcp --help | --version
 
@@ -27,6 +30,25 @@ export function parseCli(argv: string[]): ParsedCli {
 
   if (first === "stdio") return { command: "stdio" };
   if (first === "install-plugin") return { command: "install-plugin" };
+  if (first === "tools") {
+    if (args.length > 2) throw new Error("Usage: lightroom-mcp tools [name]");
+    return args.length === 2 ? { command: "tools", name: args[1] } : { command: "tools" };
+  }
+  if (first === "call") {
+    if (args.length > 3) throw new Error("Usage: lightroom-mcp call <tool> [json]");
+    const name = args[1];
+    if (!name?.trim()) throw new Error("A tool name is required. Usage: lightroom-mcp call <tool> [json]");
+    let params: unknown;
+    try {
+      params = JSON.parse(args[2] ?? "{}");
+    } catch {
+      throw new Error("Tool arguments must be valid JSON.");
+    }
+    if (params === null || typeof params !== "object" || Array.isArray(params)) {
+      throw new Error("Tool arguments must be a JSON object.");
+    }
+    return { command: "call", name, args: params as Record<string, unknown> };
+  }
 
   throw new Error(`Unknown command: ${first}\n\n${HELP}`);
 }

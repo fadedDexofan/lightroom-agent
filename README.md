@@ -1,4 +1,33 @@
-# Lightroom Classic MCP Server
+# Lightroom Agent
+
+Local development fork of [Automaat/lightroom-mcp](https://github.com/Automaat/lightroom-mcp), adding a scriptable CLI over the same tool contracts, access policy and Lightroom bridge. The upstream package name and executable remain unchanged. The instructions below this local section describe the published upstream distribution.
+
+## Run this checkout
+
+From the repository root, install the locked dependencies and build:
+
+```sh
+npm --prefix server ci
+npm --prefix server run build
+node server/dist/index.js tools
+LIGHTROOM_MCP_TOOLSETS=all node server/dist/index.js tools create_mask
+```
+
+`tools` lists the enabled tools; `tools <name>` prints one tool's schema. Both run without connecting to Lightroom, reading its token or installing a plug-in. They honor `LIGHTROOM_MCP_TOOLSETS` and `LIGHTROOM_MCP_READ_ONLY`.
+
+To invoke a tool against an already installed, running compatible plug-in:
+
+```sh
+LIGHTROOM_MCP_READ_ONLY=true node server/dist/index.js call search_photos '{"limit":5}'
+```
+
+`call <tool> [json]` accepts a JSON object, defaulting to `{}`. It uses the same backend and access restrictions as MCP and does not install the plug-in. Stdout contains one complete JSON tool response, including image blocks when present; diagnostics use stderr. A response without wrapper `isError` exits 0, a wrapper error exits 1, and malformed command arguments exit 2. Parse the JSON text inside `content` as well: batch payloads can report `success: false`, `complete: false`, failures or `remaining_ids` without a wrapper error. Exit 0 alone does not establish that every photo finished processing. An interrupted call may already have changed Lightroom: inspect the result before retrying.
+
+For an MCP client, launch this checkout's `server/dist/index.js` with Node and its default `stdio` command. Use an absolute path in the client configuration. The inherited `.mcp.json` still launches the published npm package; loading a skill from this checkout does not switch that server or the installed Lua plug-in. Keep the server and Lua bundle revisions aligned when deploying.
+
+This fork's first CLI slice is verified with automated tests and an isolated fake plug-in. It does not establish live Lightroom compatibility of new behavior. Coordinate plug-in installation and disposable-catalog tests with any active photo workflow.
+
+## Upstream Lightroom MCP
 
 Lets Claude (and other AI assistants) talk to your **Adobe Lightroom Classic** photo catalog. Search photos, set ratings, edit develop settings, manage collections, import/export — all by chatting.
 

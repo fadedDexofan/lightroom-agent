@@ -1,6 +1,19 @@
-# Lightroom MCP
+# Lightroom Agent
 
-MCP server bridging Claude to Adobe Lightroom Classic.
+Local fork of Automaat/lightroom-mcp. Build a broad, verifiable Lightroom Classic API for agents through one backend used by MCP and a scriptable CLI; selectively port verified capabilities from znznzna/lightroom-cli. Preserve upstream history and license. The existing sibling photo-workflow workspace is separate.
+
+## Fork working rules
+
+- Keep AGENTS.md as the symlink to this authored file. Preserve the upstream operational constraints below; verify behavior claims against the current source before relying on them.
+- Photographic guidance and image-quality experiments have their own owners. API work supplies capabilities, stable identities, render provenance and verifiable outcomes; it must not silently turn an experimental score into a culling rule or copy a competing photography skill.
+- Tool contracts and access policy are shared by CLI and MCP. Reuse the existing bridge and Develop session lifecycle; do not add a second Lua protocol or catalog model.
+- Default to offline development and tests. Live tests require an isolated disposable catalog and coordination with any active photo workflow. Do not install/reload a plug-in, restart Lightroom, switch the live catalog, or alter personal photos as a side effect of development or tool discovery.
+- For undocumented APIs, distinguish a discovered symbol, callable signature, persisted effect and verified render. Widen version/schema guards only with evidence from the exact Lightroom version.
+- Keep one mutating worker; delegate independent read-only investigations. Parent owns integration, final checks and exact staging. Do not push or publish without the owner's instruction.
+- Add no source comments/docstrings or diagnostic suppressions unless explicitly required. Test behavior through existing boundaries; show new behavior failing before implementation and passing afterwards.
+- Read build/test commands from server/package.json and CI configuration. Run relevant fresh checks after the final edit; never substitute a live-test-kit unit run for Lightroom validation.
+
+## Upstream operational reference
 
 ## Layout
 
@@ -37,7 +50,7 @@ Pattern verified against MIDI2LR (`rsjaffe/MIDI2LR`, see `src/plugin/Client.lua`
 
 Use mise tasks from repo root:
 
-- `mise run install` — npm ci in `server/`
+- `mise run install` — see the task in `.mise.toml`; use `npm ci` in `server/` for locked dependency installation
 - `mise run build` — `tsc` (outputs `server/dist/`)
 - `mise run test` — Jest (ESM via ts-jest)
 - `mise run dev` — `tsc --watch`
@@ -51,7 +64,7 @@ Lua tooling: `mise install` provisions `lua` + `luarocks` + `selene`. `lua:test`
 
 ## CI
 
-- `.github/workflows/ci.yml` — build+test on ubuntu/macos/windows, Node 24.15.0.
+- `.github/workflows/ci.yml` — build+test on ubuntu/macos/windows; read its pinned Node version.
 - `.github/workflows/lua-lint.yml` — selene (via mise-action) on plugin changes.
 - `.github/workflows/skill-test.yml` — Python unittest for bundled skill scripts, on `skills/` changes.
 - Type check runs `npm run check` (`tsc --noEmit` on src + `tsconfig.test.json` on tests); do not break it.

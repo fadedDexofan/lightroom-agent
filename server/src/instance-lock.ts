@@ -229,9 +229,9 @@ export function acquireInstanceLock(
 
   let released = false;
   const exitHandler = () => release();
-  const signalHandler = () => {
+  const signalHandler = (signal: NodeJS.Signals) => {
     release();
-    process.exit(0);
+    process.exit(signal === "SIGINT" ? 130 : 143);
   };
   const release = () => {
     if (released) return;

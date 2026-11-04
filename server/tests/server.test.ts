@@ -200,6 +200,24 @@ async function connect(opts: { ready?: boolean; call?: CallFn; toolsets?: string
 describe('createMcpServer', () => {
   let pair: Pair | null = null;
 
+
+  it.each([...['core', 'all'].flatMap((toolset) => ['set_selection', 'cancel', 'not_a_tool'].map((name) => [toolset, name]))])(
+    'refuses unpublished tool %s/%s before forwarding to a broker',
+    async (toolsets, name) => {
+      const callTool = jest.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
+      const server = createMcpServer({ callTool }, { toolsets: parseToolsets(toolsets), readOnly: false });
+      const client = new Client({ name: 'unpublished-tool-test', version: '1.0.0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      pair = { server, client };
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      const result = asToolResult(await client.callTool({ name, arguments: {} }));
+      expect(result).toEqual({
+        isError: true, content: [{ type: 'text', text: `Unknown tool "${name}". Only listed tools can be called.` }],
+      });
+      expect(callTool).not.toHaveBeenCalled();
+    },
+  );
+
   it('returns static shared instructions to the client on initialize', async () => {
     pair = await connect();
     const instructions = pair.client.getInstructions();

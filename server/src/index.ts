@@ -10,6 +10,7 @@ import { requestPort, responsePort } from "./ports.js";
 import { parseToolsets, type Toolset } from "./toolsets.js";
 import { parseReadOnly } from "./read-only.js";
 import { createMcpServer } from "./create-server.js";
+import { createToolAccess } from "./tool-access.js";
 import { createCallToolHandler, NOT_CONNECTED_DETAILS, NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
 import { Bridge, type Leader } from "./bridge.js";
 import { brokerPath } from "./broker.js";
@@ -105,14 +106,37 @@ async function main() {
   try {
     toolsets = parseToolsets(process.env.LIGHTROOM_MCP_TOOLSETS);
     readOnly = parseReadOnly(process.env.LIGHTROOM_MCP_READ_ONLY);
-    REQUEST_PORT = requestPort();
-    RESPONSE_PORT = responsePort();
   } catch (err) {
     console.error((err as Error).message);
     process.exit(1);
   }
 
-  ensurePluginInstalled(here, (m) => console.error(m));
+  if (cli.command === "tools") {
+    const { tools } = createToolAccess({ toolsets, readOnly });
+    if (cli.name === undefined) {
+      process.stdout.write(JSON.stringify(tools) + "\n");
+      return;
+    }
+    const tool = tools.tools.find((tool) => tool.name === cli.name);
+    if (!tool) {
+      console.error(`Tool "${cli.name}" is not available in the selected toolsets and read-only mode.`);
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(JSON.stringify(tool) + "\n");
+    return;
+  }
+
+  try {
+    REQUEST_PORT = requestPort();
+    RESPONSE_PORT = responsePort();
+  } catch (err) {
+    console.error((err as Error).message);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (cli.command === "stdio") ensurePluginInstalled(here, (m) => console.error(m));
 
   const bridge = new Bridge({
     ipcPath: brokerPath(REQUEST_PORT, RESPONSE_PORT),
@@ -122,6 +146,20 @@ async function main() {
     holderUnresponsive: () => lockHolderUnresponsive(REQUEST_PORT, RESPONSE_PORT),
     lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
   });
+
+  if (cli.command === "call") {
+    const callTool = createToolAccess({ toolsets, readOnly }).restrict(
+      (name, args, options) => bridge.callTool(name, args, options),
+    );
+    try {
+      const result = await callTool(cli.name, cli.args);
+      process.stdout.write(JSON.stringify(result) + "\n");
+      process.exitCode = result.isError ? 1 : 0;
+    } finally {
+      await bridge.shutdown(SHUTDOWN_GRACE_MS);
+    }
+    return;
+  }
 
   const server = createMcpServer({ callTool: (name, args, options) => bridge.callTool(name, args, options) }, { toolsets, readOnly });
   server.oninitialized = () => void bridge.start();
