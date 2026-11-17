@@ -22,7 +22,7 @@ This codebase is yours: what it's for and how it's built are your call, and you'
 - `skills/lightroom-agent` is the bundled skill, shipped as the MCP prompt and the mcpb prompt; `npm run build` regenerates both from it. `agents/openai.yaml` is its metadata for Codex.
 - CLI and MCP share tool contracts and access policy. Reuse the existing bridge and Develop session lifecycle; do not add a second Lua protocol or catalog model.
 - Develop and test offline by default. Never install or reload a plug-in, restart Lightroom, switch the open catalog or change a user's photos as a side effect of development or tool discovery.
-- The project `.mcp.json` starts this checkout's built server as `lightroom`. Its tools act on whatever catalog Lightroom has open; do not call them without the user's permission.
+- The Lightroom tools act on whatever catalog Lightroom has open; do not call them without the user's permission. To run this checkout's server from a client, add it as CONTRIBUTING.md describes.
 - For undocumented APIs, distinguish a discovered symbol, a callable signature, a persisted effect and a verified render. Widen a version or format guard only with evidence from that exact Lightroom version.
 - Keep one mutating worker; delegate independent read-only investigation. The parent owns integration, final checks and exact staging. Do not push, release or publish without the maintainer's instruction.
 - Add no source comments, docstrings or diagnostic suppressions unless explicitly required.
