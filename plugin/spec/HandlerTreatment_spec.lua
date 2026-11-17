@@ -13,6 +13,7 @@ describe('HandlerTreatment', function()
             photos[i].getDevelopSettings = function(photo) return settings[photo] end
             photos[i].quickDevelopSetTreatment = function(_, treatment)
                 calls.treatments[#calls.treatments + 1] = treatment
+                calls.events[#calls.events + 1] = treatment
                 if opts.ignore or (opts.dropsFirst and #calls.treatments == 1) then return end
                 for _, selected in ipairs(state.selected) do
                     local grey = treatment == 'grayscale'
@@ -25,7 +26,7 @@ describe('HandlerTreatment', function()
         end
         settings[photos[2]] = { ConvertToGrayscale = false, CameraProfile = 'Embedded' }
         state = { active = photos[3], selected = { photos[3], photos[1] }, sources = { 'collection' } }
-        calls = { treatments = {}, selections = {} }
+        calls = { treatments = {}, selections = {}, events = {} }
         catalog = helper.fakeCatalog({ photos = photos })
         catalog.kAllPhotos = 'all'
         catalog.getTargetPhoto = function() return state.active end
@@ -39,9 +40,11 @@ describe('HandlerTreatment', function()
         end
         helper.installImport({
             LrApplication = { activeCatalog = function() return catalog end },
-            LrApplicationView = { getCurrentModuleName = function() return 'library' end, switchToModule = function() end },
+            LrApplicationView = { getCurrentModuleName = function() return opts.module or 'library' end, switchToModule = function() end },
             LrDate = { currentTime = function() return 0 end },
-            LrDevelopController = {},
+            LrDevelopController = {
+                stopTracking = function(committed) calls.events[#calls.events + 1] = 'flush ' .. tostring(committed) end,
+            },
             LrLogger = helper.defaultLrLogger(),
             LrProgressScope = function() return { setCancelable = function() end, setPortionComplete = function() end,
                 setCaption = function() end, done = function() end, isCanceled = function() return false end } end,
@@ -74,6 +77,14 @@ describe('HandlerTreatment', function()
         assert.is_false(settings[photos[3]].ConvertToGrayscale)
         assertRestored()
     end)
+
+    for _, case in ipairs({ { module = 'develop', events = { 'flush true', 'grayscale' } }, { module = 'library', events = { 'grayscale' } } }) do
+        it("commits Develop's pending edits before converting only the photo shown in Develop (" .. case.module .. ')', function()
+            setup({ module = case.module })
+            Handler.set({ photo_ids = { '3' }, treatment = 'black_and_white' })
+            assert.are.same(case.events, calls.events)
+        end)
+    end
 
     it('switches back to color', function()
         setup()

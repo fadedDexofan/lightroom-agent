@@ -39,6 +39,7 @@ end
 local function convert(context, catalog, photo, state, name)
     local wanted = TREATMENTS[name]
     local before = profileOf(readSettings(catalog, photo))
+    DevelopSession.flushIfShowing(catalog, photo)
     if not DevelopSession.selectAlone(catalog, photo, state) then
         Reply.refuse('Could not select photo ' .. tostring(photo.localIdentifier) .. ' alone')
     end
