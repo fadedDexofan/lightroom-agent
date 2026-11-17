@@ -30,7 +30,7 @@ The outcome table is in [SKILL.md](../../SKILL.md#read-every-replys-outcome). In
 ## Read the state
 
 - `get_develop_settings` is the one develop read, by the same SDK names `set_develop_settings` writes; `keys` is required for more than one photo, and `absent` lists keys a photo does not carry. A `ToneCurvePV2012*` channel reads the curve Lightroom renders (its extended HDR curve when there is one); name `ExtendedToneCurvePV2012*` to read that field as stored.
-- `describe_develop_keys` lists each key's kind, the range the tools enforce and Lightroom's live range for this photo, marked `differs` where they disagree; local slider ranges need a `mask_id`. Observed on Lightroom Classic 16.0 (on a RAW): the three `Parametric*Split` keys live at 10..70, 20..80 and 30..90 while the published range is 0..100. Keep values inside the live range; a value Lightroom stores differently comes back in `adjusted`.
+- `describe_develop_keys` lists each key's kind, the range the tools enforce and Lightroom's live range for this photo, marked `differs` where they disagree; local slider ranges need a `mask_id`. Keep values inside the live range; a value Lightroom stores differently comes back in `adjusted`.
 - `get_crop` reads the crop as `set_crop` states it: the rectangle in the photo as displayed before any crop, the straighten angle and the cropped frame's size in pixels. It opens no Develop.
 - `summarize_develop_settings` gives medians and ranges by camera and ISO for rated photos, useful to learn a person's habitual base before proposing values.
 

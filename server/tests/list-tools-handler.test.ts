@@ -172,6 +172,9 @@ describe('develop setting schema', () => {
     const properties = developSettingsSchema().properties as Record<string, { minimum?: number; maximum?: number; description?: string }>;
     expect(properties.Exposure2012).toMatchObject({ minimum: -5, maximum: 5 });
     expect(properties.Contrast2012).toMatchObject({ minimum: -100, maximum: 100 });
+    expect(properties.ParametricShadowSplit).toMatchObject({ minimum: 10, maximum: 70 });
+    expect(properties.ParametricMidtoneSplit).toMatchObject({ minimum: 20, maximum: 80 });
+    expect(properties.ParametricHighlightSplit).toMatchObject({ minimum: 30, maximum: 90 });
     expect(properties.Temperature.minimum).toBeUndefined();
     expect(properties.Temperature.description).toContain('depends on the photo');
     expect(settable({ Temperature: 50000, Tint: -150 })).toBe(true);
