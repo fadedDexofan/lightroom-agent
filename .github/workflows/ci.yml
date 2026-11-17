@@ -46,6 +46,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Generated files are up to date
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: .
+        run: git diff --exit-code -- plugin/LightroomMCP.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts
+
+      - name: Live kit scripts parse
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: .
+        run: for f in tests/e2e/live/*.mjs tests/e2e/live/lib/*.mjs; do node --check "$f"; done
+
       - name: Test
         run: npm run test:coverage -- --ci --reporters=default
 
