@@ -135,8 +135,12 @@ function GradientGeometry.toDisplayedFrame(shape, geometry, frame)
     return displayed
 end
 
+function GradientGeometry.shapeOf(component)
+    return SHAPE_OF_WHAT[component.What]
+end
+
 function GradientGeometry.geometryOf(component, ratio)
-    local shape = SHAPE_OF_WHAT[component.What]
+    local shape = GradientGeometry.shapeOf(component)
     if shape == nil then return nil end
     if shape == LINEAR then
         return shape, {

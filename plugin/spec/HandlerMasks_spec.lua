@@ -108,7 +108,7 @@ describe("HandlerMasks.listMasks", function()
         local tools = listed({ correction("m-1", {
             { What = "Mask/Gradient", MaskID = "t-linear" },
             { What = "Mask/CircularGradient", MaskID = "t-radial" },
-            { What = "Mask/Paint", MaskID = "t-brush" },
+            { What = "Mask/Aggregate", MaskID = "t-brush", Masks = { { What = "Mask/Paint", Dabs = { "d 0.200000 0.300000" } } } },
             COLOR,
             LUMINANCE,
             { What = "Mask/RangeMask", MaskID = "t-depth", CorrectionRangeMask = { Type = -1, DepthRange = "0.000000 0.100000 0.400000 0.500000" } },
