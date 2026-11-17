@@ -74,10 +74,13 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
             local r = Handler.createMask({ photo_id = "1", type = typeName }, context)
 
             local entry = Store.clone(store.writes[1][2])
-            assert.are.same({ SEEDS[typeName] }, entry.CorrectionMasks)
+            local seed = Store.clone(SEEDS[typeName])
+            seed.MaskID = entry.CorrectionMasks[1].MaskID
+            assert.are.same({ seed }, entry.CorrectionMasks)
             assert.are.equal("Correction", entry.What)
-            assert.is_nil(entry.CorrectionID)
-            assert.are.equal("C1", r.mask_id)
+            assert.is_string(seed.MaskID)
+            assert.are.equal(entry.CorrectionID, r.mask_id)
+            assert.are.equal(entry.CorrectionID, store.entries[2].CorrectionID)
             assert.are.equal(typeName, r.type)
             assert.are.equal(DIGEST, store.entries[2].CorrectionMasks[1].MaskDigest)
             assert.are.same(other, store.entries[1])

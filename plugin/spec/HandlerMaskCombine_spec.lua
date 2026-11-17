@@ -89,8 +89,11 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
 
             local expected = Store.clone(SEEDS[case.type])
             for key, value in pairs(FORMS[case.operation]) do expected[key] = value end
-            assert.are.same(expected, written(store))
-            assert.are.equal("mask-aT2", r.tool_id)
+            local component = written(store)
+            expected.MaskID = component.MaskID
+            assert.are.same(expected, component)
+            assert.is_string(component.MaskID)
+            assert.are.equal(component.MaskID, r.tool_id)
             assert.are.equal("mask-a", r.mask_id)
             assert.are.equal(DIGEST, store.entries[1].CorrectionMasks[2].MaskDigest)
             assert.are.same(other, store.entries[2])
@@ -107,7 +110,7 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
 
         local r = Handler.combineMask({ photo_id = "1", mask_id = "mask-b", operation = "subtract", type = "subject" }, context)
 
-        assert.are.equal("mask-bT2", r.tool_id)
+        assert.are.equal(store.entries[2].CorrectionMasks[2].MaskID, r.tool_id)
         assert.are.equal(2, #store.entries[2].CorrectionMasks)
         assert.are.same({}, context.warnings)
     end)

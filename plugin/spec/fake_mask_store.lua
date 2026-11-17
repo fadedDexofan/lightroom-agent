@@ -76,20 +76,31 @@ function FakeMaskStore.correction(name, components, overrides)
     }, overrides)
 end
 
-function FakeMaskStore.lightroomAssignsIds(written, counter)
+local function storedIds(entries)
+    local ids = {}
+    for _, entry in ipairs(entries or {}) do
+        if type(entry) == "table" then
+            if entry.CorrectionID ~= nil then ids[tostring(entry.CorrectionID)] = true end
+            for _, component in ipairs(type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
+                if type(component) == "table" and component.MaskID ~= nil then ids[tostring(component.MaskID)] = true end
+            end
+        end
+    end
+    return ids
+end
+
+function FakeMaskStore.lightroomFillsDerivedFields(written, counter, known)
     for _, entry in ipairs(written) do
-        if entry.CorrectionID == nil then
+        if entry.CorrectionSyncID == nil and (entry.CorrectionID == nil or not known[tostring(entry.CorrectionID)]) then
             counter.next = counter.next + 1
-            entry.CorrectionID = "C" .. counter.next
             entry.CorrectionSyncID = "CS" .. counter.next
             entry.CorrectionReferenceX = 0.5
             entry.CorrectionReferenceY = 0.5
             entry.LocalCurveRefineSaturation = 100
         end
-        for index, component in ipairs(entry.CorrectionMasks) do
-            if component.MaskID == nil then
-                component.MaskID = entry.CorrectionID .. "T" .. index
-                component.MaskSyncID = "S" .. component.MaskID
+        for _, component in ipairs(entry.CorrectionMasks) do
+            if component.MaskSyncID == nil and component.MaskID ~= nil and not known[tostring(component.MaskID)] then
+                component.MaskSyncID = "S" .. tostring(component.MaskID)
             end
             if component.What == "Mask/CircularGradient" then
                 component.Flipped = not component.MaskInverted
@@ -157,6 +168,7 @@ function FakeMaskStore.attach(photo, opts)
             end
         end
     end
+    state.seenIds = storedIds(state.entries)
     photo.getDevelopSettings = function()
         if not state.insideRead and not state.insideWrite then state.readsOutsideGate = state.readsOutsideGate + 1 end
         state.reads = state.reads + 1
@@ -183,7 +195,8 @@ function FakeMaskStore.attach(photo, opts)
         state.writes[writeNumber] = clone(written)
         state.previousEntries = state.entries
         state.readsSinceWrite = 0
-        local stored = FakeMaskStore.lightroomAssignsIds(written, state.counter)
+        local stored = FakeMaskStore.lightroomFillsDerivedFields(written, state.counter, state.seenIds)
+        for id in pairs(storedIds(stored)) do state.seenIds[id] = true end
         if opts.transformWrite then stored = opts.transformWrite(stored, writeNumber) end
         state.entries = stored
     end

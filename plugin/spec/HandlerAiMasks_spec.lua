@@ -98,10 +98,10 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(1, calls.updateAI)
         assert.are.equal("people", result.type)
         assert.is_nil(result.person)
-        assert.are.equal("C1", result.mask_id)
+        assert.are.equal(written[1].CorrectionID, result.mask_id)
         assert.are.same({
-            { mask_id = "C1", part = "hair" },
-            { mask_id = "C2", part = "face_skin" },
+            { mask_id = written[1].CorrectionID, part = "hair" },
+            { mask_id = written[2].CorrectionID, part = "face_skin" },
         }, result.masks)
         assert.are.equal(0, #calls.modules)
     end)
@@ -114,7 +114,7 @@ describe("HandlerMaskCreate.createMask people", function()
 
         local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
 
-        assert.are.equal("C1", result.mask_id)
+        assert.are.equal(store.writes[1][1].CorrectionID, result.mask_id)
         assert.are.equal(1, #store.writes)
     end)
 
@@ -130,7 +130,7 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(3, written[3].CorrectionMasks[1].MaskSubType)
         assert.are.equal(13, written[3].CorrectionMasks[1].MaskSubCategoryID)
         assert.are.equal(3, #store.entries)
-        assert.are.equal("C2", result.masks[1].mask_id)
+        assert.are.equal(written[2].CorrectionID, result.masks[1].mask_id)
     end)
 
     it("removes the new masks and refuses when the photo has no such part", function()
@@ -167,12 +167,12 @@ describe("HandlerMaskCreate.createMask people", function()
         { what = "that the recompute left as it was", becomes = nil, warnings = {} },
     }) do
         it("answers for an existing AI mask " .. case.what, function()
-            local Handler = setup({ entries = { existingSky() }, existingBecomes = case.becomes })
+            local Handler, store = setup({ entries = { existingSky() }, existingBecomes = case.becomes })
             local context = helper.requestContext(nil, { title = "create_mask" })
 
             local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
 
-            assert.are.equal("C2", result.mask_id)
+            assert.are.equal(store.writes[1][2].CorrectionID, result.mask_id)
             assert.are.same(case.warnings, context.warnings)
         end)
     end
@@ -181,12 +181,12 @@ describe("HandlerMaskCreate.createMask people", function()
         local failed = existingSky()
         failed.CorrectionMasks[1].MaskDigest = nil
         failed.CorrectionMasks[1].ErrorReason = 1
-        local Handler = setup({ entries = { failed } })
+        local Handler, store = setup({ entries = { failed } })
         local context = helper.requestContext(nil, { title = "create_mask" })
 
         local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
 
-        assert.are.equal("C2", result.mask_id)
+        assert.are.equal(store.writes[1][2].CorrectionID, result.mask_id)
         assert.are.same({ "Photo 1: mask C1 was already failed (ErrorReason 1, no result) before this call" }, context.warnings)
     end)
 
@@ -357,11 +357,11 @@ describe("HandlerMaskCreate.createMask landscape", function()
         assert.are.equal("Sky", written[1].CorrectionName)
         assert.are.equal(1, calls.updateAI)
         assert.are.equal("landscape", result.type)
-        assert.are.equal("C1", result.mask_id)
+        assert.are.equal(written[1].CorrectionID, result.mask_id)
         assert.are.same({
-            { mask_id = "C1", category = "sky" },
-            { mask_id = "C2", category = "water" },
-            { mask_id = "C3", category = "vegetation" },
+            { mask_id = written[1].CorrectionID, category = "sky" },
+            { mask_id = written[2].CorrectionID, category = "water" },
+            { mask_id = written[3].CorrectionID, category = "vegetation" },
         }, result.masks)
     end)
 

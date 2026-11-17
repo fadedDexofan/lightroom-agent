@@ -281,10 +281,10 @@ describe("GuardedMaskWrite.apply", function()
         assert.are.equal(1, #state.writes)
         assert.are.equal(2, #state.writes[1])
         assert.are.equal("OLD", state.writes[1][1].CorrectionID)
-        assert.is_nil(state.writes[1][2].CorrectionID)
+        assert.are.equal("OLDT1", state.writes[1][1].CorrectionMasks[1].MaskID)
         assert.are.equal(2, #result.entries)
-        assert.are.equal("C1", result.entries[2].CorrectionID)
-        assert.are.equal("C1T1", result.entries[2].CorrectionMasks[1].MaskID)
+        assert.are.equal(state.writes[1][2].CorrectionID, result.entries[2].CorrectionID)
+        assert.are.equal(state.writes[1][2].CorrectionMasks[1].MaskID, result.entries[2].CorrectionMasks[1].MaskID)
         assert.are.equal(1, #result.previous)
         assert.are.equal(0, state.writesOutsideGate)
         assert.are.equal(0, state.readsOutsideGate)
@@ -627,6 +627,29 @@ describe("GuardedMaskWrite.apply", function()
         assert.are.same({}, state.writes[2])
     end)
 
+    it("names each entry and top-level component it adds in Lightroom's id form and keeps the ids already there", function()
+        local existing = correction("Old", { radialComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" })
+        local Guard, catalog, photo, state = setup({ entries = { existing } })
+
+        Guard.apply(helper.requestContext(), catalog, photo, { description = "Test write", build = function(entries)
+            entries[1].CorrectionMasks[2] = linearComponent()
+            entries[2] = correction("Brush", { Store.brushComponent() })
+            return entries
+        end })
+
+        local written = state.writes[1]
+        local GUID = "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
+        assert.are.equal("OLD", written[1].CorrectionID)
+        assert.are.equal("OLDT1", written[1].CorrectionMasks[1].MaskID)
+        local added = { written[1].CorrectionMasks[2].MaskID, written[2].CorrectionID, written[2].CorrectionMasks[1].MaskID }
+        for index = 1, 3 do
+            assert.is_string(added[index])
+            assert.matches(GUID, added[index])
+            assert.are.equal(added[index]:upper(), added[index])
+        end
+        assert.is_nil(written[2].CorrectionMasks[1].Masks[1].MaskID)
+    end)
+
     it("hands the check of the saved read-back the stored entries", function()
         local Guard, catalog, photo = setup()
         local seen
@@ -635,7 +658,8 @@ describe("GuardedMaskWrite.apply", function()
             readBackProblem = function(entries) seen = entries end,
         })
 
-        assert.are.equal("C1", seen[1].CorrectionID)
+        assert.is_string(seen[1].CorrectionID)
+        assert.is_string(seen[1].CorrectionMasks[1].MaskID)
     end)
 
     it("leaves an AI mask entry verbatim in the written array", function()
@@ -724,7 +748,18 @@ describe("GuardedMaskWrite.apply reading back a constructed AI component", funct
 end)
 
 describe("GuardedMaskWrite read-back of a constructed mask", function()
+    local function named(entries)
+        for entryIndex, entry in ipairs(entries) do
+            entry.CorrectionID = entry.CorrectionID or ("A" .. entryIndex)
+            for index, component in ipairs(entry.CorrectionMasks or {}) do
+                component.MaskID = component.MaskID or (entry.CorrectionID .. "T" .. index)
+            end
+        end
+        return entries
+    end
+
     local function readBackProblems(expected, actual)
+        expected, actual = named(Store.clone(expected)), named(Store.clone(actual))
         local guard, catalog, photo = setup({ transformWrite = function(stored, writeNumber)
             if writeNumber == 1 then return Store.clone(actual) end
             return stored
@@ -750,15 +785,24 @@ describe("GuardedMaskWrite read-back of a constructed mask", function()
         assert.are_not.same({}, readBackProblems(expected, oneEntry(linearComponent({ FullY = 0.2001 }))))
     end)
 
-    it("does not compare derived fields, Flipped included", function()
+    it("does not compare the fields Lightroom fills, Flipped included", function()
         local expected = oneEntry(radialComponent({ Flipped = false }))
-        local actual = oneEntry(radialComponent({ Flipped = true, MaskID = "x" }), {
-            CorrectionID = "Z",
+        local actual = oneEntry(radialComponent({ Flipped = true, MaskSyncID = "S" }), {
+            CorrectionSyncID = "CS",
             CorrectionReferenceX = 0.9,
             LocalCurveRefineSaturation = 100,
         })
 
         assert.are.same({}, readBackProblems(expected, actual))
+    end)
+
+    it("requires the written mask and component ids back", function()
+        local expected = oneEntry(radialComponent({ MaskID = "AT1" }), { CorrectionID = "A" })
+
+        assert.are.same({
+            "masks[1].CorrectionID: wrote A, read back Z",
+            "masks[1].CorrectionMasks[1].MaskID: wrote AT1, read back x",
+        }, readBackProblems(expected, oneEntry(radialComponent({ MaskID = "x" }), { CorrectionID = "Z" })))
     end)
 
     it("catches a changed local slider and a changed name", function()

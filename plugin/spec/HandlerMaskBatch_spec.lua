@@ -66,9 +66,9 @@ describe("HandlerMaskBatch.createMaskBatch in the saved settings", function()
             local result = r.data.results[index]
             assert.are.equal(id, result.photo_id)
             assert.are.equal("created", result.status)
-            assert.are.equal("C1", result.mask_id)
-            assert.are.same({ local_Exposure = 0.5, local_colorgradeMidtoneHue = 62 }, result.adjustments)
             local entry = world.stores[id].entries[1]
+            assert.are.equal(entry.CorrectionID, result.mask_id)
+            assert.are.same({ local_Exposure = 0.5, local_colorgradeMidtoneHue = 62 }, result.adjustments)
             assert.are.equal(2, entry.CorrectionMasks[1].MaskSubType)
             assert.are.equal(0.125, entry.LocalExposure2012)
             assert.are.equal(DIGEST, entry.CorrectionMasks[1].MaskDigest)

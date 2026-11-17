@@ -157,6 +157,14 @@ end
 
 defaultImports.LrLogger = M.defaultLrLogger()
 
+local uuidCount = 0
+defaultImports.LrUUID = {
+    generateUUID = function()
+        uuidCount = uuidCount + 1
+        return string.format("%08x-0000-4000-8000-%012x", uuidCount, uuidCount)
+    end,
+}
+
 -- Valid Lightroom SDK metadata keys. The real getRawMetadata/getFormattedMetadata
 -- THROW on an unsupported key, taking down the enclosing withReadAccessDo.
 -- Add genuinely-new SDK keys here.

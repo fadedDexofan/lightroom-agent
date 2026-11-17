@@ -41,7 +41,7 @@ local function resultFor(photoId, request, fresh)
     local masks = {}
     for index, entry in ipairs(fresh) do
         masks[index] = {
-            mask_id = entry.CorrectionID ~= nil and tostring(entry.CorrectionID) or nil,
+            mask_id = tostring(entry.CorrectionID),
             [request.kind == "people" and "part" or "category"] = labelOf(request, index),
         }
     end

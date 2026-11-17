@@ -1,4 +1,5 @@
 local LrTasks = import 'LrTasks'
+local LrUUID = import 'LrUUID'
 
 local AIMaskData = require 'AIMaskData'
 local CatalogWrite = require 'CatalogWrite'
@@ -21,10 +22,8 @@ local PAINT_WHAT = "Mask/Paint"
 local LOCAL_ADJUSTMENT_PREFIX = "Local"
 
 local DERIVED_FIELDS = {
-    MaskID = true,
     MaskSyncID = true,
     MaskValue = true,
-    CorrectionID = true,
     CorrectionSyncID = true,
     CorrectionReferenceX = true,
     CorrectionReferenceY = true,
@@ -33,7 +32,7 @@ local DERIVED_FIELDS = {
     Flipped = true,
 }
 
-local ENTRY_REQUIRED_FIELDS = { What = "string", CorrectionMasks = "table" }
+local ENTRY_REQUIRED_FIELDS = { What = "string", CorrectionID = "string", CorrectionMasks = "table" }
 local ENTRY_OPTIONAL_FIELDS = {
     CorrectionName = "string",
     CorrectionActive = "boolean",
@@ -45,6 +44,7 @@ local ENTRY_OPTIONAL_FIELDS = {
 }
 
 local COMPONENT_OPTIONAL_FIELDS = {
+    MaskID = "string",
     MaskActive = "boolean",
     MaskInverted = "boolean",
     MaskBlendMode = "number",
@@ -210,7 +210,11 @@ local function validateEntry(entry, where, problems, before)
     end
     for index, component in ipairs(entry.CorrectionMasks) do
         if not heldComponent(component, before) then
-            validateComponent(component, where .. ".CorrectionMasks[" .. index .. "]", problems)
+            local at = where .. ".CorrectionMasks[" .. index .. "]"
+            if type(component) == "table" and type(component.MaskID) ~= "string" then
+                addProblem(problems, at .. ": missing MaskID")
+            end
+            validateComponent(component, at, problems)
         end
     end
 end
@@ -220,6 +224,21 @@ function GuardedMaskWrite.formatProblems(entries)
     for index, entry in ipairs(entries) do validateEntry(entry, "existing mask " .. index, problems) end
     table.sort(problems)
     return problems
+end
+
+local function newId()
+    return LrUUID.generateUUID():upper()
+end
+
+local function nameAdded(proposed)
+    for _, entry in ipairs(proposed) do
+        if type(entry) == "table" then
+            if entry.CorrectionID == nil then entry.CorrectionID = newId() end
+            for _, component in ipairs(type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
+                if type(component) == "table" and component.MaskID == nil then component.MaskID = newId() end
+            end
+        end
+    end
 end
 
 local function plannedEntries(read, proposed)
@@ -511,6 +530,7 @@ function GuardedMaskWrite.apply(context, catalog, photo, spec)
             local read = deepClone(entries)
             local proposed = spec.build(entries)
             if type(proposed) ~= "table" then error("mask change produced no mask list", 0) end
+            nameAdded(proposed)
             plan = plannedEntries(read, proposed)
             local problems = {}
             for index, entry in ipairs(proposed) do
