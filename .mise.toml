@@ -34,10 +34,6 @@ run = "osascript tests/e2e/reload-plugin.applescript"
 description = "Build the .mcpb bundle for Claude Desktop / Claude Code"
 run = "node scripts/build-mcpb.mjs"
 
-[tasks.binary]
-description = "Build single-file binaries (macos + windows) via Bun"
-run = "node scripts/build-binary.mjs"
-
 [tasks."lua:deps"]
 description = "Install Lua test rocks (busted) into lua_modules/"
 run = "test -d lua_modules/lib/luarocks/rocks-$(luarocks config lua_version)/busted || luarocks install --tree lua_modules busted"
