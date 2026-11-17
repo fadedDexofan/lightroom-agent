@@ -6,10 +6,10 @@ local PhotoLookup = require 'PhotoLookup'
 
 local HandlerMaskAdmission = {}
 
-local function photoAdmission(catalog, photoId)
+local function photoAdmission(catalog, photoId, status)
     local photo = PhotoLookup.requireOne(catalog, photoId)
     local state = GuardedMaskWrite.inspect(catalog, photo)
-    local decision = MaskWriteAdmission.decide(catalog, state.process_version)
+    local decision = MaskWriteAdmission.decide(status, state.process_version)
     return {
         photo_id = tostring(photo.localIdentifier),
         process_version = state.process_version,
@@ -32,7 +32,7 @@ function HandlerMaskAdmission.get(args)
         throwaway_catalog = status.throwaway_catalog,
         certification_file = status.certification_file,
     }
-    if photoId ~= nil then result.photo = photoAdmission(catalog, photoId) end
+    if photoId ~= nil then result.photo = photoAdmission(catalog, photoId, status) end
     return result
 end
 

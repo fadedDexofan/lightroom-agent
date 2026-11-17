@@ -114,6 +114,7 @@ end
 
 function M.admitMaskWrites(decision)
     package.loaded.MaskWriteAdmission = {
+        status = function() return {} end,
         requireAdmitted = function()
             if decision and decision.refuse then require('Reply').refuse(decision.refuse) end
         end,

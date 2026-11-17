@@ -560,7 +560,7 @@ end
 
 local function replaceMasks(context, catalog, photo, target, masks, aiMasks, processVersion)
     if processVersion ~= nil and processVersion ~= target.processVersion then
-        MaskWriteAdmission.requireAdmitted(catalog, processVersion)
+        MaskWriteAdmission.requireAdmitted(MaskWriteAdmission.status(catalog), processVersion)
         CatalogWrite.developSettings(context, catalog, photo, "Set Process Version " .. tostring(processVersion),
             function() return { ProcessVersion = processVersion } end)
     end
@@ -596,7 +596,8 @@ function DevelopHandler.copyDevelopSettings(args, context)
         end
     end
     if type(toApply.MaskGroupBasedCorrections) == "table" and #toApply.MaskGroupBasedCorrections > 0 then
-        local safe, reason = LrTasks.pcall(MaskWriteAdmission.requireAdmitted, catalog, sourceSettings.ProcessVersion)
+        local safe, reason = LrTasks.pcall(MaskWriteAdmission.requireAdmitted,
+            MaskWriteAdmission.status(catalog), sourceSettings.ProcessVersion)
         if not safe then
             Reply.refuse("The source's masks cannot be copied: " .. Reply.messageOf(reason)
                 .. " Name the settings to copy with settings to leave masks out.")
@@ -850,7 +851,7 @@ end
 function DevelopHandler.applyDenoise(args, context)
     local amount = args.amount
     DevelopSession.requireControllerFunctions("apply_denoise",
-        { "getEnhancePanelState", "setEnhance", "changeDenoiseAmount" }, "Lightroom Classic 15")
+        { "getEnhancePanelState", "setEnhance", "changeDenoiseAmount" })
 
     local catalog = LrApplication.activeCatalog()
     local reply = DevelopBatch.run(context, catalog, {

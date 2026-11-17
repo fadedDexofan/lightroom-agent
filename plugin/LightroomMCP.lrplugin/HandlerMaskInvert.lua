@@ -61,7 +61,7 @@ end
 local function newMaskIds(knownIds, masksAfter)
     local fresh = {}
     for _, mask in ipairs(MaskSelection.masksNotIn(masksAfter, knownIds)) do
-        fresh[#fresh + 1] = MaskSelection.idString(mask.ID)
+        fresh[#fresh + 1] = mask.ID
     end
     return fresh
 end

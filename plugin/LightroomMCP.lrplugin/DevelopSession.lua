@@ -205,11 +205,11 @@ function DevelopSession.withPhoto(context, catalog, photo, fn)
     end)
 end
 
-function DevelopSession.requireControllerFunctions(toolName, names, minimumVersion)
+function DevelopSession.requireControllerFunctions(toolName, names)
     for _, name in ipairs(names) do
         if type(LrDevelopController[name]) ~= "function" then
-            Reply.refuse(string.format("%s needs LrDevelopController.%s, which this Lightroom does not offer%s",
-                toolName, name, minimumVersion and " (" .. minimumVersion .. " or later has it)" or ""))
+            Reply.refuse(string.format("%s needs LrDevelopController.%s, a function outside the Lightroom SDK that"
+                .. " this Lightroom does not offer", toolName, name))
         end
     end
 end

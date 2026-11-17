@@ -2,7 +2,6 @@ local LrTasks = import 'LrTasks'
 
 local AIMaskData = require 'AIMaskData'
 local CatalogWrite = require 'CatalogWrite'
-local DevelopSession = require 'DevelopSession'
 local LocalSliders = require 'LocalSliders'
 local Reply = require 'Reply'
 local Log = require 'Log'
@@ -467,7 +466,6 @@ end
 
 function GuardedMaskWrite.submit(context, catalog, photo, spec)
     if spec.unchanged then
-        DevelopSession.flushIfShowing(catalog, photo)
         local current = GuardedMaskWrite.readEntries(catalog, photo)
         if spec.unchanged(current) then return { previous = current, entries = current } end
     end
@@ -505,10 +503,11 @@ end
 
 function GuardedMaskWrite.apply(context, catalog, photo, spec)
     local plan
+    local admission = MaskWriteAdmission.status(catalog)
     return GuardedMaskWrite.submit(context, catalog, photo, {
         description = spec.description,
         build = function(entries, settings)
-            MaskWriteAdmission.requireAdmitted(catalog, settings.ProcessVersion)
+            MaskWriteAdmission.requireAdmitted(admission, settings.ProcessVersion)
             local read = deepClone(entries)
             local proposed = spec.build(entries)
             if type(proposed) ~= "table" then error("mask change produced no mask list", 0) end

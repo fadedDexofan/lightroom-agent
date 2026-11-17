@@ -101,6 +101,24 @@ describe("GuardedMaskWrite.apply admission", function()
         assert.are.equal(1, #state.writes)
     end)
 
+    it("reads the catalog path and the certification files before the write gate, not inside it", function()
+        local Guard, catalog, photo, state = setup({
+            catalogPath = PERSONAL_CATALOG,
+            files = { [CERTIFICATION_FILE] = certification(RUNNING_BUILD) },
+        })
+        local insideGate = {}
+        local getPath = catalog.getPath
+        catalog.getPath = function(...)
+            insideGate[#insideGate + 1] = state.insideWrite == true
+            return getPath(...)
+        end
+
+        Guard.apply(helper.requestContext(), catalog, photo, { description = "x", build = appendGradient(radialComponent()) })
+
+        assert.are.same({ false }, insideGate)
+        assert.are.equal(1, #state.writes)
+    end)
+
     it("refuses, writing nothing, a photo whose process version the certification did not exercise", function()
         local Guard, catalog, photo, state = setup({
             catalogPath = PERSONAL_CATALOG,

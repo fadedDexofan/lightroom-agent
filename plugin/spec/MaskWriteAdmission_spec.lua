@@ -85,15 +85,19 @@ describe("MaskWriteAdmission.status", function()
     end)
 end)
 
+local function decideWith(Admission, at, processVersion)
+    return Admission.decide(Admission.status(at), processVersion)
+end
+
 describe("MaskWriteAdmission.decide", function()
     it("admits the running build for a process version its certification exercised", function()
         local Admission = load({ [CERTIFICATION_FILE] = certification(RUNNING_BUILD) })
 
-        assert.is_true(Admission.decide(catalog, "15.3").admitted)
+        assert.is_true(Admission.decide(Admission.status(catalog), "15.3").admitted)
     end)
 
     it("refuses without a certification and says how to certify", function()
-        local decision = load({}).decide(catalog, "15.4")
+        local decision = decideWith(load({}), catalog, "15.4")
 
         assert.is_false(decision.admitted)
         assert.is_truthy(decision.reason:find("Lightroom Classic 16.0 (" .. RUNNING_BUILD .. ") is not certified", 1, true))
@@ -102,14 +106,14 @@ describe("MaskWriteAdmission.decide", function()
     end)
 
     it("refuses a certification for another build and names that build", function()
-        local decision = load({ [CERTIFICATION_FILE] = certification("16.0.0 build 7654321") }).decide(catalog, "15.4")
+        local decision = decideWith(load({ [CERTIFICATION_FILE] = certification("16.0.0 build 7654321") }), catalog, "15.4")
 
         assert.is_false(decision.admitted)
         assert.is_truthy(decision.reason:find("certified: 16.0.0 build 7654321", 1, true))
     end)
 
     it("refuses a process version the certification did not exercise and lists the ones it did", function()
-        local decision = load({ [CERTIFICATION_FILE] = certification(RUNNING_BUILD) }).decide(catalog, "11.0")
+        local decision = decideWith(load({ [CERTIFICATION_FILE] = certification(RUNNING_BUILD) }), catalog, "11.0")
 
         assert.is_false(decision.admitted)
         assert.is_truthy(decision.reason:find("process version (11.0)", 1, true))
@@ -117,7 +121,7 @@ describe("MaskWriteAdmission.decide", function()
     end)
 
     it("admits any process version on the kit's throwaway catalog without a certification", function()
-        local decision = load({ [THROWAWAY_MARKER] = "{}" }).decide(throwaway, "11.0")
+        local decision = decideWith(load({ [THROWAWAY_MARKER] = "{}" }), throwaway, "11.0")
 
         assert.is_true(decision.admitted)
         assert.is_true(decision.throwaway_catalog)
@@ -128,7 +132,7 @@ describe("MaskWriteAdmission.requireAdmitted", function()
     it("refuses with the decision's reason and leaves what was written to the outcome", function()
         local Admission = load({ [CERTIFICATION_FILE] = certification(RUNNING_BUILD) })
 
-        local refusal = helper.failedOf(function() Admission.requireAdmitted(catalog, "11.0") end)
+        local refusal = helper.failedOf(function() Admission.requireAdmitted(Admission.status(catalog), "11.0") end)
 
         assert.is_truthy(refusal:find("process version (11.0)", 1, true))
         assert.is_nil(refusal:find("othing was", 1, true))
@@ -137,6 +141,6 @@ describe("MaskWriteAdmission.requireAdmitted", function()
     it("returns quietly when the write is admitted", function()
         local Admission = load({ [CERTIFICATION_FILE] = certification(RUNNING_BUILD) })
 
-        assert.has_no.errors(function() Admission.requireAdmitted(catalog, "15.4") end)
+        assert.has_no.errors(function() Admission.requireAdmitted(Admission.status(catalog), "15.4") end)
     end)
 end)

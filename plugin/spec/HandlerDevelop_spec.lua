@@ -117,7 +117,7 @@ local function setup(opts)
         deepClone = Store.clone,
     }
     package.loaded.AIMaskCompute = nil
-    package.loaded.MaskWriteAdmission = opts.maskWriteAdmission or { requireAdmitted = function() end }
+    package.loaded.MaskWriteAdmission = opts.maskWriteAdmission or { status = function() return {} end, requireAdmitted = function() end }
     package.loaded.HandlerDevelop = nil
     package.loaded.DevelopSession = nil
     package.loaded.DevelopBatch = nil
@@ -941,7 +941,7 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
     it("refuses a full copy whose source masks the mask-write admission refuses", function()
         local Handler = select(2, setup({
             photos = photos(),
-            maskWriteAdmission = { requireAdmitted = function()
+            maskWriteAdmission = { status = function() return {} end, requireAdmitted = function()
                 error("Mask writes are not certified for this Lightroom build.", 0)
             end },
         }))
@@ -1979,22 +1979,14 @@ local function processVersionSetup(opts)
     return Handler, calls, function() return module, active.localIdentifier, sources[1] end
 end
 
-describe("HandlerDevelop controller gates", function()
-    for _, case in ipairs({
-        { tool = "apply_denoise", missing = "getEnhancePanelState", version = "Lightroom Classic 15",
-            run = function()
-                local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "getEnhancePanelState" } })
-                return function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end
-            end },
-    }) do
-        it("refuses " .. case.tool .. " through the one controller gate, naming the missing function", function()
-            local expected = case.tool .. " needs LrDevelopController." .. case.missing
-                .. ", which this Lightroom does not offer"
-                .. (case.version and " (" .. case.version .. " or later has it)" or "")
-            assert.are.equal(expected, helper.failedOf(case.run()))
-        end)
-    end
+describe("HandlerDevelop.applyDenoise on a Lightroom without the Denoise functions", function()
+    it("refuses, naming the missing function as outside the SDK", function()
+        local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "getEnhancePanelState" } })
 
+        assert.are.equal("apply_denoise needs LrDevelopController.getEnhancePanelState, a function outside the Lightroom SDK"
+            .. " that this Lightroom does not offer",
+            helper.failedOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end))
+    end)
 end)
 
 describe("HandlerDevelop.setProcessVersion", function()
@@ -2786,6 +2778,7 @@ describe("a full copy replaces the target's masks and admits them under the proc
     local function recordingAdmission(log, refusal)
         local admissions = 0
         return {
+            status = function() return {} end,
             requireAdmitted = function(_, processVersion)
                 admissions = admissions + 1
                 log[#log + 1] = "admit " .. tostring(processVersion)

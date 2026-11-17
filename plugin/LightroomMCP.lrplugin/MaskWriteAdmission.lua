@@ -74,21 +74,23 @@ function MaskWriteAdmission.status(catalog)
     return status
 end
 
-function MaskWriteAdmission.decide(catalog, processVersion)
-    local status = MaskWriteAdmission.status(catalog)
-    if status.admitted and not status.throwaway_catalog
-        and not contains(status.certified.process_versions, tostring(processVersion)) then
-        status.admitted = false
-        status.reason = string.format(
-            "The photo's process version (%s) was not exercised by the certification of Lightroom Classic %s"
-                .. " (certified: %s).",
-            tostring(processVersion), status.running.version, table.concat(status.certified.process_versions, ", "))
+function MaskWriteAdmission.decide(status, processVersion)
+    if not status.admitted or status.throwaway_catalog
+        or contains(status.certified.process_versions, tostring(processVersion)) then
+        return status
     end
-    return status
+    local decision = {}
+    for key, value in pairs(status) do decision[key] = value end
+    decision.admitted = false
+    decision.reason = string.format(
+        "The photo's process version (%s) was not exercised by the certification of Lightroom Classic %s"
+            .. " (certified: %s).",
+        tostring(processVersion), status.running.version, table.concat(status.certified.process_versions, ", "))
+    return decision
 end
 
-function MaskWriteAdmission.requireAdmitted(catalog, processVersion)
-    local decision = MaskWriteAdmission.decide(catalog, processVersion)
+function MaskWriteAdmission.requireAdmitted(status, processVersion)
+    local decision = MaskWriteAdmission.decide(status, processVersion)
     if not decision.admitted then Reply.refuse(decision.reason) end
 end
 

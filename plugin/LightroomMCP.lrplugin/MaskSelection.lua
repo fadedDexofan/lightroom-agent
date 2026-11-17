@@ -18,14 +18,9 @@ local TOOL_SWITCH_TIMEOUT_SECONDS = 5
 local MASKING_TOOL = "masking"
 local MASKING_TOOL_NAMES = { masking = true, local_point_color = true }
 
-function MaskSelection.idString(value)
-    if type(value) == "string" and value ~= "" then return value end
-    return nil
-end
-
 function MaskSelection.findMask(masks, maskId)
     for _, mask in ipairs(masks or {}) do
-        if type(mask) == "table" and mask.ID == maskId then return mask end
+        if mask.ID == maskId then return mask end
     end
     return nil
 end
@@ -51,7 +46,7 @@ function MaskSelection.readMasks(catalog, photo)
             masks, lastError = nil, result
             return false
         end
-        masks = type(result) == "table" and result or {}
+        masks = result or {}
         return holdsSavedMasks(catalog, photo, masks)
     end, MASK_LIST_TIMEOUT_SECONDS)
     if ready then return masks end
@@ -67,15 +62,13 @@ end
 function MaskSelection.readMasksOrNil()
     local ok, result = LrTasks.pcall(LrDevelopController.getAllMasks)
     if not ok then return nil end
-    if type(result) ~= "table" then return {} end
-    return result
+    return result or {}
 end
 
 function MaskSelection.idSet(masks)
     local ids = {}
     for _, mask in ipairs(masks) do
-        local id = type(mask) == "table" and MaskSelection.idString(mask.ID)
-        if id then ids[id] = true end
+        ids[mask.ID] = true
     end
     return ids
 end
@@ -83,8 +76,7 @@ end
 function MaskSelection.masksNotIn(masks, knownIds)
     local fresh = {}
     for _, mask in ipairs(masks) do
-        local id = type(mask) == "table" and MaskSelection.idString(mask.ID)
-        if id and not knownIds[id] then fresh[#fresh + 1] = mask end
+        if not knownIds[mask.ID] then fresh[#fresh + 1] = mask end
     end
     return fresh
 end
@@ -160,10 +152,7 @@ function MaskSelection.requireMask(masks, maskId, photoId)
     local mask = MaskSelection.findMask(masks, maskId)
     if mask then return mask end
     local ids = {}
-    for _, listed in ipairs(masks) do
-        local id = type(listed) == "table" and MaskSelection.idString(listed.ID)
-        if id then ids[#ids + 1] = id end
-    end
+    for _, listed in ipairs(masks) do ids[#ids + 1] = listed.ID end
     Reply.refuse(string.format("Mask not found on photo %s: %s (masks on this photo: %s)",
         photoId, tostring(maskId), #ids > 0 and table.concat(ids, ", ") or "none"))
 end
