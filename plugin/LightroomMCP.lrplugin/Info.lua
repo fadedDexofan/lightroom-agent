@@ -5,7 +5,7 @@ return {
     LrToolkitIdentifier = 'com.lightroom.mcp',
     LrPluginName = "Lightroom MCP",
 
-    LrPluginInfoUrl = "https://github.com/automaat/lightroom-mcp",
+    LrPluginInfoUrl = "https://github.com/fadedDexofan/lightroom-agent",
 
     VERSION = { major=0, minor=27, revision=0, build=0 },
 
