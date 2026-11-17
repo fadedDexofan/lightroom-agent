@@ -31,7 +31,7 @@ describe('toolset parser', () => {
     };
     const env = manifest.server.mcp_config.env;
     expect(env.LIGHTROOM_AGENT_TOOLSETS).toBe('${user_config.toolsets}');
-    expect(manifest.user_config.toolsets.default).toBe('core');
+    expect(manifest.user_config.toolsets.default).toBe('all');
     expect(env.LIGHTROOM_AGENT_READ_ONLY).toBe('${user_config.read_only}');
     expect(manifest.user_config.read_only.default).toBe(false);
     expect(manifest.user_config.read_only.type).toBe('boolean');

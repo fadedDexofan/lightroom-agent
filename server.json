@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.fadedDexofan/lightroom-agent",
-  "description": "MCP server bridging Claude/Codex/ChatGPT to Adobe Lightroom Classic via a Lua plugin.",
+  "description": "Let an AI agent cull, develop, mask and export photos in Lightroom Classic, render-checked",
   "repository": {
     "url": "https://github.com/fadedDexofan/lightroom-agent",
     "source": "github"
@@ -29,6 +29,20 @@
           "isRequired": false,
           "format": "number",
           "default": "58764"
+        },
+        {
+          "name": "LIGHTROOM_AGENT_TOOLSETS",
+          "description": "Toolsets to enable: core is always on; add develop, masks, develop,masks, or all.",
+          "isRequired": false,
+          "format": "string",
+          "default": "all"
+        },
+        {
+          "name": "LIGHTROOM_AGENT_READ_ONLY",
+          "description": "List and accept only read tools from the enabled toolsets.",
+          "isRequired": false,
+          "format": "boolean",
+          "default": "false"
         }
       ]
     }

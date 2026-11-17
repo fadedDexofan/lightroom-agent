@@ -4,10 +4,10 @@
   "display_name": "Lightroom Agent",
   "icon": "icon.png",
   "version": "0.1.0-rc.0",
-  "description": "Bridge Claude to Adobe Lightroom Classic — search, organize, develop, export.",
-  "long_description": "Connects Claude to a running Adobe Lightroom Classic instance via a bundled Lua plugin. Tools cover catalog search, collections, ratings, keywords, develop presets and settings, import and export. The Lightroom plugin is auto-installed into Lightroom's Modules folder on first run; restart Lightroom once after install to load it.",
+  "description": "Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render.",
+  "long_description": "Connects Claude to a running Adobe Lightroom Classic 15 or later through a bundled Lua plug-in. Tools cover catalog search and organisation, Develop settings, masks, snapshots, virtual copies and export, and check each change on Lightroom’s own render. On first run the server copies the plug-in into Lightroom’s Modules folder, unless upstream’s LightroomMCP plug-in is installed; restart Lightroom once to load it. Core catalog tools are always on; this bundle enables all toolsets by default, and read-only mode lists and accepts only read tools.",
   "author": {
-    "name": "Marcin Skalski"
+    "name": "fadedDexofan"
   },
   "repository": {
     "type": "git",
@@ -377,7 +377,7 @@
       "type": "string",
       "title": "Enabled toolsets",
       "description": "Core catalog tools are always enabled. Add develop, masks, develop,masks, or all. Restart the server after changing this setting.",
-      "default": "core",
+      "default": "all",
       "required": false
     },
     "request_port": {
