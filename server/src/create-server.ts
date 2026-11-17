@@ -26,7 +26,7 @@ export function createMcpServer(deps: ServerDeps, options: ToolAccessOptions = {
   server.setRequestHandler("tools/call", async (request, ctx) => {
     const { name, arguments: args } = request.params;
     const progressToken = request.params._meta?.progressToken;
-    return callTool(name, args ?? {}, {
+    return callTool(name, args, {
       signal: ctx.mcpReq.signal,
       onProgress: progressToken === undefined ? undefined : (progress) => {
         void ctx.mcpReq.notify({ method: "notifications/progress", params: { progressToken, ...progress } }).catch(() => {});

@@ -230,13 +230,6 @@ describe('Dispatcher', () => {
     expect(dispatcher.pendingCount()).toBe(0);
   });
 
-  it('defaults params to empty object when undefined', async () => {
-    const p = dispatcher.call('x', undefined, 1000);
-    const sentObj = parseSent(sent[0]);
-    expect(sentObj.params).toEqual({});
-    await p.catch(() => {});
-  });
-
   it('waits for the timeout the call names', async () => {
     jest.useFakeTimers();
     try {

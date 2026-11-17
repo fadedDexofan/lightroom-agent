@@ -64,6 +64,20 @@ const exclusiveWithMaskId: ArgumentRule = {
   holds: (args) => args.mask_id === undefined || args.adjustments === undefined,
 };
 
+const CURVE_KEYS = DEVELOP_KEYS.filter((key) => key.kind === "curve").map((key) => key.name);
+const settingsOf = (args: ToolArgs) => (args.settings ?? {}) as Record<string, unknown>;
+
+const developSettingsRules: readonly ArgumentRule[] = [
+  {
+    text: `settings must leave out the keys another tool writes: ${writtenElsewhereText(DEVELOP_KEYS.filter((key) => key.writtenBy !== undefined))}`,
+    holds: (args) => keysRefusedFor("set_develop_settings", Object.keys(settingsOf(args))).length === 0,
+  },
+  {
+    text: pointCurveRuleText("a ToneCurvePV2012 curve"),
+    holds: (args) => CURVE_KEYS.every((key) => settingsOf(args)[key] === undefined || isPointCurve(settingsOf(args)[key])),
+  },
+];
+
 const copyListRule: ArgumentRule = {
   text: `refused in a named settings list: ${writtenElsewhereText(DEVELOP_KEYS.filter((key) => key.writtenBy !== undefined))}`,
   holds: (args) => !Array.isArray(args.settings) || keysRefusedFor("copy_develop_settings", args.settings as string[]).length === 0,
@@ -1537,7 +1551,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         setDevelopSettings(args as DevelopWriteArgs, dispatcher, budgetMs, options),
     },
     description:
-      `Set Develop settings directly on a photo by Lightroom SDK name; each key's kind and range are in the settings schema. The Crop* keys are in the frame Lightroom stores, not as the photo is displayed: read the frame with get_crop and set it with set_crop. A value outside its range is refused before anything is written (Lightroom would otherwise clamp it or reset the setting to its default). A number finer than Lightroom keeps is rounded to that precision before the write and a warning names it. Returns photo_id and the stored settings. ${DEVELOP_READ_BACK} Temperature and Tint ranges depend on the photo. Point curves via ToneCurvePV2012, ToneCurvePV2012Red, ToneCurvePV2012Green and ToneCurvePV2012Blue, at most 16 points; a written curve replaces any extended (HDR) curve of that channel, and the read-back compares the curve Lightroom renders, its extended one first. Color Grading: the shadow and highlight wheels' hue and saturation are stored under the SplitToning names, balance as SplitToningBalance. Checked against the values being written and those already stored, refused before writing: ${DEVELOP_RULES.map((rule) => rule.text).join("; ")}. Refused here because another tool writes them: ${DEVELOP_KEYS.flatMap((key) => (key.writtenBy ? [`${key.name} (${key.writtenBy})`] : [])).join(", ")}.`,
+      `Set Develop settings directly on a photo by Lightroom SDK name; each key's kind and range are in the settings schema. The Crop* keys are in the frame Lightroom stores, not as the photo is displayed: read the frame with get_crop and set it with set_crop. A value outside its range is refused before anything is written (Lightroom would otherwise clamp it or reset the setting to its default). A number finer than Lightroom keeps is rounded to that precision before the write and a warning names it. Returns photo_id and the stored settings. ${DEVELOP_READ_BACK} Temperature and Tint ranges depend on the photo. Point curves via ToneCurvePV2012, ToneCurvePV2012Red, ToneCurvePV2012Green and ToneCurvePV2012Blue, at most 16 points; a written curve replaces any extended (HDR) curve of that channel, and the read-back compares the curve Lightroom renders, its extended one first. Color Grading: the shadow and highlight wheels' hue and saturation are stored under the SplitToning names, balance as SplitToningBalance. Checked against the values being written and those already stored, refused before writing: ${DEVELOP_RULES.map((rule) => rule.text).join("; ")}.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1551,6 +1565,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       },
       required: ["photo_id", "settings"],
     },
+    rules: developSettingsRules,
   },
   {
     name: "describe_develop_keys",

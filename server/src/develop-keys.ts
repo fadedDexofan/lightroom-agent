@@ -255,8 +255,6 @@ const pair = (low: string, high: string, text: string, apart: (difference: numbe
     || apart((values[high] as number) - (values[low] as number)),
 });
 
-const CURVE_KEYS = DEVELOP_KEYS.filter((key) => key.kind === "curve").map((key) => key.name);
-
 export const DEVELOP_RULES: readonly DevelopRule[] = [
   pair("CropLeft", "CropRight", "CropLeft must be less than CropRight", (difference) => difference > 0),
   pair("CropTop", "CropBottom", "CropTop must be less than CropBottom", (difference) => difference > 0),
@@ -272,11 +270,6 @@ export const DEVELOP_RULES: readonly DevelopRule[] = [
     text: "GrayMixer keys need a black and white photo (set_treatment black_and_white first); Lightroom keeps them only then",
     triggers: COLORS.map((color) => `GrayMixer${color}`), reads: ["ConvertToGrayscale"],
     holds: (values) => values.ConvertToGrayscale === true,
-  },
-  {
-    text: pointCurveRuleText("A ToneCurvePV2012 curve"),
-    triggers: CURVE_KEYS, reads: [],
-    holds: (values) => CURVE_KEYS.every((key) => values[key] === undefined || isPointCurve(values[key])),
   },
   {
     text: "GlowDirection needs GlowStyle 3 (motion) or 4 (streak) (it renders nothing with the other styles)",

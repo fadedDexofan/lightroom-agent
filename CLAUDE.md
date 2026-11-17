@@ -97,7 +97,7 @@ The decision is [ADR 0001](docs/adr/0001-one-result-envelope.md). A call's outco
 ## Develop keys
 
 - Develop keys have one home, `server/src/develop-keys.ts`: `DEVELOP_KEYS`, `DEVELOP_RULES` and `LOCAL_KEYS`. Schemas are generated from it and the build writes it into `Contract.lua`. A key enters only with live evidence: range, write, read-back after normalisation, rendered effect.
-- `set_develop_settings` runs on the server (`develop-write.ts`): it refuses keys another tool writes, rounds to precision, checks rules against stored values and writes through the internal `write_develop_settings` action.
+- `set_develop_settings` runs on the server (`develop-write.ts`): it rounds to precision, checks rules against stored values and writes through the internal `write_develop_settings` action; keys another tool writes and point-curve shapes are refused by its contract rules.
 - Lightroom normalises a write within about a second, and the read right after the gate only echoes the input. `DevelopReadBack.lua` reads back after that second and reports `adjusted`. A written key absent before and after is `not_stored` with a warning; one present before and absent after is `unknown`.
 - Point curves, global and mask, take at most `POINT_CURVE_MAX_PAIRS` (16) points. Lightroom keeps a longer global curve only as an Extended companion that then wins over plain writes, so `DevelopCurves.lua` reads the Extended field first and writes both.
 - `describe_develop_keys` is the only reader of `LrDevelopController.getRange`. Certification compares the static ranges and fails on a stale one without touching mask admission.

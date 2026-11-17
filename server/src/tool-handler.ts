@@ -1,6 +1,6 @@
 import { PluginNotSentError, PluginTimeoutError, type CallOptions, type Dispatcher } from "./dispatcher.js";
 import { DevelopQueue } from "./develop-queue.js";
-import { TOOL_CONTRACTS } from "./tool-contracts.js";
+import { TOOL_CONTRACTS, type ToolArgs } from "./tool-contracts.js";
 import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
 import { finishLost, finishReply, refusedResponse, toolResponse, unknownToolResponse, type PluginReply, type ToolResponse } from "./tool-result.js";
 import { validateToolArgs } from "./validate-args.js";
@@ -26,7 +26,8 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
   return async (name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> => {
     const contract = CONTRACTS.get(name);
     if (!contract) return unknownToolResponse(name);
-    const invalid = validateToolArgs(name, args);
+    const values = (args ?? {}) as ToolArgs;
+    const invalid = validateToolArgs(contract, values);
     if (invalid) return refusedResponse(invalid);
 
     await deps.settleReadiness?.();
@@ -37,8 +38,8 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     const { run } = contract;
     const budgetMs = TIMEOUT_MS_BY_DURATION[contract.duration ?? "quick"];
     const invoke = async (left: number): Promise<PluginReply> => "server" in run
-      ? await run.server(args, deps.dispatcher, left, options)
-      : await deps.dispatcher.call(name, args, left, options) as PluginReply;
+      ? await run.server(values, deps.dispatcher, left, options)
+      : await deps.dispatcher.call(name, values, left, options) as PluginReply;
     try {
       if (!contract.develop) return toolResponse(finishReply(readOnly, await invoke(budgetMs)));
       const turn = await queue.run(name, budgetMs, options?.signal, invoke);

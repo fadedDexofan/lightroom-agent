@@ -1,128 +1,181 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import { envelopeOf } from './helpers/envelope.js';
-import { PluginLiveness, SHADOW_BRIDGE_MESSAGE } from '../src/plugin-liveness.js';
-import { probePlugin, type HeartbeatDispatcher } from '../src/heartbeat.js';
+import { PluginLiveness, type PingDispatcher } from '../src/plugin-liveness.js';
+import { SHADOW_BRIDGE } from '../src/port-owner.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
+type Ping = { timeoutMs: number; answer: () => void; fail: () => void };
+
+function setup(opts: { connected?: () => boolean } = {}) {
+  const pings: Ping[] = [];
+  const dispatcher: PingDispatcher = {
+    call: (action, params, timeoutMs) => {
+      expect([action, params]).toEqual(['ping', {}]);
+      return new Promise((resolve, reject) => {
+        pings.push({ timeoutMs, answer: () => resolve({ pong: true }), fail: () => reject(new Error('timeout')) });
+      });
+    },
+  };
+  const reporter = { report: jest.fn(), clear: jest.fn() };
+  const liveness = new PluginLiveness({
+    dispatcher,
+    connected: opts.connected ?? (() => true),
+    reporter,
+    heartbeatIntervalMs: 30_000,
+    heartbeatTimeoutMs: 10_000,
+    probeTimeoutMs: 5_000,
+    recoveryIntervalMs: 5_000,
+  });
+  return { liveness, pings, reporter };
+}
+
+const flush = async () => {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+};
+
 describe('PluginLiveness', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('treats a connection with no settled ping as usable', () => {
-    const liveness = new PluginLiveness();
+    const { liveness } = setup();
 
     expect(liveness.current()).toBe('unknown');
     expect(liveness.isUsable()).toBe(true);
   });
 
-  it('becomes unusable once a ping fails and usable again once one succeeds', () => {
-    const liveness = new PluginLiveness();
+  it('becomes unusable once a probe fails, reports it, and re-probes until one succeeds', async () => {
+    const { liveness, pings, reporter } = setup();
 
-    liveness.markUnresponsive();
+    liveness.check();
+    pings[0].fail();
+    await flush();
     expect(liveness.isUsable()).toBe(false);
+    expect(reporter.report).toHaveBeenCalledTimes(1);
 
-    liveness.markResponsive();
+    jest.advanceTimersByTime(5_000);
+    expect(pings).toHaveLength(2);
+    pings[1].answer();
+    await flush();
     expect(liveness.isUsable()).toBe(true);
+    expect(reporter.clear).toHaveBeenCalled();
+
+    jest.advanceTimersByTime(20_000);
+    expect(pings).toHaveLength(2);
+  });
+
+  it('starts the same recovery re-probe when a heartbeat ping fails', async () => {
+    const { liveness, pings, reporter } = setup();
+    liveness.start();
+
+    jest.advanceTimersByTime(30_000);
+    expect(pings.map((ping) => ping.timeoutMs)).toEqual([10_000]);
+    pings[0].fail();
+    await flush();
+    expect(liveness.isUsable()).toBe(false);
+    expect(reporter.report).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(5_000);
+    expect(pings.map((ping) => ping.timeoutMs)).toEqual([10_000, 5_000]);
+    pings[1].answer();
+    await flush();
+    expect(liveness.isUsable()).toBe(true);
+    liveness.stop();
+  });
+
+  it('sends no heartbeat ping while a probe is in flight, so the probe verdict stands', async () => {
+    const { liveness, pings } = setup();
+    liveness.start();
+
+    liveness.check();
+    jest.advanceTimersByTime(30_000);
+    expect(pings).toHaveLength(1);
+    pings[0].answer();
+    await flush();
+
+    expect(liveness.current()).toBe('responsive');
+    liveness.stop();
   });
 
   it('makes callers wait for an in-flight probe instead of racing it', async () => {
-    const liveness = new PluginLiveness();
-    liveness.beginProbe();
+    const { liveness, pings } = setup();
+    liveness.check();
 
     let settled = false;
     const waiter = liveness.settled().then(() => {
       settled = true;
     });
-
-    await Promise.resolve();
+    await flush();
     expect(settled).toBe(false);
 
-    liveness.markUnresponsive();
+    pings[0].fail();
     await waiter;
 
     expect(settled).toBe(true);
     expect(liveness.isUsable()).toBe(false);
+    liveness.reset();
   });
 
-  it('refuses a second probe while one is in flight', () => {
-    const liveness = new PluginLiveness();
-
-    const first = liveness.beginProbe();
-    const second = liveness.beginProbe();
-
-    expect(first).not.toBeNull();
-    expect(second).toBeNull();
-
-    liveness.settleProbe(first as number, true);
-    expect(liveness.beginProbe()).not.toBeNull();
-  });
-
-  it('lets a slow probe settle without a second one overwriting it', async () => {
-    const liveness = new PluginLiveness();
-    const token = liveness.beginProbe() as number;
-
-    expect(liveness.beginProbe()).toBeNull();
-    expect(liveness.settleProbe(token, true)).toBe(true);
-
-    expect(liveness.current()).toBe('responsive');
-  });
-
-  it('discards a probe verdict from a connection already torn down', () => {
-    const liveness = new PluginLiveness();
-    const stale = liveness.beginProbe() as number;
+  it('discards a verdict from a connection already torn down', async () => {
+    const { liveness, pings, reporter } = setup();
+    liveness.check();
 
     liveness.reset();
-    const applied = liveness.settleProbe(stale, false);
+    pings[0].fail();
+    await flush();
 
-    expect(applied).toBe(false);
     expect(liveness.current()).toBe('unknown');
-    expect(liveness.isUsable()).toBe(true);
+    expect(reporter.report).not.toHaveBeenCalled();
   });
 
-  it('releases waiters when the probe settles', async () => {
-    const liveness = new PluginLiveness();
-    const token = liveness.beginProbe() as number;
+  it('blames no other bridge for a ping that failed because the sockets are down', async () => {
+    let connected = true;
+    const { liveness, pings, reporter } = setup({ connected: () => connected });
+    liveness.start();
 
-    let settled = false;
-    const waiter = liveness.settled().then(() => { settled = true; });
-    await Promise.resolve();
-    expect(settled).toBe(false);
+    jest.advanceTimersByTime(30_000);
+    connected = false;
+    pings[0].fail();
+    await flush();
 
-    liveness.settleProbe(token, true);
-    await waiter;
-    expect(settled).toBe(true);
+    expect(liveness.current()).toBe('unknown');
+    expect(reporter.report).not.toHaveBeenCalled();
+    liveness.stop();
   });
 
   it('does not block when no probe is in flight', async () => {
-    const liveness = new PluginLiveness();
+    const { liveness } = setup();
 
     await expect(liveness.settled()).resolves.toBeUndefined();
   });
 
-  it('returns to unknown on reset, so a reconnect starts optimistic', () => {
-    const liveness = new PluginLiveness();
-    liveness.markUnresponsive();
+  it('returns to unknown on reset and stops re-probing', async () => {
+    const { liveness, pings } = setup();
+    liveness.check();
+    pings[0].fail();
+    await flush();
 
     liveness.reset();
+    jest.advanceTimersByTime(60_000);
 
     expect(liveness.current()).toBe('unknown');
     expect(liveness.isUsable()).toBe(true);
-  });
-});
-
-describe('probePlugin', () => {
-  it('reports true when the plugin answers', async () => {
-    const dispatcher: HeartbeatDispatcher = {
-      call: jest.fn(() => Promise.resolve({ pong: true })),
-    };
-
-    await expect(probePlugin(dispatcher, 5_000)).resolves.toBe(true);
-    expect(dispatcher.call).toHaveBeenCalledWith('ping', {}, 5_000);
+    expect(pings).toHaveLength(1);
   });
 
-  it('reports false when the ping times out instead of throwing', async () => {
-    const dispatcher: HeartbeatDispatcher = {
-      call: jest.fn(() => Promise.reject(new Error('Plugin response timeout (10s)'))),
-    };
+  it('stops pinging once stopped', () => {
+    const { liveness, pings } = setup();
+    liveness.start();
 
-    await expect(probePlugin(dispatcher, 5_000)).resolves.toBe(false);
+    liveness.stop();
+    jest.advanceTimersByTime(90_000);
+
+    expect(pings).toHaveLength(0);
   });
 });
 
@@ -133,36 +186,37 @@ describe('tool handler readiness message', () => {
     const handler = createCallToolHandler({
       dispatcher,
       isReady: () => false,
-      notReadyMessage: () => SHADOW_BRIDGE_MESSAGE,
+      notReadyMessage: () => SHADOW_BRIDGE.message,
     });
 
     const res = await handler('get_selected_photos', {});
 
     expect(res.isError).toBe(true);
-    expect(envelopeOf(res)).toEqual({ outcome: 'failed', error: SHADOW_BRIDGE_MESSAGE });
+    expect(envelopeOf(res)).toEqual({ outcome: 'failed', error: SHADOW_BRIDGE.message });
     expect(dispatcher.call).not.toHaveBeenCalled();
   });
 
   it('waits for readiness to settle before dispatching a call', async () => {
-    const liveness = new PluginLiveness();
-    liveness.beginProbe();
+    const { liveness, pings } = setup();
+    liveness.check();
     const call = jest.fn(() => Promise.resolve({ id: 'req_1', result: {} }));
     const handler = createCallToolHandler({
       dispatcher: { call },
       isReady: () => liveness.isUsable(),
-      notReadyMessage: () => SHADOW_BRIDGE_MESSAGE,
+      notReadyMessage: () => SHADOW_BRIDGE.message,
       settleReadiness: () => liveness.settled(),
     });
 
     const pending = handler('get_selected_photos', {});
-    await Promise.resolve();
+    await flush();
     expect(call).not.toHaveBeenCalled();
 
-    liveness.markUnresponsive();
+    pings[0].fail();
     const res = await pending;
 
     expect(res.isError).toBe(true);
-    expect(envelopeOf(res)).toEqual({ outcome: 'failed', error: SHADOW_BRIDGE_MESSAGE });
+    expect(envelopeOf(res)).toEqual({ outcome: 'failed', error: SHADOW_BRIDGE.message });
     expect(call).not.toHaveBeenCalled();
+    liveness.reset();
   });
 });

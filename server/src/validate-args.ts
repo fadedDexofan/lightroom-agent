@@ -1,14 +1,18 @@
 import { Ajv, type ErrorObject, type ValidateFunction } from "ajv";
-import { PHOTO_ID_PATTERN, TOOL_CONTRACTS, type ArgumentRule, type ToolArgs } from "./tool-contracts.js";
+import { PHOTO_ID_PATTERN, type ToolArgs, type ToolContract } from "./tool-contracts.js";
 
 const ajv = new Ajv({ strict: false, allErrors: true, verbose: true });
 
-const validators = new Map<string, { validate: ValidateFunction; rules: readonly ArgumentRule[] }>(
-  TOOL_CONTRACTS.map((contract) => [
-    contract.name,
-    { validate: ajv.compile(contract.inputSchema), rules: contract.rules ?? [] },
-  ]),
-);
+const validators = new WeakMap<ToolContract, ValidateFunction>();
+
+function validatorOf(contract: ToolContract): ValidateFunction {
+  let validate = validators.get(contract);
+  if (!validate) {
+    validate = ajv.compile(contract.inputSchema);
+    validators.set(contract, validate);
+  }
+  return validate;
+}
 
 function alternative(schema: unknown): string {
   const { type, enum: values, minimum, maximum } = (schema ?? {}) as {
@@ -52,14 +56,12 @@ function problems(errors: ErrorObject[]): string[] {
     .map(describe);
 }
 
-export function validateToolArgs(name: string, args: unknown): string | null {
-  const contract = validators.get(name);
-  if (!contract) throw new Error(`No contract for ${name}`);
-  const values = args ?? {};
-  if (!contract.validate(values)) {
-    const unique = [...new Set(problems(contract.validate.errors ?? []))];
-    return `Invalid arguments for ${name}: ${unique.join("; ")}`;
+export function validateToolArgs(contract: ToolContract, args: ToolArgs): string | null {
+  const validate = validatorOf(contract);
+  if (!validate(args)) {
+    const unique = [...new Set(problems(validate.errors ?? []))];
+    return `Invalid arguments for ${contract.name}: ${unique.join("; ")}`;
   }
-  const broken = contract.rules.find((rule) => !rule.holds(values as ToolArgs));
-  return broken ? `Invalid arguments for ${name}: ${broken.text}` : null;
+  const broken = (contract.rules ?? []).find((rule) => !rule.holds(args));
+  return broken ? `Invalid arguments for ${contract.name}: ${broken.text}` : null;
 }

@@ -17,9 +17,8 @@ import { Bridge, type Leader } from "./bridge.js";
 import { brokerPath } from "./broker.js";
 import { parseCli, helpText } from "./cli.js";
 import { VERSION } from "./version.js";
-import { startHeartbeat, probePlugin } from "./heartbeat.js";
 import { ConnectionLossDeadline } from "./connection-loss.js";
-import { PluginLiveness } from "./plugin-liveness.js";
+import { HEARTBEAT_INTERVAL_SECONDS, PluginLiveness } from "./plugin-liveness.js";
 import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
 import { acquireInstanceLock, lockHolder, lockHolderUnresponsive } from "./instance-lock.js";
@@ -32,9 +31,6 @@ import {
   lightroomModulesDir,
 } from "./install-plugin.js";
 
-// Keep this interval in sync with HEARTBEAT_INTERVAL_SECONDS in
-// PluginInfoProvider.lua. See heartbeat.ts for what this drives.
-const HEARTBEAT_INTERVAL_MS = 30_000;
 const PING_TIMEOUT_MS = 10_000;
 const RESPONSE_CONNECT_SETTLE_MS = 200;
 // Short enough that a tool call waiting on the verdict is not left hanging,
@@ -190,33 +186,19 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
     send: (line) => requestSocket.send(line),
     getToken: () => readToken(),
   });
-  const liveness = new PluginLiveness();
-  let recoveryTimer: NodeJS.Timeout | null = null;
   const unresponsive = new UnresponsiveReporter({
     diagnose: () => diagnoseUnresponsive([REQUEST_PORT, RESPONSE_PORT]),
     log: (message) => console.error(`[plugin] ${message}`),
   });
-  const probeOnConnect = () => {
-    const token = liveness.beginProbe();
-    if (token === null) return;
-    void probePlugin(dispatcher, PROBE_TIMEOUT_MS).then((answered) => {
-      if (!liveness.settleProbe(token, answered)) return;
-      if (answered) {
-        unresponsive.clear();
-        if (recoveryTimer) {
-          clearInterval(recoveryTimer);
-          recoveryTimer = null;
-        }
-        return;
-      }
-      unresponsive.report();
-      // Re-probe faster than the 30s heartbeat so the bridge recovers promptly
-      // once the process holding the plugin goes away.
-      if (!recoveryTimer) {
-        recoveryTimer = setInterval(() => probeOnConnect(), PROBE_RECOVERY_INTERVAL_MS);
-      }
-    });
-  };
+  const liveness = new PluginLiveness({
+    dispatcher,
+    connected: () => socketsConnected(),
+    reporter: unresponsive,
+    heartbeatIntervalMs: HEARTBEAT_INTERVAL_SECONDS * 1000,
+    heartbeatTimeoutMs: PING_TIMEOUT_MS,
+    probeTimeoutMs: PROBE_TIMEOUT_MS,
+    recoveryIntervalMs: PROBE_RECOVERY_INTERVAL_MS,
+  });
   const startResponseSocket = () => {
     if (responseSocket || !requestSocket.isConnected()) return;
     responseSocket = new PluginSocket({
@@ -225,11 +207,10 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
       onLine: (line) => dispatcher.handleResponseLine(line),
       onConnect: () => {
         connectionLoss.clear();
-        probeOnConnect();
+        liveness.check();
       },
       onDisconnect: () => {
         liveness.reset();
-        unresponsive.clear();
         connectionLoss.start();
       },
     });
@@ -237,7 +218,6 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   };
   const stopResponseSocket = () => {
     liveness.reset();
-    unresponsive.clear();
     if (responseConnectTimer) {
       clearTimeout(responseConnectTimer);
       responseConnectTimer = null;
@@ -270,29 +250,7 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   const socketsConnected = () =>
     requestSocket.isConnected() && (responseSocket?.isConnected() ?? false);
 
-  const heartbeat = startHeartbeat(
-    dispatcher,
-    HEARTBEAT_INTERVAL_MS,
-    PING_TIMEOUT_MS,
-    (err) => {
-      console.error(`[heartbeat] ping failed: ${err.message}`);
-      // A ping that fails because the socket is down is an ordinary disconnect,
-      // not a second bridge holding the plugin. Only diagnose the latter while
-      // the connection is actually up, or a stopped plugin gets blamed on a
-      // process that does not exist.
-      if (!socketsConnected()) {
-        liveness.reset();
-        return;
-      }
-      liveness.markUnresponsive();
-      unresponsive.report();
-    },
-    () => {
-      liveness.markResponsive();
-      unresponsive.clear();
-    },
-    () => liveness.connectionGeneration(),
-  );
+  liveness.start();
 
   const callTool = createCallToolHandler({
     dispatcher,
@@ -312,9 +270,8 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   return {
     callTool,
     stop: () => {
-      clearInterval(heartbeat);
+      liveness.stop();
       connectionLoss.clear();
-      if (recoveryTimer) clearInterval(recoveryTimer);
       stopResponseSocket();
       requestSocket.stop();
     },

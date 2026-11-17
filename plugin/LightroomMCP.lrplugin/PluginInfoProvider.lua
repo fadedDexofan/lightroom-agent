@@ -174,14 +174,14 @@ local SEND_WAIT_SECONDS = 25
 -- fires but sendConnected is later false by the time sendResponse runs
 -- and no event sets the rebind flag again.
 local SEND_REBIND_TRIGGER_SECONDS = 5
--- The MCP server pings every HEARTBEAT_INTERVAL_SECONDS (server/src/index.ts).
+-- The MCP server pings every HEARTBEAT_INTERVAL_SECONDS.
 -- Treat the connection as stale only after missing roughly three pings in a
 -- row, rather than the old fixed 300s idle window. This is what lets a
 -- healthy-but-quiet interactive session run indefinitely without tripping a
 -- full restart (Automaat review, PR #151: "idle and stale connections are
 -- indistinguishable") while still detecting a genuinely dead peer (Windows
 -- onClosed unreliability, issue #134) in under two minutes.
-local HEARTBEAT_INTERVAL_SECONDS = 30
+local HEARTBEAT_INTERVAL_SECONDS = Contract.HEARTBEAT_INTERVAL_SECONDS
 local STALE_RECONNECT_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
 -- If a request is in flight when the soft threshold above is hit, give it a
 -- chance to finish rather than yanking the socket out from under it — but

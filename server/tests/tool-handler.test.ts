@@ -1,7 +1,7 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
-import { validateToolArgs } from '../src/validate-args.js';
+import { validateToolArgs } from './helpers/validate.js';
 import { DEVELOP_KEYS, LOCAL_KEYS } from '../src/develop-keys.js';
 import { dataOf, envelopeOf } from './helpers/envelope.js';
 
@@ -423,7 +423,7 @@ describe('set_develop_settings rules on stored values', () => {
   ])('refuses the point curve %j, which does not start at 0, end at 255 and increase, before anything is sent', async (curve) => {
     const { calls, write } = photoWith({});
     expect(envelopeOf(await write({ ToneCurvePV2012: curve }))).toEqual({
-      outcome: 'failed', error: expect.stringContaining('A ToneCurvePV2012 curve must start at input 0, end at input 255 and have strictly increasing inputs'),
+      outcome: 'failed', error: expect.stringContaining('a ToneCurvePV2012 curve must start at input 0, end at input 255 and have strictly increasing inputs'),
     });
     expect(calls).toEqual([]);
   });

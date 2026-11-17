@@ -1,5 +1,5 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
-import { keysRefusedFor, roundToPrecision, rulesTouchedBy, writtenElsewhereText, type Rounded } from "./develop-keys.js";
+import { roundToPrecision, rulesTouchedBy, type Rounded } from "./develop-keys.js";
 import type { Input, PluginReply } from "./tool-result.js";
 
 export interface DevelopWriteArgs {
@@ -62,8 +62,6 @@ export async function writeDevelopSettings(
 export async function setDevelopSettings(
   args: DevelopWriteArgs, dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
 ): Promise<PluginReply> {
-  const elsewhere = keysRefusedFor("set_develop_settings", Object.keys(args.settings));
-  if (elsewhere.length) return { error: `Refused before writing: ${writtenElsewhereText(elsewhere)}`, effect: "none" };
   const { settings, rounded } = roundToPrecision(args.settings);
   const reply = await writeDevelopSettings(args.photo_id, settings, dispatcher, budgetMs, options);
   return withWarnings(reply, roundingNote(rounded));

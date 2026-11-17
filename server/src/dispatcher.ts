@@ -133,7 +133,7 @@ export class Dispatcher {
     let payload: string;
     try {
       payload = JSON.stringify({
-        hello: this.getToken(), id, action, params: params ?? {},
+        hello: this.getToken(), id, action, params,
         reportProgress: Boolean(options?.onProgress), budget_ms: timeoutMs,
       });
     } catch (err) {

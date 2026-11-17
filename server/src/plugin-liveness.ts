@@ -16,77 +16,62 @@
  */
 export type PluginLivenessState = "unknown" | "responsive" | "unresponsive";
 
-export const SHADOW_BRIDGE_MESSAGE =
-  "Plugin ports connected but unresponsive; another bridge may hold the client slot. Restart the plug-in in Lightroom's Plug-in Manager.";
+export const HEARTBEAT_INTERVAL_SECONDS = 30;
 
-export const SHADOW_BRIDGE_DETAILS =
-  "Connected to the Lightroom plugin's ports, but it is not answering. " +
-  "The plugin serves one client at a time, so another lightroom-mcp process " +
-  "is most likely holding the connection. Quit any other MCP client or stale " +
-  "bridge process (pgrep -fl lightroom-mcp), or restart the plugin from " +
-  "Lightroom's Plug-in Manager.";
+export interface PingDispatcher {
+  call(action: string, params: unknown, timeoutMs: number): Promise<unknown>;
+}
+
+export interface LivenessOptions {
+  dispatcher: PingDispatcher;
+  connected: () => boolean;
+  reporter: { report(): void; clear(): void };
+  heartbeatIntervalMs: number;
+  heartbeatTimeoutMs: number;
+  probeTimeoutMs: number;
+  recoveryIntervalMs: number;
+}
 
 export class PluginLiveness {
   private state: PluginLivenessState = "unknown";
   private pending: Promise<void> | null = null;
   private resolvePending: (() => void) | null = null;
   private generation = 0;
+  private heartbeat: NodeJS.Timeout | null = null;
+  private recovery: NodeJS.Timeout | null = null;
 
-  markResponsive(): void {
-    this.state = "responsive";
-    this.release();
+  constructor(private readonly opts: LivenessOptions) {}
+
+  start(): void {
+    this.heartbeat = setInterval(() => this.check(this.opts.heartbeatTimeoutMs), this.opts.heartbeatIntervalMs);
   }
 
-  markUnresponsive(): void {
-    this.state = "unresponsive";
-    this.release();
+  stop(): void {
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = null;
+    this.stopRecovery();
+  }
+
+  check(timeoutMs = this.opts.probeTimeoutMs): void {
+    if (this.pending) return;
+    this.pending = new Promise<void>((resolve) => {
+      this.resolvePending = resolve;
+    });
+    const token = this.generation;
+    void this.ping(timeoutMs).then((answered) => this.settle(token, answered));
   }
 
   reset(): void {
     this.state = "unknown";
     this.generation += 1;
     this.release();
+    this.opts.reporter.clear();
+    this.stopRecovery();
   }
 
-  /**
-   * Claims the right to probe. Returns a token to hand back to settleProbe, or
-   * null when a probe is already running: without this the recovery interval
-   * could stack probes whose verdicts then land in arbitrary order, letting a
-   * slow timeout overwrite a fast success.
-   */
-  beginProbe(): number | null {
-    if (this.pending) return null;
-    this.pending = new Promise<void>((resolve) => {
-      this.resolvePending = resolve;
-    });
-    return this.generation;
-  }
-
-  /**
-   * Records a probe verdict, ignoring one that belongs to a connection already
-   * torn down (reset bumps the generation). Returns whether it was applied.
-   */
-  settleProbe(token: number, responsive: boolean): boolean {
-    if (token !== this.generation) return false;
-    if (responsive) {
-      this.markResponsive();
-    } else {
-      this.markUnresponsive();
-    }
-    return true;
-  }
-
-  /**
-   * Resolves once the current probe has settled. Returns immediately when the
-   * state is already known or no probe is running.
-   */
   async settled(): Promise<void> {
     if (this.state !== "unknown" || !this.pending) return;
     await this.pending;
-  }
-
-  connectionGeneration(): number {
-    return this.generation;
   }
 
   current(): PluginLivenessState {
@@ -95,6 +80,32 @@ export class PluginLiveness {
 
   isUsable(): boolean {
     return this.state !== "unresponsive";
+  }
+
+  private settle(token: number, answered: boolean): void {
+    if (token !== this.generation) return;
+    if (!answered && !this.opts.connected()) {
+      this.reset();
+      return;
+    }
+    this.state = answered ? "responsive" : "unresponsive";
+    this.release();
+    if (answered) {
+      this.opts.reporter.clear();
+      this.stopRecovery();
+      return;
+    }
+    this.opts.reporter.report();
+    this.recovery ??= setInterval(() => this.check(), this.opts.recoveryIntervalMs);
+  }
+
+  private ping(timeoutMs: number): Promise<boolean> {
+    return this.opts.dispatcher.call("ping", {}, timeoutMs).then(() => true, () => false);
+  }
+
+  private stopRecovery(): void {
+    if (this.recovery) clearInterval(this.recovery);
+    this.recovery = null;
   }
 
   private release(): void {

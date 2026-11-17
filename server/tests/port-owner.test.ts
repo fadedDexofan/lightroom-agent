@@ -1,8 +1,7 @@
 import net from 'node:net';
 import { describe, it, expect, jest } from '@jest/globals';
 import {
-  describeUnresponsive,
-  describeUnresponsiveDetails,
+  classifyUnresponsive,
   diagnoseUnresponsive,
   findPortClients,
   findPortListener,
@@ -15,10 +14,10 @@ import {
   type PortListener,
   type PortOwnership,
   type RunCommand,
-  STALE_LISTENER_MESSAGE,
+  SHADOW_BRIDGE,
+  STALE_LISTENER,
   UnresponsiveReporter,
 } from '../src/port-owner.js';
-import { SHADOW_BRIDGE_MESSAGE } from '../src/plugin-liveness.js';
 
 const LIGHTROOM: PortListener = { pid: 27120, command: 'Adobe Lightroom Classic' };
 const FOREIGN: PortListener = { pid: 4242, command: 'python3.13' };
@@ -179,17 +178,20 @@ describe('findPortClients', () => {
   });
 });
 
+const classifyMessage = (ports: PortOwnership[]) => classifyUnresponsive(ports).message;
+const classifyDetails = (ports: PortOwnership[]) => classifyUnresponsive(ports).details;
+
 function owned(listener: PortListener | null, otherClients: PortListener[] | null): PortOwnership[] {
   return [58763, 58764].map((port) => ({ port, listener, otherClients }));
 }
 
-describe('describeUnresponsive', () => {
+describe('classifyUnresponsive', () => {
   it('keeps each cause distinct, actionable and on one short line', () => {
     const messages = [
-      describeUnresponsive(owned(null, null)),
-      describeUnresponsive(owned(LIGHTROOM, [])),
-      describeUnresponsive(owned(LIGHTROOM, [MIDI2LR_APP])),
-      describeUnresponsive(owned(FOREIGN, [])),
+      classifyMessage(owned(null, null)),
+      classifyMessage(owned(LIGHTROOM, [])),
+      classifyMessage(owned(LIGHTROOM, [MIDI2LR_APP])),
+      classifyMessage(owned(FOREIGN, [])),
     ];
     expect(new Set(messages).size).toBe(4);
     for (const message of messages) {
@@ -200,20 +202,20 @@ describe('describeUnresponsive', () => {
   });
 
   it.each([
-    ['owners are unknown', owned(null, null), SHADOW_BRIDGE_MESSAGE],
-    ['clients cannot be listed', owned(LIGHTROOM, null), SHADOW_BRIDGE_MESSAGE],
-    ['Lightroom owns the ports and nobody else is connected', owned(LIGHTROOM, []), STALE_LISTENER_MESSAGE],
+    ['owners are unknown', owned(null, null), SHADOW_BRIDGE.message],
+    ['clients cannot be listed', owned(LIGHTROOM, null), SHADOW_BRIDGE.message],
+    ['Lightroom owns the ports and nobody else is connected', owned(LIGHTROOM, []), STALE_LISTENER.message],
   ])('%s', (_name, ports, expected) => {
-    expect(describeUnresponsive(ports)).toBe(expected);
+    expect(classifyMessage(ports)).toBe(expected);
   });
 
   it('points at a same-port plugin such as MIDI2LR when Lightroom owns the ports', () => {
-    expect(STALE_LISTENER_MESSAGE).toContain('MIDI2LR');
-    expect(describeUnresponsiveDetails(owned(LIGHTROOM, []))).toContain('LIGHTROOM_MCP_REQUEST_PORT');
+    expect(STALE_LISTENER.message).toContain('MIDI2LR');
+    expect(classifyDetails(owned(LIGHTROOM, []))).toContain('LIGHTROOM_MCP_REQUEST_PORT');
   });
 
   it('names connected processes, deduplicated across ports, with both remedies', () => {
-    const message = describeUnresponsiveDetails(owned(LIGHTROOM, [MIDI2LR_APP]));
+    const message = classifyDetails(owned(LIGHTROOM, [MIDI2LR_APP]));
 
     expect(message.match(/MIDI2LR \(pid 555\)/g)).toHaveLength(1);
     expect(message).toContain('pgrep -fl lightroom-mcp');
@@ -221,7 +223,7 @@ describe('describeUnresponsive', () => {
   });
 
   it('names the foreign process holding a plugin port', () => {
-    const message = describeUnresponsiveDetails([
+    const message = classifyDetails([
       { port: 58763, listener: LIGHTROOM, otherClients: [] },
       { port: 58764, listener: FOREIGN, otherClients: [] },
     ]);
@@ -232,7 +234,7 @@ describe('describeUnresponsive', () => {
   });
 
   it('still reports a foreign listener whose name is unknown', () => {
-    const message = describeUnresponsiveDetails([{ port: 58764, listener: { pid: 9 }, otherClients: [] }]);
+    const message = classifyDetails([{ port: 58764, listener: { pid: 9 }, otherClients: [] }]);
 
     expect(message).toContain('port 58764 is held by an unknown process (pid 9)');
   });
@@ -272,14 +274,14 @@ describe('UnresponsiveReporter', () => {
 
   function setup() {
     let clock = 0;
-    const diagnose = jest.fn(() => Promise.resolve(`verdict ${diagnose.mock.calls.length}`));
+    const diagnose = jest.fn(() => Promise.resolve({ message: `verdict ${diagnose.mock.calls.length}`, details: `verdict ${diagnose.mock.calls.length}` }));
     const log = jest.fn<(msg: string) => void>();
     const reporter = new UnresponsiveReporter({ diagnose, log, refreshMs: 1000, now: () => clock });
     return { reporter, diagnose, log, advance: (ms: number) => { clock += ms; } };
   }
 
   it('starts with the generic message', () => {
-    expect(setup().reporter.current()).toBe(SHADOW_BRIDGE_MESSAGE);
+    expect(setup().reporter.current()).toBe(SHADOW_BRIDGE.message);
   });
 
   it('exposes the verdict once settled, so the first failing tool call already carries it', async () => {
@@ -332,7 +334,7 @@ describe('UnresponsiveReporter', () => {
     await reporter.settled();
 
     reporter.clear();
-    expect(reporter.current()).toBe(SHADOW_BRIDGE_MESSAGE);
+    expect(reporter.current()).toBe(SHADOW_BRIDGE.message);
     reporter.report();
     await reporter.settled();
 

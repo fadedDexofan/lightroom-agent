@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { Ajv } from 'ajv';
 import fs from 'node:fs';
 import path from 'node:path';
-import { validateToolArgs } from '../src/validate-args.js';
+import { validateToolArgs } from './helpers/validate.js';
 import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
 import { manifestTools } from '../src/manifest-tools.js';
 import { PLUGIN_ACTIONS, TOOL_CONTRACTS } from '../src/tool-contracts.js';
@@ -113,8 +113,8 @@ describe('develop setting schema', () => {
       case 'curve': return [0, 0, 255, 255];
     }
   };
-  const settable = (settings: Record<string, unknown>) =>
-    validateToolArgs('set_develop_settings', { photo_id: 914, settings }) === null;
+  const settingsValid = new Ajv({ strict: false }).compile(developSettingsSchema());
+  const settable = (settings: Record<string, unknown>) => settingsValid(settings);
 
   it('accepts a valid value of every key and every key in the copy and capture lists', () => {
     for (const key of DEVELOP_KEYS) expect([key.name, settable({ [key.name]: sample(key) })]).toEqual([key.name, true]);

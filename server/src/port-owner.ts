@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { SHADOW_BRIDGE_DETAILS, SHADOW_BRIDGE_MESSAGE } from "./plugin-liveness.js";
 
 export interface PortListener {
   pid: number;
@@ -191,13 +190,26 @@ const PORT_CHANGE_HINT =
 const SAME_PORT_PLUGIN_HINT =
   "another Lightroom plugin bound to the same ports (MIDI2LR uses 58763/58764)";
 
-export const STALE_LISTENER_MESSAGE =
-  "Lightroom owns the ports but is unresponsive with no other clients. Restart Lightroom; check for a same-port plug-in such as MIDI2LR.";
+export interface UnresponsiveDiagnosis {
+  message: string;
+  details: string;
+}
 
-const STALE_LISTENER_DETAILS =
-  "Lightroom owns the plugin's ports but is not answering, and no other client is connected. " +
-  `Likely causes: ${SAME_PORT_PLUGIN_HINT}, a listener left behind by 'Reload Plug-in', or a stuck plugin. ` +
-  `Restart Lightroom Classic; if that does not help, ${PORT_CHANGE_HINT}.`;
+export const SHADOW_BRIDGE: UnresponsiveDiagnosis = {
+  message: "Plugin ports connected but unresponsive; another bridge may hold the client slot. Restart the plug-in in Lightroom's Plug-in Manager.",
+  details: "Connected to the Lightroom plugin's ports, but it is not answering. "
+    + "The plugin serves one client at a time, so another lightroom-mcp process "
+    + "is most likely holding the connection. Quit any other MCP client or stale "
+    + "bridge process (pgrep -fl lightroom-mcp), or restart the plugin from "
+    + "Lightroom's Plug-in Manager.",
+};
+
+export const STALE_LISTENER: UnresponsiveDiagnosis = {
+  message: "Lightroom owns the ports but is unresponsive with no other clients. Restart Lightroom; check for a same-port plug-in such as MIDI2LR.",
+  details: "Lightroom owns the plugin's ports but is not answering, and no other client is connected. "
+    + `Likely causes: ${SAME_PORT_PLUGIN_HINT}, a listener left behind by 'Reload Plug-in', or a stuck plugin. `
+    + `Restart Lightroom Classic; if that does not help, ${PORT_CHANGE_HINT}.`,
+};
 
 interface ForeignOwnership extends PortOwnership {
   listener: PortListener;
@@ -222,44 +234,29 @@ function describeOwner({ port, listener }: ForeignOwnership): string {
  * Lightroom owns the ports, the listener may still not be ours: another
  * plugin can hold them, or a pre-reload instance of this one.
  */
-export function describeUnresponsiveDetails(ports: PortOwnership[]): string {
+export function classifyUnresponsive(ports: PortOwnership[]): UnresponsiveDiagnosis {
   const foreign = ports.filter(isForeign);
   if (foreign.length > 0) {
-    return (
-      `Connected, but not to Lightroom: ${foreign.map(describeOwner).join("; ")}. ` +
-      "The Lightroom plugin cannot bind a port another process already owns, so the bridge talks to that process instead. " +
-      `Quit it, or ${PORT_CHANGE_HINT}.`
-    );
+    return {
+      message: "Plugin ports are owned by a foreign process. Quit that process or configure matching free ports in Lightroom and the MCP server.",
+      details: `Connected, but not to Lightroom: ${foreign.map(describeOwner).join("; ")}. `
+        + "The Lightroom plugin cannot bind a port another process already owns, so the bridge talks to that process instead. "
+        + `Quit it, or ${PORT_CHANGE_HINT}.`,
+    };
   }
-  const ownedByLightroom = ports.every((p) => p.listener && isLightroom(p.listener));
-  if (!ownedByLightroom) return SHADOW_BRIDGE_DETAILS;
-  if (ports.some((p) => p.otherClients === null)) return SHADOW_BRIDGE_DETAILS;
+  if (!ports.every((p) => p.listener && isLightroom(p.listener)) || ports.some((p) => p.otherClients === null)) {
+    return SHADOW_BRIDGE;
+  }
   const others = new Map<number, PortListener>();
   for (const client of ports.flatMap((p) => p.otherClients ?? [])) others.set(client.pid, client);
-  if (others.size === 0) return STALE_LISTENER_DETAILS;
-  return (
-    "Lightroom owns the plugin's ports but is not answering. Other processes are connected to them: " +
-    `${[...others.values()].map(describeProcess).join(", ")}. ` +
-    "If one is another lightroom-mcp bridge, quit it (pgrep -fl lightroom-mcp). " +
-    `If one belongs to ${SAME_PORT_PLUGIN_HINT}, ${PORT_CHANGE_HINT}.`
-  );
-}
-
-export function describeUnresponsive(ports: PortOwnership[]): string {
-  if (ports.some(isForeign)) {
-    return "Plugin ports are owned by a foreign process. Quit that process or configure matching free ports in Lightroom and the MCP server.";
-  }
-  if (!ports.every((p) => p.listener && isLightroom(p.listener))
-    || ports.some((p) => p.otherClients === null)) return SHADOW_BRIDGE_MESSAGE;
-  if (ports.some((p) => (p.otherClients?.length ?? 0) > 0)) {
-    return "Lightroom is unresponsive with other clients connected. Quit stale bridges or configure matching free ports in Lightroom and the MCP server.";
-  }
-  return STALE_LISTENER_MESSAGE;
-}
-
-export interface UnresponsiveDiagnosis {
-  message: string;
-  details: string;
+  if (others.size === 0) return STALE_LISTENER;
+  return {
+    message: "Lightroom is unresponsive with other clients connected. Quit stale bridges or configure matching free ports in Lightroom and the MCP server.",
+    details: "Lightroom owns the plugin's ports but is not answering. Other processes are connected to them: "
+      + `${[...others.values()].map(describeProcess).join(", ")}. `
+      + "If one is another lightroom-mcp bridge, quit it (pgrep -fl lightroom-mcp). "
+      + `If one belongs to ${SAME_PORT_PLUGIN_HINT}, ${PORT_CHANGE_HINT}.`,
+  };
 }
 
 export interface PortInspector {
@@ -283,7 +280,7 @@ export async function diagnoseUnresponsive(
       otherClients: await inspect.otherClients(port),
     })),
   );
-  return { message: describeUnresponsive(ownership), details: describeUnresponsiveDetails(ownership) };
+  return classifyUnresponsive(ownership);
 }
 
 export const DIAGNOSIS_REFRESH_MS = 60_000;
@@ -295,18 +292,17 @@ export const DIAGNOSIS_REFRESH_MS = 60_000;
  * for DIAGNOSIS_REFRESH_MS and only re-derived after that (or after recovery).
  */
 export class UnresponsiveReporter {
-  private message = SHADOW_BRIDGE_MESSAGE;
-  private details = SHADOW_BRIDGE_DETAILS;
+  private verdict = SHADOW_BRIDGE;
   private diagnosedAt: number | null = null;
   private inFlight: Promise<void> | null = null;
 
-  private readonly diagnose: () => Promise<string | UnresponsiveDiagnosis>;
+  private readonly diagnose: () => Promise<UnresponsiveDiagnosis>;
   private readonly log: (msg: string) => void;
   private readonly refreshMs: number;
   private readonly now: () => number;
 
   constructor(opts: {
-    diagnose: () => Promise<string | UnresponsiveDiagnosis>;
+    diagnose: () => Promise<UnresponsiveDiagnosis>;
     log: (msg: string) => void;
     refreshMs?: number;
     now?: () => number;
@@ -318,21 +314,20 @@ export class UnresponsiveReporter {
   }
 
   current(): string {
-    return this.message;
+    return this.verdict.message;
   }
 
   report(): void {
     if (this.inFlight) return;
     if (this.diagnosedAt !== null && this.now() - this.diagnosedAt < this.refreshMs) {
-      this.log(this.details);
+      this.log(this.verdict.details);
       return;
     }
     this.inFlight = this.diagnose()
       .then((diagnosis) => {
-        this.message = typeof diagnosis === "string" ? diagnosis : diagnosis.message;
-        this.details = typeof diagnosis === "string" ? diagnosis : diagnosis.details;
+        this.verdict = diagnosis;
         this.diagnosedAt = this.now();
-        this.log(this.details);
+        this.log(diagnosis.details);
       })
       .finally(() => {
         this.inFlight = null;
@@ -347,7 +342,6 @@ export class UnresponsiveReporter {
   /** Forgets the verdict once the plugin answers again. */
   clear(): void {
     this.diagnosedAt = null;
-    this.message = SHADOW_BRIDGE_MESSAGE;
-    this.details = SHADOW_BRIDGE_DETAILS;
+    this.verdict = SHADOW_BRIDGE;
   }
 }

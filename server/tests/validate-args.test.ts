@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { Ajv } from 'ajv';
-import { validateToolArgs } from '../src/validate-args.js';
+import { validateToolArgs } from './helpers/validate.js';
 import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
 
 const PHOTO_ID_FIELDS = new Set(['photo_id', 'photo_ids', 'source_id', 'target_ids']);
