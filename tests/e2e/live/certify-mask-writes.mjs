@@ -3,24 +3,26 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { certificationResult, evaluateStep, judgeRun, requireThrowaway, THRESHOLDS, writeCertification } from "./lib/certification.mjs";
+import { certificationResult, evaluateStep, judgeRun, renderPasses, requireThrowaway, THRESHOLDS, writeCertification } from "./lib/certification.mjs";
 import { compareRanges } from "./lib/develop-ranges.mjs";
 import { fixtureIdOrNull, openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 import { REPO_ROOT } from "./lib/paths.mjs";
 import {
   changedShare,
   changedWhere,
+  detailLevel,
   ellipseInside,
   intersectionOverUnion,
   measureChange,
   regionDeltas,
+  regionMeanChanges,
   sampledMaxLuminanceDifference,
 } from "./lib/preview.mjs";
 
 const AI_TIMEOUT_MS = 240_000;
 const RENDER_WAIT_CAP_MS = 60_000;
-const AI_RASTER_LAND_MS = 30_000;
 const AI_AMOUNT = { local_Exposure: -1 };
+const SETTLED = { minDetailRatio: 0.5, tries: 20 };
 const WHOLE_FRAME = { shape: "radial", center: { x: 0.5, y: 0.5 }, width: 2, height: 2, rotation: 0, feather: 0 };
 
 function writeResult(status, steps, { notExercised, ranges, kitCommit, thresholds, judgedFrom, runFile }) {
@@ -99,19 +101,24 @@ async function cleanCopy(master, role) {
   return copy;
 }
 
-async function check({ name, photoId, added, expectRefusal = false, prepare, call, render, landMs = 0, unchangedEntry, nothingFoundAllowed }) {
-  const entry = { name, photo_id: photoId, added, expectRefusal, nothingFoundAllowed, ...(landMs ? { land_ms: landMs } : {}) };
+async function check({ name, photoId, added, expectRefusal = false, prepare, call, render, expectsChange = true, unchangedEntry, nothingFoundAllowed }) {
+  const entry = { name, photo_id: photoId, added, expectRefusal, nothingFoundAllowed };
   try {
     const prepared = prepare ? await prepare() : undefined;
     if (unchangedEntry) entry.unchangedEntry = unchangedEntry(prepared);
+    if (prepared?.landed_ms !== undefined) entry.prepared_landed_ms = prepared.landed_ms;
     entry.before = await readRaw(photoId);
     let answer;
     if (render) {
       const waited = Date.now();
-      const pixels = await measureChange(session, photoId, async () => { answer = await call(); }, { settleMs: RENDER_WAIT_CAP_MS, landMs });
+      const shows = expectsChange ? (before, current) => renderPasses(render(before, current)) : () => true;
+      const pixels = await measureChange(session, photoId, async () => { answer = await call(); }, { settleMs: RENDER_WAIT_CAP_MS, shows, ...SETTLED });
       entry.render_wait_ms = Date.now() - waited;
-      entry.previews = { before: savePreview(evidence.length, "before", pixels.before), after: savePreview(evidence.length, "after", pixels.after) };
-      entry.rendered = render(pixels.before, pixels.after);
+      entry.detail_ratio = detailLevel(pixels.after) / detailLevel(pixels.before);
+      if (expectsChange) Object.assign(entry, { landed_ms: pixels.landedMs, render_cap_ms: RENDER_WAIT_CAP_MS });
+      entry.previews = { before: savePreview(evidence.length, "before", pixels.before), after: savePreview(evidence.length, "after", pixels.after),
+        ...(prepared?.reference ? { reference: savePreview(evidence.length, "reference", prepared.reference) } : {}) };
+      entry.rendered = render(pixels.before, pixels.after, prepared);
     } else {
       answer = await call();
     }
@@ -188,19 +195,23 @@ await check({
   call: tool("copy_develop_settings", { source_id: ids.wide, target_ids: [ids.orient1] }),
 });
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const skyKept = await cleanCopy(ids.arw14, "sky kept");
 await check({
   name: "a computed Sky kept by a guarded write", photoId: skyKept, added: 1,
   prepare: async () => {
     await toolData("create_gradient_mask", { photo_id: skyKept, shape: "linear", start: { x: 0.5, y: 0.6 }, end: { x: 0.5, y: 0.5 } });
-    const sky = await toolData("create_mask", { photo_id: skyKept, type: "sky", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS });
-    await sleep(AI_RASTER_LAND_MS);
-    return sky;
+    let sky;
+    const darkens = (before, current) => changedShare(before, current, () => true, { direction: "darker" }).changed >= THRESHOLDS.min_changed_share;
+    const landing = await measureChange(session, skyKept, async () => {
+      sky = await toolData("create_mask", { photo_id: skyKept, type: "sky", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS });
+    }, { settleMs: RENDER_WAIT_CAP_MS, shows: darkens, ...SETTLED });
+    return { ...sky, landed_ms: landing.landedMs, reference: landing.before };
   },
   unchangedEntry: (sky) => sky.mask_id,
   call: tool("create_gradient_mask", { photo_id: skyKept, shape: "linear", start: { x: 0.5, y: 0.9 }, end: { x: 0.5, y: 0.7 } }),
-  render: (before, after) => ({ check: "unchanged", measured: { sampled_max_luminance_difference: sampledMaxLuminanceDifference(before, after) } }),
+  expectsChange: false,
+  render: (before, after, sky) => ({ check: "region_means_kept",
+    measured: { ...regionMeanChanges(sky.reference, before, after), sampled_max_luminance_difference: sampledMaxLuminanceDifference(before, after) } }),
 });
 const landscape = await cleanCopy(ids.arw14, "landscape");
 await check({
@@ -215,7 +226,7 @@ await check({
 const batchJudged = await cleanCopy(ids.arw12, "sky batch");
 const batchOther = await cleanCopy(ids.arw14, "sky batch");
 await check({
-  name: "sky batch", photoId: batchJudged, added: 1, nothingFoundAllowed: [batchOther], landMs: AI_RASTER_LAND_MS,
+  name: "sky batch", photoId: batchJudged, added: 1, nothingFoundAllowed: [batchOther],
   call: tool("create_mask_batch", { photo_ids: [batchJudged, batchOther], type: "sky", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS }),
   render: regionsChange([{ name: "sky", x0: 0.3, y0: 0.02, x1: 0.7, y1: 0.12 }, { name: "ground", x0: 0.3, y0: 0.9, x1: 0.7, y1: 0.98 }], "sky", "ground", -1, "region_contrast"),
 });
@@ -223,7 +234,7 @@ await check({
 let subject = null;
 const subjectCopy = await cleanCopy(ids.people, "subject");
 await check({
-  name: "Subject created in the saved settings", photoId: subjectCopy, added: 1, landMs: AI_RASTER_LAND_MS,
+  name: "Subject created in the saved settings", photoId: subjectCopy, added: 1,
   call: tool("create_mask", { photo_id: subjectCopy, type: "subject", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS }),
   render: (before, after) => {
     subject = changedWhere(before, after, { direction: "darker" });
@@ -251,7 +262,7 @@ const combineSteps = [
 for (const { operation, target, darkens } of combineSteps) {
   const combined = await cleanCopy(ids.people, `combine ${operation}`);
   await check({
-    name: `a mask made and Subject combined into it (${operation}) in the saved settings`, photoId: combined, added: 1, landMs: AI_RASTER_LAND_MS,
+    name: `a mask made and Subject combined into it (${operation}) in the saved settings`, photoId: combined, added: 1,
     call: async () => {
       const maskId = (await toolData("create_gradient_mask", { photo_id: combined, ...target, adjustments: AI_AMOUNT })).mask_id;
       return session.tool("combine_mask", { photo_id: combined, mask_id: String(maskId), operation, type: "subject" }, { timeoutMs: AI_TIMEOUT_MS });
@@ -261,7 +272,7 @@ for (const { operation, target, darkens } of combineSteps) {
 }
 const background = await cleanCopy(ids.people, "background");
 await check({
-  name: "Background created in the saved settings", photoId: background, added: 1, landMs: AI_RASTER_LAND_MS,
+  name: "Background created in the saved settings", photoId: background, added: 1,
   call: tool("create_mask", { photo_id: background, type: "background", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS }),
   render: darkensWithin(outsideSubject),
 });

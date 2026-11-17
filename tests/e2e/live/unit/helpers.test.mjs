@@ -20,6 +20,7 @@ import {
   changedWhere,
   colorCentroid,
   decodeBmp,
+  detailLevel,
   ellipseInside,
   intersectionOverUnion,
   luminanceGap,
@@ -28,6 +29,7 @@ import {
   patchDeltas,
   rectangleInside,
   regionDeltas,
+  regionMeanChanges,
   sampledMaxLuminanceDifference,
 } from "../lib/preview.mjs";
 
@@ -398,13 +400,40 @@ test("measureChange still waits the settle time for a change that never shows", 
   assert.ok(Date.now() - started >= 300);
 });
 
-test("measureChange reads the render after the change no sooner than the landing time it is given", async () => {
+test("measureChange polls until the change it is told to expect shows and reports when it landed", async () => {
   const flat = (level) => ({ w: 4, h: 4, L: new Float32Array(16).fill(level) });
   const started = Date.now();
-  const fetch = async () => (Date.now() - started >= 250 ? flat(0.8) : flat(0.2));
-  const { after } = await measureChange({}, "1", async () => {}, { settleMs: 50, landMs: 300, pauseMs: 20, fetch });
+  const fetch = async () => flat(Date.now() - started >= 200 ? 0.8 : Date.now() - started >= 60 ? 0.5 : 0.2);
+  const shows = (before, current) => current.L[0] - before.L[0] > 0.5;
+  const { after, landedMs } = await measureChange({}, "1", async () => {}, { settleMs: 1000, shows, pauseMs: 20, fetch });
   assert.ok(Math.abs(after.L[0] - 0.8) < 1e-6);
-  assert.ok(Date.now() - started >= 300);
+  assert.ok(landedMs >= 150 && landedMs < 1000, `landed at ${landedMs}`);
+});
+
+test("measureChange reports no landing when the expected change never shows within the settle time", async () => {
+  const flat = { w: 4, h: 4, L: new Float32Array(16).fill(0.2) };
+  const { landedMs } = await measureChange({}, "1", async () => {}, { settleMs: 100, shows: () => false, pauseMs: 20, fetch: async () => flat });
+  assert.equal(landedMs, null);
+});
+
+test("measureChange with a detail floor passes over equal interim renders softer than the render before the change", async () => {
+  const pattern = (amplitude) => ({ w: 4, h: 4, L: Float32Array.from({ length: 16 }, (_, i) => 0.5 + ((i + Math.floor(i / 4)) % 2 ? amplitude : -amplitude)) });
+  let fetches = 0;
+  const fetch = async () => { fetches += 1; return fetches <= 2 ? pattern(0.2) : fetches <= 5 ? pattern(0.01) : pattern(0.15); };
+  const { after } = await measureChange({}, "1", async () => {}, { settleMs: 0, shows: () => true, pauseMs: 5, minDetailRatio: 0.5, fetch });
+  assert.ok(detailLevel(after) > 0.5 * detailLevel(pattern(0.2)), `accepted detail ${detailLevel(after)}`);
+  assert.ok(detailLevel(pattern(0.01)) < 0.1 * detailLevel(pattern(0.2)));
+});
+
+test("region mean changes take the region an earlier change moved and average a later change inside and outside it", () => {
+  const frame = (values) => ({ w: 4, h: 1, L: Float32Array.from(values) });
+  const reference = frame([0.5, 0.5, 0.5, 0.5]);
+  const before = frame([0.3, 0.3, 0.5, 0.52]);
+  const after = frame([0.32, 0.3, 0.45, 0.52]);
+  const changes = regionMeanChanges(reference, before, after);
+  assert.equal(changes.region_share, 0.5);
+  assert.ok(Math.abs(changes.region_mean_change - 0.01) < 1e-6);
+  assert.ok(Math.abs(changes.rest_mean_change + 0.025) < 1e-6);
 });
 
 test("the sampled maximum luminance difference reads every seventh pixel", () => {

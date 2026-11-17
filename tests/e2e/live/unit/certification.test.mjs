@@ -11,6 +11,7 @@ import {
   judgeRun,
   maskCount,
   NOT_EXERCISED,
+  renderPasses,
   THRESHOLDS,
   requireThrowaway,
   writeCertification,
@@ -54,8 +55,22 @@ test("a rendered check is judged from its measured numbers against the threshold
   assert.equal(evaluateStep(step, { ...THRESHOLDS, min_share_in_region: 0.6 }).passed, true);
   assert.match(evaluateStep({ ...step, rendered: { check: "darkens_within", measured: { ...measured, share_in_region: 0.9, brightened: 0.01 } } }).problem, /darkens_within failed/);
   assert.equal(evaluateStep({ ...step, rendered: { check: "region_moves", measured: { deltas: { full: -0.06, beyond: 0.005 }, changed: "full", untouched: "beyond", direction: -1 } } }).passed, true);
-  assert.equal(evaluateStep({ ...step, rendered: { check: "unchanged", measured: { sampled_max_luminance_difference: 0.02 } } }).passed, false);
-  assert.equal(evaluateStep({ ...step, rendered: { check: "unchanged", measured: { sampled_max_luminance_difference: 0.005 } } }).passed, true);
+});
+
+test("an AI mask's effect is kept when the mean change of its region and of the rest each stay within the limit, whatever the sampled maximum", () => {
+  const step = { name: "a computed Sky kept by a guarded write", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted() };
+  const kept = (region, rest) => ({ ...step, rendered: { check: "region_means_kept", measured: { region_share: 0.25, region_mean_change: region, rest_mean_change: rest, sampled_max_luminance_difference: 0.0667 } } });
+
+  assert.equal(evaluateStep(kept(-0.0003, -0.0028)).passed, true);
+  assert.match(evaluateStep(kept(0.03, -0.0028)).problem, /region_means_kept failed/);
+  assert.match(evaluateStep(kept(-0.0003, -0.012)).problem, /region_means_kept failed/);
+  assert.equal(evaluateStep(kept(-0.0003, -0.012), { ...THRESHOLDS, max_region_mean_change: 0.02 }).passed, true);
+});
+
+test("a run file whose render check this kit no longer judges is a failed step that names the check", () => {
+  const step = { name: "a computed Sky kept by a guarded write", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted(), rendered: { check: "unchanged", measured: { sampled_max_luminance_difference: 0.0667 } } };
+
+  assert.equal(evaluateStep(step).problem, "rendered check unchanged is not one this kit judges: {\"sampled_max_luminance_difference\":0.0667}");
 });
 
 test("a region contrast passes when the changed region moves at least the minimum and that many times the untouched one", () => {
@@ -68,6 +83,15 @@ test("a region contrast passes when the changed region moves at least the minimu
   assert.match(evaluateStep(contrast(-0.022, -0.005)).problem, /region_contrast failed/);
   assert.match(evaluateStep(contrast(0.022, 0)).problem, /region_contrast failed/);
   assert.equal(evaluateStep(contrast(-0.008, 0), { ...THRESHOLDS, min_contrast_change: 0.005 }).passed, true);
+});
+
+test("a render step whose expected change never landed within its cap is a miss that says so", () => {
+  const step = { name: "Subject created", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted(), rendered: { check: "darkens", measured: { darkened: 0 } } };
+
+  assert.match(evaluateStep({ ...step, landed_ms: null, render_cap_ms: 60000 }).problem, /the expected change never landed within 60 s; rendered check darkens failed/);
+  assert.match(evaluateStep({ ...step, landed_ms: 1200, render_cap_ms: 60000 }).problem, /^rendered check darkens failed/);
+  assert.equal(renderPasses({ check: "darkens", measured: { darkened: 0.2 } }), true);
+  assert.equal(renderPasses({ check: "darkens", measured: { darkened: 0.2 } }, { ...THRESHOLDS, min_changed_share: 0.3 }), false);
 });
 
 test("a step that could not run, or changed an entry it had to keep, is a failed step", () => {

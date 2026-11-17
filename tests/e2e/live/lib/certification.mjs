@@ -51,6 +51,7 @@ export const THRESHOLDS = {
   min_share_in_region: 0.7,
   min_contrast_change: 0.01,
   min_contrast_ratio: 5,
+  max_region_mean_change: 0.01,
 };
 
 const RENDER_CHECKS = {
@@ -59,11 +60,16 @@ const RENDER_CHECKS = {
     (direction > 0 ? deltas[changed] >= t.min_change : deltas[changed] <= -t.min_change) && Math.abs(deltas[untouched]) < t.max_untouched_change,
   region_contrast: ({ deltas, changed, untouched, direction }, t) =>
     direction * deltas[changed] >= t.min_contrast_change && Math.abs(deltas[changed]) >= t.min_contrast_ratio * Math.abs(deltas[untouched]),
-  unchanged: ({ sampled_max_luminance_difference }, t) => sampled_max_luminance_difference < t.max_untouched_change,
+  region_means_kept: ({ region_mean_change, rest_mean_change }, t) =>
+    Math.abs(region_mean_change) <= t.max_region_mean_change && Math.abs(rest_mean_change) <= t.max_region_mean_change,
   darkens: ({ darkened }, t) => darkened >= t.min_changed_share,
   darkens_within: ({ darkened, share_in_region, brightened }, t) =>
     darkened >= t.min_changed_share && share_in_region >= t.min_share_in_region && brightened < t.min_changed_share,
 };
+
+export function renderPasses(rendered, thresholds = THRESHOLDS) {
+  return RENDER_CHECKS[rendered.check](rendered.measured, thresholds);
+}
 
 const entryOf = (rawAnswer, id) => entriesOf(rawAnswer).find((entry) => String(entry.CorrectionID) === String(id));
 
@@ -86,7 +92,7 @@ function onlyNothingFound(answer, allowed = []) {
       && (!entry.voided || VOIDED_BY_AI_UPDATE.test(entry.reason)));
 }
 
-function problemOf({ failure, added, expectRefusal, answer, before, after, admission, rendered, unchangedEntry, nothingFoundAllowed }, thresholds) {
+function problemOf({ failure, added, expectRefusal, answer, before, after, admission, rendered, landed_ms: landedMs, render_cap_ms: capMs, unchangedEntry, nothingFoundAllowed }, thresholds) {
   if (failure) return failure;
   if (expectRefusal && !answer.isError) return "expected a refusal, the tool succeeded";
   if (expectRefusal && refusalClass(answer) === null) {
@@ -104,8 +110,10 @@ function problemOf({ failure, added, expectRefusal, answer, before, after, admis
   if (unchangedEntry !== undefined && !isDeepStrictEqual(entryOf(before, unchangedEntry), entryOf(after, unchangedEntry))) {
     return `entry ${unchangedEntry} changed`;
   }
-  if (rendered && !RENDER_CHECKS[rendered.check](rendered.measured, thresholds)) {
-    return `rendered check ${rendered.check} failed: ${JSON.stringify(rendered.measured)}`;
+  if (rendered && !Object.hasOwn(RENDER_CHECKS, rendered.check)) return `rendered check ${rendered.check} is not one this kit judges: ${JSON.stringify(rendered.measured)}`;
+  if (rendered && !renderPasses(rendered, thresholds)) {
+    const landing = landedMs === null ? `the expected change never landed within ${capMs / 1000} s; ` : "";
+    return `${landing}rendered check ${rendered.check} failed: ${JSON.stringify(rendered.measured)}`;
   }
   return null;
 }

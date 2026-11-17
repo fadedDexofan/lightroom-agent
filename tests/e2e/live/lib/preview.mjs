@@ -60,6 +60,19 @@ export function sampledMaxLuminanceDifference(a, b, step = 7) {
   return max;
 }
 
+export function detailLevel(pixels) {
+  let sum = 0;
+  let pairs = 0;
+  for (let y = 0; y < pixels.h; y++) {
+    for (let x = 0; x < pixels.w; x++) {
+      const i = y * pixels.w + x;
+      if (x + 1 < pixels.w) { sum += Math.abs(pixels.L[i + 1] - pixels.L[i]); pairs++; }
+      if (y + 1 < pixels.h) { sum += Math.abs(pixels.L[i + pixels.w] - pixels.L[i]); pairs++; }
+    }
+  }
+  return pairs === 0 ? 0 : sum / pairs;
+}
+
 export function luminanceGap(a, b) {
   if (a.w !== b.w || a.h !== b.h) return { sizes: [`${a.w}x${a.h}`, `${b.w}x${b.h}`] };
   const gaps = Float64Array.from(a.L, (value, i) => Math.abs(value - b.L[i])).sort();
@@ -70,11 +83,11 @@ export function describeSizes(before, after) {
   return { before: `${before.w}x${before.h}`, after: `${after.w}x${after.h}` };
 }
 
-export async function fetchStablePixels(session, photoId, { size = 864, tries = 8, pauseMs = 1500, fetch = fetchPixels } = {}) {
+export async function fetchStablePixels(session, photoId, { size = 864, tries = 8, pauseMs = 1500, fetch = fetchPixels, minDetail = 0 } = {}) {
   let previous = null;
   for (let attempt = 0; attempt < tries; attempt++) {
     const current = await fetch(session, photoId, size);
-    if (previous && sameImage(previous, current)) return current;
+    if (previous && sameImage(previous, current) && detailLevel(current) >= minDetail) return current;
     previous = current;
     await sleep(pauseMs);
   }
@@ -83,19 +96,18 @@ export async function fetchStablePixels(session, photoId, { size = 864, tries = 
 
 const sameImage = (a, b) => a.w === b.w && a.h === b.h && sampledMaxLuminanceDifference(a, b) < STABLE_PIXEL_TOLERANCE;
 
-export async function measureChange(session, photoId, applyChange, { size = 864, settleMs = SETTLE_MS, landMs = 0, pauseMs = 1500, fetch = fetchPixels } = {}) {
+export async function measureChange(session, photoId, applyChange, { size = 864, settleMs = SETTLE_MS, shows = (before, current) => !sameImage(current, before), minDetailRatio = 0, tries, pauseMs = 1500, fetch = fetchPixels } = {}) {
   const before = await fetchStablePixels(session, photoId, { size, pauseMs, fetch });
   await applyChange();
   const changed = Date.now();
-  const deadline = changed + settleMs;
   let current = await fetch(session, photoId, size);
-  while (Date.now() < deadline && sameImage(current, before)) {
-    await sleep(Math.min(pauseMs, Math.max(0, deadline - Date.now())));
+  while (!shows(before, current) && Date.now() - changed < settleMs) {
+    await sleep(Math.min(pauseMs, Math.max(0, changed + settleMs - Date.now())));
     current = await fetch(session, photoId, size);
   }
-  await sleep(Math.max(0, changed + landMs - Date.now()));
-  const after = await fetchStablePixels(session, photoId, { size, pauseMs, fetch });
-  return { before, after };
+  const landedMs = shows(before, current) ? Date.now() - changed : null;
+  const after = await fetchStablePixels(session, photoId, { size, pauseMs, fetch, tries, minDetail: minDetailRatio * detailLevel(before) });
+  return { before, after, landedMs };
 }
 
 function nearestIndex(pixels, fx, fy) {
@@ -192,6 +204,32 @@ export function changedWhere(before, after, { threshold = 0.04, direction = "eit
     }
   }
   return (fx, fy) => moved[nearestIndex(after, fx, fy)] === 1;
+}
+
+export function regionMeanChanges(reference, before, after, threshold = 0.04) {
+  let inside = 0;
+  let insideSum = 0;
+  let outsideSum = 0;
+  for (let y = 0; y < after.h; y++) {
+    for (let x = 0; x < after.w; x++) {
+      const fx = (x + 0.5) / after.w;
+      const fy = (y + 0.5) / after.h;
+      const held = before.L[nearestIndex(before, fx, fy)];
+      const change = after.L[y * after.w + x] - held;
+      if (Math.abs(held - reference.L[nearestIndex(reference, fx, fy)]) > threshold) {
+        inside++;
+        insideSum += change;
+      } else {
+        outsideSum += change;
+      }
+    }
+  }
+  const total = after.w * after.h;
+  return {
+    region_share: inside / total,
+    region_mean_change: inside === 0 ? 0 : insideSum / inside,
+    rest_mean_change: inside === total ? 0 : outsideSum / (total - inside),
+  };
 }
 
 export function changedShare(before, after, inside, { threshold = 0.04, direction = "either" } = {}) {
