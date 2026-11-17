@@ -228,7 +228,7 @@ Positions are always in the frame of the rendered preview, after crop, straighte
 | `create_range_mask` colour | `chart80` | Selection follows Lightroom's l, a, b sample, not sRGB: take it from a range made in Lightroom (`list_masks`) or use `copy_sample_from`. Use exactly one sample: two crash Lightroom (below). |
 | `create_range_mask` depth | `depth_heic` | Near and far regions of the depth map; a photo without depth fails and stays unchanged. |
 | `create_mask` subject, sky, background | `arw_14bit`, `arw_12bit`, `subject_photo` | The Sky covers the sky in the preview; created without opening Develop or raising a dialog; nothing found removes the new entry. |
-| `create_mask_batch` | `batch.ids` | At most 200 photos per call; a call stops after about 230 s with `partial` and the unattempted photos in `remaining`; a photo where nothing is found fails and the batch continues. |
+| `create_mask_batch` | `batch.ids` | At most 200 photos per call; a call stops starting photos when one more would not fit its time budget, and answers `partial` with the unattempted photos in `remaining`; a photo where nothing is found fails and the batch continues. |
 | `create_mask` people, landscape | `people_photo`, `arw_14bit` | One mask per part or category, on the right region. |
 | `invert_mask` | `wide_plain` | The change is the shape's complement; inverting twice restores it. |
 | `set_mask_adjustments`, `get_mask` | `wide_plain`, `ramp256` | The preview settles about 3.5 s after the call (use `measureChange`); `local_Exposure` +2 is stored as `LocalExposure2012 = 0.5`. |
