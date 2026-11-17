@@ -62,7 +62,7 @@ npm --prefix server run build
 node server/dist/index.js install-plugin
 ```
 
-`install-plugin` copies `plugin/LightroomAgent.lrplugin` into Lightroom's Modules folder (`~/Library/Application Support/Adobe/Lightroom/Modules/` on macOS, `%APPDATA%\Adobe\Lightroom\Modules\` on Windows). It never overwrites an installed copy. If upstream's `LightroomMCP.lrplugin` is installed, it refuses, because both use the same ports: quit Lightroom and delete that folder first.
+`install-plugin` copies `plugin/LightroomAgent.lrplugin` into Lightroom's Modules folder (`~/Library/Application Support/Adobe/Lightroom/Modules/` on macOS, `%APPDATA%\Adobe\Lightroom\Modules\` on Windows). It replaces an installed copy from another version and leaves a current one alone; the server does the same when it starts. If a `LightroomMCP.lrplugin` is installed, it refuses, because both use the same ports: quit Lightroom and delete that folder first.
 
 ### 2. Start it in Lightroom
 
@@ -84,7 +84,7 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 
 Check it works by asking your agent: *List my Lightroom collections.*
 
-**Updating.** Pull and rebuild, quit Lightroom, delete the installed `LightroomAgent.lrplugin` folder (Plug-in Manager shows where it is), run `install-plugin` again, then restart Lightroom and your client. The server and the plug-in must come from the same revision. To uninstall, delete that folder, `~/.config/lightroom-agent` and the client's server entry.
+**Updating.** Pull and rebuild, then restart your client: the server replaces the installed plug-in when its version differs, and refuses tool calls, naming both versions, until Lightroom has been restarted onto the new one. To uninstall, delete that folder, `~/.config/lightroom-agent` and the client's server entry.
 
 ## The bundled skill
 

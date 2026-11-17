@@ -40,7 +40,7 @@ Run from the repository root; `.mise.toml` and `server/package.json` define the 
 Before committing, run after your final edit:
 
 - in `server/`: `npm run check`, `npm run lint`, `npm run build`, `npm run test:coverage`;
-- `mise run live:test` and `node scripts/bump-version.mjs --check`;
+- `mise run live:test`, `node --test "scripts/*.test.mjs"` and `node scripts/bump-version.mjs --check`;
 - `mise run lua:lint` and `mise run lua:test` if Lua changed.
 
 CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` runs the server checks on Ubuntu, macOS and Windows and the live-kit unit tests on Ubuntu and macOS, fails when the build changes a tracked generated file, and checks version consistency. The Lua workflows run on every push and pull request; `lua-test.yml` takes Lua from `.mise.toml`, pinned to 5.1.5, the version Lightroom Classic runs. A live-kit unit run never substitutes for validation in Lightroom.
