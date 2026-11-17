@@ -28,7 +28,6 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: '26.13.1'
   NPM_VERSION: '11.21.2'
   MCP_PUBLISHER_VERSION: 'v1.8.9'
   MCP_PUBLISHER_SHA256: '4d527ca8f1ced0394c962dc925c2a4a4addef441cbefd62501c875e9481823a8'
@@ -51,7 +50,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .mise.toml
 
       - name: Tag matches the package version
         id: info
@@ -96,7 +95,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .mise.toml
           package-manager-cache: false
 
       - name: Install npm
@@ -170,10 +169,15 @@ jobs:
       VERSION: ${{ needs.verify.outputs.version }}
       NPM_TAG: ${{ needs.verify.outputs.npm_tag }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .mise.toml
+          sparse-checkout-cone-mode: false
+
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .mise.toml
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
