@@ -13,6 +13,8 @@ Examples; add the destination the person names, and check its current limits, si
 
 Upload routes may resize or recompress the image: suggest posting one file privately first and checking the downloaded result.
 
+From third-party guides, not Meta's help (checked November 2026): Instagram's profile grid shows posts as 3:4 tiles, so keep the subject inside the central 3:4 of a 4:5 frame ("Adjust Preview" moves the grid crop after posting). By default a carousel crops every slide to the first slide's ratio; the app's "Mixed" resize setting can keep each slide's own ratio, but give one carousel one format.
+
 ## 1. Read the final crop
 
 Read each photo's crop with `get_crop`: rectangle, angle and the cropped frame's `size` in pixels. Its ratio r = width ÷ height of that size. Do not compute size or ratio from the raw crop keys: with a straighten angle or a vertical frame they mislead.
@@ -44,3 +46,4 @@ Check every written file: one per photo, JPEG, the expected pixel size and an em
 
 - [Instagram Help: photo sizes](https://help.instagram.com/1631821640426723); [Instagram Content Publishing API](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media).
 - [Pinterest product specs](https://help.pinterest.com/en/business/article/pinterest-product-specs).
+- Third-party: [Planoly: Instagram's vertical grid](https://planoly.com/blog/guide-to-instagrams-new-vertical-grid) (updated October 2025); [Kapwing: multiple image sizes in one Instagram post](https://www.kapwing.com/resources/how-to-post-multiple-images-with-different-sizes-to-instagram/) (December 2025).
