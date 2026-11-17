@@ -82,14 +82,13 @@ if (fs.existsSync(iconSrc)) {
   copyFile(iconSrc, path.join(stage, "icon.png"));
 }
 
-log("packing .mcpb via @anthropic-ai/mcpb");
-const result = spawnSync(
-  "npx",
-  ["--yes", "@anthropic-ai/mcpb@latest", "pack", stage, outFile],
-  { stdio: "inherit", cwd: repoRoot, shell: process.platform === "win32" },
-);
-if (result.status !== 0) {
-  process.exit(result.status ?? 1);
+const MCPB_CLI = "@anthropic-ai/mcpb@2.1.2";
+for (const args of [["validate", stage], ["pack", stage, outFile]]) {
+  log(`${args[0]} via ${MCPB_CLI}`);
+  const result = spawnSync("npx", ["--yes", MCPB_CLI, ...args], { stdio: "inherit", cwd: repoRoot, shell: process.platform === "win32" });
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
 }
 
 const stat = fs.statSync(outFile);
