@@ -1,9 +1,9 @@
 import { PluginNotSentError, PluginTimeoutError, type CallOptions, type Dispatcher } from "./dispatcher.js";
 import { DevelopQueue } from "./develop-queue.js";
-import { TOOL_CONTRACTS, type ToolArgs } from "./tool-contracts.js";
+import type { ToolArgs } from "./tool-contracts.js";
 import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
 import { finishLost, finishReply, refusedResponse, toolResponse, unknownToolResponse, type PluginReply, type ToolResponse } from "./tool-result.js";
-import { validateToolArgs } from "./validate-args.js";
+import { CHECKED_CONTRACTS, validateToolArgs } from "./validate-args.js";
 
 export interface ToolHandlerDeps {
   dispatcher: Pick<Dispatcher, "call">;
@@ -24,10 +24,11 @@ export const NOT_CONNECTED_DETAILS =
 export function createCallToolHandler(deps: ToolHandlerDeps) {
   const queue = new DevelopQueue();
   return async (name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> => {
-    const contract = CONTRACTS.get(name);
-    if (!contract) return unknownToolResponse(name);
+    const checked = CHECKED_CONTRACTS.get(name);
+    if (!checked) return unknownToolResponse(name);
+    const { contract } = checked;
     const values = (args ?? {}) as ToolArgs;
-    const invalid = validateToolArgs(contract, values);
+    const invalid = validateToolArgs(checked, values);
     if (invalid) return refusedResponse(invalid);
 
     await deps.settleReadiness?.();
@@ -51,7 +52,6 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
   };
 }
 
-const CONTRACTS = new Map(TOOL_CONTRACTS.map((contract) => [contract.name, contract]));
 
 function failureText(name: string, readOnly: boolean, error: unknown): string {
   if (error instanceof PluginTimeoutError && !readOnly) {

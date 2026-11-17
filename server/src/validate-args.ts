@@ -1,18 +1,16 @@
 import { Ajv, type ErrorObject, type ValidateFunction } from "ajv";
-import { PHOTO_ID_PATTERN, type ToolArgs, type ToolContract } from "./tool-contracts.js";
+import { PHOTO_ID_PATTERN, TOOL_CONTRACTS, type ToolArgs, type ToolContract } from "./tool-contracts.js";
 
 const ajv = new Ajv({ strict: false, allErrors: true, verbose: true });
 
-const validators = new WeakMap<ToolContract, ValidateFunction>();
-
-function validatorOf(contract: ToolContract): ValidateFunction {
-  let validate = validators.get(contract);
-  if (!validate) {
-    validate = ajv.compile(contract.inputSchema);
-    validators.set(contract, validate);
-  }
-  return validate;
+export interface CheckedContract {
+  contract: ToolContract;
+  validate: ValidateFunction;
 }
+
+export const CHECKED_CONTRACTS: ReadonlyMap<string, CheckedContract> = new Map(TOOL_CONTRACTS.map((contract) => [
+  contract.name, { contract, validate: ajv.compile(contract.inputSchema) },
+]));
 
 function alternative(schema: unknown): string {
   const { type, enum: values, minimum, maximum } = (schema ?? {}) as {
@@ -56,8 +54,7 @@ function problems(errors: ErrorObject[]): string[] {
     .map(describe);
 }
 
-export function validateToolArgs(contract: ToolContract, args: ToolArgs): string | null {
-  const validate = validatorOf(contract);
+export function validateToolArgs({ contract, validate }: CheckedContract, args: ToolArgs): string | null {
   if (!validate(args)) {
     const unique = [...new Set(problems(validate.errors ?? []))];
     return `Invalid arguments for ${contract.name}: ${unique.join("; ")}`;

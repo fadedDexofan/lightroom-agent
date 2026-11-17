@@ -72,6 +72,17 @@ describe('createCallToolHandler', () => {
     expect(result.content[0].text).toContain("click 'Start Server'");
   });
 
+  it('treats missing arguments as an empty object', async () => {
+    const sent: unknown[] = [];
+    const handler = makeHandler({ call: async (_action, params) => { sent.push(params); return { id: '1', result: { data: {} } }; } });
+
+    expect((await handler('search_photos', undefined)).isError).toBeUndefined();
+    expect(sent).toEqual([{}]);
+    expect(envelopeOf(await handler('set_rating_and_flag', undefined))).toEqual({
+      outcome: 'failed', error: expect.stringContaining('required property'),
+    });
+  });
+
   it('forwards action and args to dispatcher', async () => {
     let captured: { action: string; params: unknown } | null = null;
     const handler = makeHandler({

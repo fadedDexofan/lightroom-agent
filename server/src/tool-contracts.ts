@@ -69,11 +69,12 @@ const exclusiveWithMaskId: ArgumentRule = {
 };
 
 const CURVE_KEYS = DEVELOP_KEYS.filter((key) => key.kind === "curve").map((key) => key.name);
+const WRITTEN_ELSEWHERE = writtenElsewhereText(DEVELOP_KEYS.filter((key) => key.writtenBy !== undefined));
 const settingsOf = (args: ToolArgs) => (args.settings ?? {}) as Record<string, unknown>;
 
 const developSettingsRules: readonly ArgumentRule[] = [
   {
-    text: `settings must leave out the keys another tool writes: ${writtenElsewhereText(DEVELOP_KEYS.filter((key) => key.writtenBy !== undefined))}`,
+    text: `settings must leave out the keys another tool writes: ${WRITTEN_ELSEWHERE}`,
     holds: (args) => keysRefusedFor("set_develop_settings", Object.keys(settingsOf(args))).length === 0,
   },
   {
@@ -83,7 +84,7 @@ const developSettingsRules: readonly ArgumentRule[] = [
 ];
 
 const copyListRule: ArgumentRule = {
-  text: `refused in a named settings list: ${writtenElsewhereText(DEVELOP_KEYS.filter((key) => key.writtenBy !== undefined))}`,
+  text: `refused in a named settings list: ${WRITTEN_ELSEWHERE}`,
   holds: (args) => !Array.isArray(args.settings) || keysRefusedFor("copy_develop_settings", args.settings as string[]).length === 0,
 };
 

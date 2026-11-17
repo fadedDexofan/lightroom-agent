@@ -997,11 +997,6 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('get_collection_photos', { collection_name: 'Trip', offset: -1 })).toContain('offset');
   });
 
-  it('treats missing arguments as an empty object', () => {
-    expect(validateToolArgs('search_photos', undefined)).toBeNull();
-    expect(validateToolArgs('set_rating_and_flag', undefined)).toContain('required property');
-  });
-
   it('reports a violation that has no field path', () => {
     const msg = validateToolArgs('search_photos', 'not-an-object');
 

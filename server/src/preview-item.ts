@@ -1,5 +1,5 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
-import type { Input, ItemFailure, PluginReply, ReplyParts } from "./tool-result.js";
+import type { Input, ItemFailure, PluginReply } from "./tool-result.js";
 
 export interface RenderedPreview {
   photo_id: string;
@@ -34,7 +34,7 @@ export async function previewItem(
   const params = size === undefined ? { photo_ids: [input] } : { photo_ids: [input], size };
   const response = await dispatcher.call(action, params, timeoutMs, options);
   if (response.error !== undefined) return { failed: { photo_id: String(input), reason: response.error } };
-  const parts = (response.result ?? {}) as ReplyParts;
+  const parts = response.result ?? {};
   if (parts.not_found?.length) return { notFound: input };
   if (parts.failed?.length) return { failed: parts.failed[0] };
   const preview = parts.data as RenderedPreview | undefined;

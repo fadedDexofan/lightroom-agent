@@ -1,6 +1,7 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import { envelopeOf } from './helpers/envelope.js';
-import { PluginLiveness, type PingDispatcher } from '../src/plugin-liveness.js';
+import { PluginLiveness } from '../src/plugin-liveness.js';
+import type { Dispatcher } from '../src/dispatcher.js';
 import { SHADOW_BRIDGE } from '../src/port-owner.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
@@ -8,11 +9,11 @@ type Ping = { timeoutMs: number; answer: () => void; fail: () => void };
 
 function setup(opts: { connected?: () => boolean } = {}) {
   const pings: Ping[] = [];
-  const dispatcher: PingDispatcher = {
+  const dispatcher: Pick<Dispatcher, 'call'> = {
     call: (action, params, timeoutMs) => {
       expect([action, params]).toEqual(['ping', {}]);
       return new Promise((resolve, reject) => {
-        pings.push({ timeoutMs, answer: () => resolve({ pong: true }), fail: () => reject(new Error('timeout')) });
+        pings.push({ timeoutMs, answer: () => resolve({ id: 'ping', result: { data: { pong: true } } }), fail: () => reject(new Error('timeout')) });
       });
     },
   };
@@ -97,6 +98,23 @@ describe('PluginLiveness', () => {
     pings[0].answer();
     await flush();
 
+    expect(liveness.isUsable()).toBe(true);
+    liveness.stop();
+  });
+
+  it('sends no heartbeat ping while the sockets are down, so the connect probe is not swallowed', async () => {
+    let connected = false;
+    const { liveness, pings } = setup({ connected: () => connected });
+    liveness.start();
+
+    jest.advanceTimersByTime(30_000);
+    expect(pings).toHaveLength(0);
+
+    connected = true;
+    liveness.check();
+    expect(pings.map((ping) => ping.timeoutMs)).toEqual([5_000]);
+    pings[0].answer();
+    await flush();
     expect(liveness.isUsable()).toBe(true);
     liveness.stop();
   });

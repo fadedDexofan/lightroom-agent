@@ -1,3 +1,5 @@
+import type { Dispatcher } from "./dispatcher.js";
+
 /**
  * Whether the plugin is actually answering, as opposed to merely accepting TCP
  * connections.
@@ -18,12 +20,8 @@ export type PluginLivenessState = "unknown" | "responsive" | "unresponsive";
 
 export const HEARTBEAT_INTERVAL_SECONDS = 30;
 
-export interface PingDispatcher {
-  call(action: string, params: unknown, timeoutMs: number): Promise<unknown>;
-}
-
 export interface LivenessOptions {
-  dispatcher: PingDispatcher;
+  dispatcher: Pick<Dispatcher, "call">;
   connected: () => boolean;
   reporter: { report(): void; clear(): void };
   heartbeatIntervalMs: number;
@@ -43,7 +41,9 @@ export class PluginLiveness {
   constructor(private readonly opts: LivenessOptions) {}
 
   start(): void {
-    this.heartbeat = setInterval(() => this.check(this.opts.heartbeatTimeoutMs), this.opts.heartbeatIntervalMs);
+    this.heartbeat = setInterval(() => {
+      if (this.opts.connected()) this.check(this.opts.heartbeatTimeoutMs);
+    }, this.opts.heartbeatIntervalMs);
   }
 
   stop(): void {
