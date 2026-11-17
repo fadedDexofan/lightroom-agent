@@ -5,12 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "lightroom-mcp": "dist/index.js"
+    "lightroom-agent": "dist/index.js"
   },
   "private": true,
   "files": [
     "dist",
-    "LightroomMCP.lrplugin",
+    "LightroomAgent.lrplugin",
     "README.md",
     "LICENSE"
   ],

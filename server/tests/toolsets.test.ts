@@ -20,7 +20,7 @@ describe('toolset parser', () => {
   });
 
   it.each(['develp', 'Develop', 'all,typo', ',', 'develop,', '${user_config.toolsets}'])('rejects %s with valid names', (raw) => {
-    expect(() => parseToolsets(raw)).toThrow('LIGHTROOM_MCP_TOOLSETS');
+    expect(() => parseToolsets(raw)).toThrow('LIGHTROOM_AGENT_TOOLSETS');
     expect(() => parseToolsets(raw)).toThrow('Valid names: core, develop, masks, all');
   });
 
@@ -30,9 +30,9 @@ describe('toolset parser', () => {
       server: { mcp_config: { env: Record<string, string> } };
     };
     const env = manifest.server.mcp_config.env;
-    expect(env.LIGHTROOM_MCP_TOOLSETS).toBe('${user_config.toolsets}');
+    expect(env.LIGHTROOM_AGENT_TOOLSETS).toBe('${user_config.toolsets}');
     expect(manifest.user_config.toolsets.default).toBe('core');
-    expect(env.LIGHTROOM_MCP_READ_ONLY).toBe('${user_config.read_only}');
+    expect(env.LIGHTROOM_AGENT_READ_ONLY).toBe('${user_config.read_only}');
     expect(manifest.user_config.read_only.default).toBe(false);
     expect(manifest.user_config.read_only.type).toBe('boolean');
     for (const value of Object.values(env)) {

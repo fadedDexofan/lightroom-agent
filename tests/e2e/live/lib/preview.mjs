@@ -36,7 +36,7 @@ export function decodeBmp(bmp) {
 
 export function decodeJpegBase64(base64) {
   if (process.platform !== "darwin") throw new Error("preview decoding uses sips and needs macOS");
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-preview-"));
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-preview-"));
   try {
     const jpegPath = path.join(scratch, "preview.jpg");
     const bmpPath = path.join(scratch, "preview.bmp");

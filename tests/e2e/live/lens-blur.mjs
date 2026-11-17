@@ -15,7 +15,7 @@ async function tool(name, args) {
 try {
   const initialSelection = await tool("get_selected_photos", {});
   const copies = await tool("create_virtual_copies", {
-    photo_ids: [requireFixtureId(marker, "arw_14bit")], copy_name: "LRMCP Lens Blur live test",
+    photo_ids: [requireFixtureId(marker, "arw_14bit")], copy_name: "LRAGENT Lens Blur live test",
   });
   copyId = copies.copies[0].copy_photo_id;
   await tool("set_lens_blur", { photo_id: copyId, active: false });

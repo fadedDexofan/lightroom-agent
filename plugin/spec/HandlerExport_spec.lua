@@ -904,8 +904,8 @@ describe("HandlerExport.renderDetailSource", function()
     local function detailSetup(opts)
         opts = opts or {}
         local files, deleted, sessions = {}, {}, {}
-        local folders = { ["/tmp/lightroom-mcp-detail"] = not opts.noBase or nil }
-        for _, name in ipairs(opts.leftovers or {}) do files["/tmp/lightroom-mcp-detail/" .. name] = true end
+        local folders = { ["/tmp/lightroom-agent-detail"] = not opts.noBase or nil }
+        for _, name in ipairs(opts.leftovers or {}) do files["/tmp/lightroom-agent-detail/" .. name] = true end
         local catalog = helper.fakeCatalog({ photos = { helper.fakePhoto({ localIdentifier = 7, path = "/p/a.arw" }) } })
         helper.installImport({
             LrApplication = { activeCatalog = function() return catalog end },
@@ -953,7 +953,7 @@ describe("HandlerExport.renderDetailSource", function()
                     deleted[#deleted + 1] = path
                 end,
                 createAllDirectories = function(path)
-                    if opts.noBase then folders["/tmp/lightroom-mcp-detail"] = true end
+                    if opts.noBase then folders["/tmp/lightroom-agent-detail"] = true end
                     folders[path] = true
                 end,
             },
@@ -996,7 +996,7 @@ describe("HandlerExport.renderDetailSource", function()
         local r = Handler.renderDetailSource({ photo_id = "/p/a.arw" })
 
         local folder = sessions[1].exportSettings.LR_export_destinationPathPrefix
-        assert.matches("^/tmp/lightroom%-mcp%-detail/[^/]+$", folder)
+        assert.matches("^/tmp/lightroom%-agent%-detail/[^/]+$", folder)
         assert.are.same({
             photo_id = "7", path = folder .. "/a.jpg",
             source = "export", left_on_photo = { "one Export history step", "the exported mark" },
@@ -1018,12 +1018,12 @@ describe("HandlerExport.renderDetailSource", function()
             sessions[2].exportSettings.LR_export_destinationPathPrefix)
         assert.are_not.equal(first.path, second.path)
         assert.is_true(files[first.path])
-        assert.is_true(files["/tmp/lightroom-mcp-detail/other/b.jpg"])
+        assert.is_true(files["/tmp/lightroom-agent-detail/other/b.jpg"])
         assert.are.same({}, deleted)
     end)
 
     it("removes render folders started longer ago than a hung export can last, and keeps newer ones", function()
-        local base = "/tmp/lightroom-mcp-detail/"
+        local base = "/tmp/lightroom-agent-detail/"
         local Handler, sessions, files = detailSetup({ now = 1000, leftovers = {
             "700000-1/abandoned.jpg", "700001-2/recent.jpg", "other/b.jpg" } })
 
@@ -1057,7 +1057,7 @@ describe("HandlerExport.renderDetailSource", function()
     for _, case in ipairs({
         { name = "into an existing detail folder", opts = { sessionError = "session refused" }, removed = {} },
         { name = "after it created the detail folder too", opts = { sessionError = "session refused", noBase = true },
-            removed = { "/tmp/lightroom-mcp-detail" } },
+            removed = { "/tmp/lightroom-agent-detail" } },
     }) do
         it("reports an export session that could not start " .. case.name .. " as failed, naming nothing left on the"
             .. " photo, and removes the folders it created", function()
@@ -1066,7 +1066,7 @@ describe("HandlerExport.renderDetailSource", function()
             assert.is_nil(r.unknown)
             assert.are.same({ { photo_id = "7", reason = "session refused" } }, r.failed)
             assert.are.same({}, files)
-            assert.matches("^/tmp/lightroom%-mcp%-detail/[^/]+$", deleted[1])
+            assert.matches("^/tmp/lightroom%-agent%-detail/[^/]+$", deleted[1])
             assert.are.same(case.removed, { unpack(deleted, 2) })
         end)
     end
@@ -1079,7 +1079,7 @@ describe("HandlerExport.renderDetailSource", function()
 
         assert.is_nil(r.failed)
         assert.are.equal("7", r.unknown[1].photo_id)
-        assert.matches("^session refused; written before this stopped: /tmp/lightroom%-mcp%-detail/[^/]+$",
+        assert.matches("^session refused; written before this stopped: /tmp/lightroom%-agent%-detail/[^/]+$",
             r.unknown[1].reason)
     end)
 
@@ -1095,7 +1095,7 @@ describe("HandlerExport.renderDetailSource", function()
             inner = helper.failedOf(function() Handler.renderDetailSource({ photo_id = 7 }) end)
             return false
         end })
-        Handler.exportPhotos({ photo_ids = { "7" }, destination = "/tmp/lightroom-mcp-detail" }, context)
+        Handler.exportPhotos({ photo_ids = { "7" }, destination = "/tmp/lightroom-agent-detail" }, context)
         assert.are.equal("export_photos is already running; wait for it to finish, then call again", inner)
     end)
 

@@ -1,11 +1,11 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { configDir } from "./config-dir.js";
 
 export function tokenFilePath(): string {
   return (
-    process.env.LIGHTROOM_MCP_TOKEN_PATH ??
-    path.join(os.homedir(), ".config", "lightroom-mcp", "token")
+    process.env.LIGHTROOM_AGENT_TOKEN_PATH ??
+    path.join(configDir(), "token")
   );
 }
 
@@ -16,7 +16,7 @@ export function readToken(): string {
     raw = fs.readFileSync(p, "utf8");
   } catch {
     throw new Error(
-      `Lightroom MCP token file not found at ${p}. ` +
+      `Lightroom Agent token file not found at ${p}. ` +
         `Open Lightroom and click 'Start Server' in Plug-in Manager to generate one.`,
     );
   }

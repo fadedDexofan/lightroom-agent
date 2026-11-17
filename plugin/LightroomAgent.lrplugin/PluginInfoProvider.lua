@@ -48,8 +48,8 @@ end
 -- NOT on a plain panel render). Tearing down from this body — as earlier
 -- versions did when running == true — killed the live server every time the
 -- Plug-in Manager was opened (issues #121, #137).
-if not _G.LightroomMCP_State then
-    _G.LightroomMCP_State = {
+if not _G.LightroomAgent_State then
+    _G.LightroomAgent_State = {
         running = false,
         shuttingDown = false,
         requestSocket = nil,
@@ -68,7 +68,7 @@ if not _G.LightroomMCP_State then
     }
 end
 
-local pluginState = _G.LightroomMCP_State
+local pluginState = _G.LightroomAgent_State
 
 local function shutdownRequested()
     return pluginState.shuttingDown == true
@@ -127,7 +127,7 @@ local function writeTokenFile(token)
     fh:close()
     -- Lightroom's Lua sandbox has no os.execute, so chmod is impossible here.
     -- On macOS single-user installs ~/.config/ inherits home-dir privacy (700).
-    -- On Linux/multi-user systems run: chmod 700 ~/.config/lightroom-mcp
+    -- On Linux/multi-user systems run: chmod 700 ~/.config/lightroom-agent
     -- See README "Security" section. Token gates localhost only; threat is
     -- local-user access on the same machine.
     return true
@@ -205,8 +205,8 @@ local function shouldRestartForStaleConnection(idle, inFlightRequests, softSecon
     return restart, suffix
 end
 
-local TOKEN_MISMATCH_MESSAGE = "The Lightroom MCP token does not match the running plug-in. "
-    .. "Click Stop Server, then Start Server in Plug-in Manager, and check LIGHTROOM_MCP_TOKEN_PATH if it is set."
+local TOKEN_MISMATCH_MESSAGE = "The Lightroom Agent token does not match the running plug-in. "
+    .. "Click Stop Server, then Start Server in Plug-in Manager, and check LIGHTROOM_AGENT_TOKEN_PATH if it is set."
 
 local function sendResponse(response, waitLimitSeconds)
     local waitSeconds = math.min(SEND_WAIT_SECONDS, math.max(0, waitLimitSeconds or SEND_WAIT_SECONDS))
@@ -392,7 +392,7 @@ local function startServer()
     local instanceId = pluginState.instanceId
     addLog("Starting LrSocket servers")
 
-    LrFunctionContext.postAsyncTaskWithContext("LightroomMCPServer", function(context)
+    LrFunctionContext.postAsyncTaskWithContext("LightroomAgentServer", function(context)
         context:addCleanupHandler(function()
             if pluginState.instanceId ~= instanceId then
                 -- A newer startServer superseded this instance; its sockets
@@ -786,7 +786,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
     local activeRequest = pluginState.requestPort or cfgRequestPort
     local activeResponse = pluginState.responsePort or cfgResponsePort
 
-    local statusText = "=== Lightroom MCP Status ===\n\n"
+    local statusText = "=== Lightroom Agent Status ===\n\n"
     statusText = statusText .. "Running: " .. tostring(pluginState.running) .. "\n"
     statusText = statusText .. "Request socket connected: " .. tostring(pluginState.receiveConnected) .. "\n"
     statusText = statusText .. "Response socket connected: " .. tostring(pluginState.sendConnected) .. "\n"
@@ -803,7 +803,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
 
     return {
         {
-            title = "Lightroom MCP Server Status",
+            title = "Lightroom Agent Server Status",
             f:static_text {
                 title = statusText,
                 fill_horizontal = 1,
@@ -837,7 +837,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                 f:static_text { title = "(default 58764)" },
             },
             f:static_text {
-                title = "Port changes apply on next Start. Server env vars must match: LIGHTROOM_MCP_REQUEST_PORT / LIGHTROOM_MCP_RESPONSE_PORT.",
+                title = "Port changes apply on next Start. Server env vars must match: LIGHTROOM_AGENT_REQUEST_PORT / LIGHTROOM_AGENT_RESPONSE_PORT.",
                 fill_horizontal = 1,
                 width_in_chars = 70,
                 height_in_lines = 2,
@@ -882,7 +882,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                         for i = logStart, #pluginState.log do
                             table.insert(lines, "  " .. pluginState.log[i])
                         end
-                        LrDialogs.message("Lightroom MCP Status", table.concat(lines, "\n"), "info")
+                        LrDialogs.message("Lightroom Agent Status", table.concat(lines, "\n"), "info")
                     end,
                 },
             },

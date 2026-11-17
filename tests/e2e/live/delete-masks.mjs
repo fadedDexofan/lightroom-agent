@@ -18,7 +18,7 @@ const componentIds = (entry) => (entry?.CorrectionMasks ?? []).map((component) =
 
 let copy = null;
 try {
-  copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, "wide_plain"))], copy_name: "LRMCP delete masks" })).copies[0].copy_photo_id);
+  copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, "wide_plain"))], copy_name: "LRAGENT delete masks" })).copies[0].copy_photo_id);
   const survivor = String((await data("create_gradient_mask", { photo_id: copy, ...linear(0.0) })).mask_id);
   const byMask = String((await data("create_gradient_mask", { photo_id: copy, ...linear(0.25) })).mask_id);
   const twoTools = String((await data("create_gradient_mask", { photo_id: copy, ...linear(0.5) })).mask_id);

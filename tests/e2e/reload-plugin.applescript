@@ -16,12 +16,12 @@ on run
             tell window "Lightroom Plug-in Manager"
                 set targetRow to missing value
                 repeat with candidate in (rows of table 1 of scroll area 1)
-                    if (value of static text 1 of candidate) starts with "Lightroom MCP" then
+                    if (value of static text 1 of candidate) starts with "Lightroom Agent" then
                         set targetRow to candidate
                         exit repeat
                     end if
                 end repeat
-                if targetRow is missing value then error "Lightroom MCP is not installed"
+                if targetRow is missing value then error "Lightroom Agent is not installed"
 
                 click targetRow
                 click button "Reload Plug-in" of scroll area 2

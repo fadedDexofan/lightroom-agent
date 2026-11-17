@@ -6,7 +6,7 @@ import { renderContractLua } from '../src/contract-lua.js';
 describe('generated Lua contract module', () => {
   it('matches the tables of the TypeScript contract; run npm run build after changing them', () => {
     const tracked = fs.readFileSync(
-      path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'Contract.lua'), 'utf8');
+      path.resolve(process.cwd(), '..', 'plugin', 'LightroomAgent.lrplugin', 'Contract.lua'), 'utf8');
     expect(tracked).toBe(renderContractLua());
   });
 });

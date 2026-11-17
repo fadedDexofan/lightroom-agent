@@ -8,7 +8,7 @@ import { SERVER_INSTRUCTIONS } from "./server-instructions.js";
 
 export function createMcpServer(callTool: ToolCaller, access: ToolAccess): Server {
   const server = new Server(
-    { name: "lightroom-mcp-server", version: VERSION },
+    { name: "lightroom-agent", version: VERSION },
     { capabilities: { tools: {}, prompts: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 

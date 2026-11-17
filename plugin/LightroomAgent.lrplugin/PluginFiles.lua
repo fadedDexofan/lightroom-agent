@@ -3,7 +3,7 @@ local LrPathUtils = import 'LrPathUtils'
 local PluginFiles = {}
 
 function PluginFiles.directory()
-    return LrPathUtils.child(LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), ".config"), "lightroom-mcp")
+    return LrPathUtils.child(LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), ".config"), "lightroom-agent")
 end
 
 function PluginFiles.token()

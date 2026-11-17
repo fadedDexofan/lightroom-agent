@@ -9,7 +9,7 @@ describe('read-only parser', () => {
     expect(parseReadOnly(raw)).toBe(true);
   });
   it.each(['TRUE', 'False', 'yes', '2', 'true,false', '${user_config.read_only}'])('rejects %s with accepted values', (raw) => {
-    expect(() => parseReadOnly(raw)).toThrow('LIGHTROOM_MCP_READ_ONLY');
+    expect(() => parseReadOnly(raw)).toThrow('LIGHTROOM_AGENT_READ_ONLY');
     expect(() => parseReadOnly(raw)).toThrow('Accepted values: true, 1, false, 0');
   });
 });

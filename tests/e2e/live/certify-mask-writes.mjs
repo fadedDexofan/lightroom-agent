@@ -95,7 +95,7 @@ function savePreview(index, side, pixels) {
 
 const copies = [];
 async function cleanCopy(master, role) {
-  const copy = String((await toolData("create_virtual_copies", { photo_ids: [master], copy_name: `LRMCP certification ${role}` })).copies[0].copy_photo_id);
+  const copy = String((await toolData("create_virtual_copies", { photo_ids: [master], copy_name: `LRAGENT certification ${role}` })).copies[0].copy_photo_id);
   copies.push(copy);
   if ((await toolData("list_masks", { photo_id: copy })).count > 0) await toolData("delete_masks", { photo_id: copy, all: true });
   return copy;

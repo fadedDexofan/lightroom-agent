@@ -54,7 +54,7 @@ class McpClient {
   async start() {
     this.proc = spawn("node", [SERVER_BIN], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, LIGHTROOM_MCP_TOOLSETS: "all" },
+      env: { ...process.env, LIGHTROOM_AGENT_TOOLSETS: "all" },
     });
     this.proc.stdout.setEncoding("utf8");
     this.proc.stderr.setEncoding("utf8");
@@ -75,7 +75,7 @@ class McpClient {
     await this._rpc("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
-      clientInfo: { name: "lightroom-mcp-e2e", version: "0.0.0" },
+      clientInfo: { name: "lightroom-agent-e2e", version: "0.0.0" },
     });
     this._notify("notifications/initialized", {});
     // Wait until a real plugin call succeeds. Plugin's response socket
@@ -221,9 +221,9 @@ async function main() {
     // Point the server at a token file that doesn't match
     // what the plugin has. Real token file stays untouched, so a crash
     // can't leave the system in a broken state (TOCTOU-safe).
-    const fakePath = path.join(os.tmpdir(), `lr_mcp_bad_token_${Date.now()}`);
+    const fakePath = path.join(os.tmpdir(), `lragent_bad_token_${Date.now()}`);
     fs.writeFileSync(fakePath, "wrong-token-deadbeef");
-    process.env.LIGHTROOM_MCP_TOKEN_PATH = fakePath;
+    process.env.LIGHTROOM_AGENT_TOKEN_PATH = fakePath;
     let saw = false;
     try {
       const c = new McpClient();
@@ -235,7 +235,7 @@ async function main() {
       }
       await c.stop();
     } finally {
-      delete process.env.LIGHTROOM_MCP_TOKEN_PATH;
+      delete process.env.LIGHTROOM_AGENT_TOKEN_PATH;
       fs.rmSync(fakePath, { force: true });
     }
     if (saw) console.log("wrong-token: plugin correctly rejected (ready-wait timed out)");
@@ -247,16 +247,16 @@ async function main() {
   if (mode === "port-mismatch") {
     // Server uses port 58773 (no plugin there), expect "not connected"
     const c = new McpClient();
-    process.env.LIGHTROOM_MCP_REQUEST_PORT = "58773";
-    process.env.LIGHTROOM_MCP_RESPONSE_PORT = "58774";
+    process.env.LIGHTROOM_AGENT_REQUEST_PORT = "58773";
+    process.env.LIGHTROOM_AGENT_RESPONSE_PORT = "58774";
     let saw = false;
     try {
       await c.start();
     } catch (err) {
       if (err.message.includes("did not become ready")) saw = true;
     }
-    delete process.env.LIGHTROOM_MCP_REQUEST_PORT;
-    delete process.env.LIGHTROOM_MCP_RESPONSE_PORT;
+    delete process.env.LIGHTROOM_AGENT_REQUEST_PORT;
+    delete process.env.LIGHTROOM_AGENT_RESPONSE_PORT;
     await c.stop();
     if (saw) console.log("port-mismatch: server correctly failed to connect to wrong ports");
     else console.log("port-mismatch: UNEXPECTED — server reached plugin");
@@ -297,8 +297,8 @@ async function main() {
 
   if (mode === "preset-roundtrip") {
     const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-    const checkpointName = `MCP_E2E_PresetRoundtrip_${stamp}`;
-    const outputRoot = process.env.LIGHTROOM_MCP_E2E_PRESET_DIR ?? os.tmpdir();
+    const checkpointName = `LRAGENT_E2E_PresetRoundtrip_${stamp}`;
+    const outputRoot = process.env.LIGHTROOM_AGENT_E2E_PRESET_DIR ?? os.tmpdir();
     const destinationDir = path.join(outputRoot, checkpointName);
 
     await run("find a source photo without changing it", async () => {
@@ -465,7 +465,7 @@ async function main() {
   }
 
   if (mode === "write" || mode === "all") {
-    const collectionName = `MCP_E2E_${Date.now()}`;
+    const collectionName = `LRAGENT_E2E_${Date.now()}`;
     ctx.collectionName = collectionName;
 
     await run(`create_collection "${collectionName}"`, async () => {
@@ -521,7 +521,7 @@ async function main() {
         checkTrue("not error", !r.isError, r.text);
       });
 
-      const tag = `mcp_e2e_${Date.now()}`;
+      const tag = `lragent_e2e_${Date.now()}`;
       await run(`set_keywords add "${tag}"`, async () => {
         const r = await c.callTool("set_keywords", {
           photo_ids: [ctx.firstPhoto.photo_id],
@@ -717,8 +717,8 @@ async function main() {
     });
 
     await run("get_photo_metadata reports a bad id as not_found", async () => {
-      const r = await c.callTool("get_photo_metadata", { photo_ids: ["/nonexistent/lrmcp-e2e.jpg"] });
-      checkEq("not_found", JSON.stringify(r.envelope.not_found), JSON.stringify(["/nonexistent/lrmcp-e2e.jpg"]));
+      const r = await c.callTool("get_photo_metadata", { photo_ids: ["/nonexistent/lragent-e2e.jpg"] });
+      checkEq("not_found", JSON.stringify(r.envelope.not_found), JSON.stringify(["/nonexistent/lragent-e2e.jpg"]));
     });
 
     await run("set_rating_and_flag out-of-range returns isError", async () => {

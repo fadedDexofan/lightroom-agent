@@ -15,7 +15,7 @@ const data = async (name, args) => (await session.toolOrThrow(name, args, { time
 const copies = [];
 
 async function freshCopy(fixture, role) {
-  const copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, fixture))], copy_name: `LRMCP copy turned ${role}` })).copies[0].copy_photo_id);
+  const copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, fixture))], copy_name: `LRAGENT copy turned ${role}` })).copies[0].copy_photo_id);
   copies.push(copy);
   return copy;
 }

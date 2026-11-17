@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 
-const FOLDER = `lrmcp-export-presets-${process.pid}`;
+const FOLDER = `lragent-export-presets-${process.pid}`;
 const USER_ROOT = path.join(os.homedir(), "Library", "Application Support", "Adobe", "Lightroom", "Export Presets");
 const CONSTRAIN = "size_doConstrain = true, size_userWantsConstrain = true,";
 
@@ -17,7 +17,7 @@ const wide = requireFixtureId(marker, "wide_plain");
 const catalogSettings = path.join(path.dirname(catalogPath), "Lightroom Settings");
 const catalogRootExisted = fs.existsSync(catalogSettings);
 const catalogRoot = path.join(catalogSettings, "Export Presets");
-const output = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-export-presets-"));
+const output = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-export-presets-"));
 const failures = [];
 let directoryCount = 0;
 

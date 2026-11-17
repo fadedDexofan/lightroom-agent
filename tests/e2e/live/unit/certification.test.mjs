@@ -275,7 +275,7 @@ test("no record is built when any check failed or none ran", () => {
 });
 
 test("--rejudge writes the record from a run file alone, with a corrected threshold, without Lightroom", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-rejudge-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-rejudge-"));
   const certificationFile = path.join(directory, "mask-certification.json");
   const runFile = path.join(directory, "run.json");
   const step = { name: "Background created", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted(), rendered: { check: "darkens_within", measured: { darkened: 0.2, share_in_region: 0.65, brightened: 0 } } };
@@ -295,7 +295,7 @@ test("--rejudge writes the record from a run file alone, with a corrected thresh
 });
 
 test("the record replaces the file whole and leaves no temporary file", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-cert-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-cert-"));
   const file = path.join(directory, "nested", "mask-certification.json");
   try {
     writeCertification(file, { a: 1 });
@@ -309,7 +309,7 @@ test("the record replaces the file whole and leaves no temporary file", () => {
 });
 
 test("the plug-in admits the catalog the kit marks, by the same marker file name", () => {
-  const admission = fs.readFileSync(path.join(REPO_ROOT, "plugin", "LightroomMCP.lrplugin", "MaskWriteAdmission.lua"), "utf8");
+  const admission = fs.readFileSync(path.join(REPO_ROOT, "plugin", "LightroomAgent.lrplugin", "MaskWriteAdmission.lua"), "utf8");
 
   assert.equal(admission.match(/THROWAWAY_MARKER_FILE = "([^"]+)"/)?.[1], THROWAWAY_MARKER_FILE);
 });

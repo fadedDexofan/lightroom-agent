@@ -46,7 +46,7 @@ const CASES = [
 try {
   for (const { label, fixture, prepare } of CASES) {
     try {
-      const copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, fixture))], copy_name: `LRMCP nothing found ${label}` })).copies[0].copy_photo_id);
+      const copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, fixture))], copy_name: `LRAGENT nothing found ${label}` })).copies[0].copy_photo_id);
       copies.push(copy);
       await prepare(copy);
       const before = await settled(copy);

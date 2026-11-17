@@ -1,7 +1,7 @@
 local helper = require 'spec_helper'
 
 local HOME = "/Users/tester"
-local CERTIFICATION_FILE = HOME .. "/.config/lightroom-mcp/mask-certification.json"
+local CERTIFICATION_FILE = HOME .. "/.config/lightroom-agent/mask-certification.json"
 local PERSONAL_CATALOG = HOME .. "/Pictures/Lightroom/Lightroom Catalog.lrcat"
 local RUNNING_BUILD = "16.0.0 build 1234567"
 
@@ -27,8 +27,8 @@ local function load(files, versionTable)
     return require 'MaskWriteAdmission'
 end
 
-local THROWAWAY_CATALOG = HOME .. "/Pictures/lrmcp-live-1/lrmcp-live-1.lrcat"
-local THROWAWAY_MARKER = HOME .. "/Pictures/lrmcp-live-1/lrmcp-live-catalog.json"
+local THROWAWAY_CATALOG = HOME .. "/Pictures/lragent-live-1/lragent-live-1.lrcat"
+local THROWAWAY_MARKER = HOME .. "/Pictures/lragent-live-1/lragent-live-catalog.json"
 
 local catalog = { getPath = function() return PERSONAL_CATALOG end }
 local throwaway = { getPath = function() return THROWAWAY_CATALOG end }

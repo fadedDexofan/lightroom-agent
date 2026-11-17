@@ -16,7 +16,7 @@ local function setup(count)
             inWrite = false
         end)
     end
-    _G._PLUGIN = { id = 'com.lightroom.mcp' }
+    _G._PLUGIN = { id = 'io.github.fadeddexofan.lightroomagent' }
     for _, photo in ipairs(photos) do
         photo.setPropertyForPlugin = function(self, plugin, field, value)
             assert.is_true(inWrite)

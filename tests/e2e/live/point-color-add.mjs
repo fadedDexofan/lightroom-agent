@@ -30,7 +30,7 @@ const PATCHES = chart80Patches().map((rgb, index) => ({ index, hue: hueOf(rgb), 
 
 let copy = null;
 try {
-  copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, "chart80"))], copy_name: "LRMCP point color add" })).copies[0].copy_photo_id);
+  copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, "chart80"))], copy_name: "LRAGENT point color add" })).copies[0].copy_photo_id);
   const mask = String((await data("create_gradient_mask", { photo_id: copy, ...WHOLE_FRAME })).mask_id);
 
   let added;

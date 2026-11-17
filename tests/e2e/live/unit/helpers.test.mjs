@@ -69,7 +69,7 @@ test("the open catalog is read from Lightroom's main window title", () => {
   const requested = "/Users/me/Pictures/Lightroom/Lightroom Catalog.lrcat";
   const main = (name) => ["", "", `${name} - Adobe Photoshop Lightroom Classic - Develop`];
   assert.equal(catalogWindowState(main("Lightroom Catalog.lrcat"), requested), "requested");
-  assert.equal(catalogWindowState(main("lrmcp-live-20261112090706.lrcat"), requested), "other");
+  assert.equal(catalogWindowState(main("lragent-live-20261112090706.lrcat"), requested), "other");
   assert.equal(catalogWindowState(["", ""], requested), "waiting");
   assert.equal(catalogWindowState(["Lightroom Plug-in Manager"], requested), "waiting");
 });
@@ -197,7 +197,7 @@ test("added Lua files are the ones a reload would not see", () => {
 });
 
 test("Lua files are listed recursively and sorted", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-bundle-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-bundle-"));
   try {
     fs.mkdirSync(path.join(directory, "sub"));
     fs.writeFileSync(path.join(directory, "b.lua"), "");
@@ -277,7 +277,7 @@ test("the alternation rate is 1 on a one-pixel checkerboard and 0 on a flat fiel
 });
 
 test("a proof report passes only when every check passed and writes its evidence where asked", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-proof-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-proof-"));
   const file = path.join(directory, "a.json");
   const log = console.log;
   const exitCode = process.exitCode;
@@ -298,7 +298,7 @@ test("a proof report passes only when every check passed and writes its evidence
 });
 
 test("a proof report keeps its evidence after every check and saves the previews a verdict rests on", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-proof-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-proof-"));
   const file = path.join(directory, "c.json");
   const log = console.log;
   console.log = () => {};
@@ -326,7 +326,7 @@ test("JPEG quantisation tables are read from every DQT segment", () => {
 });
 
 test("the export mark is read from the photo's image attributes row", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-catalog-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-catalog-"));
   const catalog = path.join(directory, "t.lrcat");
   try {
     execFileSync("sqlite3", [catalog, "create table AgLibraryImageAttributes (id_local integer, image integer, lastExportTimestamp, lastPublishTimestamp); insert into AgLibraryImageAttributes values (1, 10, 0.0, 0.0), (2, 11, 816176651.5, 0.0);"]);
@@ -459,7 +459,7 @@ test("pollCatalog waits the whole window for a change that never shows and retur
 });
 
 test("a proof's evidence records when it started and when it finished", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-proof-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-proof-"));
   const file = path.join(directory, "a.json");
   const log = console.log;
   const exitCode = process.exitCode;

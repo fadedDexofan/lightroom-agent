@@ -93,7 +93,7 @@ describe('isPluginInstalledAnywhere', () => {
   let home: string;
 
   beforeEach(() => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-home-'));
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-home-'));
     setPlatform('linux');
     jest.spyOn(os, 'homedir').mockReturnValue(home);
   });
@@ -108,14 +108,14 @@ describe('isPluginInstalledAnywhere', () => {
   });
 
   it('returns true when Info.lua is present in the modules dir', () => {
-    const dir = path.join(lightroomModulesDir(), 'LightroomMCP.lrplugin');
+    const dir = path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'Info.lua'), '-- fake');
     expect(isPluginInstalledAnywhere()).toBe(true);
   });
 
   it('returns true when Info.lua is present in the plugins dir', () => {
-    const dir = path.join(lightroomPluginsDir(), 'LightroomMCP.lrplugin');
+    const dir = path.join(lightroomPluginsDir(), 'LightroomAgent.lrplugin');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'Info.lua'), '-- fake');
     expect(isPluginInstalledAnywhere()).toBe(true);
@@ -124,17 +124,23 @@ describe('isPluginInstalledAnywhere', () => {
 
 describe('installPlugin', () => {
   let tmp: string;
+  let home: string;
 
   beforeEach(() => {
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-install-'));
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-install-'));
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-home-'));
+    setPlatform('linux');
+    jest.spyOn(os, 'homedir').mockReturnValue(home);
   });
 
   afterEach(() => {
+    restoreEnv();
     fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
   });
 
   function makeFakePlugin(parent: string): string {
-    const src = path.join(parent, 'LightroomMCP.lrplugin');
+    const src = path.join(parent, 'LightroomAgent.lrplugin');
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'Info.lua'), '-- fake');
     fs.writeFileSync(path.join(src, 'Handler.lua'), '-- handler');
@@ -142,39 +148,39 @@ describe('installPlugin', () => {
   }
 
   it('copies the plugin into destDir on first install', () => {
-    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-src-'));
+    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'));
     try {
       const source = makeFakePlugin(sourceParent);
       const result = installPlugin({ source, destDir: tmp });
-      expect(result.status).toBe('installed');
-      expect(fs.existsSync(path.join(result.destination, 'Info.lua'))).toBe(true);
-      expect(fs.existsSync(path.join(result.destination, 'Handler.lua'))).toBe(true);
+      expect(result).toEqual({ status: 'installed', destination: path.join(tmp, 'LightroomAgent.lrplugin') });
+      expect(fs.existsSync(path.join(tmp, 'LightroomAgent.lrplugin', 'Info.lua'))).toBe(true);
+      expect(fs.existsSync(path.join(tmp, 'LightroomAgent.lrplugin', 'Handler.lua'))).toBe(true);
     } finally {
       fs.rmSync(sourceParent, { recursive: true, force: true });
     }
   });
 
   it('copies nested directories recursively', () => {
-    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-src-'));
+    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'));
     try {
       const source = makeFakePlugin(sourceParent);
       fs.mkdirSync(path.join(source, 'sub'));
       fs.writeFileSync(path.join(source, 'sub', 'Nested.lua'), '-- nested');
-      const result = installPlugin({ source, destDir: tmp });
-      expect(fs.existsSync(path.join(result.destination, 'sub', 'Nested.lua'))).toBe(true);
+      installPlugin({ source, destDir: tmp });
+      expect(fs.existsSync(path.join(tmp, 'LightroomAgent.lrplugin', 'sub', 'Nested.lua'))).toBe(true);
     } finally {
       fs.rmSync(sourceParent, { recursive: true, force: true });
     }
   });
 
   it('preserves symlinks when copying', () => {
-    if (process.platform === 'win32') return;
-    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-src-'));
+    if (realPlatform === 'win32') return;
+    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'));
     try {
       const source = makeFakePlugin(sourceParent);
       fs.symlinkSync('Info.lua', path.join(source, 'Info.link.lua'));
-      const result = installPlugin({ source, destDir: tmp });
-      const copied = path.join(result.destination, 'Info.link.lua');
+      installPlugin({ source, destDir: tmp });
+      const copied = path.join(tmp, 'LightroomAgent.lrplugin', 'Info.link.lua');
       expect(fs.lstatSync(copied).isSymbolicLink()).toBe(true);
       expect(fs.readlinkSync(copied)).toBe('Info.lua');
     } finally {
@@ -183,11 +189,11 @@ describe('installPlugin', () => {
   });
 
   it('reports already-present without overwriting on second call', () => {
-    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-src-'));
+    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'));
     try {
       const source = makeFakePlugin(sourceParent);
       installPlugin({ source, destDir: tmp });
-      const dest = path.join(tmp, 'LightroomMCP.lrplugin', 'Info.lua');
+      const dest = path.join(tmp, 'LightroomAgent.lrplugin', 'Info.lua');
       fs.writeFileSync(dest, '-- modified');
       const result = installPlugin({ source, destDir: tmp });
       expect(result.status).toBe('already-present');
@@ -198,9 +204,52 @@ describe('installPlugin', () => {
   });
 });
 
+describe.each([
+  ['Modules', lightroomModulesDir],
+  ['Plugins', lightroomPluginsDir],
+])('a LightroomMCP.lrplugin in %s', (_where, dirOf) => {
+  let home: string;
+  let startDir: string;
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-home-'));
+    startDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-start-'));
+    setPlatform('linux');
+    jest.spyOn(os, 'homedir').mockReturnValue(home);
+    const upstream = path.join(dirOf(), 'LightroomMCP.lrplugin');
+    fs.mkdirSync(upstream, { recursive: true });
+    fs.writeFileSync(path.join(upstream, 'Info.lua'), '-- upstream');
+    const bundled = path.join(startDir, 'LightroomAgent.lrplugin');
+    fs.mkdirSync(bundled, { recursive: true });
+    fs.writeFileSync(path.join(bundled, 'Info.lua'), '-- fake');
+  });
+
+  afterEach(() => {
+    restoreEnv();
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(startDir, { recursive: true, force: true });
+  });
+
+  it('makes install refuse and copy nothing', () => {
+    const result = installPlugin({ source: path.join(startDir, 'LightroomAgent.lrplugin') });
+
+    expect(result).toEqual({ status: 'conflict', conflicting: path.join(dirOf(), 'LightroomMCP.lrplugin') });
+    expect(fs.existsSync(path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin'))).toBe(false);
+  });
+
+  it('makes the start-up install log the conflict instead of installing', () => {
+    const log = jest.fn();
+
+    ensurePluginInstalled(startDir, log);
+
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(path.join(dirOf(), 'LightroomMCP.lrplugin')));
+    expect(fs.existsSync(path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin'))).toBe(false);
+  });
+});
+
 describe('findBundledPlugin', () => {
   it('returns null when no plugin directory found', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-find-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-find-'));
     try {
       expect(findBundledPlugin(dir)).toBeNull();
     } finally {
@@ -209,9 +258,9 @@ describe('findBundledPlugin', () => {
   });
 
   it('finds plugin one level up', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-find-'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-find-'));
     try {
-      const plug = path.join(root, 'LightroomMCP.lrplugin');
+      const plug = path.join(root, 'LightroomAgent.lrplugin');
       fs.mkdirSync(plug);
       fs.writeFileSync(path.join(plug, 'Info.lua'), '-- fake');
       const child = path.join(root, 'server', 'dist');
@@ -229,7 +278,7 @@ describe('plugin lookup beside the binary and in the cwd', () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-exe-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-exe-'));
   });
 
   afterEach(() => {
@@ -239,7 +288,7 @@ describe('plugin lookup beside the binary and in the cwd', () => {
   });
 
   function bundlePluginIn(parent: string): string {
-    const plug = path.join(parent, 'LightroomMCP.lrplugin');
+    const plug = path.join(parent, 'LightroomAgent.lrplugin');
     fs.mkdirSync(plug, { recursive: true });
     fs.writeFileSync(path.join(plug, 'Info.lua'), '-- fake');
     return path.resolve(plug);
@@ -251,7 +300,7 @@ describe('plugin lookup beside the binary and in the cwd', () => {
 
   it('finds the plugin folder next to the executable', () => {
     const plug = bundlePluginIn(dir);
-    setExecPath(path.join(dir, 'lightroom-mcp.exe'));
+    setExecPath(path.join(dir, 'lightroom-agent.exe'));
     expect(findPluginBesideBinary()).toBe(plug);
   });
 
@@ -259,7 +308,7 @@ describe('plugin lookup beside the binary and in the cwd', () => {
     bundlePluginIn(dir);
     const sub = path.join(dir, 'bin');
     fs.mkdirSync(sub);
-    setExecPath(path.join(sub, 'lightroom-mcp.exe'));
+    setExecPath(path.join(sub, 'lightroom-agent.exe'));
     expect(findPluginBesideBinary()).toBeNull();
   });
 
@@ -284,8 +333,8 @@ describe('ensurePluginInstalled', () => {
   let startDir: string;
 
   beforeEach(() => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-home-'));
-    startDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-start-'));
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-home-'));
+    startDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-start-'));
     setPlatform('linux');
     jest.spyOn(os, 'homedir').mockReturnValue(home);
   });
@@ -297,13 +346,13 @@ describe('ensurePluginInstalled', () => {
   });
 
   function bundlePluginIn(dir: string): void {
-    const src = path.join(dir, 'LightroomMCP.lrplugin');
+    const src = path.join(dir, 'LightroomAgent.lrplugin');
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'Info.lua'), '-- fake');
   }
 
   it('returns early without logging when a plugin is already installed', () => {
-    const installed = path.join(lightroomModulesDir(), 'LightroomMCP.lrplugin');
+    const installed = path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin');
     fs.mkdirSync(installed, { recursive: true });
     fs.writeFileSync(path.join(installed, 'Info.lua'), '-- fake');
     const log = jest.fn();
@@ -324,16 +373,16 @@ describe('ensurePluginInstalled', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('copied'));
     expect(log).toHaveBeenCalledWith(expect.stringContaining('restart Lightroom'));
     expect(
-      fs.existsSync(path.join(lightroomModulesDir(), 'LightroomMCP.lrplugin', 'Info.lua')),
+      fs.existsSync(path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin', 'Info.lua')),
     ).toBe(true);
   });
 
   it('installs a plugin placed next to the executable', () => {
-    const exeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-exe-'));
+    const exeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-exe-'));
     try {
       bundlePluginIn(exeDir);
       Object.defineProperty(process, 'execPath', {
-        value: path.join(exeDir, 'lightroom-mcp'),
+        value: path.join(exeDir, 'lightroom-agent'),
         configurable: true,
       });
       const log = jest.fn();
@@ -346,14 +395,14 @@ describe('ensurePluginInstalled', () => {
   });
 
   it('never auto-installs a plugin found only in the working directory', () => {
-    const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-cwd-'));
+    const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-cwd-'));
     try {
       bundlePluginIn(cwdDir);
       jest.spyOn(process, 'cwd').mockReturnValue(cwdDir);
       const log = jest.fn();
       ensurePluginInstalled(startDir, log);
       expect(log).not.toHaveBeenCalled();
-      expect(fs.existsSync(path.join(lightroomModulesDir(), 'LightroomMCP.lrplugin'))).toBe(false);
+      expect(fs.existsSync(path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin'))).toBe(false);
     } finally {
       fs.rmSync(cwdDir, { recursive: true, force: true });
     }

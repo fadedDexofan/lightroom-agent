@@ -25,7 +25,7 @@ let baseUrl;
 let workDirectory;
 
 before(async () => {
-  workDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-manifest-"));
+  workDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-manifest-"));
   server = http.createServer((request, response) => {
     if (request.url === "/missing") {
       response.writeHead(404).end();
@@ -105,18 +105,18 @@ test("supplied files are resolved from environment variables, and a declared has
   fs.writeFileSync(present, PAYLOAD);
   const manifest = {
     supplied: [
-      { key: "a", envVar: "LRMCP_LIVE_A" },
-      { key: "b", envVar: "LRMCP_LIVE_B" },
-      { key: "c", envVar: "LRMCP_LIVE_C" },
-      { key: "d", envVar: "LRMCP_LIVE_D", sha256: PAYLOAD_SHA256 },
-      { key: "e", envVar: "LRMCP_LIVE_E", sha256: "0".repeat(64) },
+      { key: "a", envVar: "LRAGENT_LIVE_A" },
+      { key: "b", envVar: "LRAGENT_LIVE_B" },
+      { key: "c", envVar: "LRAGENT_LIVE_C" },
+      { key: "d", envVar: "LRAGENT_LIVE_D", sha256: PAYLOAD_SHA256 },
+      { key: "e", envVar: "LRAGENT_LIVE_E", sha256: "0".repeat(64) },
     ],
   };
   const resolved = await resolveSuppliedFiles(manifest, {
-    LRMCP_LIVE_A: present,
-    LRMCP_LIVE_B: path.join(workDirectory, "absent.heic"),
-    LRMCP_LIVE_D: present,
-    LRMCP_LIVE_E: present,
+    LRAGENT_LIVE_A: present,
+    LRAGENT_LIVE_B: path.join(workDirectory, "absent.heic"),
+    LRAGENT_LIVE_D: present,
+    LRAGENT_LIVE_E: present,
   });
   assert.deepEqual(
     resolved.map((entry) => [entry.status, entry.actual ?? null]),
@@ -130,12 +130,12 @@ test("a supplied slot with a bundled file uses it when its variable is unset, an
   fs.writeFileSync(path.join(bundled, "portrait.jpg"), PAYLOAD);
   const override = path.join(workDirectory, "override.jpg");
   fs.writeFileSync(override, "another photo");
-  const manifest = { supplied: [{ key: "p", envVar: "LRMCP_LIVE_P", file: "portrait.jpg", sha256: PAYLOAD_SHA256 }] };
+  const manifest = { supplied: [{ key: "p", envVar: "LRAGENT_LIVE_P", file: "portrait.jpg", sha256: PAYLOAD_SHA256 }] };
 
   const [byDefault] = await resolveSuppliedFiles(manifest, {}, bundled);
   assert.deepEqual([byDefault.status, byDefault.filePath, byDefault.from], ["present", path.join(bundled, "portrait.jpg"), "bundled"]);
-  const [overridden] = await resolveSuppliedFiles(manifest, { LRMCP_LIVE_P: override }, bundled);
-  assert.deepEqual([overridden.status, overridden.filePath, overridden.from], ["mismatch", override, "LRMCP_LIVE_P"]);
+  const [overridden] = await resolveSuppliedFiles(manifest, { LRAGENT_LIVE_P: override }, bundled);
+  assert.deepEqual([overridden.status, overridden.filePath, overridden.from], ["mismatch", override, "LRAGENT_LIVE_P"]);
 });
 
 test("every bundled fixture in the manifest is in the repository with its pinned hash", async () => {
@@ -145,8 +145,8 @@ test("every bundled fixture in the manifest is in the repository with its pinned
 });
 
 test("validation reports a supplied hash that is not 64 lowercase hex characters", () => {
-  assert.deepEqual(validateManifest({ supplied: [{ key: "a", envVar: "LRMCP_LIVE_A", sha256: PAYLOAD_SHA256 }] }), []);
-  assert.match(validateManifest({ supplied: [{ key: "a", envVar: "LRMCP_LIVE_A", sha256: "ABC" }] }).join("\n"), /a: sha256 must be 64 lowercase hex characters/);
+  assert.deepEqual(validateManifest({ supplied: [{ key: "a", envVar: "LRAGENT_LIVE_A", sha256: PAYLOAD_SHA256 }] }), []);
+  assert.match(validateManifest({ supplied: [{ key: "a", envVar: "LRAGENT_LIVE_A", sha256: "ABC" }] }).join("\n"), /a: sha256 must be 64 lowercase hex characters/);
 });
 
 test("downloads outside the allowlist are refused before any request", async () => {

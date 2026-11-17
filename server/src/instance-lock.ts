@@ -1,15 +1,11 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { configDir } from "./config-dir.js";
 
 export interface InstanceLock {
   release: () => void;
   /** Runs once when another bridge takes the lock while this one still holds it. */
   onLost: (listener: () => void) => void;
-}
-
-function defaultBaseDir(): string {
-  return path.join(os.homedir(), ".config", "lightroom-mcp");
 }
 
 function lockPath(baseDir: string, requestPort: number, responsePort: number): string {
@@ -84,7 +80,7 @@ export class LockHeldError extends Error {
     responsePort: number,
   ) {
     super(
-      `Another Lightroom MCP bridge is already running for ports ${requestPort}/${responsePort} (pid ${pid})`,
+      `Another Lightroom Agent bridge is already running for ports ${requestPort}/${responsePort} (pid ${pid})`,
     );
   }
 }
@@ -112,7 +108,7 @@ function heartbeatPath(lockFile: string): string {
 /**
  * True when a live pid's lock no longer has a working owner: the owner kept a
  * heartbeat and stopped refreshing it, and the lock itself is not newly
- * taken. Owners that never wrote a heartbeat (older versions) never qualify,
+ * taken. Owners that never wrote a heartbeat never qualify,
  * nor does one beside a heartbeat left by an earlier owner.
  */
 function ownerUnresponsive(lockFile: string): boolean {
@@ -123,7 +119,7 @@ function ownerUnresponsive(lockFile: string): boolean {
 }
 
 /** The pid the lock for these ports names, or null when there is none. */
-export function lockHolder(requestPort: number, responsePort: number, baseDir = defaultBaseDir()): number | null {
+export function lockHolder(requestPort: number, responsePort: number, baseDir = configDir()): number | null {
   return readPid(lockPath(baseDir, requestPort, responsePort));
 }
 
@@ -131,7 +127,7 @@ export function lockHolder(requestPort: number, responsePort: number, baseDir = 
 export function lockHolderUnresponsive(
   requestPort: number,
   responsePort: number,
-  baseDir = defaultBaseDir(),
+  baseDir = configDir(),
 ): boolean {
   return ownerUnresponsive(lockPath(baseDir, requestPort, responsePort));
 }
@@ -178,7 +174,7 @@ function reclaimStale(lockFile: string, stalePid: number | null): boolean {
 export function acquireInstanceLock(
   requestPort: number,
   responsePort: number,
-  baseDir = defaultBaseDir(),
+  baseDir = configDir(),
 ): InstanceLock {
   fs.mkdirSync(baseDir, { recursive: true, mode: 0o700 });
   const lockFile = lockPath(baseDir, requestPort, responsePort);

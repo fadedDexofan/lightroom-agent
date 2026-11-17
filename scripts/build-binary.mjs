@@ -70,7 +70,7 @@ if (!fs.existsSync(entry)) {
 
 for (const target of TARGETS) {
   const ext = target.includes("windows") ? ".exe" : "";
-  const name = `lightroom-mcp-${target.replace(/^bun-/, "")}${ext}`;
+  const name = `lightroom-agent-${target.replace(/^bun-/, "")}${ext}`;
   const outPath = path.join(outDir, name);
   log(`compiling ${target} → ${path.relative(repoRoot, outPath)}`);
   const result = spawnSync(

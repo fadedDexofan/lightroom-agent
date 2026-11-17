@@ -30,7 +30,7 @@ export function batchCropOffsets(count, maxOffsetX, maxOffsetY) {
 export function generateBatchImages({ rawPath, outputDirectory, count = DEFAULT_BATCH_COUNT }) {
   if (process.platform !== "darwin") throw new Error("batch images are cut with sips and need macOS");
   fs.mkdirSync(outputDirectory, { recursive: true });
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-batch-"));
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-batch-"));
   try {
     const basePath = path.join(scratch, "base.jpg");
     execFileSync(

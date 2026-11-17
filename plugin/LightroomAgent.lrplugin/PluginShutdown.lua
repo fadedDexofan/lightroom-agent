@@ -1,4 +1,4 @@
-if _G.LightroomMCP_State then
+if _G.LightroomAgent_State then
     require('PluginInfoProvider').shutdown()
 end
 

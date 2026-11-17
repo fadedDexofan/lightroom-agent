@@ -6,7 +6,7 @@ import { createReport } from "./lib/proof.mjs";
 
 const report = createReport("export and import paths in the caller's spelling");
 const { session, marker } = await openLiveSession();
-const root = fs.mkdtempSync("/tmp/lrmcp-paths-");
+const root = fs.mkdtempSync("/tmp/lragent-paths-");
 const spelled = path.join("/tmp", path.basename(root));
 let importedId = null;
 
@@ -19,7 +19,7 @@ try {
 
   const sourceDirectory = path.join(root, "source");
   fs.mkdirSync(sourceDirectory);
-  const name = "lrmcp-paths-long-original-name.jpg";
+  const name = "lragent-paths-long-original-name.jpg";
   fs.copyFileSync(files[0], path.join(sourceDirectory, name));
   const imported = (await session.toolOrThrow("import_photos", {
     source_path: path.join(spelled, "source", name), copy_to: path.join(spelled, "copied"),

@@ -17,14 +17,14 @@
       },
       "environmentVariables": [
         {
-          "name": "LIGHTROOM_MCP_REQUEST_PORT",
+          "name": "LIGHTROOM_AGENT_REQUEST_PORT",
           "description": "Lightroom plugin request socket port.",
           "isRequired": false,
           "format": "number",
           "default": "58763"
         },
         {
-          "name": "LIGHTROOM_MCP_RESPONSE_PORT",
+          "name": "LIGHTROOM_AGENT_RESPONSE_PORT",
           "description": "Lightroom plugin response socket port.",
           "isRequired": false,
           "format": "number",

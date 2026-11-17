@@ -22,7 +22,7 @@ interface RenderSource {
 export const DEFAULT_DETAIL_EDGE = 1024;
 export const MAX_DETAIL_EDGE = 2048;
 const CROP_JPEG_QUALITY = 95;
-export const DETAIL_RENDER_FOLDER = "lightroom-mcp-detail";
+export const DETAIL_RENDER_FOLDER = "lightroom-agent-detail";
 const RENDER = { jpeg_quality: 100, color_space: "sRGB", output_sharpening: "off" } as const;
 
 const floor4 = (value: number) => Math.floor(value * 10_000) / 10_000;

@@ -102,13 +102,13 @@ async function copyFromMaskless(source, target) {
 }
 
 try {
-  const source = await freshCopy("LRMCP live AI order source");
+  const source = await freshCopy("LRAGENT live AI order source");
   await settleAndMask(source);
-  const copied = await freshCopy("LRMCP live AI order copied");
+  const copied = await freshCopy("LRAGENT live AI order copied");
   const copy = await data("copy_develop_settings", { source_id: source, target_ids: [copied] });
-  const direct = await freshCopy("LRMCP live AI order direct");
+  const direct = await freshCopy("LRAGENT live AI order direct");
   const directMask = await settleAndMask(direct);
-  const noise = await freshCopy("LRMCP live AI order direct again");
+  const noise = await freshCopy("LRAGENT live AI order direct again");
   const noiseMask = await settleAndMask(noise);
 
   const settings = { copied: await stored(copied), direct: await stored(direct), noise: await stored(noise) };
@@ -143,13 +143,13 @@ try {
   }
   report.check("the stored mask and its rendered effect are recorded for copied, direct and direct-again targets", true, { entry, rendered, order_matters: beyondNoise });
 
-  const bare = await masklessCopy("LRMCP live maskless source");
+  const bare = await masklessCopy("LRAGENT live maskless source");
   await data("set_develop_settings", { photo_id: bare, settings: { Exposure2012: 0.5 } });
-  const masked = await masklessCopy("LRMCP live maskless target with masks");
+  const masked = await masklessCopy("LRAGENT live maskless target with masks");
   await data("create_mask", { photo_id: masked, type: "sky" });
   await data("create_gradient_mask", { photo_id: masked, shape: "linear", start: { x: 0.5, y: 0.9 }, end: { x: 0.5, y: 0.7 } });
   const maskedBefore = await maskCount(masked);
-  const plain = await masklessCopy("LRMCP live maskless target without masks");
+  const plain = await masklessCopy("LRAGENT live maskless target without masks");
   const preview = await dryRunFromMaskless(bare, masked, plain);
   report.check("the dry run of that full copy previews the removal of the masked target's two masks, none for the maskless target, and writes nothing",
     preview.reply.dry_run === true && preview.reply.setting_totals?.MaskGroupBasedCorrections === 1

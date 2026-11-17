@@ -1,6 +1,6 @@
 local LrDialogs = import 'LrDialogs'
 
-local state = _G.LightroomMCP_State or {}
+local state = _G.LightroomAgent_State or {}
 
 local lines = {
     "Running: " .. tostring(state.running),
@@ -19,4 +19,4 @@ if state.log then
     end
 end
 
-LrDialogs.message("Lightroom MCP Status", table.concat(lines, "\n"), "info")
+LrDialogs.message("Lightroom Agent Status", table.concat(lines, "\n"), "info")

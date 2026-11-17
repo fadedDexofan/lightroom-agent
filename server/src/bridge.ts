@@ -24,13 +24,12 @@ export interface BridgeOptions {
 }
 
 export const NO_OWNER_MESSAGE =
-  "No Lightroom MCP bridge owns the plugin connection yet. Retry in a few seconds.";
+  "No Lightroom Agent bridge owns the plugin connection yet. Retry in a few seconds.";
 
 export function unreachableOwnerMessage(pid: number): string {
   return (
-    `Lightroom MCP bridge pid ${pid} holds the plugin connection but does not accept ` +
-    "other bridges, most likely an older lightroom-mcp version. Quit or update that " +
-    "MCP client, then retry."
+    `Lightroom Agent bridge pid ${pid} holds the plugin connection but does not accept ` +
+    "other bridges. Quit that MCP client, then retry."
   );
 }
 

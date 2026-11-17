@@ -9,7 +9,7 @@ yarn-error.log*
 .pnpm-debug.log*
 dist/
 build/
-server/LightroomMCP.lrplugin/
+server/LightroomAgent.lrplugin/
 *.tsbuildinfo
 
 # Local, untracked notes for agents

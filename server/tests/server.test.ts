@@ -143,7 +143,7 @@ describe('read-only mode', () => {
     for (const name of [...names, 'set_rating', 'set_selection', 'not_a_tool']) {
       const result = asToolResult(await pair.client.callTool({ name, arguments: {} }));
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('LIGHTROOM_MCP_READ_ONLY');
+      expect(result.content[0].text).toContain('LIGHTROOM_AGENT_READ_ONLY');
     }
     expect(call).not.toHaveBeenCalled();
   });
@@ -325,7 +325,7 @@ describe('createMcpServer', () => {
       pair = await connect({ call: async () => { called = true; return { id: '1', result: {} }; } });
       const result = asToolResult(await pair.client.callTool({ name, arguments: {} }));
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('LIGHTROOM_MCP_TOOLSETS');
+      expect(result.content[0].text).toContain('LIGHTROOM_AGENT_TOOLSETS');
       expect(result.content[0].text).toContain(group);
       expect(called).toBe(false);
     });
@@ -336,16 +336,16 @@ describe('createMcpServer', () => {
       const client = new Client({ name: 'fixed-toolsets', version: '1.0.0' });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-      const original = process.env.LIGHTROOM_MCP_TOOLSETS;
+      const original = process.env.LIGHTROOM_AGENT_TOOLSETS;
       try {
         const first = JSON.stringify(await client.listTools());
         toolsets.push('develop', 'masks');
-        process.env.LIGHTROOM_MCP_TOOLSETS = 'all';
+        process.env.LIGHTROOM_AGENT_TOOLSETS = 'all';
         expect(JSON.stringify(await client.listTools())).toBe(first);
         expect((await client.callTool({ name: 'list_masks' })).isError).toBe(true);
       } finally {
-        if (original === undefined) delete process.env.LIGHTROOM_MCP_TOOLSETS;
-        else process.env.LIGHTROOM_MCP_TOOLSETS = original;
+        if (original === undefined) delete process.env.LIGHTROOM_AGENT_TOOLSETS;
+        else process.env.LIGHTROOM_AGENT_TOOLSETS = original;
         await client.close();
         await server.close();
       }

@@ -50,7 +50,7 @@ jobs:
       - name: Generated files are up to date
         if: matrix.os == 'ubuntu-latest'
         working-directory: .
-        run: git diff --exit-code -- plugin/LightroomMCP.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts
+        run: git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts
 
       - name: Live kit scripts parse
         if: matrix.os == 'ubuntu-latest'

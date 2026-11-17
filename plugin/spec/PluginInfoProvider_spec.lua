@@ -32,10 +32,10 @@ local function installStubs(prefs, asyncTasks, opts)
                 end
             end,
             sleep = function()
-                if opts.stopLoopOnSleep and _G.LightroomMCP_State then
-                    _G.LightroomMCP_State.running = false
+                if opts.stopLoopOnSleep and _G.LightroomAgent_State then
+                    _G.LightroomAgent_State.running = false
                 end
-                if opts.onSleep then opts.onSleep(_G.LightroomMCP_State) end
+                if opts.onSleep then opts.onSleep(_G.LightroomAgent_State) end
             end,
             pcall = pcall,
         },
@@ -101,7 +101,7 @@ local function serving(opts, asyncTasks)
     package.loaded.Reply = nil
     local mod = loadInfoProvider()
     mod.startServer()
-    local state = _G.LightroomMCP_State
+    local state = _G.LightroomAgent_State
     state.sendConnected = true
     return binds, sends, state
 end
@@ -114,35 +114,35 @@ end
 
 describe("PluginInfoProvider lifecycle", function()
     before_each(function()
-        _G.LightroomMCP_State = nil
+        _G.LightroomAgent_State = nil
         installStubs()
     end)
 
     it("creates fresh state on first load", function()
         loadInfoProvider()
-        assert.is_not_nil(_G.LightroomMCP_State)
-        assert.is_false(_G.LightroomMCP_State.running)
+        assert.is_not_nil(_G.LightroomAgent_State)
+        assert.is_false(_G.LightroomAgent_State.running)
     end)
 
     it("preserves a running server across a Plug-in Manager render", function()
         loadInfoProvider()
         -- Simulate a live server, then a panel render that re-runs the body.
-        _G.LightroomMCP_State.running = true
+        _G.LightroomAgent_State.running = true
         local sock = { close = function() error("must not close on render") end }
-        _G.LightroomMCP_State.requestSocket = sock
-        local stateBefore = _G.LightroomMCP_State
+        _G.LightroomAgent_State.requestSocket = sock
+        local stateBefore = _G.LightroomAgent_State
 
         loadInfoProvider()
 
-        assert.are.equal(stateBefore, _G.LightroomMCP_State)
-        assert.is_true(_G.LightroomMCP_State.running)
-        assert.are.equal(sock, _G.LightroomMCP_State.requestSocket)
+        assert.are.equal(stateBefore, _G.LightroomAgent_State)
+        assert.is_true(_G.LightroomAgent_State.running)
+        assert.are.equal(sock, _G.LightroomAgent_State.requestSocket)
     end)
 
     it("resetForReload stops a stale running instance", function()
         local mod = loadInfoProvider()
         local closed = { request = false, response = false }
-        local s = _G.LightroomMCP_State
+        local s = _G.LightroomAgent_State
         s.running = true
         s.token = "tok"
         s.sendConnected = true
@@ -165,7 +165,7 @@ describe("PluginInfoProvider lifecycle", function()
     it("resetForReload is a no-op when nothing is running", function()
         local mod = loadInfoProvider()
         assert.has_no.errors(function() mod.resetForReload() end)
-        assert.is_false(_G.LightroomMCP_State.running)
+        assert.is_false(_G.LightroomAgent_State.running)
     end)
 end)
 
@@ -173,13 +173,13 @@ end)
 -- only assert that PluginInit wires the reload teardown into the real module.
 describe("PluginInit reload reset", function()
     before_each(function()
-        _G.LightroomMCP_State = nil
+        _G.LightroomAgent_State = nil
     end)
 
     it("resets a surviving running instance on reload", function()
         installStubs({ autoStartServer = false })
         local closed = false
-        _G.LightroomMCP_State = {
+        _G.LightroomAgent_State = {
             running = true,
             requestSocket = { close = function() closed = true end },
             responseSocket = nil,
@@ -195,14 +195,14 @@ describe("PluginInit reload reset", function()
 
         loadPluginInit()
 
-        assert.is_false(_G.LightroomMCP_State.running)
-        assert.is_nil(_G.LightroomMCP_State.requestSocket)
+        assert.is_false(_G.LightroomAgent_State.running)
+        assert.is_nil(_G.LightroomAgent_State.requestSocket)
         assert.is_true(closed)
         -- Transient state returns to fresh-state defaults (Copilot #141).
-        assert.are.equal(0, _G.LightroomMCP_State.requestsProcessed)
-        assert.is_nil(_G.LightroomMCP_State.lastEvent)
-        assert.is_nil(_G.LightroomMCP_State.requestPort)
-        assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
+        assert.are.equal(0, _G.LightroomAgent_State.requestsProcessed)
+        assert.is_nil(_G.LightroomAgent_State.lastEvent)
+        assert.is_nil(_G.LightroomAgent_State.requestPort)
+        assert.is_false(_G.LightroomAgent_State.responseNeedsRebind)
     end)
 end)
 
@@ -212,7 +212,7 @@ end)
 describe("PluginInfoProvider server task", function()
     local realOpen
     before_each(function()
-        _G.LightroomMCP_State = nil
+        _G.LightroomAgent_State = nil
         -- startServer writes a token file; stub ONLY the write so it never
         -- touches disk. Delegate every other open to the real io.open --
         -- under CI's luarocks `require` loader, manifest reads call
@@ -311,7 +311,7 @@ describe("PluginInfoProvider server task", function()
         it("removes abbreviated Lua source paths containing spaces", function()
             local compile = loadstring or load
             local handler = assert(compile('error("photo_ids is required")',
-                "@/Users/person/Documents/Lightroom Plug-ins/LightroomMCP.lrplugin/HandlerOrganization.lua"))
+                "@/Users/person/Documents/Lightroom Plug-ins/LightroomAgent.lrplugin/HandlerOrganization.lua"))
             local _, message = pcall(handler)
             assert.is_not_nil(message:match("^%.%.%."))
             assert.are.equal("photo_ids is required", dispatchError(message, 0))
@@ -527,13 +527,13 @@ describe("PluginInfoProvider server task", function()
         local mod = loadInfoProvider()
 
         mod.startServer()
-        assert.is_true(_G.LightroomMCP_State.running)
+        assert.is_true(_G.LightroomAgent_State.running)
 
         mod.stopServer()
-        assert.is_false(_G.LightroomMCP_State.running)
+        assert.is_false(_G.LightroomAgent_State.running)
 
         mod.startServerFromPanel()
-        assert.is_true(_G.LightroomMCP_State.running)
+        assert.is_true(_G.LightroomAgent_State.running)
     end)
 
     it("bumps instanceId on every start", function()
@@ -541,9 +541,9 @@ describe("PluginInfoProvider server task", function()
         local mod = loadInfoProvider()
 
         mod.startServer()
-        assert.are.equal(1, _G.LightroomMCP_State.instanceId)
+        assert.are.equal(1, _G.LightroomAgent_State.instanceId)
         mod.startServer()
-        assert.are.equal(2, _G.LightroomMCP_State.instanceId)
+        assert.are.equal(2, _G.LightroomAgent_State.instanceId)
     end)
 
     it("ignores a superseded instance's cleanup handler", function()
@@ -555,16 +555,16 @@ describe("PluginInfoProvider server task", function()
         local staleCleanup = cleanups[1]
 
         mod.startServer() -- instance 2 supersedes
-        local liveReq = _G.LightroomMCP_State.requestSocket
-        local liveResp = _G.LightroomMCP_State.responseSocket
-        local liveToken = _G.LightroomMCP_State.token
+        local liveReq = _G.LightroomAgent_State.requestSocket
+        local liveResp = _G.LightroomAgent_State.responseSocket
+        local liveToken = _G.LightroomAgent_State.token
 
         -- Old context cleanup fires late (after the new instance rebound).
         staleCleanup()
 
-        assert.are.equal(liveReq, _G.LightroomMCP_State.requestSocket)
-        assert.are.equal(liveResp, _G.LightroomMCP_State.responseSocket)
-        assert.are.equal(liveToken, _G.LightroomMCP_State.token)
+        assert.are.equal(liveReq, _G.LightroomAgent_State.requestSocket)
+        assert.are.equal(liveResp, _G.LightroomAgent_State.responseSocket)
+        assert.are.equal(liveToken, _G.LightroomAgent_State.token)
     end)
 
     it("tears down its own sockets when not superseded", function()
@@ -575,9 +575,9 @@ describe("PluginInfoProvider server task", function()
         mod.startServer()
         cleanups[1]()
 
-        assert.is_nil(_G.LightroomMCP_State.requestSocket)
-        assert.is_nil(_G.LightroomMCP_State.responseSocket)
-        assert.is_nil(_G.LightroomMCP_State.token)
+        assert.is_nil(_G.LightroomAgent_State.requestSocket)
+        assert.is_nil(_G.LightroomAgent_State.responseSocket)
+        assert.is_nil(_G.LightroomAgent_State.token)
     end)
 
     it("does not churn freshly bound sockets when recovery flags are stale", function()
@@ -586,16 +586,16 @@ describe("PluginInfoProvider server task", function()
         local mod = loadInfoProvider()
 
         -- Simulate flags left true by a client disconnect just before reload.
-        _G.LightroomMCP_State.requestNeedsReconnect = true
-        _G.LightroomMCP_State.responseNeedsRebind = true
-        _G.LightroomMCP_State.responseNeedsReconnect = true
+        _G.LightroomAgent_State.requestNeedsReconnect = true
+        _G.LightroomAgent_State.responseNeedsRebind = true
+        _G.LightroomAgent_State.responseNeedsReconnect = true
 
         mod.startServer()
 
         assert.are.equal(0, #ops)
-        assert.is_false(_G.LightroomMCP_State.requestNeedsReconnect)
-        assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
-        assert.is_false(_G.LightroomMCP_State.responseNeedsReconnect)
+        assert.is_false(_G.LightroomAgent_State.requestNeedsReconnect)
+        assert.is_false(_G.LightroomAgent_State.responseNeedsRebind)
+        assert.is_false(_G.LightroomAgent_State.responseNeedsReconnect)
     end)
 
     local function bindsInMode(binds, mode)
@@ -642,11 +642,11 @@ describe("PluginInfoProvider server task", function()
         assert.is_true(#bindsInMode(binds, "send") >= 2)
         assert.is_true(contains(ops, "close"))
         assert.is_false(contains(ops, "reconnect"))
-        assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
-        assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
+        assert.is_false(_G.LightroomAgent_State.requestNeedsRebind)
+        assert.is_false(_G.LightroomAgent_State.responseNeedsRebind)
 
         requests[1].onClosed()
-        assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
+        assert.is_false(_G.LightroomAgent_State.requestNeedsRebind)
     end)
 
     it("rebinds the request listener when reconnecting it fails", function()
@@ -656,12 +656,12 @@ describe("PluginInfoProvider server task", function()
 
         assert.are.equal(2, #bindsInMode(binds, "receive"))
         assert.is_true(contains(ops, "reconnect"))
-        assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
+        assert.is_false(_G.LightroomAgent_State.requestNeedsRebind)
     end)
 
     it("rebinds the response listener when reconnecting it fails", function()
         local binds, ops = runTicks({ reconnectError = "socket closed" }, function(tick)
-            if tick == 1 then _G.LightroomMCP_State.responseNeedsReconnect = true end
+            if tick == 1 then _G.LightroomAgent_State.responseNeedsReconnect = true end
         end, 6)
 
         assert.are.equal(2, #bindsInMode(binds, "send"))
@@ -670,10 +670,10 @@ describe("PluginInfoProvider server task", function()
 
     it("leaves the running flag alone when a newer instance replaced this loop", function()
         runTicks({}, function(tick)
-            if tick == 1 then _G.LightroomMCP_State.instanceId = _G.LightroomMCP_State.instanceId + 1 end
+            if tick == 1 then _G.LightroomAgent_State.instanceId = _G.LightroomAgent_State.instanceId + 1 end
         end, 50)
 
-        assert.is_true(_G.LightroomMCP_State.running)
+        assert.is_true(_G.LightroomAgent_State.running)
     end)
 
     it("clears running when the live server task's context is cleaned up", function()
@@ -693,7 +693,7 @@ end)
 describe("stale-connection follow-up fixes (PR #151 re-review)", function()
     local realOpen
     before_each(function()
-        _G.LightroomMCP_State = nil
+        _G.LightroomAgent_State = nil
         realOpen = io.open
         io.open = function(path, mode, ...)
             if mode and mode:find("w", 1, true) then
@@ -716,11 +716,11 @@ describe("stale-connection follow-up fixes (PR #151 re-review)", function()
         -- manual Stop/Start (or any reconnect) that happens long after it
         -- sat idle. Without clearing it here, the monitor loop's very next
         -- tick would see a huge idle value and restart immediately.
-        _G.LightroomMCP_State.lastRequestTime = os.time() - 999
+        _G.LightroomAgent_State.lastRequestTime = os.time() - 999
         binds[1].onConnected()
 
-        assert.is_nil(_G.LightroomMCP_State.lastRequestTime)
-        assert.is_not_nil(_G.LightroomMCP_State.lastConnectedTime)
+        assert.is_nil(_G.LightroomAgent_State.lastRequestTime)
+        assert.is_not_nil(_G.LightroomAgent_State.lastConnectedTime)
     end)
 
     it("keeps a request counted in-flight until sendResponse actually completes, not just until the handler returns", function()
@@ -747,7 +747,7 @@ describe("superseded instance after Reload Plug-in (issue #225)", function()
     local writeFails
 
     before_each(function()
-        _G.LightroomMCP_State = nil
+        _G.LightroomAgent_State = nil
         fileToken = nil
         writeFails = false
         realOpen = io.open
@@ -756,7 +756,7 @@ describe("superseded instance after Reload Plug-in (issue #225)", function()
                 if writeFails then return nil, "permission denied" end
                 return { write = function(_, data) fileToken = data end, close = function() end }
             end
-            if path:find("lightroom-mcp/token", 1, true) then
+            if path:find("lightroom-agent/token", 1, true) then
                 if fileToken == nil then return nil end
                 return { read = function() return fileToken end, close = function() end }
             end
@@ -798,8 +798,8 @@ describe("superseded instance after Reload Plug-in (issue #225)", function()
     it("stops the loop once a newer instance rewrites the token file", function()
         local ticks = runLoop(50, 2)
         assert.is_true(ticks < 50)
-        assert.is_false(_G.LightroomMCP_State.running)
-        local log = _G.LightroomMCP_State.log
+        assert.is_false(_G.LightroomAgent_State.running)
+        local log = _G.LightroomAgent_State.log
         local found = false
         for _, line in ipairs(log) do
             if line:find("Superseded by a newer plugin instance", 1, true) then found = true end
@@ -810,7 +810,7 @@ describe("superseded instance after Reload Plug-in (issue #225)", function()
     it("keeps serving while the token file still holds its own token", function()
         local ticks = runLoop(50, nil)
         assert.are.equal(50, ticks)
-        assert.are.equal(_G.LightroomMCP_State.token, fileToken)
+        assert.are.equal(_G.LightroomAgent_State.token, fileToken)
     end)
 
     it("never stops itself when its own token write failed", function()
@@ -823,7 +823,7 @@ end)
 
 describe("heartbeat / stale-connection blast radius (PR #151 review)", function()
     before_each(function()
-        _G.LightroomMCP_State = nil
+        _G.LightroomAgent_State = nil
         installStubs()
     end)
 
@@ -834,7 +834,7 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
 
     describe("logBindFailure", function()
         local function lastLog()
-            local log = _G.LightroomMCP_State.log
+            local log = _G.LightroomAgent_State.log
             return log[#log]
         end
 
@@ -900,11 +900,11 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     local realOpen
     local logOpens
     before_each(function()
-        _G.LightroomMCP_State = nil
+        _G.LightroomAgent_State = nil
         logOpens = 0
         realOpen = io.open
         io.open = function(path, mode, ...)
-            if path and path:find("LightroomMCP.log", 1, true) then
+            if path and path:find("LightroomAgent.log", 1, true) then
                 logOpens = logOpens + 1
             end
             if mode and mode:find("w", 1, true) then
@@ -931,7 +931,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         logOpens = 0
         mod.shutdown()
 
-        local state = _G.LightroomMCP_State
+        local state = _G.LightroomAgent_State
         assert.is_true(state.shuttingDown)
         assert.is_false(state.running)
         assert.is_false(state.sendConnected)
@@ -949,14 +949,14 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         mod.startServer()
         mod.shutdown()
 
-        assert.is_not_nil(_G.LightroomMCP_State.requestSocket)
-        assert.is_not_nil(_G.LightroomMCP_State.responseSocket)
+        assert.is_not_nil(_G.LightroomAgent_State.requestSocket)
+        assert.is_not_nil(_G.LightroomAgent_State.responseSocket)
 
         cleanups[1]()
 
         assert.are.same({ "close", "close" }, ops)
-        assert.is_nil(_G.LightroomMCP_State.requestSocket)
-        assert.is_nil(_G.LightroomMCP_State.responseSocket)
+        assert.is_nil(_G.LightroomAgent_State.requestSocket)
+        assert.is_nil(_G.LightroomAgent_State.responseSocket)
     end)
 
     it("is a cheap no-op when the server never started", function()
@@ -966,14 +966,14 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
 
         assert.has_no.errors(function() mod.shutdown() end)
         assert.are.same({}, ops)
-        assert.is_true(_G.LightroomMCP_State.shuttingDown)
+        assert.is_true(_G.LightroomAgent_State.shuttingDown)
     end)
 
     it("PluginShutdown.lua stops the server and reports done at once", function()
         installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
         local mod = loadInfoProvider()
         mod.startServer()
-        local state = _G.LightroomMCP_State
+        local state = _G.LightroomAgent_State
         state.running = true
         state.requestNeedsRebind = true
 
@@ -999,7 +999,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     end)
 
     it("PluginShutdown.lua leaves a plugin that never built its state alone", function()
-        _G.LightroomMCP_State = nil
+        _G.LightroomAgent_State = nil
         package.loaded.PluginShutdown = nil
         package.loaded.PluginInfoProvider = nil
 
@@ -1008,12 +1008,12 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         shutdownModule.LrShutdownFunction(function() done = true end)
 
         assert.is_true(done)
-        assert.is_nil(_G.LightroomMCP_State)
+        assert.is_nil(_G.LightroomAgent_State)
         assert.is_nil(package.loaded.PluginInfoProvider)
     end)
 
     it("Info.lua runs PluginShutdown.lua at quit and when Lightroom unloads the plug-in for a reload", function()
-        local info = dofile("plugin/LightroomMCP.lrplugin/Info.lua")
+        local info = dofile("plugin/LightroomAgent.lrplugin/Info.lua")
 
         assert.are.equal("PluginShutdown.lua", info.LrShutdownApp)
         assert.are.equal("PluginShutdown.lua", info.LrShutdownPlugin)
@@ -1144,13 +1144,13 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         local mod = loadInfoProvider()
 
         mod.startServer()
-        local instanceBefore = _G.LightroomMCP_State.instanceId
-        _G.LightroomMCP_State.shuttingDown = true
+        local instanceBefore = _G.LightroomAgent_State.instanceId
+        _G.LightroomAgent_State.shuttingDown = true
         local pendingRestart = asyncTasks[1]
         assert.is_function(pendingRestart)
         pendingRestart()
 
-        assert.are.equal(instanceBefore, _G.LightroomMCP_State.instanceId)
+        assert.are.equal(instanceBefore, _G.LightroomAgent_State.instanceId)
     end)
 
     it("refuses an auto-start that wakes after quit began", function()
@@ -1160,8 +1160,8 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         mod.shutdown()
         mod.startServer()
 
-        assert.is_false(_G.LightroomMCP_State.running)
-        assert.is_nil(_G.LightroomMCP_State.token)
+        assert.is_false(_G.LightroomAgent_State.running)
+        assert.is_nil(_G.LightroomAgent_State.token)
     end)
 
     it("lets the Plug-in Manager Start button supersede an earlier shutdown", function()
@@ -1172,8 +1172,8 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         mod.shutdown()
         mod.startServerFromPanel()
 
-        assert.is_false(_G.LightroomMCP_State.shuttingDown)
-        assert.is_not_nil(_G.LightroomMCP_State.token)
+        assert.is_false(_G.LightroomAgent_State.shuttingDown)
+        assert.is_not_nil(_G.LightroomAgent_State.token)
     end)
 
     it("clears the shutdown flag on reload so the fresh instance can bind", function()
@@ -1185,8 +1185,8 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         mod.resetForReload()
         mod.startServer()
 
-        assert.is_false(_G.LightroomMCP_State.shuttingDown)
-        assert.is_not_nil(_G.LightroomMCP_State.token)
+        assert.is_false(_G.LightroomAgent_State.shuttingDown)
+        assert.is_not_nil(_G.LightroomAgent_State.token)
     end)
 
 end)

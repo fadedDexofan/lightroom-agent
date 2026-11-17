@@ -27,7 +27,7 @@ describe('version sources', () => {
 
   it('plugin Info.lua matches package.json', () => {
     const lua = fs.readFileSync(
-      path.join(repoRoot, 'plugin', 'LightroomMCP.lrplugin', 'Info.lua'),
+      path.join(repoRoot, 'plugin', 'LightroomAgent.lrplugin', 'Info.lua'),
       'utf8',
     );
     const m = lua.match(/VERSION = \{ major=(\d+), minor=(\d+), revision=(\d+), build=\d+ \}/);

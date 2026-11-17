@@ -96,8 +96,8 @@ describe('CLI process', () => {
     ], { cwd: process.cwd() });
     fs.writeFileSync(path.join(build, 'package.json'), '{"type":"module"}');
     fs.symlinkSync(path.resolve('node_modules'), path.join(build, 'node_modules'), 'junction');
-    fs.mkdirSync(path.join(build, 'LightroomMCP.lrplugin'));
-    fs.writeFileSync(path.join(build, 'LightroomMCP.lrplugin', 'Info.lua'), 'return {}');
+    fs.mkdirSync(path.join(build, 'LightroomAgent.lrplugin'));
+    fs.writeFileSync(path.join(build, 'LightroomAgent.lrplugin', 'Info.lua'), 'return {}');
   }, 30_000);
 
   afterEach(async () => {
@@ -124,11 +124,11 @@ describe('CLI process', () => {
         env: {
           ...process.env,
           APPDATA: path.join(state, 'appdata'),
-          LIGHTROOM_MCP_TOKEN_PATH: path.join(state, 'missing-token'),
-          LIGHTROOM_MCP_REQUEST_PORT: 'invalid',
-          LIGHTROOM_MCP_RESPONSE_PORT: 'invalid',
-          LIGHTROOM_MCP_TOOLSETS: 'core',
-          LIGHTROOM_MCP_READ_ONLY: 'false',
+          LIGHTROOM_AGENT_TOKEN_PATH: path.join(state, 'missing-token'),
+          LIGHTROOM_AGENT_REQUEST_PORT: 'invalid',
+          LIGHTROOM_AGENT_RESPONSE_PORT: 'invalid',
+          LIGHTROOM_AGENT_TOOLSETS: 'core',
+          LIGHTROOM_AGENT_READ_ONLY: 'false',
           ...env,
         },
         timeout: CLI_SPAWN_MS,
@@ -142,8 +142,8 @@ describe('CLI process', () => {
       });
       if (interruption) void interruption.ready.then(() => child.kill(interruption.signal));
     });
-    const ports = [env.LIGHTROOM_MCP_REQUEST_PORT, env.LIGHTROOM_MCP_RESPONSE_PORT].map(Number);
-    if (interruption && ports.every(Number.isInteger)) fs.rmSync(brokerPath(ports[0], ports[1], path.join(testHome, '.config', 'lightroom-mcp')), { force: true });
+    const ports = [env.LIGHTROOM_AGENT_REQUEST_PORT, env.LIGHTROOM_AGENT_RESPONSE_PORT].map(Number);
+    if (interruption && ports.every(Number.isInteger)) fs.rmSync(brokerPath(ports[0], ports[1], path.join(testHome, '.config', 'lightroom-agent')), { force: true });
     expect(fs.existsSync(path.join(testHome, 'Library'))).toBe(false);
     expect(fs.existsSync(path.join(state, 'appdata'))).toBe(false);
     return { ...result, testHome };
@@ -156,9 +156,9 @@ describe('CLI process', () => {
     plugin = new FakePlugin({ token, handler, sendWaitMs: 100 });
     await plugin.start();
     return {
-      LIGHTROOM_MCP_REQUEST_PORT: String(plugin.requestPort),
-      LIGHTROOM_MCP_RESPONSE_PORT: String(plugin.responsePort),
-      LIGHTROOM_MCP_TOKEN_PATH: tokenPath,
+      LIGHTROOM_AGENT_REQUEST_PORT: String(plugin.requestPort),
+      LIGHTROOM_AGENT_RESPONSE_PORT: String(plugin.responsePort),
+      LIGHTROOM_AGENT_TOKEN_PATH: tokenPath,
     };
   }
 
@@ -171,7 +171,7 @@ describe('CLI process', () => {
   }, CLI_TEST_MS);
 
   it('discovers one enabled tool', async () => {
-    const result = await run(['tools', 'set_develop_settings'], { LIGHTROOM_MCP_TOOLSETS: 'all' });
+    const result = await run(['tools', 'set_develop_settings'], { LIGHTROOM_AGENT_TOOLSETS: 'all' });
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(
       listToolsHandler(new Set(['core', 'develop', 'masks']), false).tools.find((tool) => tool.name === 'set_develop_settings'),
@@ -186,7 +186,7 @@ describe('CLI process', () => {
   }, CLI_TEST_MS);
 
   it('uses the same read-only discovery policy as MCP', async () => {
-    const result = await run(['tools'], { LIGHTROOM_MCP_TOOLSETS: 'all', LIGHTROOM_MCP_READ_ONLY: 'true' });
+    const result = await run(['tools'], { LIGHTROOM_AGENT_TOOLSETS: 'all', LIGHTROOM_AGENT_READ_ONLY: 'true' });
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(listToolsHandler(new Set(['core', 'develop', 'masks']), true));
   }, CLI_TEST_MS);
@@ -218,9 +218,9 @@ describe('CLI process', () => {
       { type: 'image', data: image, mimeType: 'image/jpeg' },
     ] });
     expect(called).toContain('render_preview');
-    const configDir = path.join(result.testHome, '.config', 'lightroom-mcp');
+    const configDir = path.join(result.testHome, '.config', 'lightroom-agent');
     expect(fs.readdirSync(configDir)).toEqual([]);
-    expect(fs.existsSync(brokerPath(Number(env.LIGHTROOM_MCP_REQUEST_PORT), Number(env.LIGHTROOM_MCP_RESPONSE_PORT), configDir))).toBe(false);
+    expect(fs.existsSync(brokerPath(Number(env.LIGHTROOM_AGENT_REQUEST_PORT), Number(env.LIGHTROOM_AGENT_RESPONSE_PORT), configDir))).toBe(false);
   }, CLI_TEST_MS);
 
   it('returns the backend error as JSON with a failing exit status', async () => {
@@ -236,7 +236,7 @@ describe('CLI process', () => {
   }, CLI_TEST_MS);
 
   it.each([
-    ['read-only', 'set_rating_and_flag', '{"photo_ids":["914"],"rating":5}', { LIGHTROOM_MCP_READ_ONLY: 'true' }],
+    ['read-only', 'set_rating_and_flag', '{"photo_ids":["914"],"rating":5}', { LIGHTROOM_AGENT_READ_ONLY: 'true' }],
     ['toolset', 'set_develop_settings', '{"photo_id":"914","settings":{"Exposure2012":1}}', {}],
   ])('refuses %s writes before starting the bridge', async (_label, name, args, settings) => {
     const env = await startPlugin(() => { throw new Error('Must not reach plugin'); });
@@ -250,7 +250,7 @@ describe('CLI process', () => {
 
   it('refuses an unpublished tool before starting the bridge', async () => {
     const env = await startPlugin(() => ({ success: true }));
-    const result = await run(['call', 'not_a_tool', '{}'], { ...env, LIGHTROOM_MCP_TOOLSETS: 'all' });
+    const result = await run(['call', 'not_a_tool', '{}'], { ...env, LIGHTROOM_AGENT_TOOLSETS: 'all' });
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stdout)).toEqual({
       isError: true, content: [{ type: 'text', text: JSON.stringify({

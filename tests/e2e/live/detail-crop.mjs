@@ -24,8 +24,8 @@ const ANGLE = 8;
 const UPRIGHT = { PerspectiveUpright: 4, PerspectiveVertical: -20 };
 const EXPORT_LEAVES = ["one Export history step", "the exported mark"];
 
-const detailDirectory = path.join(execFileSync("getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf8" }).trim(), "lightroom-mcp-detail");
-const captureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-detail-capture-"));
+const detailDirectory = path.join(execFileSync("getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf8" }).trim(), "lightroom-agent-detail");
+const captureDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-detail-capture-"));
 const renderFolders = new Set();
 const planted = [];
 
@@ -72,7 +72,7 @@ async function detail(photoId, regions, maxEdge) {
 
 function plantDetailEntries() {
   const now = Date.now() - COCOA_EPOCH_MS;
-  const entries = { abandoned: `${now - 2 * STALE_RENDER_MS}-0`, fresh: `${now}-0`, unrelated: "lrmcp-live-unrelated" };
+  const entries = { abandoned: `${now - 2 * STALE_RENDER_MS}-0`, fresh: `${now}-0`, unrelated: "lragent-live-unrelated" };
   for (const name of Object.values(entries)) {
     fs.mkdirSync(path.join(detailDirectory, name), { recursive: true });
     fs.writeFileSync(path.join(detailDirectory, name, "planted.txt"), "planted");
@@ -152,7 +152,7 @@ try {
   const angledSizes = sizes(angled.render, await planned(ids.wide));
   report.check(`render against get_crop with a crop at ${ANGLE} degrees is recorded`, true, angledSizes);
   await data("set_crop", { photo_id: ids.wide, rectangle: { left: 0, top: 0, right: 1, bottom: 1 } });
-  const upright = String((await data("create_virtual_copies", { photo_ids: [ids.raw], copy_name: "LRMCP live detail upright" })).copies[0].copy_photo_id);
+  const upright = String((await data("create_virtual_copies", { photo_ids: [ids.raw], copy_name: "LRAGENT live detail upright" })).copies[0].copy_photo_id);
   copies.push(upright);
   await data("set_develop_settings", { photo_id: upright, settings: UPRIGHT });
   const transformed = await detail(upright, [CENTRE]);

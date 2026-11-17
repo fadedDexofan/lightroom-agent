@@ -37,7 +37,7 @@ function waitFor(check: () => boolean, timeoutMs = 3000): Promise<void> {
 
 const tmpDirs: string[] = [];
 function tmpDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-'));
   tmpDirs.push(dir);
   return dir;
 }
@@ -58,7 +58,7 @@ afterEach(() => {
 
 describe('brokerPath', () => {
   it('uses a named pipe on Windows', () => {
-    expect(brokerPath(1, 2, '/x', 'win32')).toMatch(/^\\\\\.\\pipe\\lightroom-mcp-.+-bridge-1-2$/);
+    expect(brokerPath(1, 2, '/x', 'win32')).toMatch(/^\\\\\.\\pipe\\lightroom-agent-.+-bridge-1-2$/);
   });
 
   it('uses a socket in the config dir when the path fits', () => {

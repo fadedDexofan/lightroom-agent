@@ -54,7 +54,7 @@ local function setup(opts)
     local function extension(path)
         return leafName(path):match("%.([^%.]+)$") or ""
     end
-    _G._PLUGIN = { id = "com.lightroom.mcp" }
+    _G._PLUGIN = { id = "io.github.fadeddexofan.lightroomagent" }
     helper.installImport({
         LrApplication = {
             activeCatalog = function() return catalog end,

@@ -16,16 +16,16 @@ function parsePort(raw: string | undefined, fallback: number, name: string): num
 
 export function requestPort(): number {
   return parsePort(
-    process.env.LIGHTROOM_MCP_REQUEST_PORT,
+    process.env.LIGHTROOM_AGENT_REQUEST_PORT,
     DEFAULT_REQUEST_PORT,
-    "LIGHTROOM_MCP_REQUEST_PORT",
+    "LIGHTROOM_AGENT_REQUEST_PORT",
   );
 }
 
 export function responsePort(): number {
   return parsePort(
-    process.env.LIGHTROOM_MCP_RESPONSE_PORT,
+    process.env.LIGHTROOM_AGENT_RESPONSE_PORT,
     DEFAULT_RESPONSE_PORT,
-    "LIGHTROOM_MCP_RESPONSE_PORT",
+    "LIGHTROOM_AGENT_RESPONSE_PORT",
   );
 }

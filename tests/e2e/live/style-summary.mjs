@@ -38,7 +38,7 @@ try {
   assert.equal(summary.groups[0].settings.Exposure2012.median, 0.5);
   assert.equal(summary.groups[0].count, 1);
   console.log(JSON.stringify({ check: "single-photo", summary }));
-  exportDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lightroom-mcp-style-export-"));
+  exportDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lightroom-agent-style-export-"));
   const exported = await tool("export_photos", { photo_ids: [photoId], destination: exportDirectory,
     format: "jpeg", quality: 80, width: 1200, on_existing: "rename" });
   assert.equal(exported.files.length, 1);

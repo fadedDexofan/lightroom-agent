@@ -2,10 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export interface InstallResult {
-  status: "installed" | "already-present";
-  destination: string;
-}
+const PLUGIN_FOLDER = "LightroomAgent.lrplugin";
+const UPSTREAM_PLUGIN_FOLDER = "LightroomMCP.lrplugin";
+
+export type InstallResult =
+  | { status: "installed" | "already-present"; destination: string }
+  | { status: "conflict"; conflicting: string };
 
 export function lightroomModulesDir(): string {
   if (process.platform === "darwin") {
@@ -43,29 +45,35 @@ export function lightroomPluginsDir(): string {
   return path.join(os.homedir(), ".local", "share", "Adobe", "Lightroom", "Plugins");
 }
 
-export function isPluginInstalledAnywhere(): boolean {
-  const targets = [
-    path.join(lightroomModulesDir(), "LightroomMCP.lrplugin", "Info.lua"),
-    path.join(lightroomPluginsDir(), "LightroomMCP.lrplugin", "Info.lua"),
-  ];
-  return targets.some((p) => {
+function installedBundle(folder: string): string | null {
+  const targets = [path.join(lightroomModulesDir(), folder), path.join(lightroomPluginsDir(), folder)];
+  return targets.find((p) => {
     try {
-      return fs.statSync(p).isFile();
+      return fs.statSync(path.join(p, "Info.lua")).isFile();
     } catch {
       return false;
     }
-  });
+  }) ?? null;
+}
+
+export function isPluginInstalledAnywhere(): boolean {
+  return installedBundle(PLUGIN_FOLDER) !== null;
+}
+
+export function conflictMessage(conflicting: string): string {
+  return `${conflicting} is installed: upstream's lightroom-mcp plug-in, or this one before its rename, `
+    + "binds the same ports. Quit Lightroom, remove that folder, then install again.";
 }
 
 export function findBundledPlugin(startDir: string): string | null {
   const candidates = [
-    path.join(startDir, "LightroomMCP.lrplugin"),
-    path.join(startDir, "..", "LightroomMCP.lrplugin"),
-    path.join(startDir, "..", "..", "LightroomMCP.lrplugin"),
-    path.join(startDir, "..", "..", "..", "LightroomMCP.lrplugin"),
-    path.join(startDir, "..", "plugin", "LightroomMCP.lrplugin"),
-    path.join(startDir, "..", "..", "plugin", "LightroomMCP.lrplugin"),
-    path.join(startDir, "..", "..", "..", "plugin", "LightroomMCP.lrplugin"),
+    path.join(startDir, PLUGIN_FOLDER),
+    path.join(startDir, "..", PLUGIN_FOLDER),
+    path.join(startDir, "..", "..", PLUGIN_FOLDER),
+    path.join(startDir, "..", "..", "..", PLUGIN_FOLDER),
+    path.join(startDir, "..", "plugin", PLUGIN_FOLDER),
+    path.join(startDir, "..", "..", "plugin", PLUGIN_FOLDER),
+    path.join(startDir, "..", "..", "..", "plugin", PLUGIN_FOLDER),
   ];
   return firstValidPlugin(candidates);
 }
@@ -73,13 +81,13 @@ export function findBundledPlugin(startDir: string): string | null {
 // A compiled single-file binary resolves `here` inside its bundle, so also
 // look right beside the executable. Only direct children: no parent walk.
 export function findPluginBesideBinary(): string | null {
-  return firstValidPlugin([path.join(path.dirname(process.execPath), "LightroomMCP.lrplugin")]);
+  return firstValidPlugin([path.join(path.dirname(process.execPath), PLUGIN_FOLDER)]);
 }
 
 // Explicit `install-plugin` only: the cwd is attacker-influenced when an MCP
 // host starts the server inside an arbitrary project, so never auto-install it.
 export function findPluginInCwd(): string | null {
-  return firstValidPlugin([path.join(process.cwd(), "LightroomMCP.lrplugin")]);
+  return firstValidPlugin([path.join(process.cwd(), PLUGIN_FOLDER)]);
 }
 
 function firstValidPlugin(candidates: string[]): string | null {
@@ -98,7 +106,9 @@ function firstValidPlugin(candidates: string[]): string | null {
 
 export function installPlugin(opts: { source: string; destDir?: string }): InstallResult {
   const destDir = opts.destDir ?? lightroomModulesDir();
-  const destination = path.join(destDir, "LightroomMCP.lrplugin");
+  const conflicting = installedBundle(UPSTREAM_PLUGIN_FOLDER);
+  if (conflicting) return { status: "conflict", conflicting };
+  const destination = path.join(destDir, PLUGIN_FOLDER);
   if (fs.existsSync(destination)) return { status: "already-present", destination };
   fs.mkdirSync(destDir, { recursive: true });
   copyDirRecursive(opts.source, destination);
@@ -111,6 +121,7 @@ export function ensurePluginInstalled(startDir: string, log: (msg: string) => vo
   if (!source) return;
   try {
     const result = installPlugin({ source });
+    if (result.status === "conflict") log(`[install-plugin] ${conflictMessage(result.conflicting)}`);
     if (result.status === "installed") {
       log(`[install-plugin] copied ${source} → ${result.destination}`);
       log(`[install-plugin] restart Lightroom to load the plugin`);

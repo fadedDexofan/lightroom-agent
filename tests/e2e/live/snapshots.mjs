@@ -5,7 +5,7 @@ import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 const { session, marker } = await openLiveSession();
 const photo_id = requireFixtureId(marker, "wide_plain");
 const otherId = requireFixtureId(marker, "orient_6");
-const prefix = `lrmcp-snapshots-${Date.now()}`;
+const prefix = `lragent-snapshots-${Date.now()}`;
 const created = new Set();
 const tool = async (name, args) => (await session.toolOrThrow(name, args)).data;
 const exposureOf = async () => (await session.developSettings(photo_id, ["Exposure2012"])).settings.Exposure2012;

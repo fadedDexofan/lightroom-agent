@@ -30,7 +30,7 @@ const adoptOpenCatalog = args.includes("--adopt-open-catalog");
 const addMissing = args.includes("--add-missing");
 const parentDirectory = path.resolve(option("--parent-dir", path.join(os.homedir(), "Documents")));
 const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-const catalogName = option("--name", `lrmcp-live-${stamp}`);
+const catalogName = option("--name", `lragent-live-${stamp}`);
 
 const NEW_CATALOG_RELAUNCH_TIMEOUT_MS = 240_000;
 const PLUGIN_READY_TIMEOUT_MS = 180_000;

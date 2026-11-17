@@ -33,7 +33,7 @@ This codebase is yours: what it's for and how it's built are your call, and you'
 
 Run from the repository root; `.mise.toml` and `server/package.json` define the tasks.
 
-- `mise run build` (`npm run build` in `server/`): regenerates `server/src/skill-content.ts` and the prompt in `mcpb/manifest.json` from the bundled skill, runs `tsc` into `server/dist/`, then regenerates `plugin/LightroomMCP.lrplugin/Contract.lua` from the TypeScript contract. Never edit these three files by hand.
+- `mise run build` (`npm run build` in `server/`): regenerates `server/src/skill-content.ts` and the prompt in `mcpb/manifest.json` from the bundled skill, runs `tsc` into `server/dist/`, then regenerates `plugin/LightroomAgent.lrplugin/Contract.lua` from the TypeScript contract. Never edit these three files by hand.
 - `mise run test` (Jest), `mise run dev` (`tsc --watch`), `mise run lua:lint` (selene), `mise run lua:test` (busted), `mise run live:test` (live-kit unit tests, no Lightroom).
 - `mise install` provisions Node, Lua and selene; `lua:test` installs busted into the ignored `lua_modules/`. `selene.toml` and `lightroom.yml` (the SDK globals) configure the linter.
 
@@ -48,7 +48,7 @@ CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` r
 ## Layout
 
 - `server/`: TypeScript MCP server and CLI (strict, ESM with NodeNext: imports carry the `.js` extension).
-- `plugin/LightroomMCP.lrplugin/`: the Lua plug-in, pure Lua and the same on macOS and Windows. Specs are in `plugin/spec/`.
+- `plugin/LightroomAgent.lrplugin/`: the Lua plug-in, pure Lua and the same on macOS and Windows. Specs are in `plugin/spec/`.
 - `tests/e2e/live/`: the live kit. `tests/e2e/mcp-runner.mjs` drives the built server; `manual-test.mjs` probes the plug-in over raw TCP.
 - `docs/adr/`: accepted decisions. `GLOSSARY.md`: the terms these documents use.
 
@@ -57,8 +57,8 @@ CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` r
 Read before changing it.
 
 - The plug-in opens two `LrSocket.bind` servers (`PluginInfoProvider.lua`): request port 58763 in `mode = "receive"`, response port 58764 in `mode = "send"`. Every message is line-delimited JSON ending in `\n`. Each port takes one client at a time.
-- Ports: the server reads `LIGHTROOM_MCP_REQUEST_PORT` and `LIGHTROOM_MCP_RESPONSE_PORT` (`server/src/ports.ts`); the plug-in reads `requestPort` and `responsePort` from its Plug-in Manager prefs. Change both sides together.
-- Hosts start several servers at once. `Bridge` (`bridge.ts`) elects one leader per port pair through the instance lock; it owns the plug-in sockets and serves the others over local IPC (`broker.ts`: a Unix socket under `~/.config/lightroom-mcp/`, a named pipe on Windows, token checked). Followers forward and re-elect when the leader exits. Never `process.exit` on lock contention.
+- Ports: the server reads `LIGHTROOM_AGENT_REQUEST_PORT` and `LIGHTROOM_AGENT_RESPONSE_PORT` (`server/src/ports.ts`); the plug-in reads `requestPort` and `responsePort` from its Plug-in Manager prefs. Change both sides together.
+- Hosts start several servers at once. `Bridge` (`bridge.ts`) elects one leader per port pair through the instance lock; it owns the plug-in sockets and serves the others over local IPC (`broker.ts`: a Unix socket under `~/.config/lightroom-agent/`, a named pipe on Windows, token checked). Followers forward and re-elect when the leader exits. Never `process.exit` on lock contention.
 - A receive bind fires `onError` after 10 s without a client. Set a flag in the callback and call `:reconnect()` from the monitor loop; never reconnect synchronously from `onError`, or reconnects storm.
 - `onMessage` runs in a non-yielding context, so dispatch runs inside `LrTasks.startAsyncTask`; otherwise catalog gates cannot yield.
 
@@ -110,7 +110,7 @@ Decisions: [ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md) (a
 - `GuardedMaskWrite.submit` is the one whole-array write: commit pending Develop edits, build on a read taken inside the gate, write, read back with the caller's comparison, and restore on a mismatch through `GuardedMaskWrite.restore`. The restore writes the previous array back unvalidated and confirms it with an exact read.
 - `GuardedMaskWrite.apply` is `submit` behind admission, for writes that construct or change entries. It checks the pinned format only on what the call constructs or changes (`plannedEntries`), compares constructed numbers within 1e-5, and requires every untouched entry back exactly: those are Lightroom's own data.
 - Value edits and deletions construct nothing and need no admission. `MaskValues.lua` owns sliders, local curves and Point Color by id, with no Develop session. It skips an unchanged request, sets `CorrectionActive` (warning when a hidden mask is shown) and demands an exact read-back of the whole array (`JsonValue.differences`).
-- Admission (`MaskWriteAdmission.lua`): always on a catalog whose folder holds `lrmcp-live-catalog.json`; elsewhere only when `~/.config/lightroom-mcp/mask-certification.json` names the running build from `LrApplication.versionTable()` and the photo's process version. No build, no admission. The record does not bind the plug-in revision: rerun certification after changing the plug-in.
+- Admission (`MaskWriteAdmission.lua`): always on a catalog whose folder holds `lragent-live-catalog.json`; elsewhere only when `~/.config/lightroom-agent/mask-certification.json` names the running build from `LrApplication.versionTable()` and the photo's process version. No build, no admission. The record does not bind the plug-in revision: rerun certification after changing the plug-in.
 - Only `tests/e2e/live/certify-mask-writes.mjs` writes the record, after its suite passes on the throwaway catalog. After a Lightroom update, constructing writes stay refused until it reruns. Widening the pinned format needs a live check. `GuardedMaskWrite.formatProblems` feeds `schema_problems`; certification reads it, admission does not.
 - Lightroom stores slider values to six decimals (`STORED_MASK_DECIMAL_PLACES`) and colour-grade keys as whole numbers. `LocalSliders.storedOf` rounds before the write; replies report stored values. A new local slider is one `LOCAL_KEYS` entry. The schema is the only range check on a local slider write.
 - Point Color: the four edges of every range must be ordered or Lightroom drops the whole list (`MaskPointColors.requireOrderedRanges`). Deleting the last swatch or clearing removes both `LocalPointColors` and `LocalColorVariance`, since Lightroom drops empty arrays.
@@ -143,11 +143,11 @@ Decisions: [ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md) (a
 - Lightroom runs `LrInitPlugin` only when its window is first activated: a background launch starts no server until Lightroom comes to the front.
 - Reload Plug-in does not reliably stop the old task. `PluginShutdown.lua` stops the old loop; when Lightroom skips it, the old loop exits on a foreign token (`isSuperseded`). Until then the new binds fail with `failed to open`.
 - Reload Plug-in does not see a `.lua` file added after Lightroom started; the plug-in is disabled. Restart Lightroom after adding a file.
-- `install-plugin`, and the stdio server at start when neither Modules nor Plugins holds the bundle, copy the plug-in into Modules. Neither replaces an installed bundle. Plug-in log: `~/Documents/LrClassicLogs/LightroomMCP.log`.
+- `install-plugin`, and the stdio server at start when neither Modules nor Plugins holds the bundle, copy the plug-in into Modules. Neither replaces an installed bundle, and both refuse while a `LightroomMCP.lrplugin` (upstream's, or this one before the rename) is installed, because it binds the same ports. Plug-in log: `~/Documents/LrClassicLogs/LightroomAgent.log`.
 
 ## Adding a tool
 
-- Add its contract in `server/src/tool-contracts.ts` with `run: { plugin: "HandlerX.fn" }`, or `run: { server }` for a server-run tool; internal plug-in actions go in `PLUGIN_ACTIONS`. Put the handler in `plugin/LightroomMCP.lrplugin/Handler*.lua` and declare new SDK globals in `lightroom.yml`.
+- Add its contract in `server/src/tool-contracts.ts` with `run: { plugin: "HandlerX.fn" }`, or `run: { server }` for a server-run tool; internal plug-in actions go in `PLUGIN_ACTIONS`. Put the handler in `plugin/LightroomAgent.lrplugin/Handler*.lua` and declare new SDK globals in `lightroom.yml`.
 - Run `npm run build` to regenerate `Contract.lua`; a Jest test fails while it is stale.
 - `tools/call` refuses a name with no contract, so internal actions such as `write_develop_settings` are reachable only over the raw TCP probe.
 
@@ -156,7 +156,7 @@ Decisions: [ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md) (a
 `tests/e2e/live/README.md` holds the bootstrap, fixtures, helpers and known traps. Its safety rules bind:
 
 - Live runs need the user's permission and exclusive control of Lightroom; one agent writes at a time.
-- The guard (`requireThrowawayCatalog()` in `lib/catalog-guard.mjs`) refuses catalogs under `~/Pictures/Lightroom`, then accepts a catalog whose folder holds `lrmcp-live-catalog.json` or that `LRMCP_LIVE_THROWAWAY_CATALOG` names. It cannot recognise a personal catalog stored elsewhere: check the catalog before opting it in.
+- The guard (`requireThrowawayCatalog()` in `lib/catalog-guard.mjs`) refuses catalogs under `~/Pictures/Lightroom`, then accepts a catalog whose folder holds `lragent-live-catalog.json` or that `LRAGENT_LIVE_THROWAWAY_CATALOG` names. It cannot recognise a personal catalog stored elsewhere: check the catalog before opting it in.
 - One-shot `mcp-runner.mjs tool` calls and `node server/dist/index.js call` are not guarded.
 - `mise run live:setup` switches Lightroom away from the open catalog to a new one.
 - Never commit a `.lrcat` or a photo whose licence does not allow redistribution. Bundled fixtures carry their source, licence and hash in `tests/e2e/live/fixtures/SOURCES.md`.

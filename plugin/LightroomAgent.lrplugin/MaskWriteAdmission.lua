@@ -8,7 +8,7 @@ local RunningLightroom = require 'RunningLightroom'
 
 local MaskWriteAdmission = {}
 
-local THROWAWAY_MARKER_FILE = "lrmcp-live-catalog.json"
+local THROWAWAY_MARKER_FILE = "lragent-live-catalog.json"
 local CERTIFY_COMMAND = "node tests/e2e/live/certify-mask-writes.mjs"
 
 local function isThrowaway(catalog)

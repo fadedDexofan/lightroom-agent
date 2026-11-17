@@ -2,7 +2,7 @@ return {
     _all = {
         ROOT = { "plugin/spec" },
         pattern = "_spec",
-        lpath = "plugin/?.lua;plugin/spec/?.lua;plugin/LightroomMCP.lrplugin/?.lua",
+        lpath = "plugin/?.lua;plugin/spec/?.lua;plugin/LightroomAgent.lrplugin/?.lua",
         verbose = true,
     },
 }

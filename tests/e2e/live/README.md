@@ -12,15 +12,15 @@ Everything that needs no Lightroom (image encoders, orientation maths, manifest 
 
 ## What it changes on your Mac
 
-- Lightroom's installed plug-in, replaced by `install-bundle.mjs`, with a backup in `~/.cache/lightroom-mcp-live-backups/<stamp>/`.
-- A new catalog in `~/Documents/lrmcp-live-<stamp>/`, made through File → New Catalog, which also becomes Lightroom's most recent catalog. Its photos are copies of the fixtures.
-- `~/.config/lightroom-mcp/mask-certification.json`, written by a certification run that passes. The plug-in reads this record to allow mask writes outside the throwaway catalog.
-- Catalog snapshots in `~/.cache/lightroom-mcp-live-snapshots/`, when you take them.
+- Lightroom's installed plug-in, replaced by `install-bundle.mjs`, with a backup in `~/.cache/lightroom-agent-live-backups/<stamp>/`.
+- A new catalog in `~/Documents/lragent-live-<stamp>/`, made through File → New Catalog, which also becomes Lightroom's most recent catalog. Its photos are copies of the fixtures.
+- `~/.config/lightroom-agent/mask-certification.json`, written by a certification run that passes. The plug-in reads this record to allow mask writes outside the throwaway catalog.
+- Catalog snapshots in `~/.cache/lightroom-agent-live-snapshots/`, when you take them.
 - Fixtures in `tests/e2e/live/.fixtures/` (ignored by Git).
 
 ## Safety rules
 
-- Scripts that write run only in a throwaway catalog. `lib/catalog-guard.mjs` reads the open catalog from Lightroom's open files (`lsof`) and refuses unless that catalog's folder holds `lrmcp-live-catalog.json` (written by `setup-catalog.mjs`) or `LRMCP_LIVE_THROWAWAY_CATALOG` names the catalog. A catalog under `~/Pictures/Lightroom` is always refused.
+- Scripts that write run only in a throwaway catalog. `lib/catalog-guard.mjs` reads the open catalog from Lightroom's open files (`lsof`) and refuses unless that catalog's folder holds `lragent-live-catalog.json` (written by `setup-catalog.mjs`) or `LRAGENT_LIVE_THROWAWAY_CATALOG` names the catalog. A catalog under `~/Pictures/Lightroom` is always refused.
 - `setup-catalog.mjs` uses your open catalog only to reach File → New Catalog. It imports nothing until the new catalog is open and verified.
 - Never commit a `.lrcat` or a photo whose licence does not allow redistribution.
 - Menu clicks and keystrokes go to Lightroom only after `ensureLightroomFrontmost()` has confirmed it is in front; any app that takes focus can redirect them. Dialog buttons are pressed through their Accessibility element (`clickWindowButton`), which neither activates Lightroom nor moves the pointer.
@@ -38,9 +38,9 @@ mise run live:setup
 node tests/e2e/live/smoke.mjs
 ```
 
-- `live:fixtures` generates the synthetic images, downloads the CC0 raw samples and checks every hash, including those of the two bundled photos in `fixtures/`. Set `LRMCP_LIVE_FIXTURES_DIR` to share one fixture folder between worktrees.
+- `live:fixtures` generates the synthetic images, downloads the CC0 raw samples and checks every hash, including those of the two bundled photos in `fixtures/`. Set `LRAGENT_LIVE_FIXTURES_DIR` to share one fixture folder between worktrees.
 - `install-bundle.mjs install [candidate-dir]` backs up the installed plug-in, installs the candidate (by default this checkout's plug-in) and compares the two with `diff -rq`. It lists Lua files the candidate adds: Reload Plug-in does not load new files, so restart Lightroom (the New Catalog relaunch in the next step does).
-- `live:setup` (`setup-catalog.mjs`) needs Lightroom running. It creates the catalog, waits for the relaunch, dismisses start-up dialogs, waits for the plug-in, imports each fixture into `<catalog folder>/images/` and writes the photo ids by fixture name into `lrmcp-live-catalog.json`. Options: `--name`, and `--parent-dir`, which must match the folder the New Catalog dialog proposes (normally Documents).
+- `live:setup` (`setup-catalog.mjs`) needs Lightroom running. It creates the catalog, waits for the relaunch, dismisses start-up dialogs, waits for the plug-in, imports each fixture into `<catalog folder>/images/` and writes the photo ids by fixture name into `lragent-live-catalog.json`. Options: `--name`, and `--parent-dir`, which must match the folder the New Catalog dialog proposes (normally Documents).
 - `smoke.mjs` checks that the kit works: the EXIF orientation of all eight orientation fixtures, `list_masks`, a linear gradient on `orient_6` (preview difference by region), a radial gradient on `wide_plain` (overlap with the expected ellipse) and the stored develop row. It removes its masks.
 - `reopen-catalog.mjs <path to .lrcat>` quits Lightroom and opens it with that catalog, then confirms the catalog from the window title. Lightroom 16.0 sometimes opens its most recent catalog instead of the file it was given, so the script relaunches up to three times. Run `install-bundle.mjs restore <backup>` while Lightroom is closed, before reopening.
 
@@ -79,7 +79,7 @@ Each step reads `MaskGroupBasedCorrections` before and after, and checks the mas
 node tests/e2e/live/certify-mask-writes.mjs --rejudge <run file> --threshold <name>=<value>
 ```
 
-Only a run where every step passed writes `~/.config/lightroom-mcp/mask-certification.json`: the Lightroom version and build, the process versions exercised, the checks, the checks with a render comparison, what was not exercised (also depth range, when no depth photo was supplied or Lightroom found no depth map in it), the kit commit and the thresholds. A failed or interrupted run leaves the previous record.
+Only a run where every step passed writes `~/.config/lightroom-agent/mask-certification.json`: the Lightroom version and build, the process versions exercised, the checks, the checks with a render comparison, what was not exercised (also depth range, when no depth photo was supplied or Lightroom found no depth map in it), the kit commit and the thresholds. A failed or interrupted run leaves the previous record.
 
 The same run compares the static range tables with Lightroom's: `describe_develop_keys` on `arw_12bit` for every number key of `DEVELOP_KEYS`, and on `pano` with a linear gradient selected for every local slider of `LOCAL_KEYS`. Ranges never decide admission, but a stale static range is written into the record, printed at the end and makes the command exit non-zero: correct the table before installing the build.
 
@@ -113,12 +113,12 @@ Bundled in `fixtures/`, with their sources, licences and the Openize notice in [
 
 | Key | File | Variable | Purpose |
 |---|---|---|---|
-| `people_photo` | `portrait_cc0.jpg` (CC0) | `LRMCP_LIVE_PEOPLE_PHOTO` | People masks, and the Subject and combine steps of certification. |
-| `depth_heic` | `iphone_portrait_photo.heic` (Openize License) | `LRMCP_LIVE_DEPTH_HEIC` | Depth range. It has to be a real iPhone Portrait HEIC with a depth map: Lightroom ignores synthetic depth data. |
+| `people_photo` | `portrait_cc0.jpg` (CC0) | `LRAGENT_LIVE_PEOPLE_PHOTO` | People masks, and the Subject and combine steps of certification. |
+| `depth_heic` | `iphone_portrait_photo.heic` (Openize License) | `LRAGENT_LIVE_DEPTH_HEIC` | Depth range. It has to be a real iPhone Portrait HEIC with a depth map: Lightroom ignores synthetic depth data. |
 
-Supplied by you: `LRMCP_LIVE_SUBJECT_PHOTO`, a photo with one clear foreground subject for Subject masks. Checks that need it are skipped without it.
+Supplied by you: `LRAGENT_LIVE_SUBJECT_PHOTO`, a photo with one clear foreground subject for Subject masks. Checks that need it are skipped without it.
 
-Other variables: `LRMCP_LIVE_FIXTURES_DIR`, `LRMCP_LIVE_THROWAWAY_CATALOG`, `LIGHTROOM_MCP_REQUEST_PORT` and `LIGHTROOM_MCP_RESPONSE_PORT`.
+Other variables: `LRAGENT_LIVE_FIXTURES_DIR`, `LRAGENT_LIVE_THROWAWAY_CATALOG`, `LIGHTROOM_AGENT_REQUEST_PORT` and `LIGHTROOM_AGENT_RESPONSE_PORT`.
 
 ## Helpers
 
@@ -193,9 +193,9 @@ node tests/e2e/mcp-runner.mjs list-tools
 | Mode | Checks |
 |---|---|
 | `read` (default) | Read tools return well-formed data. Runs on any catalog. |
-| `write` | Creates a collection `MCP_E2E_<timestamp>`, sets a rating and a keyword and restores them. The collection is left for inspection. |
+| `write` | Creates a collection `LRAGENT_E2E_<timestamp>`, sets a rating and a keyword and restores them. The collection is left for inspection. |
 | `develop` | Writes and reads Exposure, applies a preset, copies Contrast with a `settings` list. |
-| `preset-roundtrip` | Captures a plug-in preset, reads it back and exports it; a second export to the same file is refused. Output goes to `LIGHTROOM_MCP_E2E_PRESET_DIR` (default `$TMPDIR`). |
+| `preset-roundtrip` | Captures a plug-in preset, reads it back and exports it; a second export to the same file is refused. Output goes to `LIGHTROOM_AGENT_E2E_PRESET_DIR` (default `$TMPDIR`). |
 | `export` | Exports a five-star photo (or the first photo) as a JPEG to `$TMPDIR` and checks that its long edge is at most 1024 px. |
 | `pagination` | Consecutive `search_photos` pages do not overlap and report the same count. |
 | `failure` | Unknown tools, unknown ids and invalid values are refused. |

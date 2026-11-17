@@ -14,6 +14,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { configDir } from "./config-dir.js";
 import { LineBuffer } from "./line-buffer.js";
 import type { CallOptions, ToolProgress } from "./dispatcher.js";
 import { isReadOnlyTool } from "./tool-contracts.js";
@@ -44,16 +45,16 @@ export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 export function brokerPath(
   requestPort: number,
   responsePort: number,
-  baseDir = path.join(os.homedir(), ".config", "lightroom-mcp"),
+  baseDir = configDir(),
   platform: NodeJS.Platform = process.platform,
 ): string {
   const name = `bridge-${requestPort}-${responsePort}`;
   if (platform === "win32") {
-    return `\\\\.\\pipe\\lightroom-mcp-${os.userInfo().username}-${name}`;
+    return `\\\\.\\pipe\\lightroom-agent-${os.userInfo().username}-${name}`;
   }
   const preferred = path.join(baseDir, `${name}.sock`);
   if (Buffer.byteLength(preferred) <= MAX_UNIX_SOCKET_PATH) return preferred;
-  return path.join(os.tmpdir(), `lightroom-mcp-${os.userInfo().uid}-${name}.sock`);
+  return path.join(os.tmpdir(), `lightroom-agent-${os.userInfo().uid}-${name}.sock`);
 }
 
 export function signNonce(token: string | null, nonce: string): string | null {
@@ -203,7 +204,7 @@ export class BrokerServer {
       return;
     }
     if (!authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), req.auth)) {
-      this.reply(sock, req.id, req.name, refusedResponse("Rejected by the Lightroom MCP bridge: token mismatch."));
+      this.reply(sock, req.id, req.name, refusedResponse("Rejected by the Lightroom Agent bridge: token mismatch."));
       return;
     }
     if (calls.has(req.id)) return;
@@ -296,10 +297,10 @@ export class BrokerServer {
 }
 
 export const NOT_CONNECTED_TO_OWNER_MESSAGE =
-  "This process is not connected to the Lightroom MCP process that owns the plugin connection, so nothing was sent. Retry in a few seconds.";
+  "This process is not connected to the Lightroom Agent process that owns the plugin connection, so nothing was sent. Retry in a few seconds.";
 
 export const OWNER_LOST_MESSAGE =
-  "The Lightroom MCP process that owned the plugin connection exited during this call, " +
+  "The Lightroom Agent process that owned the plugin connection exited during this call, " +
   "so its result is unknown. Check Lightroom before retrying a call that changes photos.";
 
 export interface BrokerClientOptions {

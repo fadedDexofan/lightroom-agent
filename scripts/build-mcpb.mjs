@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
 const stage = path.join(repoRoot, "build", "mcpb-stage");
 const outDir = path.join(repoRoot, "build");
-const outFile = path.join(outDir, "lightroom-mcp.mcpb");
+const outFile = path.join(outDir, "lightroom-agent.mcpb");
 
 const log = (m) => console.log(`[build-mcpb] ${m}`);
 
@@ -70,8 +70,8 @@ run("npm ci --omit=dev --ignore-scripts", dstServer);
 
 log("staging Lightroom plugin");
 copyDir(
-  path.join(repoRoot, "plugin", "LightroomMCP.lrplugin"),
-  path.join(stage, "LightroomMCP.lrplugin"),
+  path.join(repoRoot, "plugin", "LightroomAgent.lrplugin"),
+  path.join(stage, "LightroomAgent.lrplugin"),
 );
 
 log("copying manifest");

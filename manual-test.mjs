@@ -8,15 +8,15 @@
 // Lightroom plugin is reachable and a given handler works end-to-end.
 //
 // Prerequisites:
-//   - Lightroom Classic running with LightroomMCP plugin loaded
+//   - Lightroom Classic running with LightroomAgent plugin loaded
 //   - Plugin token written to TOKEN_PATH (created when Start Server is clicked)
 //
 // Env overrides (must match plugin Plug-in Manager settings):
-//   LIGHTROOM_MCP_REQUEST_PORT   default 58763
-//   LIGHTROOM_MCP_RESPONSE_PORT  default 58764
+//   LIGHTROOM_AGENT_REQUEST_PORT   default 58763
+//   LIGHTROOM_AGENT_RESPONSE_PORT  default 58764
 //
 // Env overrides (probe/server reader only — no matching Plug-in Manager setting):
-//   LIGHTROOM_MCP_TOKEN_PATH     default ~/.config/lightroom-mcp/token
+//   LIGHTROOM_AGENT_TOKEN_PATH     default ~/.config/lightroom-agent/token
 //
 // Usage: node manual-test.mjs [action] [json-params]
 //   node manual-test.mjs list_collections
@@ -27,11 +27,11 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-const REQUEST_PORT = Number(process.env.LIGHTROOM_MCP_REQUEST_PORT ?? 58763);
-const RESPONSE_PORT = Number(process.env.LIGHTROOM_MCP_RESPONSE_PORT ?? 58764);
+const REQUEST_PORT = Number(process.env.LIGHTROOM_AGENT_REQUEST_PORT ?? 58763);
+const RESPONSE_PORT = Number(process.env.LIGHTROOM_AGENT_RESPONSE_PORT ?? 58764);
 const TOKEN_PATH =
-  process.env.LIGHTROOM_MCP_TOKEN_PATH ??
-  path.join(os.homedir(), ".config", "lightroom-mcp", "token");
+  process.env.LIGHTROOM_AGENT_TOKEN_PATH ??
+  path.join(os.homedir(), ".config", "lightroom-agent", "token");
 const TIMEOUT_MS = 30_000;
 
 const action = process.argv[2] ?? "list_collections";

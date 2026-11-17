@@ -43,7 +43,7 @@ async function exportWatchingModals(destination) {
 
 let output = null;
 try {
-  output = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-live-failed-export-"));
+  output = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-live-failed-export-"));
   const readOnly = path.join(output, "read-only");
   const writable = path.join(output, "writable");
   fs.mkdirSync(readOnly, { mode: 0o555 });

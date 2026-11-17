@@ -24,7 +24,7 @@ describe("instance lock", () => {
   });
 
   function baseDir(): string {
-    tmpDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "lightroom-mcp-lock-test-"));
+    tmpDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "lightroom-agent-lock-test-"));
     return tmpDir;
   }
 
@@ -32,7 +32,7 @@ describe("instance lock", () => {
     locks.push(acquireInstanceLock(58763, 58764, baseDir()));
 
     expect(() => acquireInstanceLock(58763, 58764, baseDir())).toThrow(
-      /Another Lightroom MCP bridge is already running/,
+      /Another Lightroom Agent bridge is already running/,
     );
   });
 

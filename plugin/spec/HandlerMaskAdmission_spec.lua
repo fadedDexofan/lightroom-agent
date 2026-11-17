@@ -3,7 +3,7 @@ local helper = require 'spec_helper'
 local Store = require 'fake_mask_store'
 
 local HOME = "/Users/tester"
-local CERTIFICATION_FILE = HOME .. "/.config/lightroom-mcp/mask-certification.json"
+local CERTIFICATION_FILE = HOME .. "/.config/lightroom-agent/mask-certification.json"
 local PERSONAL_CATALOG = HOME .. "/Pictures/Lightroom/Lightroom Catalog.lrcat"
 local RUNNING_BUILD = "16.0.0 build 1234567"
 local CERTIFIED = '{"lightroom":{"version":"16.0","build":"' .. RUNNING_BUILD .. '"},'

@@ -211,15 +211,15 @@ describe('classifyUnresponsive', () => {
 
   it('points at a same-port plugin such as MIDI2LR when Lightroom owns the ports', () => {
     expect(STALE_LISTENER.message).toContain('MIDI2LR');
-    expect(classifyDetails(owned(LIGHTROOM, []))).toContain('LIGHTROOM_MCP_REQUEST_PORT');
+    expect(classifyDetails(owned(LIGHTROOM, []))).toContain('LIGHTROOM_AGENT_REQUEST_PORT');
   });
 
   it('names connected processes, deduplicated across ports, with both remedies', () => {
     const message = classifyDetails(owned(LIGHTROOM, [MIDI2LR_APP]));
 
     expect(message.match(/MIDI2LR \(pid 555\)/g)).toHaveLength(1);
-    expect(message).toContain('pgrep -fl lightroom-mcp');
-    expect(message).toContain('LIGHTROOM_MCP_RESPONSE_PORT');
+    expect(message).toContain("pgrep -fl 'lightroom-(agent|mcp)'");
+    expect(message).toContain('LIGHTROOM_AGENT_RESPONSE_PORT');
   });
 
   it('names the foreign process holding a plugin port', () => {
@@ -230,7 +230,7 @@ describe('classifyUnresponsive', () => {
 
     expect(message).toContain('port 58764 is held by python3.13 (pid 4242)');
     expect(message).not.toContain('58763 is held');
-    expect(message).toContain('LIGHTROOM_MCP_RESPONSE_PORT');
+    expect(message).toContain('LIGHTROOM_AGENT_RESPONSE_PORT');
   });
 
   it('still reports a foreign listener whose name is unknown', () => {
@@ -268,7 +268,7 @@ describe('UnresponsiveReporter', () => {
     expect(log).toHaveBeenCalledTimes(2);
     expect(log).toHaveBeenLastCalledWith(diagnosis.details);
     expect(diagnosis.details).toContain('python3.13 (pid 4242)');
-    expect(diagnosis.details).toContain('LIGHTROOM_MCP_REQUEST_PORT');
+    expect(diagnosis.details).toContain('LIGHTROOM_AGENT_REQUEST_PORT');
     expect(diagnosis.details.length).toBeGreaterThan(diagnosis.message.length);
   });
 

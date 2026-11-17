@@ -9,6 +9,7 @@ Changes of this fork against upstream at 1709e40. The design decisions behind th
 - Develop writes are read back after Lightroom normalises them; a value stored differently is reported in `adjusted`.
 - A command line runs any tool: `tools`, `call <tool> [json]` and `install-plugin`.
 - A live test kit in `tests/e2e/live/` builds a throwaway catalog and checks the tools against Lightroom's renders.
+- Renamed to lightroom-agent: the plug-in (Lightroom Agent, `LightroomAgent.lrplugin`), environment variables (`LIGHTROOM_AGENT_*`) and the configuration directory (`~/.config/lightroom-agent/`). Remove an installed `LightroomMCP.lrplugin` before installing.
 
 # Upstream history
 

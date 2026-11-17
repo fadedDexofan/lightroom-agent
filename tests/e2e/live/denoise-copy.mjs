@@ -45,9 +45,9 @@ async function copyOf(name) {
 
 const freeBefore = freeKiB();
 try {
-  const source = await copyOf("LRMCP live Denoise source");
-  const target = await copyOf("LRMCP live Denoise target");
-  const plain = await copyOf("LRMCP live Denoise plain target");
+  const source = await copyOf("LRAGENT live Denoise source");
+  const target = await copyOf("LRAGENT live Denoise target");
+  const plain = await copyOf("LRAGENT live Denoise plain target");
   const sourceDenoise = await denoised(source, SOURCE_AMOUNT);
   const targetDenoise = await denoised(target, TARGET_AMOUNT);
   await data("set_develop_settings", { photo_id: source, settings: { Exposure2012: SOURCE_EXPOSURE } });

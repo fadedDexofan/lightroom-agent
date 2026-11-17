@@ -15,7 +15,7 @@ export class McpSession {
   }
 
   async start() {
-    this.process = spawn("node", [SERVER_BIN], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, LIGHTROOM_MCP_TOOLSETS: "all" } });
+    this.process = spawn("node", [SERVER_BIN], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, LIGHTROOM_AGENT_TOOLSETS: "all" } });
     this.process.stdout.setEncoding("utf8");
     this.process.stdout.on("data", (chunk) => this.onStdout(chunk));
     this.process.on("exit", (code) => {
@@ -25,7 +25,7 @@ export class McpSession {
     await this.rpc("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
-      clientInfo: { name: "lightroom-mcp-live-kit", version: "0.0.0" },
+      clientInfo: { name: "lightroom-agent-live-kit", version: "0.0.0" },
     });
     this.send({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
     await this.waitUntilPluginAnswers();

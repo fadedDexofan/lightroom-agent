@@ -292,7 +292,7 @@ return {
         { name = "none", labelColor = "none" },
     },
     PREVIEW_REPLY_RESERVE_SECONDS = 10,
-    DETAIL_RENDER_FOLDER = "lightroom-mcp-detail",
+    DETAIL_RENDER_FOLDER = "lightroom-agent-detail",
     DEFAULT_PAGE_LIMIT = 100,
     CATALOG_WRITE_WAIT_SECONDS = 10,
     AI_MASK_COMPUTE_WAIT_SECONDS = 15,

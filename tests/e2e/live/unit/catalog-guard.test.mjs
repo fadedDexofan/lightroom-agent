@@ -16,7 +16,7 @@ import { LIGHTROOM_PROCESS_NAME, THROWAWAY_CATALOG_ENV, THROWAWAY_MARKER_FILE } 
 
 const HOME = path.resolve("/Users/tester");
 const REAL = path.join(HOME, "Pictures", "Lightroom", "Lightroom Catalog.lrcat");
-const THROWAWAY = path.join(HOME, "Documents", "lrmcp-live-1", "lrmcp-live-1.lrcat");
+const THROWAWAY = path.join(HOME, "Documents", "lragent-live-1", "lragent-live-1.lrcat");
 const markerFor = (catalog) => path.join(path.dirname(catalog), THROWAWAY_MARKER_FILE);
 const options = (extra = {}) => ({ home: HOME, environment: {}, fileExists: () => false, ...extra });
 
@@ -42,7 +42,7 @@ test("open catalogs are parsed from lsof field output and sidecar files are igno
     `n${THROWAWAY}`,
     `n${THROWAWAY}-wal`,
     `n${THROWAWAY}-shm`,
-    `n${path.dirname(THROWAWAY)}/lrmcp-live-1.lrcat-data/LOG`,
+    `n${path.dirname(THROWAWAY)}/lragent-live-1.lrcat-data/LOG`,
     `n${THROWAWAY}`,
   ].join("\n");
   assert.deepEqual(parseOpenCatalogs(output), [THROWAWAY]);
@@ -101,7 +101,7 @@ test("no Lightroom executable or process-query failure reports no catalog owner"
 
 test("the runner's mutating modes refuse before starting a server when the open catalog has no throwaway marker", () => {
   const runner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "mcp-runner.mjs");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-runner-guard-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-runner-guard-"));
   try {
     const bin = path.join(root, "bin");
     const catalog = path.join(root, "unmarked", "Unmarked.lrcat");
@@ -110,7 +110,7 @@ test("the runner's mutating modes refuse before starting a server when the open 
     fs.writeFileSync(path.join(bin, "lsof"), `#!/bin/sh\necho "p4242"\necho "n${catalog}"\n`, { mode: 0o755 });
     for (const mode of ["write", "develop", "export", "preset-roundtrip", "all"]) {
       const result = spawnSync(process.execPath, [runner, mode], {
-        encoding: "utf8", timeout: 20_000, env: { PATH: bin, HOME: root, LIGHTROOM_MCP_READ_ONLY: "true" },
+        encoding: "utf8", timeout: 20_000, env: { PATH: bin, HOME: root, LIGHTROOM_AGENT_READ_ONLY: "true" },
       });
       assert.match(`${result.stdout}${result.stderr}`, /refusing to run: .*Unmarked\.lrcat is not a throwaway catalog/, mode);
       assert.notEqual(result.status, 0, mode);

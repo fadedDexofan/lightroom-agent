@@ -45,7 +45,7 @@ try {
       continue;
     }
     try {
-      const copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, fixture))], copy_name: `LRMCP neighbours ${kind}` })).copies[0].copy_photo_id);
+      const copy = String((await data("create_virtual_copies", { photo_ids: [String(requireFixtureId(marker, fixture))], copy_name: `LRAGENT neighbours ${kind}` })).copies[0].copy_photo_id);
       copies.push(copy);
       const made = await make(copy);
       const before = await entries(copy);

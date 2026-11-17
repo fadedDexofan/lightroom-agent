@@ -23,6 +23,7 @@ import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
 import { acquireInstanceLock, lockHolder, lockHolderUnresponsive } from "./instance-lock.js";
 import {
+  conflictMessage,
   ensurePluginInstalled,
   findBundledPlugin,
   findPluginBesideBinary,
@@ -80,8 +81,8 @@ async function main() {
   let REQUEST_PORT: number;
   let RESPONSE_PORT: number;
   try {
-    toolsets = parseToolsets(process.env.LIGHTROOM_MCP_TOOLSETS);
-    readOnly = parseReadOnly(process.env.LIGHTROOM_MCP_READ_ONLY);
+    toolsets = parseToolsets(process.env.LIGHTROOM_AGENT_TOOLSETS);
+    readOnly = parseReadOnly(process.env.LIGHTROOM_AGENT_READ_ONLY);
   } catch (err) {
     console.error((err as Error).message);
     process.exit(1);
@@ -149,7 +150,7 @@ async function main() {
   // sockets plus the heartbeat interval keep the event loop alive — the
   // orphaned bridge then holds both the single-client plugin connection and
   // the instance lock, so every future bridge instance fails with "Another
-  // Lightroom MCP bridge is already running". Stdin EOF is the one reliable
+  // Lightroom Agent bridge is already running". Stdin EOF is the one reliable
   // cross-platform signal that the client is gone.
   let shuttingDown = false;
   const exitOnClientGone = (reason: string) => () => {
@@ -162,7 +163,7 @@ async function main() {
   process.stdin.once("end", exitOnClientGone("stdin ended (client exited)"));
   process.stdin.once("close", exitOnClientGone("stdin closed (client exited)"));
 
-  console.error(`Lightroom MCP server v${VERSION} running on stdio`);
+  console.error(`Lightroom Agent server v${VERSION} running on stdio`);
   console.error(`Connecting to plugin: request :${REQUEST_PORT}, response :${RESPONSE_PORT}`);
   console.error(`Token file: ${tokenFilePath()}`);
 }
@@ -282,15 +283,19 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
 function runInstallPlugin(): void {
   const source = findBundledPlugin(here) ?? findPluginBesideBinary() ?? findPluginInCwd();
   if (!source) {
-    console.error("Could not locate a LightroomMCP.lrplugin folder.");
+    console.error("Could not locate a LightroomAgent.lrplugin folder.");
     console.error(
-      "Extract LightroomMCP-<platform>.lrplugin.zip from the release next to this binary (or run from that folder), then retry.",
+      "Extract LightroomAgent-<platform>.lrplugin.zip from the release next to this binary (or run from that folder), then retry.",
     );
     process.exit(1);
   }
   const dest = lightroomModulesDir();
   try {
     const result = installPlugin({ source, destDir: dest });
+    if (result.status === "conflict") {
+      console.error(conflictMessage(result.conflicting));
+      process.exit(1);
+    }
     if (result.status === "installed") {
       console.error(`Installed plugin: ${result.destination}`);
       console.error(`Restart Lightroom Classic to load it.`);

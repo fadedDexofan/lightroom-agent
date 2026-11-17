@@ -28,7 +28,7 @@ export function validateManifest(manifest) {
     if (path.basename(sample.file ?? "") !== sample.file || !sample.file) problems.push(`${sample.key}: file must be a bare file name`);
   }
   for (const supplied of manifest.supplied ?? []) {
-    if (!/^LRMCP_LIVE_[A-Z_]+$/.test(supplied.envVar ?? "")) problems.push(`${supplied.key}: envVar must look like LRMCP_LIVE_NAME`);
+    if (!/^LRAGENT_LIVE_[A-Z_]+$/.test(supplied.envVar ?? "")) problems.push(`${supplied.key}: envVar must look like LRAGENT_LIVE_NAME`);
     if (supplied.sha256 !== undefined && !SHA256_PATTERN.test(supplied.sha256)) problems.push(`${supplied.key}: sha256 must be 64 lowercase hex characters`);
     if (supplied.file !== undefined && (path.basename(supplied.file) !== supplied.file || supplied.sha256 === undefined)) problems.push(`${supplied.key}: a bundled file must be a bare file name with a sha256`);
   }

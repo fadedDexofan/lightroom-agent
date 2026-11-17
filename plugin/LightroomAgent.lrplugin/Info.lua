@@ -2,8 +2,8 @@ return {
     LrSdkVersion = 15.0,
     LrSdkMinimumVersion = 15.0,
 
-    LrToolkitIdentifier = 'com.lightroom.mcp',
-    LrPluginName = "Lightroom MCP",
+    LrToolkitIdentifier = 'io.github.fadeddexofan.lightroomagent',
+    LrPluginName = "Lightroom Agent",
 
     LrPluginInfoUrl = "https://github.com/fadedDexofan/lightroom-agent",
 
@@ -21,7 +21,7 @@ return {
 
     LrLibraryMenuItems = {
         {
-            title = "Lightroom MCP — Show Status",
+            title = "Lightroom Agent — Show Status",
             file = "MenuShowStatus.lua",
         },
     },

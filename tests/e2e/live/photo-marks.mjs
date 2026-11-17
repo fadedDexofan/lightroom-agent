@@ -7,7 +7,7 @@ const { session, marker } = await openLiveSession();
 const photoId = String(requireFixtureId(marker, "ramp256"));
 const data = async (name, args) => (await session.toolOrThrow(name, args)).data;
 const original = await session.photoMetadata(photoId);
-const ACCESSIBILITY = { alt_text: "LRMCP live alt text: a grey ramp", extended_description: "LRMCP live description: 256 grey steps from black to white" };
+const ACCESSIBILITY = { alt_text: "LRAGENT live alt text: a grey ramp", extended_description: "LRAGENT live description: 256 grey steps from black to white" };
 
 try {
   for (const [rating, flag, label] of [[3, "pick", "green"], [1, "reject", "yellow"], [0, "none", "none"]]) {

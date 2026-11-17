@@ -26,7 +26,7 @@ function render(width: number, height: number): Buffer {
 const tempRoots: string[] = [];
 afterAll(() => tempRoots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 function tempRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'lrmcp-detail-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'lragent-detail-test-'));
   tempRoots.push(root);
   return root;
 }
@@ -105,7 +105,7 @@ describe('get_photo_detail', () => {
   });
 
   it('removes the folder the plug-in rendered into for this call and nothing beside it', async () => {
-    const base = join(tempRoot(), 'lightroom-mcp-detail');
+    const base = join(tempRoot(), 'lightroom-agent-detail');
     const own = join(base, 'call-1');
     const other = join(base, 'call-2');
     mkdirSync(own, { recursive: true });

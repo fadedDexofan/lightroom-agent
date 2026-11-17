@@ -103,8 +103,8 @@ const targets = [
     },
   },
   {
-    name: "plugin/LightroomMCP.lrplugin/Info.lua",
-    file: p("plugin", "LightroomMCP.lrplugin", "Info.lua"),
+    name: "plugin/LightroomAgent.lrplugin/Info.lua",
+    file: p("plugin", "LightroomAgent.lrplugin", "Info.lua"),
     read() {
       const m = fs
         .readFileSync(this.file, "utf8")

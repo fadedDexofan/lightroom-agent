@@ -3,7 +3,7 @@
 // real PluginSocket/Dispatcher, on every OS the CI matrix runs on, so we can
 // surface Windows-only TCP lifecycle races (issue #110) without Lightroom.
 //
-// Mirrors plugin/LightroomMCP.lrplugin/PluginInfoProvider.lua:
+// Mirrors plugin/LightroomAgent.lrplugin/PluginInfoProvider.lua:
 //   - request port: TCP server, single client accepted at a time
 //   - response port: TCP server, single client accepted at a time
 //   - each new request-side client connect schedules a response-side rebind

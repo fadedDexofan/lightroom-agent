@@ -180,7 +180,7 @@ export interface PortOwnership {
 
 const PORT_CHANGE_HINT =
   "pick free ports in Lightroom's Plug-in Manager and set the same values in " +
-  "LIGHTROOM_MCP_REQUEST_PORT / LIGHTROOM_MCP_RESPONSE_PORT";
+  "LIGHTROOM_AGENT_REQUEST_PORT / LIGHTROOM_AGENT_RESPONSE_PORT";
 
 /**
  * Another Lightroom plugin binding the same ports (MIDI2LR does, from inside
@@ -198,9 +198,9 @@ export interface UnresponsiveDiagnosis {
 export const SHADOW_BRIDGE: UnresponsiveDiagnosis = {
   message: "Plugin ports connected but unresponsive; another bridge may hold the client slot. Restart the plug-in in Lightroom's Plug-in Manager.",
   details: "Connected to the Lightroom plugin's ports, but it is not answering. "
-    + "The plugin serves one client at a time, so another lightroom-mcp process "
-    + "is most likely holding the connection. Quit any other MCP client or stale "
-    + "bridge process (pgrep -fl lightroom-mcp), or restart the plugin from "
+    + "The plugin serves one client at a time, so another bridge process (lightroom-agent, "
+    + "or upstream's lightroom-mcp) is most likely holding the connection. Quit any other MCP client or stale "
+    + "bridge process (pgrep -fl 'lightroom-(agent|mcp)'), or restart the plugin from "
     + "Lightroom's Plug-in Manager.",
 };
 
@@ -254,7 +254,7 @@ export function classifyUnresponsive(ports: PortOwnership[]): UnresponsiveDiagno
     message: "Lightroom is unresponsive with other clients connected. Quit stale bridges or configure matching free ports in Lightroom and the MCP server.",
     details: "Lightroom owns the plugin's ports but is not answering. Other processes are connected to them: "
       + `${[...others.values()].map(describeProcess).join(", ")}. `
-      + "If one is another lightroom-mcp bridge, quit it (pgrep -fl lightroom-mcp). "
+      + "If one is another lightroom-agent or lightroom-mcp bridge, quit it (pgrep -fl 'lightroom-(agent|mcp)'). "
       + `If one belongs to ${SAME_PORT_PLUGIN_HINT}, ${PORT_CHANGE_HINT}.`,
   };
 }

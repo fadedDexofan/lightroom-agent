@@ -108,17 +108,17 @@ try {
     report.check("set_develop_settings refuses ConvertToGrayscale and points to set_treatment",
       refused.isError && refused.text.includes("set_treatment"), { text: refused.text });
 
-    const source = await virtualCopy(id("arw_12bit"), "LRMCP live B&W source");
+    const source = await virtualCopy(id("arw_12bit"), "LRAGENT live B&W source");
     await data("set_treatment", { photo_ids: [source], treatment: "black_and_white" });
-    const copyTarget = await virtualCopy(id("arw_14bit"), "LRMCP live B&W copy target");
+    const copyTarget = await virtualCopy(id("arw_14bit"), "LRAGENT live B&W copy target");
     await data("copy_develop_settings", { source_id: source, target_ids: [copyTarget] });
     const copied = await look(copyTarget);
     findings.copy = { chroma: copied.chroma, grey: copied.chroma < GREY_CHROMA, ConvertToGrayscale: copied.settings.ConvertToGrayscale, profile: profileOf(copied.settings) };
     report.check("copy_develop_settings from a B&W raw: what the colour target reads back is recorded", true, findings.copy);
 
     if (withPreset) {
-      const presetTarget = await virtualCopy(id("arw_14bit"), "LRMCP live B&W preset target");
-      const preset = await session.tool("create_develop_preset", { photo_id: source, preset_name: `LRMCP live B&W transfer ${Date.now()}`, settings: ["ConvertToGrayscale"] });
+      const presetTarget = await virtualCopy(id("arw_14bit"), "LRAGENT live B&W preset target");
+      const preset = await session.tool("create_develop_preset", { photo_id: source, preset_name: `LRAGENT live B&W transfer ${Date.now()}`, settings: ["ConvertToGrayscale"] });
       findings.preset_create = { isError: preset.isError, text: preset.isError ? preset.text : undefined, data: preset.data };
       if (!preset.isError) {
         await data("apply_develop_preset", { photo_ids: [presetTarget], preset_uuid: preset.data.uuid });

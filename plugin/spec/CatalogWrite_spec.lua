@@ -241,7 +241,7 @@ describe("Develop controller writes", function()
     end
 
     it("go only through CatalogWrite.develop", function()
-        local directory = "plugin/LightroomMCP.lrplugin/"
+        local directory = "plugin/LightroomAgent.lrplugin/"
         local direct = {}
         for file in io.popen('ls "' .. directory .. '"'):lines() do
             if file:match("%.lua$") and file ~= "CatalogWrite.lua" then

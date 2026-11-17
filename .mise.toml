@@ -27,7 +27,7 @@ description = "Build in watch mode"
 run = "cd server && npm run watch"
 
 [tasks."plugin:reload"]
-description = "Reload the installed Lightroom MCP plug-in on macOS"
+description = "Reload the installed Lightroom Agent plug-in on macOS"
 run = "osascript tests/e2e/reload-plugin.applescript"
 
 [tasks.mcpb]
@@ -49,7 +49,7 @@ run = "lua_modules/bin/busted"
 
 [tasks."lua:lint"]
 description = "Lint the Lightroom plugin with selene"
-run = "selene plugin/LightroomMCP.lrplugin"
+run = "selene plugin/LightroomAgent.lrplugin"
 
 [tasks."live:fixtures"]
 description = "Generate the live-test fixtures, download the CC0 raw samples and verify both"

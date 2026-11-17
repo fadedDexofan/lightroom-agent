@@ -20,7 +20,7 @@ The tool descriptions and the server instructions are the authority on what each
 
 ## Before the first call
 
-1. Check which tools the session exposes. Toolsets are fixed when the server starts (`LIGHTROOM_MCP_TOOLSETS`: core, develop, masks or all); read-only mode (`LIGHTROOM_MCP_READ_ONLY`) hides every write, exports and `get_photo_detail` included. If a tool is missing, check the server's toolsets, read-only mode and version before deciding it is unsupported, and tell the person.
+1. Check which tools the session exposes. Toolsets are fixed when the server starts (`LIGHTROOM_AGENT_TOOLSETS`: core, develop, masks or all); read-only mode (`LIGHTROOM_AGENT_READ_ONLY`) hides every write, exports and `get_photo_detail` included. If a tool is missing, check the server's toolsets, read-only mode and version before deciding it is unsupported, and tell the person.
 2. Identify the actual source: a folder (`list_folders`, `get_folder_photos`), a collection (`list_collections`, `get_collection_photos`), the selection (`get_selected_photos`, which falls back to the filmstrip) or a search. Address photos by their catalog ids; paths are ambiguous with virtual copies.
 3. Read what is already there: `get_photo_metadata` (ratings, flags, labels, virtual-copy and stack identity), `get_develop_settings`, `get_ai_metadata` for earlier private notes.
 

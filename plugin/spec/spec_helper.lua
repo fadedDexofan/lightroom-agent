@@ -9,7 +9,7 @@ local M = {}
 
 -- Make plugin sources requireable.
 local sep = package.config:sub(1, 1)
-local pluginRoot = "plugin" .. sep .. "LightroomMCP.lrplugin" .. sep .. "?.lua"
+local pluginRoot = "plugin" .. sep .. "LightroomAgent.lrplugin" .. sep .. "?.lua"
 if not package.path:find(pluginRoot, 1, true) then
     package.path = package.path .. ";" .. pluginRoot
 end

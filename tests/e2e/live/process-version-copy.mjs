@@ -22,9 +22,9 @@ const processVersion = async (photoId) =>
   (await data("get_develop_settings", { photo_ids: [photoId], keys: ["ProcessVersion"] })).photos[0].settings.ProcessVersion;
 
 try {
-  const target = await masklessCopy("LRMCP live process version target");
+  const target = await masklessCopy("LRAGENT live process version target");
   const downgrade = (await data("set_process_version", { photo_ids: [target], version: OLDER_VERSION, confirm: true })).results[0];
-  const source = await masklessCopy("LRMCP live process version source");
+  const source = await masklessCopy("LRAGENT live process version source");
   const sky = await data("create_mask", { photo_id: source, type: "sky", adjustments: { local_Exposure: -1 } });
   const before = { source: await processVersion(source), target: await processVersion(target) };
   report.check(`the target was set to ${OLDER_VERSION} and differs from the source's process version before the copy`,

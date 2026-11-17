@@ -23,7 +23,7 @@ const data = async (name, args) => (await session.toolOrThrow(name, args, { time
 const imageComponents = (entry) => (entry?.CorrectionMasks ?? []).filter((component) => component?.What === "Mask/Image")
   .map((component) => ({ digest: component.MaskDigest ?? null, error_reason: component.ErrorReason ?? null }));
 
-const copy = String((await data("create_virtual_copies", { photo_ids: [String(portrait)], copy_name: "LRMCP live people parts" })).copies[0].copy_photo_id);
+const copy = String((await data("create_virtual_copies", { photo_ids: [String(portrait)], copy_name: "LRAGENT live people parts" })).copies[0].copy_photo_id);
 try {
   const started = Date.now();
   const created = await session.tool("create_mask", { photo_id: copy, type: "people", parts: PARTS }, { timeoutMs: AI_TIMEOUT_MS });

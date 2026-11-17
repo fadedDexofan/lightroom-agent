@@ -8,7 +8,7 @@ const JPEG_QUALITY = "95";
 
 export function encodeJpegWithSips(canvas) {
   if (process.platform !== "darwin") throw new Error("JPEG fixtures are encoded with sips and need macOS");
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-jpeg-"));
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-jpeg-"));
   try {
     const pngPath = path.join(scratch, "in.png");
     const jpegPath = path.join(scratch, "out.jpg");

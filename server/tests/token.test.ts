@@ -7,17 +7,17 @@ import { readToken, tokenFilePath } from '../src/token.js';
 describe('token', () => {
   let tmpDir: string;
   let tmpFile: string;
-  const originalEnv = process.env.LIGHTROOM_MCP_TOKEN_PATH;
+  const originalEnv = process.env.LIGHTROOM_AGENT_TOKEN_PATH;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lr-mcp-token-'));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-token-'));
     tmpFile = path.join(tmpDir, 'token');
-    process.env.LIGHTROOM_MCP_TOKEN_PATH = tmpFile;
+    process.env.LIGHTROOM_AGENT_TOKEN_PATH = tmpFile;
   });
 
   afterEach(() => {
-    if (originalEnv === undefined) delete process.env.LIGHTROOM_MCP_TOKEN_PATH;
-    else process.env.LIGHTROOM_MCP_TOKEN_PATH = originalEnv;
+    if (originalEnv === undefined) delete process.env.LIGHTROOM_AGENT_TOKEN_PATH;
+    else process.env.LIGHTROOM_AGENT_TOKEN_PATH = originalEnv;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -35,14 +35,14 @@ describe('token', () => {
     expect(() => readToken()).toThrow(/empty/);
   });
 
-  it('respects LIGHTROOM_MCP_TOKEN_PATH override', () => {
+  it('respects LIGHTROOM_AGENT_TOKEN_PATH override', () => {
     expect(tokenFilePath()).toBe(tmpFile);
   });
 
-  it('falls back to ~/.config/lightroom-mcp/token without override', () => {
-    delete process.env.LIGHTROOM_MCP_TOKEN_PATH;
+  it('falls back to ~/.config/lightroom-agent/token without override', () => {
+    delete process.env.LIGHTROOM_AGENT_TOKEN_PATH;
     expect(tokenFilePath()).toBe(
-      path.join(os.homedir(), '.config', 'lightroom-mcp', 'token'),
+      path.join(os.homedir(), '.config', 'lightroom-agent', 'token'),
     );
   });
 });

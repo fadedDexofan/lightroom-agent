@@ -21,7 +21,7 @@ local LrLogger = tryImport('LrLogger')
 local LrPathUtils = tryImport('LrPathUtils')
 local LrFileUtils = tryImport('LrFileUtils')
 
-local lrLogger = LrLogger and LrLogger('LightroomMCP') or nil
+local lrLogger = LrLogger and LrLogger('LightroomAgent') or nil
 if lrLogger then lrLogger:enable("logfile") end
 
 local Log = {}
@@ -41,7 +41,7 @@ local function filePath()
     if LrFileUtils then
         pcall(function() LrFileUtils.createAllDirectories(dir) end)
     end
-    resolvedPath = LrPathUtils.child(dir, "LightroomMCP.log")
+    resolvedPath = LrPathUtils.child(dir, "LightroomAgent.log")
     return resolvedPath
 end
 
