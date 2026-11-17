@@ -27,4 +27,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run selene
+        env:
+          MISE_AUTO_INSTALL: "false"
         run: mise run lua:lint
