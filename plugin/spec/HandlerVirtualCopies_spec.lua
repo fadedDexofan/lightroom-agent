@@ -141,10 +141,9 @@ describe('HandlerVirtualCopies', function()
             setup(case.opts)
             local result = Handler.create({ photo_ids = { '3' } })
             assert.is_nil(result.data)
-            local written = case.opts.twoCopies and 'createVirtualCopies, virtual copy 101, virtual copy 200'
-                or 'createVirtualCopies, virtual copy 101'
-            assert.are.same({ { photo_id = '3', reason = case.reason .. '; written before this stopped: ' .. written } },
-                result.unknown)
+            local created = case.opts.twoCopies and '101, 200' or '101'
+            assert.are.same({ { photo_id = '3', reason = case.reason .. '; virtual copies created: ' .. created
+                .. '; written before this stopped: createVirtualCopies' } }, result.unknown)
             assertRestored()
         end)
     end

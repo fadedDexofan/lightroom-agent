@@ -1,4 +1,5 @@
 local LrApplication = import 'LrApplication'
+local LrTasks = import 'LrTasks'
 
 local CatalogWrite = require 'CatalogWrite'
 local DevelopBatch = require 'DevelopBatch'
@@ -14,14 +15,19 @@ local function createOne(context, catalog, photo, state, copyName)
     end
     local masterId = tostring((photo:getRawMetadata('masterPhoto') or photo).localIdentifier)
     local created = CatalogWrite.invoke(context, "createVirtualCopies", catalog.createVirtualCopies, catalog, copyName) or {}
-    for _, made in ipairs(created) do context.ledger:record('virtual copy ' .. tostring(made.localIdentifier)) end
-    if #created ~= 1 then error('Lightroom returned ' .. #created .. ' virtual copies instead of one', 0) end
-    local copyId = tostring(created[1].localIdentifier)
-    local copyMaster = created[1]:getRawMetadata('masterPhoto')
+    local createdIds = {}
+    for index, made in ipairs(created) do createdIds[index] = tostring(made.localIdentifier) end
+    local function stop(problem)
+        if #createdIds > 0 then problem = problem .. '; virtual copies created: ' .. table.concat(createdIds, ', ') end
+        error(problem, 0)
+    end
+    if #created ~= 1 then stop('Lightroom returned ' .. #created .. ' virtual copies instead of one') end
+    local copyId = createdIds[1]
+    local read, copyMaster = LrTasks.pcall(created[1].getRawMetadata, created[1], 'masterPhoto')
+    if not read then stop(Reply.messageOf(copyMaster)) end
     local copyMasterId = copyMaster and tostring(copyMaster.localIdentifier)
     if copyMasterId ~= masterId then
-        error('Lightroom made virtual copy ' .. copyId .. ' of photo ' .. tostring(copyMasterId)
-            .. ', not of photo ' .. masterId, 0)
+        stop('Lightroom made virtual copy ' .. copyId .. ' of photo ' .. tostring(copyMasterId) .. ', not of photo ' .. masterId)
     end
     return { master_photo_id = masterId, copy_photo_id = copyId }
 end
