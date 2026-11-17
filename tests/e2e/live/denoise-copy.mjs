@@ -10,7 +10,7 @@ const SOURCE_EXPOSURE = 0.7;
 const SETTLE_LIMIT_MS = 300_000;
 const POLL_MS = 2_000;
 const STABLE_POLLS = 3;
-const DENOISE_WARNING = "The source has Denoise, which a copy does not carry";
+const DENOISE_WARNING = "A full copy leaves out the source's FilterList (Enhance)";
 
 const report = createReport("a full copy leaves the target's own Denoise and warns about the source's (proof y, round 3 C2)");
 const { session, marker } = await openLiveSession();
@@ -39,6 +39,7 @@ async function denoised(photoId, amount) {
 async function copyOf(name) {
   const copy = String((await data("create_virtual_copies", { photo_ids: [base], copy_name: name })).copies[0].copy_photo_id);
   copies.push(copy);
+  if ((await data("list_masks", { photo_id: copy })).count > 0) await data("delete_masks", { photo_id: copy, all: true });
   return copy;
 }
 

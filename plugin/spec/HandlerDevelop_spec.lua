@@ -2428,7 +2428,9 @@ describe("develop writes read back after Lightroom normalises them", function()
             if normalise and normalise.throws and not normalise.storesFirst then error(normalise.throws) end
             for key, value in pairs(settings) do
                 if normalise and normalise[key] ~= nil then value = normalise[key] end
-                if normalise and normalise.drops == key then value = nil end
+                if normalise and (normalise.drops == key or type(normalise.drops) == "table" and normalise.drops[key]) then
+                    value = nil
+                end
                 if key:find("^Extended") then value = nil end
                 stored[key] = value
             end
@@ -2471,13 +2473,41 @@ describe("develop writes read back after Lightroom normalises them", function()
         assert.truthy(r.problem:find("ToneCurvePV2012 [0,0,255,255] on photo 1 (written [0,0,128,140,255,255])", 1, true), r.problem)
     end)
 
-    it("reports a key Lightroom does not show after the write as unknown", function()
-        local _, Handler = setup({ photos = { storingPhoto("1", {}, { drops = "Temperature" }) }, tasks = sleeps() })
+    it("reports a key the photo held before and Lightroom does not show after the write as unknown", function()
+        local _, Handler = setup({ photos = { storingPhoto("1", { Temperature = 5000 }, { drops = "Temperature" }) },
+            tasks = sleeps() })
 
         local r = Handler.setDevelopSettings({ photo_id = "1", settings = { Temperature = 200 } })
 
         assert.are.equal("1", r.unknown[1].photo_id)
         assert.truthy(r.unknown[1].reason:find("Temperature", 1, true))
+        assert.is_nil(r.data.not_stored)
+    end)
+
+    local JPEG_DROPS = { drops = { Temperature = true, Tint = true } }
+
+    it("answers done and names the keys a photo stores neither before nor after the write", function()
+        local _, Handler = setup({ photos = { storingPhoto("1", { Exposure2012 = 0 }, JPEG_DROPS) }, tasks = sleeps() })
+
+        local r = Handler.setDevelopSettings({ photo_id = "1", settings = { Temperature = 5500, Tint = 10, Exposure2012 = 0.5 } })
+
+        assert.is_nil(r.unknown)
+        assert.is_nil(r.problem)
+        assert.are.same({ { photo_id = "1", keys = { "Temperature", "Tint" } } }, r.data.not_stored)
+        assert.are.same({ "Lightroom stores no Temperature, Tint for photo 1" }, r.warnings)
+    end)
+
+    it("copies a raw's look onto a JPEG whole and names the white balance the JPEG does not store", function()
+        local raw = storingPhoto("10", { Exposure2012 = 1, Temperature = 5200, Tint = 8 })
+        local jpeg = storingPhoto("11", { Exposure2012 = 0 }, JPEG_DROPS)
+        local _, Handler = setup({ photos = { raw, jpeg }, tasks = sleeps() })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+
+        assert.are.equal(1, r.data.copied)
+        assert.is_nil(r.unknown)
+        assert.are.same({ { photo_id = "11", keys = { "Temperature", "Tint" } } }, r.data.not_stored)
+        assert.are.same({ "Lightroom stores no Temperature, Tint for photo 11" }, r.warnings)
     end)
 
     it("fails a copy target that throws before Lightroom stored anything, proven by the read-back", function()

@@ -54,7 +54,20 @@ test("a rendered check is judged from its measured numbers against the threshold
   assert.equal(evaluateStep(step, { ...THRESHOLDS, min_share_in_region: 0.6 }).passed, true);
   assert.match(evaluateStep({ ...step, rendered: { check: "darkens_within", measured: { ...measured, share_in_region: 0.9, brightened: 0.01 } } }).problem, /darkens_within failed/);
   assert.equal(evaluateStep({ ...step, rendered: { check: "region_moves", measured: { deltas: { full: -0.06, beyond: 0.005 }, changed: "full", untouched: "beyond", direction: -1 } } }).passed, true);
-  assert.equal(evaluateStep({ ...step, rendered: { check: "unchanged", measured: { max_luminance_difference: 0.02 } } }).passed, false);
+  assert.equal(evaluateStep({ ...step, rendered: { check: "unchanged", measured: { sampled_max_luminance_difference: 0.02 } } }).passed, false);
+  assert.equal(evaluateStep({ ...step, rendered: { check: "unchanged", measured: { sampled_max_luminance_difference: 0.005 } } }).passed, true);
+});
+
+test("a region contrast passes when the changed region moves at least the minimum and that many times the untouched one", () => {
+  const step = { name: "sky batch", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted() };
+  const contrast = (sky, ground) => ({ ...step, rendered: { check: "region_contrast", measured: { deltas: { sky, ground }, changed: "sky", untouched: "ground", direction: -1 } } });
+
+  assert.equal(evaluateStep(contrast(-0.022, -0.0014)).passed, true);
+  assert.equal(evaluateStep(contrast(-0.022, 0)).passed, true);
+  assert.match(evaluateStep(contrast(-0.008, 0)).problem, /region_contrast failed/);
+  assert.match(evaluateStep(contrast(-0.022, -0.005)).problem, /region_contrast failed/);
+  assert.match(evaluateStep(contrast(0.022, 0)).problem, /region_contrast failed/);
+  assert.equal(evaluateStep(contrast(-0.008, 0), { ...THRESHOLDS, min_contrast_change: 0.005 }).passed, true);
 });
 
 test("a step that could not run, or changed an entry it had to keep, is a failed step", () => {
@@ -124,6 +137,13 @@ test("an expected refusal passes only when the tool refused and left the photo's
   assert.equal(evaluateStep({ ...base, answer: refused, before: raw(undefined), after: raw([]) }).passed, true);
   assert.match(evaluateStep({ ...base, answer: ok, before: raw([]), after: raw([]) }).problem, /expected a refusal/);
   assert.match(evaluateStep({ ...base, answer: refused, before: raw([]), after: raw([{}]) }).problem, /expected 0 mask\(s\) added, found 1/);
+});
+
+test("masks read back with their keys in another order count as the same masks", () => {
+  const before = [{ CorrectionID: "a", CorrectionAmount: 1, CorrectionMasks: [{ What: "Mask/Image", MaskValue: 1 }] }];
+  const after = [{ CorrectionMasks: [{ MaskValue: 1, What: "Mask/Image" }], CorrectionAmount: 1, CorrectionID: "a" }];
+
+  assert.equal(evaluateStep({ name: "people refused with cleanup", added: 0, expectRefusal: true, admission: admitted(), answer: refused, before: raw(before), after: raw(after) }).passed, true);
 });
 
 test("a nothing-found refusal passes as failed or as unknown naming Update AI Settings, only with the masks back exactly, and says which", () => {

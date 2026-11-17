@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
-import { measureChange, maxLuminanceDifference } from "./lib/preview.mjs";
+import { measureChange, sampledMaxLuminanceDifference } from "./lib/preview.mjs";
 
 const { session, marker } = await openLiveSession();
 let copyId;
@@ -26,8 +26,8 @@ try {
     assert.equal(enabled.active, true);
     assert.equal(enabled.amount, 50);
   });
-  const difference = maxLuminanceDifference(pixels.before, pixels.after);
-  assert.ok(difference > 0.01, `Lens Blur preview did not change: ${difference}`);
+  const sampledMax = sampledMaxLuminanceDifference(pixels.before, pixels.after);
+  assert.ok(sampledMax > 0.01, `Lens Blur preview did not change: sampled maximum luminance difference ${sampledMax}`);
   await tool("get_lens_blur", { photo_id: requireFixtureId(marker, "wide_plain") });
   const saved = await tool("get_lens_blur", { photo_id: copyId });
   assert.equal(saved.active, true);
@@ -40,7 +40,7 @@ try {
   assert.equal(adjusted.bokeh, "Ring");
   const selection = await tool("get_selected_photos", {});
   assert.deepEqual(selection, initialSelection);
-  console.log(JSON.stringify({ copyId, off, saved, adjusted, difference }));
+  console.log(JSON.stringify({ copyId, off, saved, adjusted, sampled_max_luminance_difference: sampledMax }));
 } finally {
   try {
     if (copyId) await tool("remove_photos_from_catalog", { photo_ids: [copyId], confirm: true });

@@ -28,6 +28,7 @@ import {
   patchDeltas,
   rectangleInside,
   regionDeltas,
+  sampledMaxLuminanceDifference,
 } from "../lib/preview.mjs";
 
 function solidPixels(w, h, level) {
@@ -319,7 +320,7 @@ test("JPEG quantisation tables are read from every DQT segment", () => {
   const segment = (body) => [0xff, 0xdb, (body.length + 2) >> 8, (body.length + 2) & 0xff, ...body];
   const jpeg = Buffer.from([0xff, 0xd8, ...segment(table(0, 1)), ...segment([...table(1, 2), ...table(2, 3)]), 0xff, 0xda, 0, 2, 0xff, 0xd9]);
 
-  assert.deepEqual(jpegQuantTables(jpeg).map((values) => [values.length, values[0]]), [[64, 1], [64, 2], [64, 3]]);
+  assert.deepEqual(jpegQuantTables(jpeg).map(({ id, precision, values }) => [id, precision, values.length, values[0]]), [[0, 8, 64, 1], [1, 8, 64, 2], [2, 8, 64, 3]]);
 });
 
 test("the export mark is read from the photo's image attributes row", () => {
@@ -395,6 +396,21 @@ test("measureChange still waits the settle time for a change that never shows", 
   const { after } = await measureChange({}, "1", async () => {}, { settleMs: 300, pauseMs: 20, fetch: async () => flat });
   assert.ok(Math.abs(after.L[0] - 0.2) < 1e-6);
   assert.ok(Date.now() - started >= 300);
+});
+
+test("measureChange reads the render after the change no sooner than the landing time it is given", async () => {
+  const flat = (level) => ({ w: 4, h: 4, L: new Float32Array(16).fill(level) });
+  const started = Date.now();
+  const fetch = async () => (Date.now() - started >= 250 ? flat(0.8) : flat(0.2));
+  const { after } = await measureChange({}, "1", async () => {}, { settleMs: 50, landMs: 300, pauseMs: 20, fetch });
+  assert.ok(Math.abs(after.L[0] - 0.8) < 1e-6);
+  assert.ok(Date.now() - started >= 300);
+});
+
+test("the sampled maximum luminance difference reads every seventh pixel", () => {
+  const a = { L: new Float32Array(14) };
+  const b = { L: Float32Array.from({ length: 14 }, (_, i) => (i === 3 ? 0.9 : i === 7 ? 0.2 : 0)) };
+  assert.ok(Math.abs(sampledMaxLuminanceDifference(a, b) - 0.2) < 1e-6);
 });
 
 test("pollCatalog returns the read as soon as the expected change shows, without waiting out the window", async () => {

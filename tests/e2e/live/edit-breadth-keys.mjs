@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
-import { maxLuminanceDifference, measureChange, meanChroma } from "./lib/preview.mjs";
+import { sampledMaxLuminanceDifference, measureChange, meanChroma } from "./lib/preview.mjs";
 import { createReport } from "./lib/proof.mjs";
 
 const VISIBLE = 0.01;
@@ -44,9 +44,9 @@ try {
     });
     const keys = Object.keys(write.settings);
     const readBack = await stored(keys);
-    const change = Math.max(maxLuminanceDifference(pixels.before, pixels.after), Math.abs(meanChroma(pixels.after) - meanChroma(pixels.before)));
+    const change = { sampled_max_luminance_difference: sampledMaxLuminanceDifference(pixels.before, pixels.after), mean_chroma_difference: Math.abs(meanChroma(pixels.after) - meanChroma(pixels.before)) };
     const kept = keys.every((key) => readBack[key] === write.settings[key]);
-    report.check(`${write.label}: written, read back${write.visible ? " and visible" : ""}`, kept && !reply.adjusted && (!write.visible || change > VISIBLE),
+    report.check(`${write.label}: written, read back${write.visible ? " and visible" : ""}`, kept && !reply.adjusted && (!write.visible || Math.max(...Object.values(change)) > VISIBLE),
       { requested: write.settings, read_back: readBack, adjusted: reply.adjusted ?? null, change });
   }
 
@@ -55,8 +55,9 @@ try {
   const pixels = await measureChange(session, copyId, async () => {
     mixer = await data("set_develop_settings", { photo_id: copyId, settings: { GrayMixerRed: 60, GrayMixerBlue: -60 } });
   });
+  const mixerChange = sampledMaxLuminanceDifference(pixels.before, pixels.after);
   report.check("GrayMixer on a black and white photo: written and visible",
-    !mixer.adjusted && maxLuminanceDifference(pixels.before, pixels.after) > VISIBLE, { adjusted: mixer.adjusted ?? null, change: maxLuminanceDifference(pixels.before, pixels.after) });
+    !mixer.adjusted && mixerChange > VISIBLE, { adjusted: mixer.adjusted ?? null, sampled_max_luminance_difference: mixerChange });
   report.finish({ photo: copyId });
 } finally {
   await session.tool("remove_photos_from_catalog", { photo_ids: [copyId], confirm: true });

@@ -12,12 +12,15 @@ import {
   changedWhere,
   ellipseInside,
   intersectionOverUnion,
-  maxLuminanceDifference,
   measureChange,
   regionDeltas,
+  sampledMaxLuminanceDifference,
 } from "./lib/preview.mjs";
 
 const AI_TIMEOUT_MS = 240_000;
+const RENDER_WAIT_CAP_MS = 60_000;
+const AI_RASTER_LAND_MS = 30_000;
+const AI_AMOUNT = { local_Exposure: -1 };
 const WHOLE_FRAME = { shape: "radial", center: { x: 0.5, y: 0.5 }, width: 2, height: 2, rotation: 0, feather: 0 };
 
 function writeResult(status, steps, { notExercised, ranges, kitCommit, thresholds, judgedFrom, runFile }) {
@@ -54,7 +57,7 @@ const { session, marker, catalogPath } = await openLiveSession();
 const id = (key) => String(requireFixtureId(marker, key));
 const ids = {
   wide: id("wide_plain"), ramp: id("ramp256"), chart: id("chart80"),
-  arw14: id("arw_14bit"), arw12: id("arw_12bit"), orient1: id("orient_1"), pano: id("pano"), flat: id("flat_gray"),
+  arw14: id("arw_14bit"), arw12: id("arw_12bit"), orient1: id("orient_1"), pano: id("pano"), flat: id("flat_gray"), people: id("people_photo"),
 };
 
 async function toolData(name, args, options) {
@@ -88,15 +91,25 @@ function savePreview(index, side, pixels) {
   return { file, sha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
-async function check({ name, photoId, added, expectRefusal = false, prepare, call, render, unchangedEntry, nothingFoundAllowed }) {
-  const entry = { name, photo_id: photoId, added, expectRefusal, nothingFoundAllowed };
+const copies = [];
+async function cleanCopy(master, role) {
+  const copy = String((await toolData("create_virtual_copies", { photo_ids: [master], copy_name: `LRMCP certification ${role}` })).copies[0].copy_photo_id);
+  copies.push(copy);
+  if ((await toolData("list_masks", { photo_id: copy })).count > 0) await toolData("delete_masks", { photo_id: copy, all: true });
+  return copy;
+}
+
+async function check({ name, photoId, added, expectRefusal = false, prepare, call, render, landMs = 0, unchangedEntry, nothingFoundAllowed }) {
+  const entry = { name, photo_id: photoId, added, expectRefusal, nothingFoundAllowed, ...(landMs ? { land_ms: landMs } : {}) };
   try {
     const prepared = prepare ? await prepare() : undefined;
     if (unchangedEntry) entry.unchangedEntry = unchangedEntry(prepared);
     entry.before = await readRaw(photoId);
     let answer;
     if (render) {
-      const pixels = await measureChange(session, photoId, async () => { answer = await call(); });
+      const waited = Date.now();
+      const pixels = await measureChange(session, photoId, async () => { answer = await call(); }, { settleMs: RENDER_WAIT_CAP_MS, landMs });
+      entry.render_wait_ms = Date.now() - waited;
       entry.previews = { before: savePreview(evidence.length, "before", pixels.before), after: savePreview(evidence.length, "after", pixels.after) };
       entry.rendered = render(pixels.before, pixels.after);
     } else {
@@ -118,8 +131,8 @@ async function check({ name, photoId, added, expectRefusal = false, prepare, cal
 
 const tool = (name, args, options) => () => session.tool(name, args, options);
 
-const regionsChange = (regions, changed, untouched, direction = 1) => (before, after) =>
-  ({ check: "region_moves", measured: { deltas: regionDeltas(before, after, regions), changed, untouched, direction } });
+const regionsChange = (regions, changed, untouched, direction = 1, check = "region_moves") => (before, after) =>
+  ({ check, measured: { deltas: regionDeltas(before, after, regions), changed, untouched, direction } });
 
 const radialGeometry = { center: { x: 0.5, y: 0.5 }, width: 0.4, height: 0.3, rotation: 30, feather: 0 };
 const radial = await check({
@@ -175,31 +188,43 @@ await check({
   call: tool("copy_develop_settings", { source_id: ids.wide, target_ids: [ids.orient1] }),
 });
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const skyKept = await cleanCopy(ids.arw14, "sky kept");
 await check({
-  name: "a computed Sky kept by a guarded write", photoId: ids.arw14, added: 1,
-  prepare: () => toolData("create_mask", { photo_id: ids.arw14, type: "sky", adjustments: { local_Exposure: -0.5 } }, { timeoutMs: AI_TIMEOUT_MS }),
+  name: "a computed Sky kept by a guarded write", photoId: skyKept, added: 1,
+  prepare: async () => {
+    await toolData("create_gradient_mask", { photo_id: skyKept, shape: "linear", start: { x: 0.5, y: 0.6 }, end: { x: 0.5, y: 0.5 } });
+    const sky = await toolData("create_mask", { photo_id: skyKept, type: "sky", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS });
+    await sleep(AI_RASTER_LAND_MS);
+    return sky;
+  },
   unchangedEntry: (sky) => sky.mask_id,
-  call: tool("create_gradient_mask", { photo_id: ids.arw14, shape: "linear", start: { x: 0.5, y: 0.9 }, end: { x: 0.5, y: 0.7 } }),
-  render: (before, after) => ({ check: "unchanged", measured: { max_luminance_difference: maxLuminanceDifference(before, after) } }),
+  call: tool("create_gradient_mask", { photo_id: skyKept, shape: "linear", start: { x: 0.5, y: 0.9 }, end: { x: 0.5, y: 0.7 } }),
+  render: (before, after) => ({ check: "unchanged", measured: { sampled_max_luminance_difference: sampledMaxLuminanceDifference(before, after) } }),
 });
+const landscape = await cleanCopy(ids.arw14, "landscape");
 await check({
-  name: "landscape", photoId: ids.arw14, added: 2,
-  call: tool("create_mask", { photo_id: ids.arw14, type: "landscape", categories: ["sky", "vegetation"] }, { timeoutMs: AI_TIMEOUT_MS }),
+  name: "landscape", photoId: landscape, added: 2,
+  call: tool("create_mask", { photo_id: landscape, type: "landscape", categories: ["sky", "vegetation"] }, { timeoutMs: AI_TIMEOUT_MS }),
 });
+const noPerson = await cleanCopy(ids.arw12, "no person");
 await check({
-  name: "people refused with cleanup", photoId: ids.arw12, added: 0, expectRefusal: true,
-  call: tool("create_mask", { photo_id: ids.arw12, type: "people", parts: ["face_skin"] }, { timeoutMs: AI_TIMEOUT_MS }),
+  name: "people refused with cleanup", photoId: noPerson, added: 0, expectRefusal: true,
+  call: tool("create_mask", { photo_id: noPerson, type: "people", parts: ["face_skin"] }, { timeoutMs: AI_TIMEOUT_MS }),
 });
+const batchJudged = await cleanCopy(ids.arw12, "sky batch");
+const batchOther = await cleanCopy(ids.arw14, "sky batch");
 await check({
-  name: "sky batch", photoId: ids.arw12, added: 1, nothingFoundAllowed: [ids.arw14],
-  call: tool("create_mask_batch", { photo_ids: [ids.arw12, ids.arw14], type: "sky", adjustments: { local_Exposure: -0.5 } }, { timeoutMs: AI_TIMEOUT_MS }),
-  render: regionsChange([{ name: "sky", x0: 0.3, y0: 0.02, x1: 0.7, y1: 0.12 }, { name: "ground", x0: 0.3, y0: 0.9, x1: 0.7, y1: 0.98 }], "sky", "ground", -1),
+  name: "sky batch", photoId: batchJudged, added: 1, nothingFoundAllowed: [batchOther], landMs: AI_RASTER_LAND_MS,
+  call: tool("create_mask_batch", { photo_ids: [batchJudged, batchOther], type: "sky", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS }),
+  render: regionsChange([{ name: "sky", x0: 0.3, y0: 0.02, x1: 0.7, y1: 0.12 }, { name: "ground", x0: 0.3, y0: 0.9, x1: 0.7, y1: 0.98 }], "sky", "ground", -1, "region_contrast"),
 });
 
 let subject = null;
+const subjectCopy = await cleanCopy(ids.people, "subject");
 await check({
-  name: "Subject created in the saved settings", photoId: ids.arw12, added: 1,
-  call: tool("create_mask", { photo_id: ids.arw12, type: "subject", adjustments: { local_Exposure: -0.5 } }, { timeoutMs: AI_TIMEOUT_MS }),
+  name: "Subject created in the saved settings", photoId: subjectCopy, added: 1, landMs: AI_RASTER_LAND_MS,
+  call: tool("create_mask", { photo_id: subjectCopy, type: "subject", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS }),
   render: (before, after) => {
     subject = changedWhere(before, after, { direction: "darker" });
     return { check: "darkens", measured: { darkened: changedShare(before, after, () => true, { direction: "darker" }).changed } };
@@ -224,23 +249,26 @@ const combineSteps = [
   { operation: "intersect", target: WHOLE_FRAME, darkens: inSubject },
 ];
 for (const { operation, target, darkens } of combineSteps) {
+  const combined = await cleanCopy(ids.people, `combine ${operation}`);
   await check({
-    name: `a mask made and Subject combined into it (${operation}) in the saved settings`, photoId: ids.arw12, added: 1,
+    name: `a mask made and Subject combined into it (${operation}) in the saved settings`, photoId: combined, added: 1, landMs: AI_RASTER_LAND_MS,
     call: async () => {
-      const maskId = (await toolData("create_gradient_mask", { photo_id: ids.arw12, ...target, adjustments: { local_Exposure: -0.5 } })).mask_id;
-      return session.tool("combine_mask", { photo_id: ids.arw12, mask_id: String(maskId), operation, type: "subject" }, { timeoutMs: AI_TIMEOUT_MS });
+      const maskId = (await toolData("create_gradient_mask", { photo_id: combined, ...target, adjustments: AI_AMOUNT })).mask_id;
+      return session.tool("combine_mask", { photo_id: combined, mask_id: String(maskId), operation, type: "subject" }, { timeoutMs: AI_TIMEOUT_MS });
     },
     render: darkensWithin(darkens),
   });
 }
+const background = await cleanCopy(ids.people, "background");
 await check({
-  name: "Background created in the saved settings", photoId: ids.arw12, added: 1,
-  call: tool("create_mask", { photo_id: ids.arw12, type: "background", adjustments: { local_Exposure: -0.5 } }, { timeoutMs: AI_TIMEOUT_MS }),
+  name: "Background created in the saved settings", photoId: background, added: 1, landMs: AI_RASTER_LAND_MS,
+  call: tool("create_mask", { photo_id: background, type: "background", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS }),
   render: darkensWithin(outsideSubject),
 });
+const nothing = await cleanCopy(ids.flat, "nothing found");
 await check({
-  name: "nothing found refused with nothing left", photoId: ids.flat, added: 0, expectRefusal: true,
-  call: tool("create_mask", { photo_id: ids.flat, type: "subject" }, { timeoutMs: AI_TIMEOUT_MS }),
+  name: "nothing found refused with nothing left", photoId: nothing, added: 0, expectRefusal: true,
+  call: tool("create_mask", { photo_id: nothing, type: "subject" }, { timeoutMs: AI_TIMEOUT_MS }),
 });
 
 let ranges;
@@ -259,6 +287,7 @@ fs.writeFileSync(runFile, `${JSON.stringify({
   status, started_at: startedAt.toISOString(), finished_at: new Date().toISOString(), kit_commit: kitCommit, thresholds: THRESHOLDS, steps: evidence, ranges,
 }, null, 2)}\n`);
 fs.rmSync(partialFile, { force: true });
+if (copies.length > 0) await session.tool("remove_photos_from_catalog", { photo_ids: copies, confirm: true });
 await session.stop();
 
 const { steps, notExercised } = judgeRun(evidence);

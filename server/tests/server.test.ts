@@ -254,7 +254,7 @@ describe('createMcpServer', () => {
       export_photos: ['get_photo_detail or another export', 'refused, not queued', 'separator between names (/ on macOS'],
       set_mask_adjustments: ['saved settings by mask_id', 'six decimal places', 'pending in Develop are committed first', 'one history step', 'naming what Lightroom stored'],
       set_mask_curves: ['saved settings by mask_id', 'at most 16 points', 'pending in Develop are committed first', 'naming what Lightroom stored'],
-      edit_mask_point_colors: ['centred on the source', 'already holds', 'six decimals', 'saved settings by mask_id'],
+      edit_mask_point_colors: ['stores the source rounded to two decimals', 'centred on the rounded source', 'already holds', 'six decimals', 'saved settings by mask_id'],
       list_masks: ['empty list means', 'saved settings hold', 'Develop has not loaded them yet', 'click OK in Lightroom', 'call again', 'failed with nothing changed'],
     };
     for (const [name, phrases] of Object.entries(required)) {

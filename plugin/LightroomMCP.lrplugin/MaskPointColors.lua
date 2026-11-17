@@ -164,19 +164,26 @@ local function rangeAround(centre)
     }
 end
 
+local SOURCE_STEP = 0.01
+
+local function sourceOf(value)
+    return math.floor(value / SOURCE_STEP + 0.5) * SOURCE_STEP
+end
+
 function MaskPointColors.newSwatch(fields)
+    local srcSat, srcLum = sourceOf(fields.SrcSat), sourceOf(fields.SrcLum)
     return {
-        SrcHue = fields.SrcHue,
-        SrcSat = fields.SrcSat,
-        SrcLum = fields.SrcLum,
+        SrcHue = sourceOf(fields.SrcHue),
+        SrcSat = srcSat,
+        SrcLum = srcLum,
         HueShift = fields.HueShift or 0,
         SatScale = fields.SatScale or 0,
         LumScale = fields.LumScale or 0,
         RangeAmount = fields.RangeAmount or DEFAULT_RANGE_AMOUNT,
         Variance = fields.Variance or DEFAULT_VARIANCE,
         HueRange = copyRange(fields.HueRange or DEFAULT_HUE_RANGE),
-        SatRange = copyRange(fields.SatRange or rangeAround(fields.SrcSat)),
-        LumRange = copyRange(fields.LumRange or rangeAround(srgbEncoded(fields.SrcLum))),
+        SatRange = copyRange(fields.SatRange or rangeAround(srcSat)),
+        LumRange = copyRange(fields.LumRange or rangeAround(srgbEncoded(srcLum))),
     }
 end
 

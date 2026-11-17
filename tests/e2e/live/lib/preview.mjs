@@ -54,7 +54,7 @@ export async function fetchPixels(session, photoId, size = 864) {
   return { ...decodeJpegBase64(answer.image.data), jpeg: answer.image.data };
 }
 
-export function maxLuminanceDifference(a, b, step = 7) {
+export function sampledMaxLuminanceDifference(a, b, step = 7) {
   let max = 0;
   for (let i = 0; i < a.L.length; i += step) max = Math.max(max, Math.abs(a.L[i] - b.L[i]));
   return max;
@@ -81,17 +81,19 @@ export async function fetchStablePixels(session, photoId, { size = 864, tries = 
   throw new Error(`preview of ${photoId} did not stabilise in ${tries} fetches`);
 }
 
-const sameImage = (a, b) => a.w === b.w && a.h === b.h && maxLuminanceDifference(a, b) < STABLE_PIXEL_TOLERANCE;
+const sameImage = (a, b) => a.w === b.w && a.h === b.h && sampledMaxLuminanceDifference(a, b) < STABLE_PIXEL_TOLERANCE;
 
-export async function measureChange(session, photoId, applyChange, { size = 864, settleMs = SETTLE_MS, pauseMs = 1500, fetch = fetchPixels } = {}) {
+export async function measureChange(session, photoId, applyChange, { size = 864, settleMs = SETTLE_MS, landMs = 0, pauseMs = 1500, fetch = fetchPixels } = {}) {
   const before = await fetchStablePixels(session, photoId, { size, pauseMs, fetch });
   await applyChange();
-  const deadline = Date.now() + settleMs;
+  const changed = Date.now();
+  const deadline = changed + settleMs;
   let current = await fetch(session, photoId, size);
   while (Date.now() < deadline && sameImage(current, before)) {
     await sleep(Math.min(pauseMs, Math.max(0, deadline - Date.now())));
     current = await fetch(session, photoId, size);
   }
+  await sleep(Math.max(0, changed + landMs - Date.now()));
   const after = await fetchStablePixels(session, photoId, { size, pauseMs, fetch });
   return { before, after };
 }

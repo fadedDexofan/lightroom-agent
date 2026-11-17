@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
-import { fetchStablePixels, maxLuminanceDifference, meanChroma } from "./lib/preview.mjs";
+import { fetchStablePixels, sampledMaxLuminanceDifference, meanChroma } from "./lib/preview.mjs";
 import { createReport } from "./lib/proof.mjs";
 
 const GREY_CHROMA = 0.01;
@@ -68,10 +68,10 @@ async function toColour(label, photoId, before, grey) {
     look_restored: before ? JSON.stringify(back.settings.Look ?? null) === JSON.stringify(before.settings.Look ?? null) : null,
   });
   if (before) {
-    const difference = maxLuminanceDifference(before.pixels, back.pixels);
+    const difference = sampledMaxLuminanceDifference(before.pixels, back.pixels);
     Object.assign(entry, {
       renders_as_before: difference < SAME_RENDER && Math.abs(back.chroma - before.chroma) < GREY_CHROMA,
-      max_luminance_difference: difference,
+      sampled_max_luminance_difference: difference,
       chroma: { ...entry.chroma, after: back.chroma },
     });
   }
@@ -89,6 +89,7 @@ async function roundTrip(label, photoId) {
 async function virtualCopy(photoId, name) {
   const copy = (await data("create_virtual_copies", { photo_ids: [photoId], copy_name: name })).copies[0].copy_photo_id;
   copies.push(copy);
+  if ((await data("list_masks", { photo_id: copy })).count > 0) await data("delete_masks", { photo_id: copy, all: true });
   return copy;
 }
 

@@ -169,7 +169,9 @@ function FakeMaskStore.attach(photo, opts)
             source = state.previousEntries
         end
         state.readsSinceWrite = state.readsSinceWrite + 1
-        if #source > 0 then settings.MaskGroupBasedCorrections = clone(source) end
+        if #source > 0 or (opts.writtenEmptyKept and #state.writes > 0) then
+            settings.MaskGroupBasedCorrections = clone(source)
+        end
         return settings
     end
     photo.applyDevelopSettings = function(_, settings)

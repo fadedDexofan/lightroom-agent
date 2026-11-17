@@ -34,6 +34,9 @@ try {
   const targets = {};
   for (const fixture of TARGETS) targets[fixture] = { copy: await freshCopy(fixture, `${fixture} target`), native: await freshCopy(fixture, `${fixture} native`) };
   await data("reset_develop_adjustments", { photo_ids: copies, confirm: true });
+  for (const photoId of copies) {
+    if ((await entries(photoId)).length > 0) await data("delete_masks", { photo_id: photoId, all: true });
+  }
 
   const sourceSky = String((await data("create_mask", { photo_id: source, type: "sky", adjustments: SKY })).mask_id);
   const sourceComponent = imageOf((await entries(source)).find((entry) => String(entry.CorrectionID) === sourceSky));

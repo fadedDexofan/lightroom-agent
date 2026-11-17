@@ -74,13 +74,13 @@ end
 
 local MAX_NAMED_KEYS = 10
 
-local function keysChangedSince(catalog, photo, settings)
+local function keysOutsideMasksChangedSince(catalog, photo, settings)
     local now
     catalog:withReadAccessDo(function() now = photo:getDevelopSettings() end)
     local seen, keys = {}, {}
     for _, path in ipairs(JsonValue.differences(settings or {}, now or {})) do
         local key = path:match("^[^.]+")
-        if not seen[key] then
+        if key ~= "MaskGroupBasedCorrections" and not seen[key] then
             seen[key] = true
             keys[#keys + 1] = key
         end
@@ -100,7 +100,7 @@ local function restoreAndRefuse(context, catalog, photo, write, reason)
         error(reason .. "; the new masks could not be confirmed removed, check the photo's masks in Develop", 0)
     end
     if #context.ledger:since(write.to) > 0 then
-        local changed = keysChangedSince(catalog, photo, write.settings)
+        local changed = keysOutsideMasksChangedSince(catalog, photo, write.settings)
         if #changed > 0 then
             error(reason .. "; the new masks were removed, but Update AI Settings also changed " .. namedKeys(changed)
                 .. " on the photo", 0)

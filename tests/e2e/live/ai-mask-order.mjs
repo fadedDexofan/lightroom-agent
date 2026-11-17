@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isDeepStrictEqual } from "node:util";
 import { developHistory, pollCatalog } from "./lib/catalog-db.mjs";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 import { fetchStablePixels, luminanceGap } from "./lib/preview.mjs";
@@ -159,7 +160,7 @@ try {
   const cleared = await copyFromMaskless(bare, masked);
   report.check("a full copy from a maskless source removes the target's masks and says how many",
     maskedBefore === 2 && cleared.outcome === "done" && cleared.data?.copied === 1
-      && JSON.stringify(cleared.data?.masks_removed) === JSON.stringify([{ photo_id: masked, count: 2 }])
+      && isDeepStrictEqual(cleared.data?.masks_removed, [{ photo_id: masked, count: 2 }])
       && cleared.list_masks.count === 0,
     { masks_before: maskedBefore, ...cleared });
   report.check("the stored shape after the emptying write and its history steps are recorded", true,

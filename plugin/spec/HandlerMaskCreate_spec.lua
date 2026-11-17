@@ -12,7 +12,7 @@ local function setup(opts)
     opts = opts or {}
     local photo = helper.fakePhoto({ id = "1", path = "/1.jpg" })
     local store = Store.attach(photo, { entries = opts.entries or { existingGradient() }, transformWrite = opts.transformWrite,
-        settings = opts.settings })
+        settings = opts.settings, writtenEmptyKept = opts.writtenEmptyKept })
     local calls = { updateAI = 0, modules = {} }
     if not opts.withoutUpdateAi then
         photo.updateAISettings = function()
@@ -123,7 +123,8 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
               .. " stopped: updateAISettings, Update AI Settings" },
     }) do
         it("removes the new mask when Lightroom finds nothing and " .. case.what, function()
-            local Handler, store = setup({ nothingFound = true, computeChanges = case.changes,
+            local Handler, store = setup({ nothingFound = true, computeChanges = case.changes, entries = {},
+                writtenEmptyKept = true,
                 settings = { DepthMapInfo = { Digest = "stale" }, FilterList = { Filters = { { CompressedSettings = "old" } } },
                     Exposure2012 = 0.5 } })
             local before = Store.clone(store.entries)

@@ -16,7 +16,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const copies = [];
 
 async function whole(photoId) {
-  const names = (await data("get_develop_settings", { photo_ids: [photoId] })).keys.map((entry) => entry.name);
+  const names = (await data("get_develop_settings", { photo_ids: [photoId] })).photos[0].keys.map((entry) => entry.name);
   return (await data("get_develop_settings", { photo_ids: [photoId], keys: names })).photos[0].settings;
 }
 

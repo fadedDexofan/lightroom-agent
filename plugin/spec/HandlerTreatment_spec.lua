@@ -13,7 +13,7 @@ describe('HandlerTreatment', function()
             photos[i].getDevelopSettings = function(photo) return settings[photo] end
             photos[i].quickDevelopSetTreatment = function(_, treatment)
                 calls.treatments[#calls.treatments + 1] = treatment
-                if opts.ignore then return end
+                if opts.ignore or (opts.dropsFirst and #calls.treatments == 1) then return end
                 for _, selected in ipairs(state.selected) do
                     local grey = treatment == 'grayscale'
                     settings[selected].ConvertToGrayscale = grey
@@ -85,12 +85,23 @@ describe('HandlerTreatment', function()
         assert.are.same({ 'grayscale', 'color' }, calls.treatments)
     end)
 
-    it('reports a photo Lightroom did not convert as unknown', function()
+    it('sends a dispatch Lightroom dropped once more and answers by the read', function()
+        setup({ dropsFirst = true })
+        local result = Handler.set({ photo_ids = { '1' }, treatment = 'black_and_white' })
+        assert.is_nil(result.unknown)
+        assert.is_true(result.data.results[1].convert_to_grayscale)
+        assert.are.same({ 'grayscale', 'grayscale' }, calls.treatments)
+        assertRestored()
+    end)
+
+    it('reports a photo Lightroom did not convert after the second dispatch as unknown, naming the dispatch', function()
         setup({ ignore = true })
         local result = Handler.set({ photo_ids = { '1' }, treatment = 'black_and_white' })
         assert.is_nil(result.data)
         assert.are.equal('1', result.unknown[1].photo_id)
-        assert.matches('ConvertToGrayscale', result.unknown[1].reason, 1, true)
+        assert.are.equal('Lightroom did not change the treatment after two dispatches; ConvertToGrayscale reads false;'
+            .. ' written before this stopped: quickDevelopSetTreatment', result.unknown[1].reason)
+        assert.are.same({ 'grayscale', 'grayscale' }, calls.treatments)
         assertRestored()
     end)
 

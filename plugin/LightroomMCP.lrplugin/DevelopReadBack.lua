@@ -64,7 +64,8 @@ function DevelopReadBack.check(context, catalog, written)
     catalog:withReadAccessDo(function()
         for _, entry in ipairs(written) do
             local stored = entry.photo:getDevelopSettings() or {}
-            local result = { photo_id = tostring(entry.photo.localIdentifier), stored = {}, adjusted = {}, absent = {} }
+            local result = { photo_id = tostring(entry.photo.localIdentifier), stored = {}, adjusted = {}, absent = {},
+                notStored = {} }
             if entry.error ~= nil then
                 result.error = entry.error
                 result.written = context.ledger:since(entry.from, entry.to)
@@ -74,7 +75,9 @@ function DevelopReadBack.check(context, catalog, written)
             else
             for _, key in ipairs(sortedKeys(entry.settings)) do
                 local requested, value = entry.settings[key], DevelopCurves.read(stored, key)
-                if value == nil then
+                if value == nil and entry.before ~= nil and DevelopCurves.read(entry.before, key) == nil then
+                    result.notStored[#result.notStored + 1] = key
+                elseif value == nil then
                     result.absent[#result.absent + 1] = key
                 else
                     result.stored[key] = value
@@ -96,7 +99,7 @@ function DevelopReadBack.parts(checked, data, lists)
     local parts = lists or {}
     parts.data = data
     parts.unknown = parts.unknown or {}
-    local adjusted = {}
+    local adjusted, notStored = {}, {}
     parts.failed = parts.failed or {}
     for _, result in ipairs(checked) do
         if result.error ~= nil then
@@ -105,6 +108,12 @@ function DevelopReadBack.parts(checked, data, lists)
             list[#list + 1] = { photo_id = result.photo_id, reason = reason }
         end
         for _, item in ipairs(result.adjusted) do adjusted[#adjusted + 1] = item end
+        if #result.notStored > 0 then
+            notStored[#notStored + 1] = { photo_id = result.photo_id, keys = result.notStored }
+            parts.warnings = parts.warnings or {}
+            parts.warnings[#parts.warnings + 1] = string.format("Lightroom stores no %s for photo %s",
+                table.concat(result.notStored, ", "), result.photo_id)
+        end
         if #result.absent > 0 then
             parts.unknown[#parts.unknown + 1] = {
                 photo_id = result.photo_id,
@@ -112,6 +121,7 @@ function DevelopReadBack.parts(checked, data, lists)
             }
         end
     end
+    if #notStored > 0 then data.not_stored = notStored end
     if #adjusted > 0 then
         data.adjusted = adjusted
         local named = {}

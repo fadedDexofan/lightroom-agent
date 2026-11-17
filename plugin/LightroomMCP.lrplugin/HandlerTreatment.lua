@@ -26,19 +26,26 @@ local function readSettings(catalog, photo)
     return settings
 end
 
+local function dispatchAndRead(context, catalog, photo, wanted)
+    CatalogWrite.invoke(context, "quickDevelopSetTreatment", photo.quickDevelopSetTreatment, photo, wanted.command)
+    local settings
+    local changed = DevelopSession.waitFor(function()
+        settings = readSettings(catalog, photo)
+        return settings.ConvertToGrayscale == wanted.grayscale
+    end, SETTLE_SECONDS)
+    return changed, settings
+end
+
 local function convert(context, catalog, photo, state, name)
     local wanted = TREATMENTS[name]
     local before = profileOf(readSettings(catalog, photo))
     if not DevelopSession.selectAlone(catalog, photo, state) then
         Reply.refuse('Could not select photo ' .. tostring(photo.localIdentifier) .. ' alone')
     end
-    CatalogWrite.invoke(context, "quickDevelopSetTreatment", photo.quickDevelopSetTreatment, photo, wanted.command)
-    local settings
-    if not DevelopSession.waitFor(function()
-        settings = readSettings(catalog, photo)
-        return settings.ConvertToGrayscale == wanted.grayscale
-    end, SETTLE_SECONDS) then
-        error('Lightroom did not change the treatment; ConvertToGrayscale reads '
+    local changed, settings = dispatchAndRead(context, catalog, photo, wanted)
+    if not changed then changed, settings = dispatchAndRead(context, catalog, photo, wanted) end
+    if not changed then
+        error('Lightroom did not change the treatment after two dispatches; ConvertToGrayscale reads '
             .. tostring(settings.ConvertToGrayscale), 0)
     end
     return {

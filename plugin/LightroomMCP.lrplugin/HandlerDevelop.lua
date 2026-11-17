@@ -528,8 +528,9 @@ function DevelopHandler.applyDevelopPreset(args, context)
             remaining[#remaining + 1] = resolvedEntry.id
         else
             local from = context.ledger:mark()
-            local entriesBefore
+            local entriesBefore, before
             local applied, problem = LrTasks.pcall(function()
+                catalog:withReadAccessDo(function() before = DevelopReadBack.before(photo:getDevelopSettings()) end)
                 entriesBefore = aiPreset and GuardedMaskWrite.readEntries(catalog, photo)
                 applyPreset(context, catalog, selectedPreset, photo)
             end)
@@ -546,10 +547,10 @@ function DevelopHandler.applyDevelopPreset(args, context)
             end
             if computed then
                 appliedCount = appliedCount + 1
-                written[#written + 1] = { photo = photo, settings = presetSettings }
+                written[#written + 1] = { photo = photo, settings = presetSettings, before = before }
             else
-                written[#written + 1] = { photo = photo, settings = presetSettings, error = Reply.messageOf(problem),
-                    from = from, to = context.ledger:mark() }
+                written[#written + 1] = { photo = photo, settings = presetSettings, before = before,
+                    error = Reply.messageOf(problem), from = from, to = context.ledger:mark() }
                 stopped = not applied
             end
         end
@@ -659,7 +660,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
             catalog:withReadAccessDo(function() settings = entry.photo:getDevelopSettings() or {} end)
             local existing = settings.MaskGroupBasedCorrections
             local target = { processVersion = settings.ProcessVersion, maskCount = type(existing) == "table" and #existing or 0 }
-            local before = args.settings and DevelopReadBack.before(settings) or nil
+            local before = DevelopReadBack.before(settings)
             local from = context.ledger:mark()
             local masked, previous = true, nil
             if masks and (#masks > 0 or target.maskCount > 0) then
@@ -668,7 +669,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
             end
             if not masked then
                 written[#written + 1] = {
-                    photo = entry.photo, settings = rest, from = from, to = context.ledger:mark(),
+                    photo = entry.photo, settings = rest, before = before, from = from, to = context.ledger:mark(),
                     error = "the masks could not be copied: " .. Reply.messageOf(previous),
                 }
             else
@@ -680,7 +681,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
                 end)
                 if ok then
                     copiedCount = copiedCount + 1
-                    written[#written + 1] = { photo = entry.photo, settings = rest }
+                    written[#written + 1] = { photo = entry.photo, settings = rest, before = before }
                     if aiMasks then computed[#computed + 1] = photoId end
                     if masks and #masks == 0 and previous and #previous > 0 then
                         masksRemoved[#masksRemoved + 1] = { photo_id = photoId, count = #previous }
@@ -736,6 +737,7 @@ function DevelopHandler.matchPhotoStyle(args, context)
             local photoId = tostring(entry.photo.localIdentifier)
             local current
             catalog:withReadAccessDo(function() current = entry.photo:getDevelopSettings() or {} end)
+            local before = DevelopReadBack.before(current)
             if (current.ConvertToGrayscale == true) ~= grayscale then
                 failures[#failures + 1] = {
                     photo_id = photoId,
@@ -757,12 +759,12 @@ function DevelopHandler.matchPhotoStyle(args, context)
                     CatalogWrite.run(context, catalog, 'Match Photo Style', function()
                         CatalogWrite.call(context, entry.photo, "applyDevelopSettings", DevelopCurves.forWrite(settings))
                     end)
-                    written[#written + 1] = { photo = entry.photo, settings = settings }
+                    written[#written + 1] = { photo = entry.photo, settings = settings, before = before }
                     results[#results + 1] = { photo_id = photoId, snapshot = snapshot, settings_changed = changed }
                 end)
                 if not ok then
                     written[#written + 1] = {
-                        photo = entry.photo, settings = settings, from = from, to = context.ledger:mark(),
+                        photo = entry.photo, settings = settings, before = before, from = from, to = context.ledger:mark(),
                         error = Reply.messageOf(reason) .. (snapshot and "; the style was not confirmed stored and"
                             .. " recovery snapshot " .. tostring(snapshot.name) .. " was kept" or ""),
                     }
@@ -780,13 +782,15 @@ function DevelopHandler.setDevelopSettings(args, context)
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
 
     DevelopSession.flushIfShowing(catalog, photo)
+    local before
     CatalogWrite.run(context, catalog, "Set Develop Settings", function()
+        before = DevelopReadBack.before(photo:getDevelopSettings())
         CatalogWrite.call(context, photo, "applyDevelopSettings", DevelopCurves.forWrite(args.settings),
             "Set Develop Settings")
     end)
     Log.info(string.format("Set develop settings on photo %s", tostring(photo.localIdentifier)))
 
-    local checked = DevelopReadBack.check(context, catalog, { { photo = photo, settings = args.settings } })
+    local checked = DevelopReadBack.check(context, catalog, { { photo = photo, settings = args.settings, before = before } })
     return DevelopReadBack.parts(checked, { photo_id = checked[1].photo_id, settings = checked[1].stored })
 end
 

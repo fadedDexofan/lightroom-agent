@@ -61,7 +61,19 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
         assert.are.equal(1, store.attempts)
     end)
 
-    it("keeps the fields the request gives and fills only the ranges it omits", function()
+    it("stores the source as Lightroom's own add does, rounded to two decimals, with the ranges of the rounded values",
+        function()
+        local Handler, store = savedSetup()
+
+        Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-b", action = "add",
+            swatch = { SrcHue = 3.021347, SrcSat = 0.537218, SrcLum = 0.512694, LumScale = -0.8 } })
+
+        assert.are.same({ "3.020000, 0.540000, 0.510000, 0.000000, 0.000000, -0.800000, 0.500000, 0.000000, 0.333333,"
+            .. " 0.666667, 1.000000, 0.000000, 0.360000, 0.720000, 1.000000, 0.011905, 0.561905, 0.921905, 1.000000" },
+            store.entries[2].LocalPointColors)
+    end)
+
+    it("keeps the fields the request gives, rounds its source and fills only the ranges it omits", function()
         local Handler, store = savedSetup()
 
         Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-b", action = "add", swatch = {
@@ -69,8 +81,8 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
             HueRange = { LowerNone = 0.1, LowerFull = 0.2, UpperFull = 0.6, UpperNone = 0.9 },
         } })
 
-        assert.are.same({ "1.500000, 0.100000, 0.002000, -0.200000, 0.000000, 0.000000, 0.800000, 0.100000, 0.200000,"
-            .. " 0.600000, 0.900000, 0.000000, 0.000000, 0.280000, 0.830000, 0.000000, 0.000000, 0.205840, 0.755840" },
+        assert.are.same({ "1.500000, 0.100000, 0.000000, -0.200000, 0.000000, 0.000000, 0.800000, 0.100000, 0.200000,"
+            .. " 0.600000, 0.900000, 0.000000, 0.000000, 0.280000, 0.830000, 0.000000, 0.000000, 0.180000, 0.730000" },
             store.entries[2].LocalPointColors)
         assert.are.same({ "0.300000" }, store.entries[2].LocalColorVariance)
     end)

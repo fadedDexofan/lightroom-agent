@@ -37,7 +37,7 @@ export function jpegQuantTables(jpeg) {
         const size = wide ? 128 : 64;
         const values = [];
         for (let i = 0; i < 64; i++) values.push(wide ? jpeg.readUInt16BE(cursor + 1 + i * 2) : jpeg[cursor + 1 + i]);
-        tables.push(values);
+        tables.push({ id: jpeg[cursor] & 0x0f, precision: wide ? 16 : 8, values });
         cursor += 1 + size;
       }
     }

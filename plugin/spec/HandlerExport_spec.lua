@@ -1006,6 +1006,8 @@ describe("HandlerExport.renderDetailSource", function()
             { s.LR_format, s.LR_jpeg_quality, s.LR_export_colorSpace, s.LR_size_doConstrain, s.LR_outputSharpeningOn,
                 s.LR_reimportExportedPhoto, s.LR_export_destinationType, s.LR_export_destinationPathPrefix,
                 s.LR_export_useSubfolder })
+        assert.is_falsy(s.LR_jpeg_useLimitSize)
+        assert.is_nil(s.LR_jpeg_limitSize)
     end)
 
     it("renders each call into a folder of its own and leaves other calls' files alone", function()
