@@ -43,10 +43,14 @@ describe('HandlerVirtualCopies', function()
             assert.are.equal(1, #state.selected)
             calls.create[#calls.create + 1] = { photo = state.active, name = name }
             if opts.failCreate or opts.failCreateAt == #calls.create then error('SDK failure') end
-            local master = state.active:getRawMetadata('masterPhoto') or state.active
+            local master = opts.wrongMaster and photos[5] or state.active:getRawMetadata('masterPhoto') or state.active
             local copy = helper.fakePhoto({ id = tostring(100 + #calls.create),
                 isVirtualCopy = true, masterPhoto = master })
+            if opts.copyUnreadable then copy.getRawMetadata = function() error('photo gone') end end
             state.active, state.selected = copy, { copy }
+            if opts.twoCopies then
+                return { copy, helper.fakePhoto({ id = '200', isVirtualCopy = true, masterPhoto = master }) }
+            end
             return { copy }
         end
         helper.installImport({
@@ -116,6 +120,23 @@ describe('HandlerVirtualCopies', function()
         assert.are.same({ photo_id = '1', master_photo_id = '1', copy_photo_id = '102' }, result.data.copies[2])
         assertRestored()
     end)
+
+    for _, case in ipairs({
+        { opts = { wrongMaster = true }, reason = 'Lightroom made virtual copy 101 of photo 5, not of photo 3' },
+        { opts = { copyUnreadable = true }, reason = 'photo gone' },
+        { opts = { twoCopies = true }, reason = 'Lightroom returned 2 virtual copies instead of one' },
+    }) do
+        it('keeps the created copy ids in the unknown reason when a check after creation fails: ' .. case.reason, function()
+            setup(case.opts)
+            local result = Handler.create({ photo_ids = { '3' } })
+            assert.is_nil(result.data)
+            local written = case.opts.twoCopies and 'createVirtualCopies, virtual copy 101, virtual copy 200'
+                or 'createVirtualCopies, virtual copy 101'
+            assert.are.same({ { photo_id = '3', reason = case.reason .. '; written before this stopped: ' .. written } },
+                result.unknown)
+            assertRestored()
+        end)
+    end
 
     it('restores the view source after falling back to All Photographs', function()
         setup({ restricted = true })

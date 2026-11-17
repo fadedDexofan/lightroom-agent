@@ -72,7 +72,7 @@ Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defrin
 ## Snapshots, virtual copies, history
 
 - Snapshots are stored per master: a virtual copy's snapshots are listed on its master and every copy, and deleting one through a copy deletes it for all. `apply_develop_snapshot` changes only the photo named. Name a snapshot after the photo and the moment (filename plus "before grading") and check the name before applying or deleting.
-- `create_virtual_copies` names each copy `copy_name`, returns `copies` (`master_photo_id`, `copy_photo_id`) and keeps copies made before a failure in its data. A new copy joins its master's stack (observed on Lightroom Classic 16.0). Edit through `copy_photo_id`. Also observed on Lightroom Classic 16.0: the call occasionally fails inside Lightroom without creating anything; read the master's `copy_photo_ids` before one retry.
+- `create_virtual_copies` names each copy `copy_name`, returns `copies` (`master_photo_id`, `copy_photo_id`) and keeps copies made before a failure in its data; a photo whose copy has another master or cannot be read back is `unknown`, and its reason names the copies created, so they can be found and removed. A new copy joins its master's stack (observed on Lightroom Classic 16.0). Edit through `copy_photo_id`. Also observed on Lightroom Classic 16.0: the call occasionally fails inside Lightroom without creating anything; read the master's `copy_photo_ids` before one retry.
 - `match_photo_style` makes a recovery snapshot per target before writing; `apply_develop_snapshot` restores it.
 
 ## Presets, copying and automatic adjustments

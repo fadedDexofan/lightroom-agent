@@ -1786,7 +1786,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     duration: "long",
     develop: "drives",
     run: { plugin: "HandlerVirtualCopies.create" },
-    description: "Create one virtual copy per distinct photo (max 25), named copy_name if given. Returns copies (photo_id/master_photo_id/copy_photo_id); copies made before a failure stay in data. Edit via copy_photo_id; repeats add more.",
+    description: "Create one virtual copy per distinct photo (max 25), named copy_name if given. Returns copies (photo_id/master_photo_id/copy_photo_id); copies made before a failure stay in data. A photo whose new copy has another master, or whose copy cannot be read back, is unknown, and its reason names every copy Lightroom created for it. Edit via copy_photo_id; repeats add more.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
