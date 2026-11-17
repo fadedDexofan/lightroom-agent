@@ -1,7 +1,7 @@
 {
   "name": "lightroom-agent",
   "version": "0.27.0",
-  "description": "MCP server bridging Claude/Codex/ChatGPT to Adobe Lightroom Classic via a Lua plugin.",
+  "description": "Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -11,6 +11,7 @@
   "files": [
     "dist",
     "LightroomAgent.lrplugin",
+    "skills",
     "README.md",
     "LICENSE"
   ],
@@ -23,7 +24,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --runInBand",
     "prepare": "npm run build",
-    "prepack": "node scripts/stage-plugin.mjs",
+    "prepack": "node scripts/stage-package.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -34,9 +35,13 @@
     "photography",
     "claude",
     "codex",
-    "chatgpt"
+    "chatgpt",
+    "pi-package"
   ],
-  "author": "Marcin Skalski",
+  "author": "fadedDexofan",
+  "contributors": [
+    "Marcin Skalski"
+  ],
   "license": "MIT",
   "homepage": "https://github.com/fadedDexofan/lightroom-agent#readme",
   "repository": {
@@ -70,5 +75,10 @@
   "overrides": {
     "minimatch": "^11.0.1"
   },
-  "mcpName": "io.github.fadedDexofan/lightroom-agent"
+  "mcpName": "io.github.fadedDexofan/lightroom-agent",
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  }
 }

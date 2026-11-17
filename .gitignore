@@ -10,6 +10,7 @@ yarn-error.log*
 dist/
 build/
 server/LightroomAgent.lrplugin/
+server/skills/
 *.tsbuildinfo
 
 # Local, untracked notes for agents
