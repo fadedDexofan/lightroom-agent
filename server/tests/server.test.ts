@@ -510,20 +510,23 @@ describe('createMcpServer', () => {
     ]);
   });
 
-  it('serves the bundled skill prompt with its workflow references', async () => {
+  it('serves the bundled skill prompt with its references and links between their sections', async () => {
     pair = await connect({ ready: false });
     expect(pair.client.getServerCapabilities()).toMatchObject({ prompts: {}, tools: {} });
     const { prompts } = await pair.client.listPrompts();
     expect(prompts).toHaveLength(1);
-    expect(prompts[0].name).toBe('raw-photo-lightroom-preset');
+    expect(prompts[0]).toMatchObject({ name: 'lightroom-agent', title: 'Lightroom agent' });
     const result = await pair.client.getPrompt({ name: prompts[0].name });
     expect(result.messages).toEqual([{
       role: 'user',
-      content: { type: 'text', text: expect.stringContaining('Judge color only from RAW files rendered by Lightroom/Camera Raw.') },
+      content: { type: 'text', text: expect.stringContaining('# SKILL.md\n\n---\nname: lightroom-agent\n') },
     }]);
-    expect(result.messages[0].content).toMatchObject({
-      text: expect.stringContaining('# RAW-First Lightroom Workflow v2'),
-    });
+    const text = (result.messages[0].content as { text: string }).text;
+    expect(text).toContain('\n# references/tools.md\n\n# Tools: mechanics');
+    expect(text).toContain('](SKILL.md#read-every-replys-outcome)');
+    expect(text).toContain('](references/cull.md#the-procedure)');
+    expect(text).toContain('](references/masks.md#mask-writes-re-render-a-raw)');
+    expect(text).not.toMatch(/\]\((?!https?:|SKILL\.md|references\/)/);
   });
 
   it('rejects an unknown skill prompt', async () => {

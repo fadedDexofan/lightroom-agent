@@ -1,0 +1,10 @@
+interface:
+  display_name: "Lightroom Agent"
+  short_description: "Cull, develop and export in Lightroom with verified edits"
+  default_prompt: "Use $lightroom-agent to cull these photos, develop the keepers on Lightroom's own render, and verify every change before reporting."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "lightroom"
+      description: "Local Lightroom Classic bridge (lightroom-agent): reads the catalog and Develop settings, renders previews and full-resolution detail crops, writes edits, masks, crops, presets and exports."

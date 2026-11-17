@@ -1,11 +1,5 @@
 import { ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
-import { SKILL_TEXT } from './skill-content.js';
-
-export const SKILL_PROMPT = {
-  name: 'raw-photo-lightroom-preset',
-  title: 'RAW Photo Lightroom Preset',
-  description: 'Closed-loop RAW editing, reference matching and Lightroom preset workflow.',
-};
+import { SKILL_PROMPT, SKILL_TEXT } from './skill-content.js';
 
 export function getSkillPrompt(name: string) {
   if (name !== SKILL_PROMPT.name) {

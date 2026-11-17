@@ -14,7 +14,7 @@ A write of the photo's mask array through Lightroom's undocumented mask setting,
 
 The exact set of keys and value types a guarded write accepts for each kind of mask component it constructs or changes. Entries a write leaves alone are Lightroom's own data: they are not checked against it, only required to read back exactly.
 
-- Avoid: pinned schema (the old name)
+- Avoid: pinned schema
 
 ### Mask-write admission
 

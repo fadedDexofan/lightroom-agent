@@ -3,7 +3,8 @@ import type { ToolCaller } from "./broker.js";
 import { createCallToolHandler, type ToolHandlerDeps } from "./tool-handler.js";
 import { createToolAccess, type ToolAccessOptions } from "./tool-access.js";
 import { VERSION } from "./version.js";
-import { getSkillPrompt, SKILL_PROMPT } from "./skill-prompt.js";
+import { SKILL_PROMPT } from "./skill-content.js";
+import { getSkillPrompt } from "./skill-prompt.js";
 import { SERVER_INSTRUCTIONS } from "./server-instructions.js";
 
 export type ServerDeps = ToolHandlerDeps | { callTool: ToolCaller };

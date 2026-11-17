@@ -19,7 +19,7 @@ This codebase is yours: what it's for and how it's built are your call, and you'
 - Preserve upstream history and the MIT license.
 - Keep `AGENTS.md` a symlink to this file. Verify any behavior claim here against the current source before relying on it, and fix this file in the change that makes it stale.
 - This repository holds technical API facts, contracts and mechanics. API work supplies capabilities, stable identities, render provenance and verifiable outcomes; it never silently turns an experimental score into a culling rule.
-- `skills/raw-photo-lightroom-preset` is upstream content shipped as the MCP prompt and the mcpb prompt; `npm run build` regenerates both from it.
+- `skills/lightroom-agent` is the bundled skill, shipped as the MCP prompt and the mcpb prompt; `npm run build` regenerates both from it. `agents/openai.yaml` is its metadata for Codex.
 - CLI and MCP share tool contracts and access policy. Reuse the existing bridge and Develop session lifecycle; do not add a second Lua protocol or catalog model.
 - Develop and test offline by default. Never install or reload a plug-in, restart Lightroom, switch the open catalog or change a user's photos as a side effect of development or tool discovery.
 - The project `.mcp.json` starts this checkout's built server as `lightroom`. Its tools act on whatever catalog Lightroom has open; do not call them without the user's permission.
@@ -34,16 +34,16 @@ This codebase is yours: what it's for and how it's built are your call, and you'
 Run from the repository root; `.mise.toml` and `server/package.json` define the tasks.
 
 - `mise run build` (`npm run build` in `server/`): regenerates `server/src/skill-content.ts` and the prompt in `mcpb/manifest.json` from the bundled skill, runs `tsc` into `server/dist/`, then regenerates `plugin/LightroomMCP.lrplugin/Contract.lua` from the TypeScript contract. Never edit these three files by hand.
-- `mise run test` (Jest), `mise run dev` (`tsc --watch`), `mise run lua:lint` (selene), `mise run lua:test` (busted), `mise run skill:test` (bundled skill's Python tests), `mise run live:test` (live-kit unit tests, no Lightroom).
+- `mise run test` (Jest), `mise run dev` (`tsc --watch`), `mise run lua:lint` (selene), `mise run lua:test` (busted), `mise run live:test` (live-kit unit tests, no Lightroom).
 - `mise install` provisions Node, Lua and selene; `lua:test` installs busted into the ignored `lua_modules/`. `selene.toml` and `lightroom.yml` (the SDK globals) configure the linter.
 
 Before committing, run after your final edit:
 
 - in `server/`: `npm run check`, `npm run lint`, `npm run build`, `npm run test:coverage`;
 - `mise run live:test` and `node scripts/bump-version.mjs --check`;
-- `mise run lua:lint` and `mise run lua:test` if Lua changed; `mise run skill:test` if `skills/` changed.
+- `mise run lua:lint` and `mise run lua:test` if Lua changed.
 
-CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` runs the server checks and live-kit unit tests on Ubuntu, macOS and Windows, fails when the build changes a tracked generated file, and checks version consistency. The Lua and skill workflows run on changes to their paths; `lua-test.yml` uses apt Lua 5.4, not the mise Lua. A live-kit unit run never substitutes for validation in Lightroom.
+CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` runs the server checks and live-kit unit tests on Ubuntu, macOS and Windows, fails when the build changes a tracked generated file, and checks version consistency. The Lua workflows run on changes to their paths; `lua-test.yml` uses apt Lua 5.4, not the mise Lua. A live-kit unit run never substitutes for validation in Lightroom.
 
 ## Layout
 

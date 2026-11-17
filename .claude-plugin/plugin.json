@@ -1,7 +1,7 @@
 {
   "name": "lightroom",
   "version": "0.27.0",
-  "description": "Lightroom Classic tools and a RAW photo preset workflow.",
+  "description": "Lightroom Classic tools and the lightroom-agent skill for culling, developing and exporting photos with verified edits.",
   "author": {
     "name": "Marcin Skalski"
   },

@@ -50,6 +50,10 @@ claude mcp add lightroom -e LIGHTROOM_MCP_TOOLSETS=all -- node /path/to/lightroo
 
 Any other MCP client runs the same command over stdio.
 
+## The bundled skill
+
+[`skills/lightroom-agent`](skills/lightroom-agent/SKILL.md) is a skill for agents that use these tools. It covers how to combine the tools and read their outcomes, and how to make photographic decisions while culling, developing, masking and exporting. `SKILL.md` is the entry point and links the files in `references/`. The server offers the whole skill as the MCP prompt `lightroom-agent`, with each reference appended under its path. `agents/openai.yaml` carries Codex's metadata for the skill.
+
 ## Toolsets and read-only mode
 
 The server exposes only the core tools unless `LIGHTROOM_MCP_TOOLSETS` asks for more:
