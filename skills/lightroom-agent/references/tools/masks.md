@@ -5,6 +5,7 @@ Use a mask when a global change cannot do the job: a subject that needs light th
 ## Addressing and vocabulary
 
 - Masks and their components are addressed by the ids `list_masks` returns (masks, and per mask its tools with `type`, `subtype`, `part`, `inverted`), or by the ids a creating call returns. Edits can regenerate ids: use the latest ones.
+- `list_masks` reads the saved settings without Develop, newest mask first; an empty list means the photo holds no masks.
 - Sliders use one vocabulary everywhere: the `local_*` SDK names (`local_Exposure` −4..4, `local_Contrast`, `local_Highlights`, `local_Shadows`, `local_Texture`, `local_Clarity`, `local_Dehaze`, `local_Sharpness`, `local_LuminanceNoise`, `local_Defringe`, `local_colorgrade*`, `local_glow`, …), in the `adjustments` of every creating call and in `set_mask_adjustments`. Each range is in the schema; `describe_develop_keys` with a `mask_id` shows where Lightroom's live range differs.
 - A new geometry mask without `adjustments`, and every new People or Landscape mask, applies no local adjustment until `set_mask_adjustments`, though on a RAW its creation can trigger a re-render ([below](#mask-writes-re-render-a-raw)).
 
@@ -30,7 +31,6 @@ Writes that construct mask data in Lightroom's undocumented format are guarded: 
 - `get_mask_write_admission` (with `photo_id`) reports admitted or not and why, without writing.
 - A refusal names the reason; after a Lightroom update the guarded writes refuse until certification is rerun. Report that to the person instead of working around it.
 - They check what they construct against the certified format, leave every other mask as Lightroom stored it, read the whole mask list back and roll back on a mismatch.
-- `list_masks` reads the saved settings without Develop, newest mask first; an empty list means the photo holds no masks. `invert_mask` still acts in Develop on the active photo: it waits up to 5 s until Develop lists as many masks as the saved settings hold, and fails with nothing changed while it lists fewer: the masks are not loaded yet, or an alert such as "No sky detected" is open from the person's own work. Click OK in Lightroom if an alert is open, then call again.
 
 ## Positions
 
@@ -55,7 +55,7 @@ Four calls write AI masks: `create_mask` (Subject, Sky, Background, People parts
 
 `combine_mask` worked in all three forms on a dense subject with Exposure −1 (observed on Lightroom Classic 16.0): add darkened the subject like Subject alone, subtract left the subject and darkened the rest, intersect darkened only the overlap. Intersect is stored as a subtracted, inverted component. People parts: each part becomes its own mask, and there is no single-person choice (Lightroom masks the first person).
 
-`invert_mask` `in_place` flips one component; `copy` makes Lightroom's inverted duplicate and writes every value of the source onto it. Use the returned `mask_id`.
+`invert_mask` `in_place` flips one component; `copy` makes Lightroom's inverted duplicate and writes every value of the source onto it. Use the returned `mask_id`. It opens the named photo in Develop and reads Develop's mask list: it waits up to 5 s until Develop lists as many masks as the saved settings hold, and fails with nothing changed while it lists fewer: the masks are not loaded yet, or an alert such as "No sky detected" is open from the person's own work. Click OK in Lightroom if an alert is open, then call again.
 
 ## Mask writes re-render a RAW
 
