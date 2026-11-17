@@ -30,6 +30,10 @@ local TWO_SAMPLE_COLOR = {
     CorrectionRangeMask = { Type = 1, PointModels = { "0.947132 0.039424 0.709755 0.747028 0.195453 0", "0.588786 0.645059 0.347055 0.447817 0.552280 1" }, SampleType = 0, ColorAmount = 0.494949, Invert = false, Version = 4 },
 }
 
+local function subjectComponent()
+    return { What = "Mask/Image", MaskID = "t-subject", MaskSubType = 1 }
+end
+
 local function correction(id, components, fields)
     local entry = { What = "Correction", CorrectionID = id, CorrectionName = "Mask " .. id, CorrectionActive = true,
         CorrectionMasks = components }
@@ -185,15 +189,39 @@ describe("HandlerMasks.listMasks", function()
         assert.are.same({}, listed({ { What = "Correction", CorrectionID = "m-1", CorrectionName = "Empty" } }).masks[1].tools)
     end)
 
-    it("still lists the masks, without ranges, when the photo's frame cannot be read", function()
+    it("lists colour ranges without samples, and still the other ranges, when the photo's frame cannot be read", function()
         local context = helper.requestContext(nil, { title = "list_masks" })
 
-        local r = listed({ correction("m-1", { COLOR }) }, { orientation = "ZZ", context = context })
+        local r = listed({ correction("m-1", { COLOR, LUMINANCE, subjectComponent() }), correction("m-2", { COLOR }) },
+            { orientation = "ZZ", context = context })
 
-        assert.are.equal(1, r.count)
-        assert.are.same({ id = "t-color", type = "rangeMask", subtype = "color", inverted = false }, r.masks[1].tools[1])
+        local tools = r.masks[2].tools
+        assert.are.same({ id = "t-color", type = "rangeMask", subtype = "color", inverted = false }, tools[1])
+        assert.are.same({ min = 0.6, max = 0.9, lower_falloff = 0.1, upper_falloff = 0.1 }, tools[2].range)
         assert.are.equal(1, #context.warnings)
-        assert.truthy(context.warnings[1]:find("stored ranges of photo 1 could not be read", 1, true), context.warnings[1])
+        assert.truthy(context.warnings[1]:find("colour samples of photo 1 could not be placed", 1, true), context.warnings[1])
+    end)
+
+    it("reads no frame and warns of nothing for a photo without colour ranges", function()
+        local context = helper.requestContext(nil, { title = "list_masks" })
+
+        local r = listed({ correction("m-1", { LUMINANCE, subjectComponent() }) }, { orientation = "ZZ", context = context })
+
+        assert.is_table(r.masks[1].tools[1].range)
+        assert.are.same({}, context.warnings)
+    end)
+
+    it("warns once that colour sample pins sit in a frame with Upright, Transform or manual distortion", function()
+        local context = helper.requestContext(nil, { title = "list_masks" })
+        local Handler = setup({ photos = { {
+            id = "1",
+            developSettings = { PerspectiveVertical = 20, MaskGroupBasedCorrections = { correction("m-1", { COLOR }), correction("m-2", { COLOR }) } },
+        } } })
+
+        Handler.listMasks({ photo_id = "1" }, context)
+
+        assert.are.equal(1, #context.warnings)
+        assert.truthy(context.warnings[1]:find("PerspectiveVertical 20", 1, true), context.warnings[1])
     end)
 
     it("returns an empty list for a photo whose saved settings hold no masks", function()

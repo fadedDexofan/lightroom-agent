@@ -6,6 +6,7 @@ local RangeMaskGeometry = {}
 local LUMINANCE = "luminance"
 local COLOR = "color"
 local DEPTH = "depth"
+RangeMaskGeometry.COLOR = COLOR
 
 local RANGE_TYPE_OF_KIND = { [COLOR] = 1, [LUMINANCE] = 2, [DEPTH] = -1 }
 local KIND_OF_RANGE_TYPE = { [1] = COLOR, [2] = LUMINANCE, [-1] = DEPTH }

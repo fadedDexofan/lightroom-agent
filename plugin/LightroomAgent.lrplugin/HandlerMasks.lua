@@ -21,10 +21,13 @@ local TYPE_OF_GRADIENT_SHAPE = { linear = "gradient", radial = "radialGradient" 
 
 local function frameOf(context, catalog, photo)
     local ok, frame = LrTasks.pcall(ImageFrame.forPhoto, catalog, photo)
-    if ok then return frame end
-    context:warn(string.format("The stored ranges of photo %s could not be read, so range tools are listed without"
-        .. " range: %s", tostring(photo.localIdentifier), Reply.messageOf(frame)))
-    return nil
+    if not ok then
+        context:warn(string.format("The colour samples of photo %s could not be placed, so colour ranges are listed"
+            .. " without range: %s", tostring(photo.localIdentifier), Reply.messageOf(frame)))
+        return nil
+    end
+    if frame.warning then context:warn(frame.warning) end
+    return frame
 end
 
 local function describeTool(component, frameOfPhoto)
@@ -43,9 +46,10 @@ local function describeTool(component, frameOfPhoto)
     else
         tool.type = component.What
     end
-    if tool.type == RANGE then
-        local frame = frameOfPhoto()
-        if frame ~= nil then tool.range = select(2, RangeMaskGeometry.rangeOf(component, frame)) end
+    if tool.type == RANGE and tool.subtype ~= RangeMaskGeometry.COLOR then
+        tool.range = select(2, RangeMaskGeometry.rangeOf(component))
+    elseif tool.type == RANGE and frameOfPhoto() ~= nil then
+        tool.range = select(2, RangeMaskGeometry.rangeOf(component, frameOfPhoto()))
     end
     return tool
 end
