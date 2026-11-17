@@ -48,7 +48,7 @@ function MaskHandler.listMasks(args, context)
 
     local masks = {}
     for _, mask in ipairs(raw.masks) do
-        masks[#masks + 1] = MaskSelection.normalizeMask(mask, photoId, raw.ranges)
+        masks[#masks + 1] = MaskSelection.normalizeMask(mask, raw.ranges)
     end
 
     Log.info(string.format("Listed %d masks on photo %s", #masks, photoId))

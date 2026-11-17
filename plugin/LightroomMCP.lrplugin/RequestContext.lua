@@ -7,14 +7,10 @@ local RequestContext = {}
 RequestContext.__index = RequestContext
 
 function RequestContext.new(title, budgetMs, sendProgress)
-    local deadline = nil
-    if type(budgetMs) == "number" and budgetMs > 0 then
-        deadline = LrDate.currentTime() + budgetMs / 1000
-    end
     return setmetatable({
         title = title,
         cancelled = false,
-        deadline = deadline,
+        deadline = LrDate.currentTime() + budgetMs / 1000,
         lastProgress = -1,
         sendProgress = sendProgress,
         warnings = {},
@@ -27,7 +23,6 @@ function RequestContext:isCanceled()
 end
 
 function RequestContext:timeLeft()
-    if not self.deadline then return math.huge end
     return self.deadline - LrDate.currentTime()
 end
 

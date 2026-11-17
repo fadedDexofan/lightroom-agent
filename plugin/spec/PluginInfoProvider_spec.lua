@@ -244,7 +244,7 @@ describe("PluginInfoProvider server task", function()
                 end,
             }
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"p1","action":"search_photos","reportProgress":true}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p1","action":"search_photos","reportProgress":true}')
 
             assert.are.equal(0, sleeps)
             assert.are.same({ done = true }, require('JSON'):decode(sends[#sends]).result.data)
@@ -253,7 +253,7 @@ describe("PluginInfoProvider server task", function()
 
     describe("undecodable requests", function()
         local function malformed(token)
-            return '{"hello":"' .. token .. '","id":"req_1","action":"ping","params":{"x":"\\q"}}'
+            return '{"budget_ms":30000,"hello":"' .. token .. '","id":"req_1","action":"ping","params":{"x":"\\q"}}'
         end
 
         it("answers an authenticated client instead of leaving it to time out", function()
@@ -270,7 +270,7 @@ describe("PluginInfoProvider server task", function()
         it("answers a well-formed request with a wrong token", function()
             local binds, sends = serving()
 
-            binds[1].onMessage(nil, '{"hello":"not-the-token","id":"req_1","action":"ping"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"not-the-token","id":"req_1","action":"ping"}')
 
             assert.is_not_nil(sends[1])
             assert.is_not_nil(sends[1]:find('"id":"req_1"', 1, true))
@@ -288,7 +288,7 @@ describe("PluginInfoProvider server task", function()
         it("stays silent when no id can be salvaged", function()
             local binds, sends, state = serving()
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","action":"ping"')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","action":"ping"')
 
             assert.is_nil(sends[1])
         end)
@@ -300,7 +300,7 @@ describe("PluginInfoProvider server task", function()
             package.loaded.HandlerSearch = {
                 searchPhotos = function() error(message, level) end,
             }
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"e1","action":"search_photos"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"e1","action":"search_photos"}')
             return require('JSON'):decode(sends[1]).error
         end
 
@@ -335,7 +335,7 @@ describe("PluginInfoProvider server task", function()
                 get = function(params) received = params; return { photos = { { photo_id = "7", keys = {} } } } end,
             }
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token
                 .. '","id":"r1","action":"get_develop_settings","params":{"photo_ids":["7"]}}')
 
             local reply = require('JSON'):decode(sends[1])
@@ -351,7 +351,7 @@ describe("PluginInfoProvider server task", function()
                 get = function(params) received = params; return { admitted = false } end,
             }
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token
                 .. '","id":"r1","action":"get_mask_write_admission","params":{"photo_id":"7"}}')
 
             local reply = require('JSON'):decode(sends[1])
@@ -367,15 +367,15 @@ describe("PluginInfoProvider server task", function()
                 searchPhotos = function(_, context)
                     seen.left = context:timeLeft()
                     seen.before = context:isCanceled()
-                    binds[1].onMessage(nil, '{"hello":"' .. state.token
+                    binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token
                         .. '","action":"cancel","params":{"request_id":"c1"}}')
                     seen.after = context:isCanceled()
                     return {}
                 end,
             }
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token
-                .. '","id":"c1","action":"search_photos","budget_ms":30000}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token
+                .. '","id":"c1","action":"search_photos"}')
 
             assert.are.same({ left = 30, before = false, after = true }, seen)
         end)
@@ -392,8 +392,8 @@ describe("PluginInfoProvider server task", function()
                 end,
             }
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"p1","action":"search_photos"}')
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"p2","action":"list_collections"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p1","action":"search_photos"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p2","action":"list_collections"}')
 
             local JSON = require 'JSON'
             assert.are.same({ data = { photos = {} } }, JSON:decode(sends[1]).result)
@@ -414,8 +414,8 @@ describe("PluginInfoProvider server task", function()
         local function answers(handlersFrom)
             local binds, sends, state = serving()
             package.loaded.HandlerOrganization = handlersFrom(require 'Reply', require 'CatalogWrite')
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"r1","action":"set_rating_and_flag"}')
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"r2","action":"set_color_label"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"r1","action":"set_rating_and_flag"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"r2","action":"set_color_label"}')
             local JSON = require 'JSON'
             return JSON:decode(sends[1]), JSON:decode(sends[2])
         end
@@ -474,7 +474,7 @@ describe("PluginInfoProvider server task", function()
             local Reply = require 'Reply'
             package.loaded.HandlerMasks = { listMasks = function(params) Reply.notFound(params.photo_id) end }
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"n1","action":"list_masks","params":{"photo_id":404}}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"n1","action":"list_masks","params":{"photo_id":404}}')
 
             local reply = require('JSON'):decode(sends[1])
             assert.is_nil(reply.error)
@@ -495,8 +495,8 @@ describe("PluginInfoProvider server task", function()
                 end,
             }
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"w1","action":"set_rating_and_flag"}')
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"w2","action":"set_color_label"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"w1","action":"set_rating_and_flag"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"w2","action":"set_color_label"}')
 
             local JSON = require 'JSON'
             assert.are.same({ data = { done = true }, warnings = { "own warning", "view not restored" } },
@@ -512,7 +512,7 @@ describe("PluginInfoProvider server task", function()
                 searchPhotos = function() return { score = 0 / 0 } end,
             }
 
-            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"e2","action":"search_photos"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"e2","action":"search_photos"}')
 
             assert.are.equal(1, #sends)
             local reply = require('JSON'):decode(sends[1])
@@ -735,7 +735,7 @@ describe("stale-connection follow-up fixes (PR #151 re-review)", function()
             end,
         }
 
-        binds[1].onMessage(nil, '{"id":1,"action":"ping","hello":"' .. state.token .. '"}')
+        binds[1].onMessage(nil, '{"budget_ms":30000,"id":1,"action":"ping","hello":"' .. state.token .. '"}')
 
         assert.are.equal(0, state.inFlightRequests)
     end)
@@ -919,7 +919,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     end)
 
     local function requestFor(state, action)
-        return '{"id":1,"action":"' .. action .. '","hello":"' .. state.token .. '"}'
+        return '{"budget_ms":30000,"id":1,"action":"' .. action .. '","hello":"' .. state.token .. '"}'
     end
 
     it("clears connection state without blocking on sockets or the log file", function()

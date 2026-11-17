@@ -15,7 +15,6 @@ local GuardedMaskWrite = {}
 local READ_BACK_TIMEOUT_SECONDS = 3
 local READ_BACK_POLL_SECONDS = 0.1
 local TOLERANCE = 1e-5
-local MAX_CLONE_DEPTH = 40
 local MAX_REPORTED_PROBLEMS = 6
 
 local OPAQUE_WHAT = "Mask/Image"
@@ -89,24 +88,16 @@ local RANGE_TYPE_FIELDS = {
 }
 local RANGE_TYPE_COLOR = 1
 
-local function deepClone(value, depth)
-    if type(value) ~= "table" then
-        if type(value) == "function" or type(value) == "userdata" then
-            error("mask data holds a " .. type(value) .. " value, which cannot be copied", 0)
-        end
-        return value
-    end
-    if depth > MAX_CLONE_DEPTH then error("mask data is nested too deeply to copy", 0) end
+local function deepClone(value)
+    if type(value) ~= "table" then return value end
     local copy = {}
     for key, item in pairs(value) do
-        copy[key] = deepClone(item, depth + 1)
+        copy[key] = deepClone(item)
     end
     return copy
 end
 
-function GuardedMaskWrite.deepClone(value)
-    return deepClone(value, 0)
-end
+GuardedMaskWrite.deepClone = deepClone
 
 local function hasType(value, expected)
     if expected == "number" then
@@ -235,10 +226,10 @@ end
 local function plannedEntries(read, proposed)
     local byId, plan = {}, {}
     for _, entry in ipairs(read) do
-        if type(entry) == "table" and entry.CorrectionID ~= nil then byId[tostring(entry.CorrectionID)] = entry end
+        if entry.CorrectionID ~= nil then byId[tostring(entry.CorrectionID)] = entry end
     end
     for index, entry in ipairs(proposed) do
-        local before = type(entry) == "table" and entry.CorrectionID ~= nil and byId[tostring(entry.CorrectionID)] or nil
+        local before = entry.CorrectionID ~= nil and byId[tostring(entry.CorrectionID)] or nil
         plan[index] = { preserved = before ~= nil and JsonValue.equal(before, entry), before = before }
     end
     return plan
@@ -409,12 +400,7 @@ local function mismatchesFor(plan)
 end
 
 local function entriesOf(settings)
-    settings = settings or {}
-    local entries = settings.MaskGroupBasedCorrections
-    if entries ~= nil and type(entries) ~= "table" then
-        error("Lightroom returned mask data that is not a list", 0)
-    end
-    return deepClone(entries or {}, 0), settings.ProcessVersion
+    return deepClone(settings.MaskGroupBasedCorrections or {}), settings.ProcessVersion
 end
 
 local function readEntries(catalog, photo)
@@ -434,19 +420,6 @@ function GuardedMaskWrite.inspect(catalog, photo)
         mask_count = #entries,
         schema_problems = GuardedMaskWrite.formatProblems(entries),
     }
-end
-
-local function admittedEntries(catalog, photo, plannedProcessVersion)
-    local read, entries, processVersion = LrTasks.pcall(readEntries, catalog, photo)
-    if not read then
-        Reply.refuse("The masks already on this photo could not be read: " .. Reply.messageOf(entries))
-    end
-    MaskWriteAdmission.requireAdmitted(catalog, plannedProcessVersion or processVersion)
-    return entries
-end
-
-function GuardedMaskWrite.preflight(catalog, photo, plannedProcessVersion)
-    return admittedEntries(catalog, photo, plannedProcessVersion)
 end
 
 local function writeEntries(context, catalog, photo, description, entries)
@@ -503,10 +476,10 @@ function GuardedMaskWrite.submit(context, catalog, photo, spec)
     local wrote, writeError = LrTasks.pcall(CatalogWrite.run, context, catalog, spec.description, function()
         settings = photo:getDevelopSettings()
         previous = entriesOf(settings)
-        proposed = spec.build(deepClone(previous, 0))
+        proposed = spec.build(deepClone(previous), settings)
         if proposed == nil then return CatalogWrite.NOTHING end
         sent = true
-        CatalogWrite.call(context, photo, "applyDevelopSettings", { MaskGroupBasedCorrections = deepClone(proposed, 0) })
+        CatalogWrite.call(context, photo, "applyDevelopSettings", { MaskGroupBasedCorrections = deepClone(proposed) })
     end)
     if not wrote and not sent then error(writeError, 0) end
     if not wrote then
@@ -519,13 +492,9 @@ function GuardedMaskWrite.submit(context, catalog, photo, spec)
     if not read then
         mismatches = { "the masks could not be read back: " .. tostring(actual) }
     end
-    if #mismatches == 0 and spec.crossCheck then
-        local checked, crossProblem = LrTasks.pcall(spec.crossCheck, actual)
-        if not checked then
-            mismatches = { "check against Lightroom's mask list failed: " .. tostring(crossProblem) }
-        elseif crossProblem then
-            mismatches = { crossProblem }
-        end
+    if #mismatches == 0 and spec.readBackProblem then
+        local problem = spec.readBackProblem(actual)
+        if problem then mismatches = { problem } end
     end
     if #mismatches > 0 then
         failAfterRollback(context, catalog, photo, previous, mismatches, mark)
@@ -534,12 +503,12 @@ function GuardedMaskWrite.submit(context, catalog, photo, spec)
 end
 
 function GuardedMaskWrite.apply(context, catalog, photo, spec)
-    admittedEntries(catalog, photo)
     local plan
     return GuardedMaskWrite.submit(context, catalog, photo, {
         description = spec.description,
-        build = function(entries)
-            local read = deepClone(entries, 0)
+        build = function(entries, settings)
+            MaskWriteAdmission.requireAdmitted(catalog, settings.ProcessVersion)
+            local read = deepClone(entries)
             local proposed = spec.build(entries)
             if type(proposed) ~= "table" then error("mask change produced no mask list", 0) end
             plan = plannedEntries(read, proposed)
@@ -557,7 +526,7 @@ function GuardedMaskWrite.apply(context, catalog, photo, spec)
             return proposed
         end,
         mismatches = function(expected, actual) return mismatchesFor(plan)(expected, actual) end,
-        crossCheck = spec.crossCheck,
+        readBackProblem = spec.readBackProblem,
     })
 end
 

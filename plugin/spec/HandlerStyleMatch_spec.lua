@@ -72,6 +72,13 @@ describe('reference style matching', function()
             ExtendedToneCurvePV2012 = { 0, 0, 255, 255 }, FixtureLook = 3 }, applied['2'])
     end)
 
+    it('matches a target named twice once, with one snapshot and one result', function()
+        local reply = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '2', 2 } })
+        assert.same({ 'snapshot:2', 'apply:2' }, events)
+        assert.are.equal(1, reply.data.matched)
+        assert.are.equal(1, #reply.data.results)
+    end)
+
     it('transfers the reference curve from its Extended field into both fields of each target', function()
         local long = { 0, 0, 13, 15, 27, 31, 40, 46, 54, 61, 67, 76, 81, 91, 94, 105, 107, 119, 121, 133, 134, 146, 148, 160, 161, 172, 174, 186, 188, 199, 201, 212, 214, 226, 228, 238, 241, 249, 255, 255 }
         reference:getDevelopSettings().ExtendedToneCurvePV2012 = long

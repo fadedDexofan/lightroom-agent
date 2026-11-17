@@ -30,11 +30,7 @@ local function close(a, b)
 end
 
 local function requireApi()
-    local version = LrApplication.versionTable()
-    if version.major < 13 or (version.major == 13 and version.minor < 3) then
-        Reply.refuse('Lens Blur needs Lightroom Classic 13.3 or later')
-    end
-    DevelopSession.requireControllerFunctions('Lens Blur', { 'getProcessVersion', 'getValue', 'setValue',
+    DevelopSession.requireControllerFunctions('Lens Blur', { 'getValue', 'setValue',
         'getSelectedLensBlurBokeh', 'setLensBlurBokeh', 'stopTracking' }, 'Lightroom Classic 13.3')
 end
 
@@ -51,14 +47,6 @@ local function target(args)
         Reply.refuse('Lens Blur needs Process Version 3 or later; this photo uses ' .. version)
     end
     return catalog, photo
-end
-
-local function requireProcess()
-    local version = sdk(LrDevelopController.getProcessVersion)
-    local number = type(version) == 'string' and tonumber(version:match('^Version (%d+)$'))
-    if not number or number < 3 then
-        Reply.refuse('Lens Blur needs Process Version 3 or later; this photo uses ' .. tostring(version))
-    end
 end
 
 local function assertActive(catalog, photo)
@@ -139,7 +127,6 @@ end
 function Handler.get(args, context)
     local catalog, photo = target(args)
     return DevelopSession.withPhoto(context, catalog, photo, function()
-        requireProcess()
         local result = read(catalog, photo)
         result.photo_id = tostring(photo.localIdentifier)
         return result
@@ -149,7 +136,6 @@ end
 function Handler.set(args, context)
     local catalog, photo = target(args)
     return DevelopSession.withPhoto(context, catalog, photo, function()
-        requireProcess()
         local adjustments = args.bokeh ~= nil or args.focal_range ~= nil
         for _, slider in ipairs(SLIDERS) do adjustments = adjustments or args[slider.key] ~= nil end
         if adjustments or args.active == true then

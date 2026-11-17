@@ -15,9 +15,7 @@ local function createOne(context, catalog, photo, state, copyName)
     local created = CatalogWrite.invoke(context, "createVirtualCopies", catalog.createVirtualCopies, catalog, copyName) or {}
     if #created ~= 1 then error('Lightroom did not return exactly one virtual copy') end
     local copy = created[1]
-    if not copy:getRawMetadata('isVirtualCopy') then error('Lightroom did not return a virtual copy') end
     local master = copy:getRawMetadata('masterPhoto')
-    if not master then error('Virtual copy has no master photo') end
     return {
         master_photo_id = tostring(master.localIdentifier),
         copy_photo_id = tostring(copy.localIdentifier),

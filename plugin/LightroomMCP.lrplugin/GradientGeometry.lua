@@ -219,6 +219,4 @@ function GradientGeometry.newComponent(shape, geometry, mode, aspect)
     return GradientGeometry.applyGeometry(shape, component, geometry, aspect)
 end
 
-GradientGeometry.TOOL_TYPE_OF_SHAPE = { [LINEAR] = "gradient", [RADIAL] = "radialGradient" }
-
 return GradientGeometry

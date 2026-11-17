@@ -18,6 +18,7 @@ local DevelopSession = require 'DevelopSession'
 local AIMaskCompute = require 'AIMaskCompute'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local Log = require 'Log'
+local MaskWriteAdmission = require 'MaskWriteAdmission'
 local JSON = require 'JSON'
 local JsonValue = require 'JsonValue'
 local Reply = require 'Reply'
@@ -72,7 +73,7 @@ local function allDevelopPresetEntries()
         end
     end
 
-    if _PLUGIN and type(LrApplication.getDevelopPresetsForPlugin) == "function" then
+    if type(LrApplication.getDevelopPresetsForPlugin) == "function" then
         local pluginPresets = LrApplication.getDevelopPresetsForPlugin(_PLUGIN) or {}
         for _, preset in ipairs(pluginPresets) do
             table.insert(entries, presetEntry(preset, "Plugin Develop Presets", "plugin"))
@@ -272,7 +273,7 @@ end
 function DevelopHandler.createDevelopPreset(args, context)
     args.photo_id = tostring(args.photo_id)
 
-    if not _PLUGIN or type(LrApplication.addDevelopPresetForPlugin) ~= "function" then
+    if type(LrApplication.addDevelopPresetForPlugin) ~= "function" then
         Reply.refuse("Plugin preset creation is unavailable")
     end
     for _, entry in ipairs(allDevelopPresetEntries()) do
@@ -579,7 +580,7 @@ end
 
 local function replaceMasks(context, catalog, photo, target, masks, aiMasks, processVersion)
     if processVersion ~= nil and processVersion ~= target.processVersion then
-        GuardedMaskWrite.preflight(catalog, photo, processVersion)
+        MaskWriteAdmission.requireAdmitted(catalog, processVersion)
         DevelopSession.flushIfShowing(catalog, photo)
         local title = "Set Process Version " .. tostring(processVersion)
         CatalogWrite.run(context, catalog, title, function()
@@ -621,7 +622,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
         end
     end
     if type(toApply.MaskGroupBasedCorrections) == "table" and #toApply.MaskGroupBasedCorrections > 0 then
-        local safe, reason = LrTasks.pcall(GuardedMaskWrite.preflight, catalog, source)
+        local safe, reason = LrTasks.pcall(MaskWriteAdmission.requireAdmitted, catalog, sourceSettings.ProcessVersion)
         if not safe then
             Reply.refuse("The source's masks cannot be copied: " .. Reply.messageOf(reason)
                 .. " Name the settings to copy with settings to leave masks out.")
@@ -713,9 +714,9 @@ function DevelopHandler.matchPhotoStyle(args, context)
     local targetIds = idStrings(args.target_ids)
     local catalog = LrApplication.activeCatalog()
     local source = PhotoLookup.requireOne(catalog, sourceId)
-    local resolved = PhotoLookup.resolveMany(catalog, targetIds)
-    for _, entry in ipairs(resolved) do
-        if entry.photo and entry.photo.localIdentifier == source.localIdentifier then
+    local targets, missing = PhotoLookup.resolveDistinct(catalog, targetIds)
+    for _, entry in ipairs(targets) do
+        if entry.photo.localIdentifier == source.localIdentifier then
             Reply.refuse('Reference photo must not appear in target_ids')
         end
     end
@@ -726,12 +727,10 @@ function DevelopHandler.matchPhotoStyle(args, context)
         grayscale = reference.ConvertToGrayscale == true
         for key in pairs(STYLE_KEYS) do settings[key] = DevelopCurves.read(reference, key) end
     end)
-    local results, failures, missing, written, remaining = {}, {}, {}, {}, {}
+    local results, failures, written, remaining = {}, {}, {}, {}
     local snapshots = require 'HandlerSnapshots'
-    for _, entry in ipairs(resolved) do
-        if not entry.photo then
-            missing[#missing + 1] = tostring(entry.id)
-        elseif #remaining > 0 or context:stopping(batchReserve(2, false)) then
+    for _, entry in ipairs(targets) do
+        if #remaining > 0 or context:stopping(batchReserve(2, false)) then
             remaining[#remaining + 1] = entry.id
         else
             local photoId = tostring(entry.photo.localIdentifier)
@@ -919,13 +918,7 @@ local PROCESS_VERSIONS = {
 local function refuseMaskedDowngrade(catalog, photo)
     local settings
     catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
-    if type(settings) ~= "table" then
-        Reply.refuse("Could not check the photo's masks before downgrading")
-    end
     local masks = settings.MaskGroupBasedCorrections
-    if masks ~= nil and type(masks) ~= "table" then
-        Reply.refuse("Could not read the photo's masks before downgrading")
-    end
     if masks and next(masks) ~= nil then
         Reply.refuse("Process-version downgrades are refused on photos with masks;"
             .. " keep the current version to preserve mask editing")
@@ -1028,7 +1021,6 @@ function DevelopHandler.applyAutoAdjustments(args, context)
     local autoFunctions = {}
     if args.tone then autoFunctions[#autoFunctions + 1] = "setAutoTone" end
     if args.white_balance then autoFunctions[#autoFunctions + 1] = "setAutoWhiteBalance" end
-    DevelopSession.requireControllerFunctions("apply_auto_adjustments", autoFunctions, "Lightroom Classic 7.4")
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,

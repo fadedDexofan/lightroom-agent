@@ -487,7 +487,6 @@ const fitsFrame = (region: { x: number; y: number; width: number; height: number
   region.x + region.width <= 1 && region.y + region.height <= 1;
 
 export const PLUGIN_ACTIONS: readonly { name: string; plugin: string }[] = [
-  { name: "set_selection", plugin: "HandlerSelection.setSelection" },
   { name: "render_preview", plugin: "HandlerPreview.renderPreview" },
   { name: "render_duplicate_preview", plugin: "HandlerPreview.renderDuplicatePreview" },
   { name: "render_detail_source", plugin: "HandlerExport.renderDetailSource" },
@@ -2037,7 +2036,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "Create gradient mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    develop: "drives",
+    develop: "settings",
     run: { plugin: "HandlerGradientMasks.createGradientMask" },
     description:
       "Place a linear or radial gradient (certified Lightroom only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and the geometry read back.",
@@ -2077,7 +2076,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "Update gradient mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    develop: "drives",
+    develop: "settings",
     run: { plugin: "HandlerGradientMasks.updateGradientMask" },
     description:
       "Reshape a gradient by tool_id from list_masks or create_gradient_mask (certified Lightroom only; shared guarded-write and coordinate rules apply). Supply only changed fields: start/end for linear, center/width/height/rotation/feather/area for radial; a field of the shape the stored tool does not have is refused before anything is written. Preserves tool id, mask id and adjustments.",
@@ -2098,7 +2097,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "Create brush mask",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    develop: "drives",
+    develop: "settings",
     run: { plugin: "HandlerBrushMasks.createBrushMask" },
     description:
       "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (certified Lightroom only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
@@ -2132,7 +2131,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "Add brush strokes",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    develop: "drives",
+    develop: "settings",
     run: { plugin: "HandlerBrushMasks.addBrushStrokes" },
     description:
       "Append strokes to a brush by tool_id from list_masks or create_brush_mask (certified Lightroom only; shared guarded-write and coordinate rules apply). Uses create_brush_mask stroke settings and path filling; existing strokes, ids and adjustments stay unchanged. Empty strokes are rejected. Append erase strokes to remove paint, or delete the brush with delete_masks tool_ids and repaint. Returns mask_id, tool_id, strokes_added and stroke_count.",
@@ -2153,7 +2152,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "Create range mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    develop: "drives",
+    develop: "settings",
     run: { plugin: "HandlerRangeMasks.createRangeMask" },
     description:
       "Create a luminance, color or depth range (certified Lightroom only; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC. Falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). copy_sample_from {mask_id, tool_id, optional photo_id} replaces color.sample: copies that sample verbatim, keeping its displayed pin and amount unless color.amount overrides it. Any other source fails unchanged. Cross-photo copies match rankings, so different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. New masks start neutral. Returns mask_id, tool_id, type and the range read back.",

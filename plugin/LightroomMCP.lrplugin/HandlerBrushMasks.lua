@@ -2,12 +2,10 @@ local LrApplication = import 'LrApplication'
 
 local PhotoLookup = require 'PhotoLookup'
 local BrushStrokes = require 'BrushStrokes'
-local DevelopSession = require 'DevelopSession'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
 local MaskValues = require 'MaskValues'
-local MaskSelection = require 'MaskSelection'
 local Reply = require 'Reply'
 
 local BrushMaskHandler = {}
@@ -23,21 +21,6 @@ local function resultFor(photoId, entries, location, strokesAdded)
         strokes_added = strokesAdded,
         stroke_count = #component.Masks,
     }
-end
-
-local function writeWithBrushCrossCheck(context, catalog, photo, description, build, locationOf)
-    return DevelopSession.withPhoto(context, catalog, photo, function()
-        return GuardedMaskWrite.apply(context, catalog, photo, {
-            description = description,
-            build = build,
-            crossCheck = function(actual)
-                local location = locationOf()
-                local entry = actual[location.entry]
-                local component = entry.CorrectionMasks[location.component]
-                return MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, BrushStrokes.TOOL_TYPE)
-            end,
-        })
-    end)
 end
 
 local function addBrush(entries, request)
@@ -59,7 +42,6 @@ function BrushMaskHandler.createBrushMask(args, context)
     local strokes = BrushStrokes.parseStrokes(args.strokes)
     local maskId = args.mask_id
     local name = args.name
-    DevelopSession.requireMaskApi("create_brush_mask")
 
     local catalog = LrApplication.activeCatalog()
 
@@ -73,15 +55,15 @@ function BrushMaskHandler.createBrushMask(args, context)
         name = name,
         adjustments = args.adjustments,
     }
-    addBrush(GuardedMaskWrite.preflight(catalog, photo), request)
 
     local location
-    local written = writeWithBrushCrossCheck(context, catalog, photo, "Create brush mask",
-        function(entries)
+    local written = GuardedMaskWrite.apply(context, catalog, photo, {
+        description = "Create brush mask",
+        build = function(entries)
             location = addBrush(entries, request)
             return entries
         end,
-        function() return location end)
+    })
 
     if frame.warning then context:warn(frame.warning) end
     local result = resultFor(photoId, written.entries, location, #strokes)
@@ -106,7 +88,6 @@ end
 function BrushMaskHandler.addBrushStrokes(args, context)
     local toolId = args.tool_id
     local strokes = BrushStrokes.parseStrokes(args.strokes)
-    DevelopSession.requireMaskApi("add_brush_strokes")
 
     local catalog = LrApplication.activeCatalog()
 
@@ -118,15 +99,15 @@ function BrushMaskHandler.addBrushStrokes(args, context)
         toolId = toolId,
         strokes = BrushStrokes.toStoredFrame(strokes, frame),
     }
-    appendToBrush(GuardedMaskWrite.preflight(catalog, photo), request)
 
     local location
-    local written = writeWithBrushCrossCheck(context, catalog, photo, "Add brush strokes",
-        function(entries)
+    local written = GuardedMaskWrite.apply(context, catalog, photo, {
+        description = "Add brush strokes",
+        build = function(entries)
             location = appendToBrush(entries, request)
             return entries
         end,
-        function() return location end)
+    })
 
     if frame.warning then context:warn(frame.warning) end
     local result = resultFor(photoId, written.entries, location, #strokes)

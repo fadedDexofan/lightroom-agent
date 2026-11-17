@@ -28,18 +28,6 @@ function MaskSelection.idString(value)
     return nil
 end
 
-local function scalarOrNil(value)
-    local valueType = type(value)
-    if valueType == "string" or valueType == "number" or valueType == "boolean" then return value end
-    return nil
-end
-
-local function toolsOf(mask)
-    local tools = type(mask) == "table" and mask.Tools
-    if type(tools) ~= "table" then return {} end
-    return tools
-end
-
 function MaskSelection.findMask(masks, maskId)
     for _, mask in ipairs(masks or {}) do
         if type(mask) == "table" and mask.ID == maskId then return mask end
@@ -62,9 +50,7 @@ end
 local function savedMaskCount(catalog, photo)
     local count = 0
     catalog:withReadAccessDo(function()
-        local settings = photo:getDevelopSettings()
-        local groups = type(settings) == "table" and settings.MaskGroupBasedCorrections
-        if type(groups) == "table" then count = #groups end
+        count = #(photo:getDevelopSettings().MaskGroupBasedCorrections or {})
     end)
     return count
 end
@@ -164,70 +150,24 @@ function MaskSelection.problemUnlessAddedRemoved(context, catalog, photo, knownI
     return nil
 end
 
-local function toolListed(masks, maskId, toolId, toolType, subtype)
-    for _, tool in ipairs(toolsOf(MaskSelection.findMask(masks, maskId))) do
-        if tostring(tool.ID) == tostring(toolId) and tool.Type == toolType
-            and (subtype == nil or tool.Subtype == subtype) then
-            return true
-        end
-    end
-    return false
-end
-
-function MaskSelection.problemUnlessListed(maskId, toolId, toolType, subtype)
-    if maskId == nil or toolId == nil then
-        return "Lightroom did not assign ids to the written mask"
-    end
-    local listed = DevelopSession.waitFor(function()
-        local masks = MaskSelection.readMasksOrNil()
-        return masks ~= nil and toolListed(masks, tostring(maskId), toolId, toolType, subtype)
-    end, MASK_LISTED_TIMEOUT_SECONDS)
-    if listed then return nil end
-    return string.format("Lightroom's mask list has no %s tool %s in mask %s after the write",
-        subtype and (toolType .. " " .. subtype) or toolType, tostring(toolId), tostring(maskId))
-end
-
-local function sortedKeyNames(entry)
-    local names = {}
-    for key in pairs(entry) do names[#names + 1] = tostring(key) end
-    table.sort(names)
-    return table.concat(names, ", ")
-end
-
-local function normalizeTool(tool, photoId, ranges)
-    if type(tool) ~= "table" then
-        error("Lightroom returned a mask tool that is not a table for photo " .. photoId)
-    end
-    local id = MaskSelection.idString(tool.ID)
-    if not id then
-        error("Lightroom returned a mask tool without an id for photo " .. photoId
-            .. " (fields: " .. sortedKeyNames(tool) .. ")")
-    end
+local function normalizeTool(tool, ranges)
     return {
-        id = id,
-        type = scalarOrNil(tool.Type),
-        subtype = scalarOrNil(tool.Subtype),
+        id = tool.ID,
+        type = tool.Type,
+        subtype = tool.Subtype,
         inverted = tool.Inverted == true,
-        range = ranges and ranges[id] or nil,
+        range = ranges and ranges[tool.ID] or nil,
     }
 end
 
-function MaskSelection.normalizeMask(mask, photoId, ranges)
-    if type(mask) ~= "table" then
-        error("Lightroom returned a mask that is not a table for photo " .. photoId)
-    end
-    local id = MaskSelection.idString(mask.ID)
-    if not id then
-        error("Lightroom returned a mask without an id for photo " .. photoId
-            .. " (fields: " .. sortedKeyNames(mask) .. ")")
-    end
+function MaskSelection.normalizeMask(mask, ranges)
     local tools = {}
-    for _, tool in ipairs(toolsOf(mask)) do
-        tools[#tools + 1] = normalizeTool(tool, photoId, ranges)
+    for _, tool in ipairs(mask.Tools or {}) do
+        tools[#tools + 1] = normalizeTool(tool, ranges)
     end
     return {
-        id = id,
-        name = scalarOrNil(mask.Name),
+        id = mask.ID,
+        name = mask.Name,
         hidden = mask.Hidden == true,
         tools = tools,
     }

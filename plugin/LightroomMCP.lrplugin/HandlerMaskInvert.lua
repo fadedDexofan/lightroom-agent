@@ -20,14 +20,10 @@ local MODE_COPY = "copy"
 
 local function describeMask(mask)
     local tools = {}
-    if type(mask.Tools) == "table" then
-        for _, tool in ipairs(mask.Tools) do
-            if type(tool) == "table" then
-                tools[#tools + 1] = { id = MaskSelection.idString(tool.ID), inverted = tool.Inverted == true }
-            end
-        end
+    for _, tool in ipairs(mask.Tools or {}) do
+        tools[#tools + 1] = { id = tool.ID, inverted = tool.Inverted == true }
     end
-    return { id = mask.ID, name = type(mask.Name) == "string" and mask.Name or nil, tools = tools }
+    return { id = mask.ID, name = mask.Name, tools = tools }
 end
 
 local function callInvertFunction(context, name, maskId)

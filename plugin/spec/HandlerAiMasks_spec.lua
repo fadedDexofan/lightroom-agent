@@ -346,16 +346,6 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(0, store.writesOutsideGate)
     end)
 
-    it("rejects a second Develop-driving call while one runs", function()
-        local Handler, _, _ = setup()
-        local DevelopSession = require 'DevelopSession'
-        local message
-        DevelopSession.run(helper.requestContext(nil, { title = "other_tool" }), nil, false, function()
-            message = helper.failedOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end)
-        end)
-
-        assert.matches("other_tool is already running", message, 1, true)
-    end)
 end)
 
 describe("HandlerMaskCreate.createMask landscape", function()

@@ -121,7 +121,7 @@ end
 function M.requestContext(budgetSeconds, overrides)
     package.loaded.RequestContext = nil
     local RequestContext = require 'RequestContext'
-    local context = RequestContext.new("test", budgetSeconds and budgetSeconds * 1000, nil)
+    local context = RequestContext.new("test", (budgetSeconds or 3600) * 1000, nil)
     contexts[context] = true
     context.report = function() end
     for key, value in pairs(overrides or {}) do context[key] = value end

@@ -160,6 +160,4 @@ function BrushStrokes.appendStrokes(aggregate, strokes)
     return #aggregate.Masks
 end
 
-BrushStrokes.TOOL_TYPE = "brush"
-
 return BrushStrokes

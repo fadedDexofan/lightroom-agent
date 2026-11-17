@@ -179,6 +179,4 @@ function RangeMaskGeometry.copiableColorRange(component, frame)
     return range
 end
 
-RangeMaskGeometry.TOOL_TYPE = "rangeMask"
-
 return RangeMaskGeometry

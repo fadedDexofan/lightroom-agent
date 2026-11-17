@@ -1,13 +1,11 @@
 local LrApplication = import 'LrApplication'
 
 local PhotoLookup = require 'PhotoLookup'
-local DevelopSession = require 'DevelopSession'
 local GradientGeometry = require 'GradientGeometry'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
 local MaskValues = require 'MaskValues'
-local MaskSelection = require 'MaskSelection'
 local Reply = require 'Reply'
 
 local GradientMaskHandler = {}
@@ -54,7 +52,6 @@ end
 function GradientMaskHandler.createGradientMask(args, context)
     local request = GradientGeometry.parseCreate(args)
     request.adjustments = args.adjustments
-    DevelopSession.requireMaskApi("create_gradient_mask")
 
     local catalog = LrApplication.activeCatalog()
 
@@ -62,25 +59,15 @@ function GradientMaskHandler.createGradientMask(args, context)
 
     local photoId = tostring(photo.localIdentifier)
     local placement = placementFor(catalog, photo)
-    local existing = GuardedMaskWrite.preflight(catalog, photo)
-    addGradient(existing, request, placement)
 
     local location
-    local toolType = GradientGeometry.TOOL_TYPE_OF_SHAPE[request.shape]
-    local written = DevelopSession.withPhoto(context, catalog, photo, function()
-        return GuardedMaskWrite.apply(context, catalog, photo, {
-            description = "Create gradient mask",
-            build = function(entries)
-                location = addGradient(entries, request, placement)
-                return entries
-            end,
-            crossCheck = function(actual)
-                local entry = actual[location.entry]
-                local component = entry.CorrectionMasks[location.component]
-                return MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, toolType)
-            end,
-        })
-    end)
+    local written = GuardedMaskWrite.apply(context, catalog, photo, {
+        description = "Create gradient mask",
+        build = function(entries)
+            location = addGradient(entries, request, placement)
+            return entries
+        end,
+    })
 
     if placement.frame.warning then context:warn(placement.frame.warning) end
     local result = resultFor(photoId, written.entries, location, placement)
@@ -112,7 +99,6 @@ end
 
 function GradientMaskHandler.updateGradientMask(args, context)
     local request = GradientGeometry.parseUpdate(args)
-    DevelopSession.requireMaskApi("update_gradient_mask")
 
     local catalog = LrApplication.activeCatalog()
 
@@ -120,25 +106,15 @@ function GradientMaskHandler.updateGradientMask(args, context)
 
     local photoId = tostring(photo.localIdentifier)
     local placement = placementFor(catalog, photo)
-    local existing = GuardedMaskWrite.preflight(catalog, photo)
-    reshapeGradient(existing, request, placement)
 
     local location
-    local written = DevelopSession.withPhoto(context, catalog, photo, function()
-        return GuardedMaskWrite.apply(context, catalog, photo, {
-            description = "Update gradient mask",
-            build = function(entries)
-                location = reshapeGradient(entries, request, placement)
-                return entries
-            end,
-            crossCheck = function(actual)
-                local entry = actual[location.entry]
-                local component = entry.CorrectionMasks[location.component]
-                local toolType = GradientGeometry.TOOL_TYPE_OF_SHAPE[location.shape]
-                return MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, toolType)
-            end,
-        })
-    end)
+    local written = GuardedMaskWrite.apply(context, catalog, photo, {
+        description = "Update gradient mask",
+        build = function(entries)
+            location = reshapeGradient(entries, request, placement)
+            return entries
+        end,
+    })
 
     if placement.frame.warning then context:warn(placement.frame.warning) end
     local result = resultFor(photoId, written.entries, location, placement)

@@ -140,7 +140,7 @@ const responsePromise = new Promise((resolve, reject) => {
 
 await responseConnected;
 
-const payload = JSON.stringify({ hello: token, id, action, params });
+const payload = JSON.stringify({ hello: token, id, action, params, budget_ms: TIMEOUT_MS });
 console.log(`>>> ${payload}`);
 reqSock.write(payload + "\n");
 

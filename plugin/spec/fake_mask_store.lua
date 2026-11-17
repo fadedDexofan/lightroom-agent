@@ -233,7 +233,6 @@ end
 function FakeMaskStore.guardedHandler(handlerName, modules, opts)
     local helper = require 'spec_helper'
     opts = opts or {}
-    local listMasks = opts.listMasks or FakeMaskStore.maskListOf
     local photos, stores, storeOf = {}, {}, {}
     local catalog
     for _, spec in ipairs(opts.photos or { { id = "1" } }) do
@@ -264,8 +263,7 @@ function FakeMaskStore.guardedHandler(handlerName, modules, opts)
     local controller = {
         getAllMasks = function()
             calls.getAllMasks = calls.getAllMasks + 1
-            if opts.hideNewMasks then return {} end
-            return listMasks(storeOf[active].entries)
+            return FakeMaskStore.maskListOf(storeOf[active].entries)
         end,
         selectMask = function(id) selectedMask = id end,
         getSelectedMask = function() return selectedMask end,
@@ -280,7 +278,6 @@ function FakeMaskStore.guardedHandler(handlerName, modules, opts)
             calls.stopTracking[#calls.stopTracking + 1] = { committed = commit, writes = #storeOf[active].writes }
         end,
     }
-    if opts.withoutMaskApi then controller = {} end
 
     helper.admitMaskWrites(opts.maskWrites)
 

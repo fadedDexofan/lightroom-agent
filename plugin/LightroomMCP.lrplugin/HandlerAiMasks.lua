@@ -4,7 +4,6 @@ local PhotoLookup = require 'PhotoLookup'
 local AIMaskCompute = require 'AIMaskCompute'
 local AIMaskData = require 'AIMaskData'
 local AiMaskParts = require 'AiMaskParts'
-local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
 
 local AiMaskHandler = {}
@@ -61,15 +60,13 @@ local function createAiMasks(context, args, request)
     local photoId = tostring(photo.localIdentifier)
     AIMaskCompute.requireSupported(context.title, photo)
 
-    local fresh = DevelopSession.run(context, catalog, false, function()
-        return AIMaskCompute.run(context, catalog, photo, {
-            description = "Create AI masks",
-            subject = "the " .. request.kind .. " masks",
-            expected = #request.specs,
-            build = function(entries) return appendEntries(entries, request) end,
-            nothingFound = function(own) return missingMessage(request, photoId, own) end,
-        }).own
-    end)
+    local fresh = AIMaskCompute.run(context, catalog, photo, {
+        description = "Create AI masks",
+        subject = "the " .. request.kind .. " masks",
+        expected = #request.specs,
+        build = function(entries) return appendEntries(entries, request) end,
+        nothingFound = function(own) return missingMessage(request, photoId, own) end,
+    }).own
 
     local result = resultFor(photoId, request, fresh)
     Log.info(string.format("Created %d %s mask(s) on photo %s", #fresh, request.kind, photoId))

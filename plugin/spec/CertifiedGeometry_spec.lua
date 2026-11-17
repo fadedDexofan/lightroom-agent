@@ -35,19 +35,6 @@ local function lightroomFillsDepthInfo(stored)
     return stored
 end
 
-local SUBTYPE_OF_RANGE_TYPE = { [1] = "color", [2] = "luminance", [-1] = "depth" }
-
-local function maskListWithSubtypes(entries)
-    local masks = Store.maskListOf(entries)
-    for maskIndex, entry in ipairs(entries) do
-        for toolIndex, component in ipairs(entry.CorrectionMasks) do
-            local range = component.CorrectionRangeMask
-            if range then masks[maskIndex].Tools[toolIndex].Subtype = SUBTYPE_OF_RANGE_TYPE[range.Type] end
-        end
-    end
-    return masks
-end
-
 local function lightroomColorRange()
     return Store.correction("Reds", { {
         What = "Mask/RangeMask", MaskID = "C1T1", MaskActive = true, MaskInverted = false, MaskBlendMode = 0,
@@ -186,8 +173,7 @@ local EXPECTED = {
 describe("stored geometry of the certified inputs", function()
     for _, case in ipairs(CASES) do
         it("stays byte for byte: " .. case.name, function()
-            local Handler, stores = Store.guardedHandler(case.handler, case.modules,
-                { photos = case.photos, listMasks = case.handler == "HandlerRangeMasks" and maskListWithSubtypes or nil })
+            local Handler, stores = Store.guardedHandler(case.handler, case.modules, { photos = case.photos })
 
             case.run(Handler)
 

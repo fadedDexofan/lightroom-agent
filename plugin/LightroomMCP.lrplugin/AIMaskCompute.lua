@@ -34,7 +34,7 @@ end
 local function entriesById(entries)
     local byId = {}
     for _, entry in ipairs(entries) do
-        if type(entry) == "table" and entry.CorrectionID ~= nil then byId[tostring(entry.CorrectionID)] = entry end
+        if entry.CorrectionID ~= nil then byId[tostring(entry.CorrectionID)] = entry end
     end
     return byId
 end
@@ -42,12 +42,12 @@ end
 local POLL_SECONDS = 0.1
 
 local function idOf(entry)
-    return type(entry) == "table" and entry.CorrectionID ~= nil and tostring(entry.CorrectionID) or nil
+    return entry.CorrectionID ~= nil and tostring(entry.CorrectionID) or nil
 end
 
 local function errorReasonOf(entry)
-    for _, component in ipairs(type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
-        if type(component) == "table" and type(component.ErrorReason) == "number" and component.ErrorReason ~= 0 then
+    for _, component in ipairs(entry.CorrectionMasks or {}) do
+        if (component.ErrorReason or 0) ~= 0 then
             return component.ErrorReason
         end
     end
@@ -112,8 +112,8 @@ end
 
 local function aiComponentsById(entry)
     local byId = {}
-    for index, component in ipairs(type(entry) == "table" and type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
-        if type(component) == "table" and component.What == AIMaskData.KIND then
+    for index, component in ipairs(entry.CorrectionMasks or {}) do
+        if component.What == AIMaskData.KIND then
             byId[component.MaskID ~= nil and tostring(component.MaskID) or ("#" .. index)] = component
         end
     end

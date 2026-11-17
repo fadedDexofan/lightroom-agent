@@ -30,14 +30,6 @@ describe("RequestContext", function()
         assert.is_true(context:stopping(6))
     end)
 
-    it("sets no deadline without a budget", function()
-        local clock = { now = 100 }
-        local context = load(clock, {}).new("ping", nil)
-        clock.now = 1e9
-        assert.are.equal(math.huge, context:timeLeft())
-        assert.is_false(context:stopping(3600))
-    end)
-
     it("stops when cancelled by the server or from the progress scope", function()
         local scopes = {}
         local RequestContext = load({ now = 0 }, scopes)

@@ -1,12 +1,10 @@
 local LrApplication = import 'LrApplication'
 
 local PhotoLookup = require 'PhotoLookup'
-local DevelopSession = require 'DevelopSession'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
 local MaskValues = require 'MaskValues'
-local MaskSelection = require 'MaskSelection'
 local RangeMaskGeometry = require 'RangeMaskGeometry'
 local Reply = require 'Reply'
 
@@ -87,7 +85,6 @@ end
 
 function RangeMaskHandler.createRangeMask(args, context)
     local displayedRequest = RangeMaskGeometry.parseCreate(args)
-    DevelopSession.requireMaskApi("create_range_mask")
 
     local catalog = LrApplication.activeCatalog()
 
@@ -102,25 +99,18 @@ function RangeMaskHandler.createRangeMask(args, context)
     if displayedRequest.kind == "color" and frame.warning then context:warn(frame.warning) end
     local request = RangeMaskGeometry.toStoredFrame(displayedRequest, frame)
     request.adjustments = args.adjustments
-    local existing = GuardedMaskWrite.preflight(catalog, photo)
-    addRangeComponent(existing, request)
 
     local location
-    local written = DevelopSession.withPhoto(context, catalog, photo, function()
-        return GuardedMaskWrite.apply(context, catalog, photo, {
-            description = "Create range mask",
-            build = function(entries)
-                location = addRangeComponent(entries, request)
-                return entries
-            end,
-            crossCheck = function(actual)
-                local entry = actual[location.entry]
-                local component = entry.CorrectionMasks[location.component]
-                return problemUnlessDepthMapFound(request.kind, component)
-                    or MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, RangeMaskGeometry.TOOL_TYPE, request.kind)
-            end,
-        })
-    end)
+    local written = GuardedMaskWrite.apply(context, catalog, photo, {
+        description = "Create range mask",
+        build = function(entries)
+            location = addRangeComponent(entries, request)
+            return entries
+        end,
+        readBackProblem = function(actual)
+            return problemUnlessDepthMapFound(request.kind, actual[location.entry].CorrectionMasks[location.component])
+        end,
+    })
 
     local result = resultFor(photoId, written.entries, location, frame)
     result.new_mask = request.maskId == nil

@@ -88,7 +88,7 @@ The decision is [ADR 0001](docs/adr/0001-one-result-envelope.md). A call's outco
 
 - `LrDevelopController` acts only on the photo active in Develop. Go through `DevelopSession.lua`: `withPhoto` opens one photo, runs the callback and restores module, view source and selection; `run` is the multi-photo form. A view they cannot restore becomes a reply warning.
 - Photo-list Develop operations (Denoise, process version, Auto, reset, mask batches) go through `DevelopBatch.run`, which owns de-duplication, `not_found`, the time budget, cancellation, progress and each photo's outcome.
-- Contracts marked `develop: "drives"` or `develop: "settings"` run one at a time in arrival order through `DevelopQueue` in the leader, shared by every client. A call that gets no turn within its budget fails without sending anything. `DevelopSession`'s single-flight refusal stays as the backstop for raw-socket callers.
+- Contracts marked `develop: "drives"` or `develop: "settings"` run one at a time in arrival order through `DevelopQueue` in the leader, shared by every client. A call that gets no turn within its budget fails without sending anything. `DevelopSession`'s single-flight refusal stops two Develop drivers interleaving when a timed-out call outlives its 60 s grace.
 - A pending Develop edit overwrites a saved-settings write about 2 s later. `DevelopSession.flushIfShowing` commits pending edits before every develop-settings gate and every guarded mask write; a session that made a controller write commits it before restoring the view. An edit the user makes during the call can still be lost.
 - `DevelopSession.requireControllerFunctions` is the one gate for a controller function a Lightroom version may lack; `requireMaskApi` is one use of it. Lens Blur also refuses below 13.3 and Remove spots below 14.1; AI masks refuse when the SDK lacks `photo:updateAISettings` (13.3).
 - Snapshot apply and delete are Develop-module commands that do nothing elsewhere, so `HandlerSnapshots.lua` runs them inside `withPhoto`. Snapshots are stored per master: deleting one through a virtual copy deletes it for the master and every copy.
@@ -149,7 +149,7 @@ Decisions: [ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md) (a
 
 - Add its contract in `server/src/tool-contracts.ts` with `run: { plugin: "HandlerX.fn" }`, or `run: { server }` for a server-run tool; internal plug-in actions go in `PLUGIN_ACTIONS`. Put the handler in `plugin/LightroomMCP.lrplugin/Handler*.lua` and declare new SDK globals in `lightroom.yml`.
 - Run `npm run build` to regenerate `Contract.lua`; a Jest test fails while it is stale.
-- `tools/call` refuses a name with no contract, so internal actions such as `set_selection` are reachable only over the raw TCP probe.
+- `tools/call` refuses a name with no contract, so internal actions such as `write_develop_settings` are reachable only over the raw TCP probe.
 
 ## Live kit
 

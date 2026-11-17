@@ -72,7 +72,6 @@ return {
         set_metadata = { "HandlerMetadata", "setMetadata" },
         set_process_version = { "HandlerDevelop", "setProcessVersion" },
         set_rating_and_flag = { "HandlerOrganization", "setRatingAndFlag" },
-        set_selection = { "HandlerSelection", "setSelection" },
         set_treatment = { "HandlerTreatment", "set" },
         summarize_develop_settings = { "HandlerStyleSummary", "summarize" },
         undo_last_step = { "HandlerUndo", "undoLastStep" },

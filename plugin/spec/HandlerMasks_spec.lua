@@ -228,8 +228,8 @@ describe("HandlerMasks.listMasks", function()
         local Handler = setup({
             photos = { {
                 id = "1",
+                orientation = "ZZ",
                 masks = { mask("m-1", "Mask 1", false, { tool("t-color", "rangeMask", "color", false) }) },
-                developSettings = { MaskGroupBasedCorrections = "not a list" },
             } },
         })
 
@@ -349,30 +349,6 @@ describe("HandlerMasks.listMasks", function()
         assert.are.equal(0, Handler.listMasks({ photo_id = "1" }).count)
         assert.truthy(nested:find("list_masks is already running", 1, true))
         assert.are.equal(0, Handler.listMasks({ photo_id = "1" }).count)
-    end)
-
-    it("errors with the field names when a mask has no id", function()
-        local Handler = setup({ photos = { { id = "1", masks = { { label = "x", Tools = {} } } } } })
-
-        local class, err = helper.outcomeOf(function(context) Handler.listMasks({ photo_id = "1" }, context) end)
-
-        assert.are.equal("failed", class)
-
-        assert.truthy(err:find("mask without an id for photo 1", 1, true))
-        assert.truthy(err:find("Tools, label", 1, true))
-    end)
-
-    it("errors with the field names when a mask tool has no id", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = { { ID = "m", Tools = { { Type = "brush" } } } } } },
-        })
-
-        local class, err = helper.outcomeOf(function(context) Handler.listMasks({ photo_id = "1" }, context) end)
-
-        assert.are.equal("failed", class)
-
-        assert.truthy(err:find("mask tool without an id for photo 1", 1, true))
-        assert.truthy(err:find("(fields: Type)", 1, true))
     end)
 
     it("reads the shape Lightroom Classic 15.6 returned for real masks", function()

@@ -102,7 +102,6 @@ local function setup(opts)
     local Store = require 'fake_mask_store'
     local function storedMasks(photo) return (photo:getDevelopSettings() or {}).MaskGroupBasedCorrections or {} end
     package.loaded.GuardedMaskWrite = opts.guardedMaskWrite or {
-        preflight = function() end,
         apply = function(context, _, photo, spec)
             local previous = Store.clone(storedMasks(photo))
             context.ledger:record(spec.description)
@@ -118,6 +117,7 @@ local function setup(opts)
         deepClone = Store.clone,
     }
     package.loaded.AIMaskCompute = nil
+    package.loaded.MaskWriteAdmission = opts.maskWriteAdmission or { requireAdmitted = function() end }
     package.loaded.HandlerDevelop = nil
     package.loaded.DevelopSession = nil
     package.loaded.DevelopBatch = nil
@@ -955,7 +955,7 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
     it("refuses a full copy whose source masks the mask-write admission refuses", function()
         local Handler = select(2, setup({
             photos = photos(),
-            guardedMaskWrite = { preflight = function()
+            maskWriteAdmission = { requireAdmitted = function()
                 error("Mask writes are not certified for this Lightroom build.", 0)
             end },
         }))
@@ -2013,11 +2013,6 @@ describe("HandlerDevelop controller gates", function()
                 local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "getEnhancePanelState" } })
                 return function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end
             end },
-        { tool = "apply_auto_adjustments", missing = "setAutoWhiteBalance", version = "Lightroom Classic 7.4",
-            run = function()
-                local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "setAutoWhiteBalance" } })
-                return function() Handler.applyAutoAdjustments({ photo_ids = { "1" }, white_balance = true }) end
-            end },
         { tool = "reset_develop_adjustments", missing = "resetAllDevelopAdjustments",
             run = function()
                 local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "resetAllDevelopAdjustments" } })
@@ -2039,11 +2034,6 @@ describe("HandlerDevelop controller gates", function()
         end)
     end
 
-    it("lets auto tone run on a Lightroom without auto white balance", function()
-        local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "setAutoWhiteBalance" } })
-        local reply = Handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true })
-        assert.are.same({ "1:applied" }, statuses(reply))
-    end)
 end)
 
 describe("HandlerDevelop.setProcessVersion", function()
@@ -2087,13 +2077,6 @@ describe("HandlerDevelop.setProcessVersion", function()
         assert.are.equal(1, #reply.failed)
         assert.are.same({ "1:changed" }, statuses(reply))
         assert.are.same({ "1" }, calls)
-    end)
-
-    it("fails closed when mask settings cannot be read", function()
-        local Handler, calls = processVersionSetup({ settings2 = { MaskGroupBasedCorrections = "unreadable" } })
-        local reply = Handler.setProcessVersion({ photo_ids = { "2" }, version = "Version 5" })
-        assert.are.same({ "2:Could not read the photo's masks before downgrading" }, reasonsOf(reply.failed))
-        assert.are.equal(0, #calls)
     end)
 
     it("retains completed changes and lists remaining inputs when the request's budget runs out", function()
@@ -2724,7 +2707,6 @@ describe("a full copy writes masks only through the guarded mask write", functio
         local _, Handler = setup({
             photos = { source, accepted, refused },
             guardedMaskWrite = {
-                preflight = function() return {} end,
                 apply = function(context, _, photo, spec)
                     guarded[#guarded + 1] = tostring(photo.localIdentifier)
                     if photo == refused then Reply.refuse("Mask writes are not certified for process version 11.0") end
@@ -2758,7 +2740,6 @@ describe("a full copy writes masks only through the guarded mask write", functio
             photos = { source, target },
             tasks = { sleep = function() end, pcall = pcall },
             guardedMaskWrite = {
-                preflight = function() return stored.MaskGroupBasedCorrections end,
                 apply = function(context, _, _, spec)
                     context.ledger:record(spec.description)
                     stored.MaskGroupBasedCorrections = spec.build({})
@@ -2794,8 +2775,7 @@ describe("a full copy writes masks only through the guarded mask write", functio
                 tasks = { sleep = function() end, pcall = pcall },
                 writeAccessAborts = case.busy and function(name) return name == "Copy Develop Settings" end or nil,
                 guardedMaskWrite = {
-                    preflight = function() return stored.MaskGroupBasedCorrections end,
-                    apply = function(context, _, _, spec)
+                        apply = function(context, _, _, spec)
                         local previous = stored.MaskGroupBasedCorrections
                         context.ledger:record(spec.description)
                         stored.MaskGroupBasedCorrections = spec.build({})
@@ -2842,15 +2822,20 @@ end)
 describe("a full copy replaces the target's masks and admits them under the process version it writes", function()
     local Reply = require 'Reply'
 
+    local function recordingAdmission(log, refusal)
+        local admissions = 0
+        return {
+            requireAdmitted = function(_, processVersion)
+                admissions = admissions + 1
+                log[#log + 1] = "admit " .. tostring(processVersion)
+                if refusal and admissions > 1 then Reply.refuse(refusal) end
+            end,
+        }
+    end
+
     local function recordingGuard(log, opts)
         opts = opts or {}
         return {
-            preflight = function(_, photo, processVersion)
-                if tostring(photo.localIdentifier) == "10" then return {} end
-                log[#log + 1] = "preflight " .. tostring(photo.localIdentifier) .. " " .. tostring(processVersion)
-                if opts.refusePreflight then Reply.refuse(opts.refusePreflight) end
-                return photo:getDevelopSettings().MaskGroupBasedCorrections or {}
-            end,
             apply = function(context, _, photo, spec)
                 local settings = photo:getDevelopSettings()
                 log[#log + 1] = "masks " .. tostring(photo.localIdentifier) .. " at " .. tostring(settings.ProcessVersion)
@@ -2919,12 +2904,13 @@ describe("a full copy replaces the target's masks and admits them under the proc
             Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
         } })
         local older = target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
-        local _, Handler = setup({ photos = { source, older }, guardedMaskWrite = recordingGuard(log) })
+        local _, Handler = setup({ photos = { source, older }, guardedMaskWrite = recordingGuard(log),
+            maskWriteAdmission = recordingAdmission(log) })
 
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
         assert.are.equal(1, r.data.copied)
-        assert.are.same({ "preflight 11 15.4", "write 11 ProcessVersion", "masks 11 at 15.4", "write 11 Exposure2012,ProcessVersion" }, log)
+        assert.are.same({ "admit 15.4", "admit 15.4", "write 11 ProcessVersion", "masks 11 at 15.4", "write 11 Exposure2012,ProcessVersion" }, log)
     end)
 
     it("fails a target with nothing written when the planned process version is not admitted", function()
@@ -2935,13 +2921,14 @@ describe("a full copy replaces the target's masks and admits them under the proc
         local older = target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
         local _, Handler = setup({
             photos = { source, older },
-            guardedMaskWrite = recordingGuard(log, { refusePreflight = "The photo's process version (15.4) was not exercised" }),
+            guardedMaskWrite = recordingGuard(log),
+            maskWriteAdmission = recordingAdmission(log, "The photo's process version (15.4) was not exercised"),
         })
 
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
         assert.are.equal("11", r.failed[1].photo_id)
-        assert.are.same({ "preflight 11 15.4" }, log)
+        assert.are.same({ "admit 15.4", "admit 15.4" }, log)
         assert.are.equal("11.0", older:getDevelopSettings().ProcessVersion)
     end)
 

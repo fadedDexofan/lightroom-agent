@@ -147,13 +147,13 @@ describe("HandlerBrushMasks.createBrushMask", function()
         assert.are.equal(0, stores["1"].writesOutsideGate)
     end)
 
-    it("opens Develop for the cross-check and puts the module back", function()
+    it("writes without opening Develop or reading its mask list", function()
         local Handler, _, calls = setup()
 
         Handler.createBrushMask(createRequest())
 
-        assert.are.same({ "develop", "library" }, calls.modules)
-        assert.is_true(calls.getAllMasks >= 1)
+        assert.are.same({}, calls.modules)
+        assert.are.equal(0, calls.getAllMasks)
     end)
 
     it("accepts a numeric photo id", function()
@@ -162,8 +162,8 @@ describe("HandlerBrushMasks.createBrushMask", function()
         assert.are.equal("7", Handler.createBrushMask(createRequest({ photo_id = 7 })).photo_id)
     end)
 
-    it("rejects a path that needs too many dabs in the stored frame before writing or opening Develop", function()
-        local Handler, stores, calls = setup()
+    it("rejects a path that needs too many dabs in the stored frame before writing", function()
+        local Handler, stores = setup()
 
         local message = helper.failedOf(function()
             Handler.createBrushMask(createRequest({ strokes = { stroke({ points = { point(0, 0), point(1, 1) }, radius = 0.0001 }) } }))
@@ -171,7 +171,6 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
         assert.is_truthy(message:find("dabs along its path", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("writes feather, density and erase strokes and verifies them when Lightroom reads them back", function()
@@ -242,41 +241,28 @@ describe("HandlerBrushMasks.createBrushMask", function()
         assert.are.equal(0, #stores["1"].entries)
     end)
 
-    it("answers an unknown photo with not_found before opening Develop", function()
-        local Handler, _, calls = setup()
+    it("answers an unknown photo with not_found", function()
+        local Handler = setup()
 
         assert.are.equal("404", helper.notFoundOf(function() Handler.createBrushMask(createRequest({ photo_id = "404" })) end))
-        assert.are.equal(0, #calls.modules)
     end)
 
-    it("fails for an unknown mask id without writing or opening Develop", function()
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingBrush() } } })
+    it("fails for an unknown mask id without writing", function()
+        local Handler, stores = setup({ photos = { { id = "1", entries = existingBrush() } } })
 
         local message = helper.failedOf(function() Handler.createBrushMask(createRequest({ mask_id = "C9" })) end)
 
         assert.is_truthy(message:find("Mask not found on this photo: C9", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("refuses on an uncertified Lightroom, leaving the photo and the view alone", function()
-        local Handler, stores, calls = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
+        local Handler, stores = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
 
         local message = helper.failedOf(function() Handler.createBrushMask(createRequest()) end)
 
         assert.is_truthy(message:find("is not certified", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("names the minimum Lightroom version when the mask API is missing", function()
-        local Handler, stores, calls = setup({ withoutMaskApi = true })
-
-        local message = helper.failedOf(function() Handler.createBrushMask(createRequest()) end)
-
-        assert.is_truthy(message:find("^create_brush_mask needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
-        assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("restores the previous masks when Lightroom reads different dabs back", function()
@@ -337,16 +323,6 @@ describe("HandlerBrushMasks.createBrushMask", function()
         assert.are.equal(0, #stores["1"].entries)
     end)
 
-    it("restores the previous masks when Lightroom's mask list does not show a brush tool", function()
-        local Handler, stores, calls = setup({ hideNewMasks = true })
-
-        local message = helper.failedOf(function() Handler.createBrushMask(createRequest()) end)
-
-        assert.is_truthy(message:find("Lightroom's mask list has no brush tool C1T1 in mask C1", 1, true))
-        assert.are.equal(2, #stores["1"].writes)
-        assert.are.equal(0, #stores["1"].entries)
-        assert.are.equal("library", calls.modules[#calls.modules])
-    end)
 end)
 
 describe("HandlerBrushMasks.addBrushStrokes", function()
@@ -375,7 +351,7 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
     end)
 
     it("rejects a path that needs too many dabs in the stored frame before writing", function()
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingBrush() } } })
+        local Handler, stores = setup({ photos = { { id = "1", entries = existingBrush() } } })
 
         local message = helper.failedOf(function()
             Handler.addBrushStrokes(addRequest({ strokes = { stroke({ points = { point(0, 0), point(1, 1) }, radius = 0.0001 }) } }))
@@ -383,11 +359,10 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
 
         assert.is_truthy(message:find("dabs along its path", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("fails for an unknown tool id or a tool that is not a brush, writing nothing", function()
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingBrush() } } })
+        local Handler, stores = setup({ photos = { { id = "1", entries = existingBrush() } } })
 
         local unknown = helper.failedOf(function() Handler.addBrushStrokes(addRequest({ tool_id = "NOPE" })) end)
         local gradient = helper.failedOf(function() Handler.addBrushStrokes(addRequest({ tool_id = "C1T2" })) end)
@@ -395,7 +370,6 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
         assert.is_truthy(unknown:find("Brush tool not found on this photo: NOPE", 1, true))
         assert.is_truthy(gradient:find("Mask/Gradient mask, not a brush", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("appends an erase stroke with feather after the strokes it erases", function()

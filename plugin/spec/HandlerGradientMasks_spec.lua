@@ -62,14 +62,6 @@ describe("HandlerGradientMasks.createGradientMask", function()
 
         Handler.createGradientMask(linearRequest())
 
-        assert.are.same({ { committed = true, writes = 0 }, { committed = true, writes = 0 } }, calls.stopTracking)
-    end)
-
-    it("commits Develop's pending edits before the write also when it opened the photo itself, and none after", function()
-        local Handler, _, calls = setup()
-
-        Handler.createGradientMask(linearRequest())
-
         assert.are.same({ { committed = true, writes = 0 } }, calls.stopTracking)
     end)
 
@@ -147,13 +139,13 @@ describe("HandlerGradientMasks.createGradientMask", function()
         assert.are.equal(0, stores["1"].writesOutsideGate)
     end)
 
-    it("opens Develop for the cross-check and puts the module back", function()
+    it("writes without opening Develop or reading its mask list", function()
         local Handler, _, calls = setup()
 
         Handler.createGradientMask(linearRequest())
 
-        assert.are.same({ "develop", "library" }, calls.modules)
-        assert.is_true(calls.getAllMasks >= 1)
+        assert.are.same({}, calls.modules)
+        assert.are.equal(0, calls.getAllMasks)
     end)
 
     it("accepts a numeric photo id and a file path and answers with the photo's own id", function()
@@ -163,8 +155,8 @@ describe("HandlerGradientMasks.createGradientMask", function()
         assert.are.equal("7", Handler.createGradientMask(linearRequest({ photo_id = "/7.jpg" })).photo_id)
     end)
 
-    it("rejects a degenerate linear gradient before reading, writing or opening Develop", function()
-        local Handler, stores, calls = setup()
+    it("rejects a degenerate linear gradient before reading or writing", function()
+        local Handler, stores = setup()
 
         local message = helper.failedOf(function()
             Handler.createGradientMask(linearRequest({ ["end"] = point(0.5, 0.2) }))
@@ -173,44 +165,30 @@ describe("HandlerGradientMasks.createGradientMask", function()
         assert.is_truthy(message:find("same point", 1, true))
         assert.are.equal(0, #stores["1"].writes)
         assert.are.equal(0, stores["1"].reads)
-        assert.are.equal(0, #calls.modules)
     end)
 
-    it("answers an unknown photo with not_found before opening Develop", function()
-        local Handler, _, calls = setup()
+    it("answers an unknown photo with not_found", function()
+        local Handler = setup()
 
         assert.are.equal("404", helper.notFoundOf(function() Handler.createGradientMask(linearRequest({ photo_id = "404" })) end))
-        assert.are.equal(0, #calls.modules)
     end)
 
-    it("fails for an unknown mask id without writing or opening Develop", function()
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingGradients() } } })
+    it("fails for an unknown mask id without writing", function()
+        local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
         local message = helper.failedOf(function() Handler.createGradientMask(linearRequest({ mask_id = "C9" })) end)
 
         assert.is_truthy(message:find("Mask not found on this photo: C9", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("refuses on an uncertified Lightroom, leaving the photo and the view alone", function()
-        local Handler, stores, calls = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
+        local Handler, stores = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
 
         local message = helper.failedOf(function() Handler.createGradientMask(linearRequest()) end)
 
         assert.is_truthy(message:find("is not certified", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("names the minimum Lightroom version when the mask API is missing", function()
-        local Handler, stores, calls = setup({ withoutMaskApi = true })
-
-        local message = helper.failedOf(function() Handler.createGradientMask(linearRequest()) end)
-
-        assert.is_truthy(message:find("^create_gradient_mask needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
-        assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("restores the previous masks when Lightroom reads different geometry back", function()
@@ -250,16 +228,6 @@ describe("HandlerGradientMasks.createGradientMask", function()
         assert.are.equal(0, #stores["1"].entries)
     end)
 
-    it("restores the previous masks when Lightroom's mask list does not show the new tool", function()
-        local Handler, stores, calls = setup({ hideNewMasks = true })
-
-        local message = helper.failedOf(function() Handler.createGradientMask(linearRequest()) end)
-
-        assert.is_truthy(message:find("Lightroom's mask list has no gradient tool C1T1 in mask C1", 1, true))
-        assert.are.equal(2, #stores["1"].writes)
-        assert.are.equal(0, #stores["1"].entries)
-        assert.are.equal("library", calls.modules[#calls.modules])
-    end)
 end)
 
 describe("HandlerGradientMasks.updateGradientMask", function()
@@ -354,7 +322,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
     end)
 
     it("rejects a degenerate gradient without writing", function()
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingGradients() } } })
+        local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
         local degenerate = helper.failedOf(function()
             Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T1", ["end"] = point(0.5, 0.2) })
@@ -362,7 +330,6 @@ describe("HandlerGradientMasks.updateGradientMask", function()
 
         assert.is_truthy(degenerate:find("same point", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("fails for an unknown tool id or a tool that is not a gradient", function()
@@ -384,7 +351,6 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         assert.is_truthy(unknown:find("Gradient tool not found on this photo: NOPE", 1, true))
         assert.is_truthy(brush:find("Mask/Aggregate mask, not a linear or radial gradient", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("rejects a field of the other shape", function()
@@ -653,13 +619,12 @@ describe("HandlerGradientMasks in the stored frame of a rotated photo", function
     end)
 
     it("refuses a photo whose orientation it cannot map, writing nothing", function()
-        local Handler, stores, calls = setup({ photos = { { id = "1", orientation = "ZZ" } } })
+        local Handler, stores = setup({ photos = { { id = "1", orientation = "ZZ" } } })
 
         local message = helper.failedOf(function() Handler.createGradientMask(displayedVertical()) end)
 
         assert.is_truthy(message:find("cannot map", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 end)
 

@@ -4,30 +4,7 @@ local Store = require 'fake_mask_store'
 local linearComponent = Store.linearComponent
 local correction = Store.correction
 
-local SUBTYPE_OF_RANGE_TYPE = { [1] = "color", [2] = "luminance", [-1] = "depth" }
-
-local function maskListWithSubtypes(entries)
-    local masks = Store.maskListOf(entries)
-    for maskIndex, entry in ipairs(entries) do
-        for toolIndex, component in ipairs(entry.CorrectionMasks) do
-            local range = component.CorrectionRangeMask
-            if range then masks[maskIndex].Tools[toolIndex].Subtype = SUBTYPE_OF_RANGE_TYPE[range.Type] end
-        end
-    end
-    return masks
-end
-
 local function setup(opts)
-    opts = opts or {}
-    opts.listMasks = function(entries)
-        local masks = maskListWithSubtypes(entries)
-        if opts.wrongSubtype then
-            for _, mask in ipairs(masks) do
-                for _, tool in ipairs(mask.Tools) do tool.Subtype = opts.wrongSubtype end
-            end
-        end
-        return masks
-    end
     return Store.guardedHandler("HandlerRangeMasks", { "ImageFrame", "RangeMaskGeometry" }, opts)
 end
 
@@ -434,7 +411,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
             assert.are.equal(0.05, result.color.sample.y)
         end)
 
-        it("refuses a source that is not a color range, writing nothing and not opening Develop", function()
+        it("refuses a source that is not a color range, writing nothing", function()
             local luminance = lightroomColorRange({
                 CorrectionRangeMask = { Type = 2, Version = 3, SampleType = 0, LumRange = "0.1 0.2 0.3 0.4" },
             })
@@ -453,7 +430,6 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
                 assert.is_truthy(message:find("copy_sample_from: tool C1T1 " .. case.expected, 1, true), message)
                 assert.are.equal(0, #stores["1"].writes)
-                assert.are.equal(0, #calls.modules)
             end
         end)
 
@@ -476,7 +452,6 @@ describe("HandlerRangeMasks.createRangeMask", function()
             assert.is_truthy(otherMask:find("copy_sample_from: tool C1T1 is not in mask C2 on photo 1", 1, true))
             assert.are.equal("9", unknownPhoto)
             assert.are.equal(0, #stores["1"].writes)
-            assert.are.equal(0, #calls.modules)
         end)
 
         it("never queries or reads settings outside the gates", function()
@@ -490,14 +465,13 @@ describe("HandlerRangeMasks.createRangeMask", function()
         end)
     end)
 
-    it("fails for an unknown mask id without writing or opening Develop", function()
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingGradient() } } })
+    it("fails for an unknown mask id without writing", function()
+        local Handler, stores = setup({ photos = { { id = "1", entries = existingGradient() } } })
 
         local message = helper.failedOf(function() Handler.createRangeMask(luminanceRequest({ mask_id = "C9" })) end)
 
         assert.is_truthy(message:find("Mask not found on this photo: C9", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("never queries or reads settings outside the gates", function()
@@ -511,40 +485,28 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal(0, stores["1"].writesOutsideGate)
     end)
 
-    it("opens Develop for the cross-check and puts the module back", function()
+    it("writes without opening Develop or reading its mask list", function()
         local Handler, _, calls = setup()
 
         Handler.createRangeMask(colorRequest())
 
-        assert.are.same({ "develop", "library" }, calls.modules)
-        assert.is_true(calls.getAllMasks >= 1)
+        assert.are.same({}, calls.modules)
+        assert.are.equal(0, calls.getAllMasks)
     end)
 
-    it("answers an unknown photo with not_found before opening Develop", function()
-        local Handler, _, calls = setup()
+    it("answers an unknown photo with not_found", function()
+        local Handler = setup()
 
         assert.are.equal("404", helper.notFoundOf(function() Handler.createRangeMask(luminanceRequest({ photo_id = "404" })) end))
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("refuses on an uncertified Lightroom, leaving the photo and the view alone", function()
-        local Handler, stores, calls = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
+        local Handler, stores = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
 
         local message = helper.failedOf(function() Handler.createRangeMask(luminanceRequest()) end)
 
         assert.is_truthy(message:find("is not certified", 1, true))
         assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("names the minimum Lightroom version when the mask API is missing", function()
-        local Handler, stores, calls = setup({ withoutMaskApi = true })
-
-        local message = helper.failedOf(function() Handler.createRangeMask(luminanceRequest()) end)
-
-        assert.is_truthy(message:find("^create_range_mask needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
-        assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
     end)
 
     it("restores the previous masks when Lightroom reads a different luminance range back", function()
@@ -621,25 +583,6 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal(0, #stores["1"].entries)
     end)
 
-    it("restores the previous masks when Lightroom's mask list does not show the new tool", function()
-        local Handler, stores, calls = setup({ hideNewMasks = true })
-
-        local message = helper.failedOf(function() Handler.createRangeMask(luminanceRequest()) end)
-
-        assert.is_truthy(message:find("Lightroom's mask list has no rangeMask luminance tool C1T1 in mask C1", 1, true))
-        assert.are.equal(2, #stores["1"].writes)
-        assert.are.equal(0, #stores["1"].entries)
-        assert.are.equal("library", calls.modules[#calls.modules])
-    end)
-
-    it("restores the previous masks when Lightroom lists the tool with another subtype", function()
-        local Handler, stores = setup({ wrongSubtype = "color" })
-
-        local message = helper.failedOf(function() Handler.createRangeMask(luminanceRequest()) end)
-
-        assert.is_truthy(message:find("has no rangeMask luminance tool", 1, true))
-        assert.are.equal(0, #stores["1"].entries)
-    end)
 end)
 
 describe("colour samples on a cropped photo", function()

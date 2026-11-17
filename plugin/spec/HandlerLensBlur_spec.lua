@@ -24,7 +24,6 @@ local function setup(opts)
         return { LensBlur = saved, ProcessVersion = opts.storedProcess, ColorGradeBlending = colorGradeBlending }
     end
     local controller = {
-        getProcessVersion = function() return opts.process or 'Version 6' end,
         getValue = function(name) return values[name] end,
         getRange = function(name)
             if name == 'LensBlurAmount' then return 0, opts.amountMax or 100 end
@@ -187,7 +186,7 @@ describe('HandlerLensBlur', function()
         local storedProcess = case[1]
         for _, operation in ipairs({ 'get', 'set' }) do
             it(operation .. ' refuses stored legacy process ' .. tostring(storedProcess) .. ' without normalizing settings', function()
-                local ctx = setup({ storedProcess = storedProcess, process = case[2], normalizeDevelop = true })
+                local ctx = setup({ storedProcess = storedProcess, normalizeDevelop = true })
                 local before = ctx.settings()
 
                 local err = helper.failedOf(function()
@@ -201,18 +200,6 @@ describe('HandlerLensBlur', function()
                 assert.are.same({ active = '2', module = 'library', sources = { 'collection' } }, ctx.view())
             end)
         end
-    end
-
-    for _, version in ipairs({ 'Version 1', 'Version 2' }) do
-        it('refuses ' .. version .. ' without writing', function()
-            local ctx = setup({ process = version })
-
-            local err = helper.failedOf(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
-
-            assert.matches(version, err, 1, true)
-            assert.are.equal(0, ctx.writes())
-            assert.are.same({ active = '2', module = 'library', sources = { 'collection' } }, ctx.view())
-        end)
     end
 
     it('stops when the controller accepts a value but never saves it', function()
@@ -246,15 +233,6 @@ describe('HandlerLensBlur', function()
         local result = ctx.Handler.set({ photo_id = '1', active = false })
 
         assert.is_false(result.active)
-        assert.are.equal(0, ctx.writes())
-    end)
-
-    it('refuses Lightroom below13.3 without writing', function()
-        local ctx = setup({ version = { major = 13, minor = 2 } })
-
-        local err = helper.failedOf(function() ctx.Handler.get({ photo_id = '1' }) end)
-
-        assert.matches('13.3', err, 1, true)
         assert.are.equal(0, ctx.writes())
     end)
 

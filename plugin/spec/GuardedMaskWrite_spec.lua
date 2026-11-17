@@ -88,117 +88,33 @@ describe("GuardedMaskWrite.apply on the photo shown in Develop", function()
     end
 end)
 
-describe("GuardedMaskWrite.preflight", function()
-    it("returns the existing entries of a photo admitted for mask writes", function()
-        local Guard, catalog, photo = setup({ entries = { correction("A", { linearComponent() }) } })
-
-        local entries = Guard.preflight(catalog, photo)
-
-        assert.are.equal(1, #entries)
-        assert.are.equal("A", entries[1].CorrectionName)
-    end)
-
-    it("returns an empty list for a photo without masks", function()
-        local Guard, catalog, photo = setup()
-
-        assert.are.same({}, Guard.preflight(catalog, photo))
-    end)
-
-    it("reads settings inside the read gate", function()
-        local Guard, catalog, photo, state = setup()
-
-        Guard.preflight(catalog, photo)
-
-        assert.are.equal(0, state.readsOutsideGate)
-        assert.are.equal(1, state.reads)
-    end)
-
-    it("admits a write when the certification names the running build and the photo's process version", function()
-        local Guard, catalog, photo = setup({
+describe("GuardedMaskWrite.apply admission", function()
+    it("writes when the certification names the running build and the photo's process version", function()
+        local Guard, catalog, photo, state = setup({
             catalogPath = PERSONAL_CATALOG,
             files = { [CERTIFICATION_FILE] = certification(RUNNING_BUILD) },
             entries = { correction("A", { linearComponent() }) },
         })
 
-        assert.are.equal(1, #Guard.preflight(catalog, photo))
+        Guard.apply(helper.requestContext(), catalog, photo, { description = "x", build = appendGradient(radialComponent()) })
+
+        assert.are.equal(1, #state.writes)
     end)
 
-    it("refuses a photo whose process version the certification did not exercise", function()
-        local Guard, catalog, photo = setup({
+    it("refuses, writing nothing, a photo whose process version the certification did not exercise", function()
+        local Guard, catalog, photo, state = setup({
             catalogPath = PERSONAL_CATALOG,
             files = { [CERTIFICATION_FILE] = certification(RUNNING_BUILD) },
             processVersion = "11.0",
         })
 
-        local message = helper.failedOf(function() Guard.preflight(catalog, photo) end)
+        local message = helper.failedOf(function()
+            Guard.apply(helper.requestContext(), catalog, photo, { description = "x", build = appendGradient(radialComponent()) })
+        end)
 
         assert.is_truthy(message:find("process version (11.0)", 1, true))
         assert.is_nil(message:find("othing was", 1, true))
-    end)
-
-    it("refuses under the planned process version even when the photo's own is certified", function()
-        local Guard, catalog, photo = setup({
-            catalogPath = PERSONAL_CATALOG,
-            files = { [CERTIFICATION_FILE] = certification(RUNNING_BUILD) },
-        })
-
-        local message = helper.failedOf(function() Guard.preflight(catalog, photo, "11.0") end)
-
-        assert.is_truthy(message:find("process version (11.0)", 1, true))
-    end)
-
-    it("accepts any Local adjustment slider on an existing entry", function()
-        local entry = correction("A", { linearComponent() }, { LocalShadows2012 = 0.1, LocalTexture = 0.2 })
-        local Guard, catalog, photo = setup({ entries = { entry } })
-
-        assert.are.equal(1, #Guard.preflight(catalog, photo))
-    end)
-
-    it("accepts the local tone curve of every channel on an existing entry", function()
-        local curves = {
-            MainCurve = { "0,0", "64,30", "192,225", "255,255" },
-            RedCurve = { "0,0", "255,255" },
-            GreenCurve = { "0,0", "255,255" },
-            BlueCurve = { "0,0", "255,255" },
-        }
-        local Guard, catalog, photo = setup({ entries = { correction("A", { linearComponent() }, curves) } })
-
-        assert.are.equal(1, #Guard.preflight(catalog, photo))
-    end)
-
-    it("treats an AI mask component as opaque", function()
-        local ai = { What = "Mask/Image", MaskActive = true, SomethingOpaque = { 1, 2, 3 }, Whatever = "x" }
-        local Guard, catalog, photo = setup({ entries = { correction("AI", { ai }) } })
-
-        assert.are.equal(1, #Guard.preflight(catalog, photo))
-    end)
-
-    it("refuses, writing nothing, when an existing mask holds a value it cannot copy", function()
-        local ai = { What = "Mask/Image", MaskActive = true, Opaque = io.stdout }
-        local Guard, catalog, photo, state = setup({ entries = { correction("AI", { ai }) } })
-
-        local message = helper.failedOf(function() Guard.apply(helper.requestContext(), catalog, photo, { description = "x", build = appendGradient(linearComponent()) }) end)
-
-        assert.is_truthy(message:find("userdata", 1, true))
         assert.are.equal(0, #state.writes)
-    end)
-
-    it("accepts existing brush and luminance range masks", function()
-        local brush = {
-            What = "Mask/Aggregate",
-            MaskActive = true,
-            Masks = {
-                { What = "Mask/Paint", Dabs = { "d 0.1 0.2" }, Radius = 0.1, Flow = 1, CenterWeight = 0 },
-            },
-        }
-        local range = {
-            What = "Mask/RangeMask",
-            MaskActive = true,
-            CorrectionRangeMask = { Type = 2, Version = 3, SampleType = 0, LumRange = "0.1 0.2 0.3 0.4" },
-        }
-        local Guard, catalog, photo = setup({ entries = { correction("B", { brush }), correction("R", { range }) } })
-
-        assert.are.equal(2, #Guard.preflight(catalog, photo))
     end)
 
 end)
@@ -233,7 +149,6 @@ describe("GuardedMaskWrite.apply beside entries the call leaves alone", function
             local Guard, catalog, photo, state = setup({ entries = { case.entry } })
             local held = Store.clone(state.entries[1])
 
-            Guard.preflight(catalog, photo)
             Guard.apply(helper.requestContext(), catalog, photo, { description = "Create gradient mask", build = appendGradient(radialComponent()) })
 
             assert.are.equal(1, #state.writes)
@@ -680,39 +595,26 @@ describe("GuardedMaskWrite.apply", function()
         assert.are.same({}, state.writes[1])
     end)
 
-    it("rolls back when the cross-check reports a problem", function()
+    it("rolls back when the check of the saved read-back reports a problem", function()
         local Guard, catalog, photo, state = setup()
 
         local message = helper.failedOf(function()
             applyAppend(Guard, catalog, photo, linearComponent(), {
-                crossCheck = function() return "mask list does not show the tool" end,
+                readBackProblem = function() return "no depth map" end,
             })
         end)
 
-        assert.is_truthy(message:find("mask list does not show the tool", 1, true))
+        assert.is_truthy(message:find("no depth map", 1, true))
         assert.are.equal(2, #state.writes)
         assert.are.same({}, state.writes[2])
     end)
 
-    it("rolls back when the cross-check throws", function()
-        local Guard, catalog, photo, state = setup()
-
-        local message = helper.failedOf(function()
-            applyAppend(Guard, catalog, photo, linearComponent(), {
-                crossCheck = function() error("getAllMasks failed", 0) end,
-            })
-        end)
-
-        assert.is_truthy(message:find("getAllMasks failed", 1, true))
-        assert.are.equal(2, #state.writes)
-    end)
-
-    it("hands the cross-check the stored entries", function()
+    it("hands the check of the saved read-back the stored entries", function()
         local Guard, catalog, photo = setup()
         local seen
 
         applyAppend(Guard, catalog, photo, linearComponent(), {
-            crossCheck = function(entries) seen = entries end,
+            readBackProblem = function(entries) seen = entries end,
         })
 
         assert.are.equal("C1", seen[1].CorrectionID)
