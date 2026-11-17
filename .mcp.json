@@ -1,8 +1,10 @@
 {
   "mcpServers": {
     "lightroom": {
-      "command": "npx",
-      "args": ["-y", "@mskalski/lightroom-mcp"]
+      "command": "node",
+      "args": [
+        "server/dist/index.js"
+      ]
     }
   }
 }
