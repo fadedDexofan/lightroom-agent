@@ -281,6 +281,14 @@ describe('createMcpServer', () => {
   });
 
   describe('toolset selection', () => {
+    it.each([
+      [undefined, false, 'Toolsets: core; read-only mode: off'],
+      ['all', false, 'Toolsets: core, develop, masks; read-only mode: off'],
+      ['develop', true, 'Toolsets: core, develop; read-only mode: on'],
+    ])('summarises toolsets %p with read-only %p for the start-up log', (toolsets, readOnly, line) => {
+      expect(createToolAccess({ toolsets: parseToolsets(toolsets), readOnly }).summary).toBe(line);
+    });
+
     const coreNames = [
       'search_photos', 'get_selected_photos', 'get_photo_metadata', 'get_photo_preview',
       'get_photo_detail', 'get_photo_previews', 'find_duplicate_groups', 'get_photo_stats', 'set_gps',

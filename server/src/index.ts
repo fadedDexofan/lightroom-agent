@@ -164,6 +164,7 @@ async function main() {
   process.stdin.once("close", exitOnClientGone("stdin closed (client exited)"));
 
   console.error(`Lightroom Agent server v${VERSION} running on stdio`);
+  console.error(access.summary);
   console.error(`Connecting to plugin: request :${REQUEST_PORT}, response :${RESPONSE_PORT}`);
   console.error(`Token file: ${tokenFilePath()}`);
 }

@@ -20,6 +20,7 @@ export function createToolAccess({ toolsets, readOnly }: ToolAccessOptions) {
 
   return {
     tools,
+    summary: `Toolsets: ${[...enabledToolsets].join(", ")}; read-only mode: ${readOnly ? "on" : "off"}`,
     restrict(callTool: ToolCaller): ToolCaller {
       return async (name, args, options) => {
         if (readOnly && !allowedTools.has(name)) {
