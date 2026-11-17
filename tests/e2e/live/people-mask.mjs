@@ -15,7 +15,7 @@ const report = createReport("People masks on a portrait: every part found, compu
 const { session, marker } = await openLiveSession();
 const portrait = fixtureIdOrNull(marker, "people_photo");
 if (portrait === null) {
-  console.log("skipped: the throwaway catalog has no people_photo (set LRMCP_LIVE_PEOPLE_PHOTO and run setup-catalog.mjs --add-missing)");
+  console.log("skipped: the throwaway catalog has no people_photo (run setup-catalog.mjs --add-missing)");
   await session.stop();
   process.exit(0);
 }

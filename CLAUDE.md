@@ -159,7 +159,7 @@ Decisions: [ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md) (a
 - The guard (`requireThrowawayCatalog()` in `lib/catalog-guard.mjs`) refuses catalogs under `~/Pictures/Lightroom`, then accepts a catalog whose folder holds `lrmcp-live-catalog.json` or that `LRMCP_LIVE_THROWAWAY_CATALOG` names. It cannot recognise a personal catalog stored elsewhere: check the catalog before opting it in.
 - One-shot `mcp-runner.mjs tool` calls and `node server/dist/index.js call` are not guarded.
 - `mise run live:setup` switches Lightroom away from the open catalog to a new one.
-- Never commit a `.lrcat`, a photo of unknown license or a depth HEIC.
+- Never commit a `.lrcat` or a photo whose licence does not allow redistribution. Bundled fixtures carry their source, licence and hash in `tests/e2e/live/fixtures/SOURCES.md`.
 - Back up the installed bundle outside `$TMPDIR` before installing a candidate (`install-bundle.mjs` does it) and restore it afterwards.
 - A listening socket does not prove requests work: confirm with a tool call. Never force quit Lightroom or remove another process's socket.
 - Make temporary collections and keywords uniquely named, delete only those, and confirm the catalog's original state afterwards.

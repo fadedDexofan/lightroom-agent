@@ -11,6 +11,7 @@ export const FIXTURES_DIR = process.env.LRMCP_LIVE_FIXTURES_DIR ?? path.join(LIV
 export const GENERATED_DIR = path.join(FIXTURES_DIR, "generated");
 export const SAMPLES_DIR = path.join(FIXTURES_DIR, "samples");
 export const MANIFEST_PATH = path.join(LIVE_DIR, "manifest.json");
+export const BUNDLED_FIXTURES_DIR = path.join(LIVE_DIR, "fixtures");
 
 const CACHE_DIR = path.join(os.homedir(), ".cache");
 export const SNAPSHOTS_DIR = path.join(CACHE_DIR, "lightroom-mcp-live-snapshots");

@@ -43,7 +43,7 @@ async function collectFixtureFiles() {
   for (const sample of manifest.samples) files.push({ key: sample.key, source: path.join(SAMPLES_DIR, sample.file) });
   for (const supplied of await resolveSuppliedFiles(manifest)) {
     if (supplied.status === "mismatch") {
-      throw new Error(`${supplied.envVar} names ${supplied.filePath}, whose sha256 ${supplied.actual} is not the manifest's ${supplied.sha256}`);
+      throw new Error(`${supplied.key} (${supplied.from}) is ${supplied.filePath}, whose sha256 ${supplied.actual} is not the manifest's ${supplied.sha256}`);
     }
     if (supplied.status === "present") {
       files.push({ key: supplied.key, source: supplied.filePath, extension: path.extname(supplied.filePath) });

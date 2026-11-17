@@ -15,7 +15,7 @@ import {
   validateManifest,
   verifySample,
 } from "../lib/manifest.mjs";
-import { MANIFEST_PATH } from "../lib/paths.mjs";
+import { BUNDLED_FIXTURES_DIR, MANIFEST_PATH } from "../lib/paths.mjs";
 
 const PAYLOAD = Buffer.from("raw sample stand-in");
 const PAYLOAD_SHA256 = createHash("sha256").update(PAYLOAD).digest("hex");
@@ -122,6 +122,26 @@ test("supplied files are resolved from environment variables, and a declared has
     resolved.map((entry) => [entry.status, entry.actual ?? null]),
     [["present", null], ["missing-file", null], ["not-set", null], ["present", PAYLOAD_SHA256], ["mismatch", PAYLOAD_SHA256]],
   );
+});
+
+test("a supplied slot with a bundled file uses it when its variable is unset, and the variable overrides it", async () => {
+  const bundled = path.join(workDirectory, "bundled");
+  fs.mkdirSync(bundled, { recursive: true });
+  fs.writeFileSync(path.join(bundled, "portrait.jpg"), PAYLOAD);
+  const override = path.join(workDirectory, "override.jpg");
+  fs.writeFileSync(override, "another photo");
+  const manifest = { supplied: [{ key: "p", envVar: "LRMCP_LIVE_P", file: "portrait.jpg", sha256: PAYLOAD_SHA256 }] };
+
+  const [byDefault] = await resolveSuppliedFiles(manifest, {}, bundled);
+  assert.deepEqual([byDefault.status, byDefault.filePath, byDefault.from], ["present", path.join(bundled, "portrait.jpg"), "bundled"]);
+  const [overridden] = await resolveSuppliedFiles(manifest, { LRMCP_LIVE_P: override }, bundled);
+  assert.deepEqual([overridden.status, overridden.filePath, overridden.from], ["mismatch", override, "LRMCP_LIVE_P"]);
+});
+
+test("every bundled fixture in the manifest is in the repository with its pinned hash", async () => {
+  const bundled = loadManifest(MANIFEST_PATH).supplied.filter((supplied) => supplied.file);
+  assert.deepEqual(bundled.map((supplied) => supplied.key).sort(), ["depth_heic", "people_photo"]);
+  for (const supplied of bundled) assert.equal(await sha256File(path.join(BUNDLED_FIXTURES_DIR, supplied.file)), supplied.sha256, supplied.key);
 });
 
 test("validation reports a supplied hash that is not 64 lowercase hex characters", () => {

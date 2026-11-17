@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { BUNDLED_FIXTURES_DIR } from "./paths.mjs";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ALLOWED_SAMPLE_LICENSE = "CC0-1.0";
@@ -29,6 +30,7 @@ export function validateManifest(manifest) {
   for (const supplied of manifest.supplied ?? []) {
     if (!/^LRMCP_LIVE_[A-Z_]+$/.test(supplied.envVar ?? "")) problems.push(`${supplied.key}: envVar must look like LRMCP_LIVE_NAME`);
     if (supplied.sha256 !== undefined && !SHA256_PATTERN.test(supplied.sha256)) problems.push(`${supplied.key}: sha256 must be 64 lowercase hex characters`);
+    if (supplied.file !== undefined && (path.basename(supplied.file) !== supplied.file || supplied.sha256 === undefined)) problems.push(`${supplied.key}: a bundled file must be a bare file name with a sha256`);
   }
   return problems;
 }
@@ -74,13 +76,14 @@ export async function downloadSample(
   return filePath;
 }
 
-export function resolveSuppliedFiles(manifest, environment = process.env) {
+export function resolveSuppliedFiles(manifest, environment = process.env, bundledDirectory = BUNDLED_FIXTURES_DIR) {
   return Promise.all((manifest.supplied ?? []).map(async (supplied) => {
-    const value = environment[supplied.envVar];
-    if (!value) return { ...supplied, status: "not-set" };
-    if (!fs.existsSync(value)) return { ...supplied, status: "missing-file", filePath: value };
-    if (supplied.sha256 === undefined) return { ...supplied, status: "present", filePath: value };
+    const from = environment[supplied.envVar] ? supplied.envVar : supplied.file ? "bundled" : null;
+    if (!from) return { ...supplied, status: "not-set" };
+    const value = from === "bundled" ? path.join(bundledDirectory, supplied.file) : environment[supplied.envVar];
+    if (!fs.existsSync(value)) return { ...supplied, status: "missing-file", filePath: value, from };
+    if (supplied.sha256 === undefined) return { ...supplied, status: "present", filePath: value, from };
     const actual = await sha256File(value);
-    return { ...supplied, status: actual === supplied.sha256 ? "present" : "mismatch", filePath: value, actual };
+    return { ...supplied, status: actual === supplied.sha256 ? "present" : "mismatch", filePath: value, from, actual };
   }));
 }

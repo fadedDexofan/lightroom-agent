@@ -22,7 +22,7 @@ Everything that needs no Lightroom (image encoders, orientation maths, manifest 
 
 - Scripts that write run only in a throwaway catalog. `lib/catalog-guard.mjs` reads the open catalog from Lightroom's open files (`lsof`) and refuses unless that catalog's folder holds `lrmcp-live-catalog.json` (written by `setup-catalog.mjs`) or `LRMCP_LIVE_THROWAWAY_CATALOG` names the catalog. A catalog under `~/Pictures/Lightroom` is always refused.
 - `setup-catalog.mjs` uses your open catalog only to reach File → New Catalog. It imports nothing until the new catalog is open and verified.
-- Never commit a `.lrcat`, a photo of unknown licence or a depth HEIC.
+- Never commit a `.lrcat` or a photo whose licence does not allow redistribution.
 - Menu clicks and keystrokes go to Lightroom only after `ensureLightroomFrontmost()` has confirmed it is in front; any app that takes focus can redirect them. Dialog buttons are pressed through their Accessibility element (`clickWindowButton`), which neither activates Lightroom nor moves the pointer.
 - Do not force-quit Lightroom or remove another process's socket.
 - Keep plug-in backups outside `$TMPDIR`, which macOS clears.
@@ -38,8 +38,7 @@ mise run live:setup
 node tests/e2e/live/smoke.mjs
 ```
 
-- Before `live:setup`, download the original file of the pinned portrait from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Bearded_man_with_long_hair-3052641.jpg) and set `LRMCP_LIVE_PEOPLE_PHOTO` to its path. Certification needs it; the kit does not download it. Set the other variables under [Fixtures](#fixtures) the same way for the checks that use them.
-- `live:fixtures` generates the synthetic images, downloads the CC0 raw samples and checks every hash, including those of the files you supplied. Set `LRMCP_LIVE_FIXTURES_DIR` to share one fixture folder between worktrees.
+- `live:fixtures` generates the synthetic images, downloads the CC0 raw samples and checks every hash, including those of the two bundled photos in `fixtures/`. Set `LRMCP_LIVE_FIXTURES_DIR` to share one fixture folder between worktrees.
 - `install-bundle.mjs install [candidate-dir]` backs up the installed plug-in, installs the candidate (by default this checkout's plug-in) and compares the two with `diff -rq`. It lists Lua files the candidate adds: Reload Plug-in does not load new files, so restart Lightroom (the New Catalog relaunch in the next step does).
 - `live:setup` (`setup-catalog.mjs`) needs Lightroom running. It creates the catalog, waits for the relaunch, dismisses start-up dialogs, waits for the plug-in, imports each fixture into `<catalog folder>/images/` and writes the photo ids by fixture name into `lrmcp-live-catalog.json`. Options: `--name`, and `--parent-dir`, which must match the folder the New Catalog dialog proposes (normally Documents).
 - `smoke.mjs` checks that the kit works: the EXIF orientation of all eight orientation fixtures, `list_masks`, a linear gradient on `orient_6` (preview difference by region), a radial gradient on `wide_plain` (overlap with the expected ellipse) and the stored develop row. It removes its masks.
@@ -110,13 +109,14 @@ Downloaded by `fetch-samples.mjs` from raw.pixls.us, both CC0 and pinned by hash
 | `arw_14bit` | `_DSC0009.ARW` (Sony ILCE-7M3, 6000x4000) | Raw with sky and trees: AI masks, Landscape, batch source, Denoise. |
 | `arw_12bit` | `_DSC0010.ARW` | The same scene at 12 bits, for batch and multi-photo checks. |
 
-Supplied by you and never committed. `setup-catalog.mjs` imports each file whose environment variable is set; checks that need one are skipped without it. When `manifest.json` pins a `sha256`, a different file is reported as a mismatch and not imported.
+Bundled in `fixtures/`, with their sources, licences and the Openize notice in [fixtures/SOURCES.md](fixtures/SOURCES.md). `setup-catalog.mjs` imports them by default. An environment variable points the kit at another copy instead; a file whose hash differs from the one `manifest.json` pins is reported as a mismatch and not imported, because certification's thresholds were measured on these photos.
 
-| Environment variable | Needed for |
-|---|---|
-| `LRMCP_LIVE_DEPTH_HEIC` | Depth range. Must be a real iPhone Portrait HEIC with a depth map: Lightroom ignores synthetic depth data. The manifest pins `iphone_portrait_photo.heic` from openize-heic-net (Openize License, not redistributed). |
-| `LRMCP_LIVE_PEOPLE_PHOTO` | People masks, and the Subject and combine steps of certification. The manifest pins a CC0 Wikimedia Commons portrait, `Bearded_man_with_long_hair-3052641.jpg`. |
-| `LRMCP_LIVE_SUBJECT_PHOTO` | Subject masks on a photo with one clear foreground subject. |
+| Key | File | Variable | Purpose |
+|---|---|---|---|
+| `people_photo` | `portrait_cc0.jpg` (CC0) | `LRMCP_LIVE_PEOPLE_PHOTO` | People masks, and the Subject and combine steps of certification. |
+| `depth_heic` | `iphone_portrait_photo.heic` (Openize License) | `LRMCP_LIVE_DEPTH_HEIC` | Depth range. It has to be a real iPhone Portrait HEIC with a depth map: Lightroom ignores synthetic depth data. |
+
+Supplied by you: `LRMCP_LIVE_SUBJECT_PHOTO`, a photo with one clear foreground subject for Subject masks. Checks that need it are skipped without it.
 
 Other variables: `LRMCP_LIVE_FIXTURES_DIR`, `LRMCP_LIVE_THROWAWAY_CATALOG`, `LIGHTROOM_MCP_REQUEST_PORT` and `LIGHTROOM_MCP_RESPONSE_PORT`.
 

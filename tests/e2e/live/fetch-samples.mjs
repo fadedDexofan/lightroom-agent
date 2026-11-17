@@ -33,7 +33,7 @@ for (const sample of manifest.samples) {
 for (const supplied of await resolveSuppliedFiles(manifest)) {
   const detail = supplied.filePath ? ` ${supplied.filePath}` : "";
   const hash = supplied.status === "mismatch" ? `, sha256 ${supplied.actual} is not the manifest's ${supplied.sha256}` : "";
-  console.log(`${supplied.key}: ${supplied.status}${detail} (${supplied.envVar}${hash})`);
+  console.log(`${supplied.key}: ${supplied.status}${detail} (${supplied.from ?? `${supplied.envVar} not set`}${hash})`);
   if (supplied.status === "mismatch") failed++;
 }
 
