@@ -1,18 +1,27 @@
+# lightroom-agent (unreleased)
+
+Changes of this fork against upstream at 1709e40. The design decisions behind them are in `docs/adr/`.
+
+- Every tool answers in one result envelope: `done`, `partial`, `failed` or `unknown`. The class comes from a per-call ledger of what the plug-in wrote, so `failed` always means nothing changed ([ADR 0001](docs/adr/0001-one-result-envelope.md)).
+- Mask sliders, curves, Point Color and deletions work on the photo's saved settings by mask id, without opening Develop or depending on the selected mask ([ADR 0003](docs/adr/0003-masks-addressed-by-id-in-the-saved-settings.md)).
+- Subject, Sky, Background, People and Landscape masks and `combine_mask` components are written for Lightroom to compute and judged on the photo afterwards; a mask Lightroom cannot find is removed.
+- Mask geometry writes are admitted by a per-machine certification of the running Lightroom build and the photo's process version instead of a list of tested versions ([ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md)).
+- Develop writes are read back after Lightroom normalises them; a value stored differently is reported in `adjusted`.
+- A command line runs any tool: `tools`, `call <tool> [json]` and `install-plugin`.
+- A live test kit in `tests/e2e/live/` builds a throwaway catalog and checks the tools against Lightroom's renders.
+
+# Upstream history
+
+The notes below are Automaat/lightroom-mcp's, unchanged up to 1709e40, with its per-change notes in `docs/release-notes/`. They describe upstream's behaviour, which this fork has changed in the ways listed above.
+
 # Unreleased
 
 - All advertised tools now publish Claude Code-compatible root schemas. Cross-field selector rules remain enforced before dispatch, and nested schema constraints are unchanged.
+- `delete_empty_masks` is removed. Use `delete_masks` with only `photo_ids` to delete empty masks on up to 1000 photos (LrC 14+), preserving module and selection. Existing `photo_id` calls with `mask_ids`, `tool_ids` or `all` keep their behavior (LrC 11+). The two forms cannot be mixed; each retains its result fields.
 - The default tool list now contains only core catalog and metadata tools. Enable `LIGHTROOM_MCP_TOOLSETS=develop`, `masks`, `develop,masks`, or `all` in your MCP server environment to restore Develop or mask tools after upgrading. Desktop bundle users can set **Enabled toolsets**. Core is always enabled. Restart the server to apply a change; hidden tools are also refused when called. Develop includes `create_virtual_copies` and `summarize_develop_settings`.
 
 - `create_people_mask` and `create_landscape_mask` are removed. Use `create_mask` with `type: "people", parts: ["hair"]` or `type: "landscape", categories: ["sky"]`. Results retain `mask_id` and the per-part/category `masks` list. People/Landscape keep their guarded LrC 15.6 / process 15.4 requirement and reject `adjustments`; set sliders afterwards with `set_mask_adjustments`. Subject/Sky/Background calls and their adjustments remain unchanged.
-- `get_mask` replaces `get_mask_adjustments`, `get_mask_curves` and `get_mask_point_colors`. Pass `photo_id` and `mask_id`; omit `kinds` to read all three in one call from the photo's saved settings, or select `adjustments`, `curves` and/or `point_colors`. Results contain the requested `adjustments`, `curves` and `swatches`.
-- Mask values are read and written by mask id in the photo's saved settings: `get_mask`, `set_mask_adjustments`, `set_mask_curves` and `edit_mask_point_colors`' update no longer open Develop or select the mask, and need no certification. A write changes only the named values, is read back exactly and restores the previous masks if Lightroom kept anything else. A write that shows a hidden mask again says so in a warning.
-- Mask sliders are written as Lightroom stores them: six decimal places, colour-grade sliders as whole numbers; the reply gives the stored values, and `create_mask_batch` reports them for the photo it created the mask on.
-- Point Color swatches carry `Variance` (-1 to 1), readable in `get_mask` and writable by update.
-- Mask curves take up to 16 points per channel; the global point curve takes up to 17.
-- `invert_mask`'s copy carries every value of the source and restores the masking tool and the selected mask; `not_copied` and `adjustments_copied` are gone. `get_mask`'s `unavailable` and `errors` are gone.
-- `edit_mask_point_colors` deletes and clears swatches in the photo's saved settings without opening Develop; only add still uses the Masking panel.
-- AI masks are judged once on the photo after Update AI Settings: `create_mask` People/Landscape, `create_mask_batch` targets, full `copy_develop_settings` and AI presets answer done when their own masks computed, failed with the previous masks restored when Lightroom could not compute one (a preset keeps its masks and is unknown), and unknown with nothing more written when anything is still computing after 15 s. Warnings name existing AI masks whose result the recompute changed or that were already failed, instead of a blanket recompute warning. The 120 s People/Landscape wait and the "Update AI Settings Errors" alert warning are gone.
-- `get_photo_preview` asks again while Lightroom is still rebuilding a raw photo's preview after a change, and fails saying so when its time runs out.
+- `get_mask` replaces `get_mask_adjustments`, `get_mask_curves` and `get_mask_point_colors`. Pass `photo_id` and `mask_id`; omit `kinds` to read all three in one Develop session, or select `adjustments`, `curves` and/or `point_colors`. Results contain `adjustments`, `curves`, `swatches` and per-kind `unavailable`; unsupported/unreadable kinds appear in `errors`, and a request with no readable kind fails. The set tools are unchanged.
 - Write results omit request echoes and count-only messages while retaining counts, IDs, readbacks and actionable warnings. See [the changed tools and fields](docs/release-notes/360-write-results.md).
 - `set_rating` and `set_flag` are replaced by `set_rating_and_flag`. Pass `photo_ids` and `rating`, `flag`, or both; both fields are saved in one write. Rating `0` clears stars and flag `"none"` clears the pick flag. Omitted fields stay unchanged. Results contain `success`, `updated` and `missing`.
 - `set_rating_and_flag`, `get_photo_metadata` and the three mask creation tools publish plain object schemas for Claude Code. Rating-or-flag, exclusive single/batch photo selectors and the mask-id/creation-adjustments exclusion are enforced before dispatch; handlers, sections, geometry, sliders and results are unchanged.
