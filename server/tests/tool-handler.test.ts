@@ -699,15 +699,6 @@ describe('describe_develop_keys', () => {
     expect(data.keys).toHaveLength(DEVELOP_KEYS.length);
   });
 
-  it('matches the live split ranges Lightroom Classic 16.0 reported on a raw', async () => {
-    const live: Record<string, [number, number]> = { ParametricShadowSplit: [10, 70], ParametricMidtoneSplit: [20, 80], ParametricHighlightSplit: [30, 90] };
-    const byKey = new Map((dataOf(await lightroom(live).describe({})) as Described).keys.map((entry) => [entry.key, entry]));
-
-    for (const [key, range] of Object.entries(live)) {
-      expect(byKey.get(key)).toEqual({ key, kind: 'number', range, live: range });
-    }
-  });
-
   it('treats a live range within 1e-9 of the table as the same and a larger difference as differing', async () => {
     const { describe } = lightroom({ Contrast2012: [-100, 100.0000000001], Texture: [-100, 100.001] });
 

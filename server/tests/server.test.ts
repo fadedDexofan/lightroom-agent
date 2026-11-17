@@ -249,7 +249,7 @@ describe('createMcpServer', () => {
     const required: Record<string, string[]> = {
       create_range_mask: ['sRGB', 'copy_sample_from', 'second sample point', 'Lightroom crashes', '0.01', 'different colors'],
       create_mask: ['ErrorReason', 'no alert to dismiss', 'omitted sliders are neutral', 'AI process is running', 'single-person', 'writes nothing more', 'does not prove'],
-      create_mask_batch: ['saved settings', 'does not prove', 'reports finding nothing', 'compare previews', 'remaining', '230'],
+      create_mask_batch: ['saved settings', 'does not prove', 'reports finding nothing', 'compare previews', 'remaining', 'would not fit its time budget'],
       invert_mask: ['only one component', 'returned mask_id'],
       combine_mask: ['intersect', 'inverted true', 'ErrorReason', 'saved settings'],
       get_photo_detail: ['render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}', 'a string ("export" today)', 'a list of phrases', '"the exported mark"'],
@@ -257,6 +257,8 @@ describe('createMcpServer', () => {
       set_mask_adjustments: ['saved settings by mask_id', 'six decimal places', 'pending in Develop are committed first', 'one history step', 'naming what Lightroom stored'],
       set_mask_curves: ['saved settings by mask_id', 'at most 16 points', 'pending in Develop are committed first', 'naming what Lightroom stored'],
       edit_mask_point_colors: ['stores the source rounded to two decimals', 'centred on the rounded source', 'already holds', 'six decimals', 'saved settings by mask_id'],
+      get_photo_preview: ['enlargement of a smaller cached preview', 'cropped photo', 'get_photo_detail'],
+      get_photo_previews: ['enlargement of a smaller cached preview', 'cropped photo', 'get_photo_detail'],
       list_masks: ['saved settings, without opening Develop', 'newest first', 'subtype subject, sky, background, people or landscape', 'add part', 'stored kind as type and no subtype', 'empty list means'],
     };
     for (const [name, phrases] of Object.entries(required)) {
@@ -460,15 +462,6 @@ describe('createMcpServer', () => {
   });
 
   describe('ListTools', () => {
-    it.each(['get_photo_preview', 'get_photo_previews'])('warns in %s that a preview can be an enlargement', async (name) => {
-      pair = await connect({});
-      const tool = (await pair.client.listTools()).tools.find((candidate) => candidate.name === name);
-      expect(tool?.description).toContain(
-        "Lightroom's preview cache can answer with an enlargement of a smaller cached preview, most often on a cropped photo, "
-          + 'without saying so; judge fine sharpness with get_photo_detail.',
-      );
-    });
-
     it('exposes tool annotations and titles for every classified tool', async () => {
       pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();

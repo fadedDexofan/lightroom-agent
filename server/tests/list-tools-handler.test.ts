@@ -19,7 +19,7 @@ describe('TOOL_DEFINITIONS', () => {
     const guidance = `${tool?.description} ${sizeSchema.description}`;
     expect(guidance).toMatch(/cull is 864.*review 1728.*default cull/);
     expect(guidance).toMatch(/cull is for choosing among frames, review for a whole-frame look/);
-    expect(guidance).toContain('Judge critical sharpness with get_photo_detail, not with a preview');
+    expect(guidance).toContain('judge fine sharpness with get_photo_detail');
     expect(guidance).toContain('width x height / 750');
     expect(guidance).toContain('width/height/bytes are actual');
     expect(guidance).toContain('scaled_by_server');

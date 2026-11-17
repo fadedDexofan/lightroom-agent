@@ -629,7 +629,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
-        size: previewSizeSchema("Longest edge returned: cull is 864, review 1728, sizes Lightroom 16.0 renders itself for 3:2 raws, so they usually arrive without resampling; numeric 64-2048 means exactly that edge; default cull, the frequent call. The server scales a larger Lightroom image down to this edge, at most 2000px, within 3.5 MiB; a smaller image is returned as Lightroom made it. cull is for choosing among frames, review for a whole-frame look at rendering, tone and mask edges. Judge critical sharpness with get_photo_detail, not with a preview. Image tokens grow with pixel area (Claude: about width x height / 750) and repeat each turn in history."),
+        size: previewSizeSchema("Longest edge returned: cull is 864, review 1728, sizes Lightroom 16.0 renders itself for 3:2 raws, so they usually arrive without resampling; numeric 64-2048 means exactly that edge; default cull, the frequent call. The server scales a larger Lightroom image down to this edge, at most 2000px, within 3.5 MiB; a smaller image is returned as Lightroom made it. cull is for choosing among frames, review for a whole-frame look at rendering, tone and mask edges. Image tokens grow with pixel area (Claude: about width x height / 750) and repeat each turn in history."),
         region: {
           type: "object",
           additionalProperties: false,
@@ -1681,7 +1681,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     develop: "drives",
     run: { plugin: "HandlerLensBlur.get" },
-    description: "Read Lens Blur active/amount/cat_eye/highlights_boost/focal_range near/far/focal_range_raw (four SDK values)/bokeh (Process Version 3+). No computed blur returns active:false and unavailable controls. Opens Develop; shared restoration rules apply.",
+    description: "Read Lens Blur active/amount/cat_eye/highlights_boost/focal_range near/far/focal_range_raw (four SDK values)/bokeh (Process Version 3+). No computed blur returns active:false and unavailable controls.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1765,7 +1765,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerDevelop.setProcessVersion" },
     description:
-      "Set Version 1–6 (confirm:true; appearance can change). Downgrades of photos with masks fail to preserve guarded editing. Opens each in Develop; restore_selection defaults true. Returns results per photo, status changed or unchanged with previous_version and new_version. Max 100; stops near 240 s; resend remaining.",
+      "Set Version 1–6 (confirm:true; appearance can change). Downgrades of photos with masks fail to preserve guarded editing. Opens each in Develop; restore_selection defaults true. Returns results per photo, status changed or unchanged with previous_version and new_version. Max 100; stops starting photos when one more would not fit its time budget; resend remaining.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1896,7 +1896,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerDevelop.applyAutoAdjustments" },
     description:
-      `Apply Auto Tone, Auto White Balance or both to up to 100 photos. Set tone or white_balance true (omitted=false). Opens each in Develop and waits for settled settings; shared restoration rules apply. Returns results per photo, status applied once the changed values hold for a second. Lightroom gives no completion signal for Auto, so a photo where no change is seen within ${AUTO_CHANGE_WAIT_SECONDS} s is unknown: Auto may still land (or had nothing to change), so read its settings before writing to it. Stops near 240 s; resend remaining.`,
+      `Apply Auto Tone, Auto White Balance or both to up to 100 photos. Set tone or white_balance true (omitted=false). Opens each in Develop and waits for settled settings; shared restoration rules apply. Returns results per photo, status applied once the changed values hold for a second. Lightroom gives no completion signal for Auto, so a photo where no change is seen within ${AUTO_CHANGE_WAIT_SECONDS} s is unknown: Auto may still land (or had nothing to change), so read its settings before writing to it. Stops starting photos when one more would not fit its time budget; resend remaining.`,
     rules: [{ text: "tone or white_balance must be true", holds: (args) => args.tone === true || args.white_balance === true }],
     inputSchema: {
       type: "object",
@@ -1918,7 +1918,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerDevelop.resetDevelopAdjustments" },
     description:
-      "Reset all Develop edits, including crop/masks, on up to 100 photos (confirm:true); recover through Lightroom History. Opens each in Develop; shared restoration rules apply. Returns results per photo, status reset. Stops near 240 s or on cancel; resend remaining.",
+      "Reset all Develop edits, including crop/masks, on up to 100 photos (confirm:true); recover through Lightroom History. Opens each in Develop; shared restoration rules apply. Returns results per photo, status reset. Stops starting photos when one more would not fit its time budget, or on cancel; resend remaining.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1938,7 +1938,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerDevelop.applyDenoise" },
     description:
-      "Enable/change AI Denoise through Develop, not a develop key. Activates each photo; shared restoration rules apply. Activity Center computes in background. Same amount leaves the photo unchanged; other settings stay. Max 100 photos; stops near 240 s; resend remaining. Returns results per photo, status applied, amount_changed with previous_amount, or unchanged. A change Lightroom shows but does not save in time makes the photo unknown, naming the amount writes, even when the amount is set back and the panel shows it: read its Denoise state before retrying.",
+      "Enable/change AI Denoise through Develop, not a develop key. Activates each photo; shared restoration rules apply. Activity Center computes in background. Same amount leaves the photo unchanged; other settings stay. Max 100 photos; stops starting photos when one more would not fit its time budget; resend remaining. Returns results per photo, status applied, amount_changed with previous_amount, or unchanged. A change Lightroom shows but does not save in time makes the photo unknown, naming the amount writes, even when the amount is set back and the panel shows it: read its Denoise state before retrying.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1969,7 +1969,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     develop: "drives",
     run: { plugin: "HandlerSpots.list" },
-    description: "List Remove spots: count, 1-based index and complete SDK params including nested fields. Indices shift after deletion. Opens Develop, preserves active tool; shared restoration rules apply.",
+    description: "List Remove spots: count, 1-based index and complete SDK params including nested fields. Indices shift after deletion. Preserves the active tool.",
     inputSchema: {
       type: "object", additionalProperties: false,
       properties: { photo_id: photoIdSchema("Photo ID or file path") },
@@ -2468,7 +2468,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerMaskBatch.createMaskBatch" },
     description:
-      `Create the same Subject, Sky or Background mask with the same adjustments on up to 200 photos by writing it into each photo's saved settings and letting Lightroom compute it for that photo, without opening Develop (certified Lightroom only; shared guarded-write rules apply). Existing masks are not written; an existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the call, is named in a warning. Returns results with photo_id, mask_id, status created and, when adjustments were given, the values Lightroom stored (colour grade in whole numbers, other sliders to six decimals). A photo where Lightroom reports finding nothing (ErrorReason) is failed with its mask removed, ${AI_COMPUTE_CHANGED_MORE}, and the batch goes on; a photo still computing at the limit is unknown, and nothing more is written to it. A computed mask's digest does not prove it covers anything useful; compare previews. Stops near 230 s; resend remaining. Rejected mask formats fail untouched. Exposure is -4 to 4.`,
+      `Create the same Subject, Sky or Background mask with the same adjustments on up to 200 photos by writing it into each photo's saved settings and letting Lightroom compute it for that photo, without opening Develop (certified Lightroom only; shared guarded-write rules apply). Existing masks are not written; an existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the call, is named in a warning. Returns results with photo_id, mask_id, status created and, when adjustments were given, the values Lightroom stored (colour grade in whole numbers, other sliders to six decimals). A photo where Lightroom reports finding nothing (ErrorReason) is failed with its mask removed, ${AI_COMPUTE_CHANGED_MORE}, and the batch goes on; a photo still computing at the limit is unknown, and nothing more is written to it. A computed mask's digest does not prove it covers anything useful; compare previews. Stops starting photos when one more would not fit its time budget; resend remaining. Rejected mask formats fail untouched. Exposure is -4 to 4.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2577,7 +2577,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerMaskCombine.combineMask" },
     description:
-      `Add, subtract or intersect a Subject, Sky or Background component on mask_id from list_masks by appending it to the mask in the photo's saved settings, without opening Develop or selecting the mask (certified Lightroom only; shared guarded-write rules apply). Lightroom then computes it with one Update AI Settings; the call answers from the photo's AI state: the new component computed is done and returns its tool_id; when Lightroom reports finding nothing to combine it ends the component failed (ErrorReason), the mask is put back and the call fails, ${AI_COMPUTE_CHANGED_MORE}; anything still computing 15 s later is unknown and nothing more is written. add widens, subtract removes, intersect keeps overlap; intersect is stored as a subtracted, inverted component, shown inverted true in list_masks. A computed component's digest does not prove it covers anything useful; compare previews. Unknown mask ids fail unchanged. One history step for the component and one for the compute.`,
+      `Add, subtract or intersect a Subject, Sky or Background component on mask_id from list_masks by appending it to the mask in the photo's saved settings, without opening Develop or selecting the mask (certified Lightroom only; shared guarded-write rules apply). Lightroom then computes it with one Update AI Settings; the call answers from the photo's AI state: the new component computed is done and returns its tool_id; when Lightroom reports finding nothing to combine it ends the component failed (ErrorReason), the mask is put back and the call fails, ${AI_COMPUTE_CHANGED_MORE}; anything still computing ${AI_MASK_COMPUTE_WAIT_SECONDS} s later is unknown and nothing more is written. add widens, subtract removes, intersect keeps overlap; intersect is stored as a subtracted, inverted component, shown inverted true in list_masks. A computed component's digest does not prove it covers anything useful; compare previews. Unknown mask ids fail unchanged. One history step for the component and one for the compute.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
