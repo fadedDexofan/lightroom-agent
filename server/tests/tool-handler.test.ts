@@ -250,14 +250,14 @@ describe('Develop call queue', () => {
   it('sends the next Develop call only after the previous one answered, in arrival order', async () => {
     const { pending, handler, settle } = gatedDispatcher();
     const first = handler(...develop(1));
-    const second = handler('list_masks', { photo_id: 2 });
+    const second = handler('list_spots', { photo_id: 2 });
     const third = handler(...develop(3));
     await settle();
     expect(pending.map((entry) => entry.action)).toEqual(['write_develop_settings']);
     pending[0].resolve(done('1'));
     await first;
     await settle();
-    expect(pending.map((entry) => entry.action)).toEqual(['write_develop_settings', 'list_masks']);
+    expect(pending.map((entry) => entry.action)).toEqual(['write_develop_settings', 'list_spots']);
     pending[1].resolve(done('2'));
     await second;
     await settle();

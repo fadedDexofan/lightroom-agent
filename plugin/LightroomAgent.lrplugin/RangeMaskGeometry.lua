@@ -130,10 +130,15 @@ local function numbersIn(text)
     return numbers
 end
 
-function RangeMaskGeometry.rangeOf(component, frame)
+function RangeMaskGeometry.kindOf(component)
     if component.What ~= "Mask/RangeMask" or type(component.CorrectionRangeMask) ~= "table" then return nil end
+    return KIND_OF_RANGE_TYPE[component.CorrectionRangeMask.Type]
+end
+
+function RangeMaskGeometry.rangeOf(component, frame)
+    local kind = RangeMaskGeometry.kindOf(component)
+    if kind == nil then return nil end
     local range = component.CorrectionRangeMask
-    local kind = KIND_OF_RANGE_TYPE[range.Type]
     if TRAPEZOID_FIELD_OF_KIND[kind] ~= nil then
         local values = numbersIn(range[TRAPEZOID_FIELD_OF_KIND[kind]])
         if values == nil or #values ~= 4 then return nil end

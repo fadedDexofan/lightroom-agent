@@ -257,7 +257,7 @@ describe('createMcpServer', () => {
       set_mask_adjustments: ['saved settings by mask_id', 'six decimal places', 'pending in Develop are committed first', 'one history step', 'naming what Lightroom stored'],
       set_mask_curves: ['saved settings by mask_id', 'at most 16 points', 'pending in Develop are committed first', 'naming what Lightroom stored'],
       edit_mask_point_colors: ['stores the source rounded to two decimals', 'centred on the rounded source', 'already holds', 'six decimals', 'saved settings by mask_id'],
-      list_masks: ['empty list means', 'saved settings hold', 'Develop has not loaded them yet', 'click OK in Lightroom', 'call again', 'failed with nothing changed'],
+      list_masks: ['saved settings, without opening Develop', 'newest first', 'subtype subject, sky, background, people or landscape', 'add part', 'stored kind as type and no subtype', 'empty list means'],
     };
     for (const [name, phrases] of Object.entries(required)) {
       const tool = TOOL_CONTRACTS.find((entry) => entry.name === name);

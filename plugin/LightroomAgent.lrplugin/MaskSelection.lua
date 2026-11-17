@@ -125,29 +125,6 @@ function MaskSelection.problemUnlessAddedRemoved(context, catalog, photo, knownI
     return nil
 end
 
-local function normalizeTool(tool, ranges)
-    return {
-        id = tool.ID,
-        type = tool.Type,
-        subtype = tool.Subtype,
-        inverted = tool.Inverted == true,
-        range = ranges and ranges[tool.ID] or nil,
-    }
-end
-
-function MaskSelection.normalizeMask(mask, ranges)
-    local tools = {}
-    for _, tool in ipairs(mask.Tools or {}) do
-        tools[#tools + 1] = normalizeTool(tool, ranges)
-    end
-    return {
-        id = mask.ID,
-        name = mask.Name,
-        hidden = mask.Hidden == true,
-        tools = tools,
-    }
-end
-
 function MaskSelection.requireMask(masks, maskId, photoId)
     local mask = MaskSelection.findMask(masks, maskId)
     if mask then return mask end

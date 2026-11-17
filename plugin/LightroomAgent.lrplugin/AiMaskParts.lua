@@ -2,6 +2,7 @@ local Contract = require 'Contract'
 
 local AiMaskParts = {}
 
+local AI_KIND = "Mask/Image"
 local ALL_PEOPLE_SUBTYPE = 3
 local LANDSCAPE_SUBTYPE = 0
 local MASK_VERSION = 1
@@ -50,7 +51,7 @@ local function newComponent(spec, request)
         name = "People - " .. spec.label
     end
     local component = {
-        What = "Mask/Image",
+        What = AI_KIND,
         MaskActive = true,
         MaskInverted = false,
         MaskBlendMode = 0,
@@ -63,6 +64,23 @@ local function newComponent(spec, request)
         ErrorReason = NO_ERROR,
     }
     return component, name
+end
+
+local function categoryNamed(list, category)
+    for _, spec in ipairs(list) do
+        if spec.category == category then return spec.name end
+    end
+    return nil
+end
+
+function AiMaskParts.partOf(component)
+    if component.What ~= AI_KIND then return nil end
+    local kind, list = nil, nil
+    if component.MaskSubType == ALL_PEOPLE_SUBTYPE then kind, list = "people", PEOPLE_PARTS end
+    if component.MaskSubType == LANDSCAPE_SUBTYPE then kind, list = "landscape", LANDSCAPE_CATEGORIES end
+    local name = list and categoryNamed(list, component.MaskSubCategoryID)
+    if name == nil then return nil end
+    return { kind = kind, name = name }
 end
 
 function AiMaskParts.newEntry(spec, request)

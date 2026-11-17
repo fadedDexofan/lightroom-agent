@@ -2015,10 +2015,9 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "List masks",
     annotations: { readOnlyHint: true, openWorldHint: false },
-    develop: "drives",
     run: { plugin: "HandlerMasks.listMasks" },
     description:
-      "List masks: id/name/hidden and tools with id/type/subtype/inverted. Range tools include stored luminance/depth min/max/falloffs or color x/y/l/a/b/amount; use these color rankings with create_range_mask. UI-created ranges appear only after Lightroom saves them to the catalog. An empty list means the photo's saved settings hold no masks; masks Develop has not loaded yet fail the call as the shared mask rules say. Ids remain valid on that photo while masks stay unchanged. Shared Develop restoration rules apply.",
+      "List a photo's masks from its saved settings, without opening Develop, newest first as Lightroom's Masks panel shows them: id/name/hidden and tools (the mask's components) with id/type/inverted. type is gradient, radialGradient, brush, rangeMask (subtype luminance, color or depth) or aiSelection (subtype subject, sky, background, people or landscape, as create_mask names them; people and landscape add part, the people part or landscape category). A component of an encoding this server does not know is listed with its stored kind as type and no subtype. Range tools include stored luminance/depth min/max/falloffs or color x/y/l/a/b/amount; use these color rankings with create_range_mask. UI-created masks appear only after Lightroom saves them to the catalog. An empty list means the photo's saved settings hold no masks. Ids remain valid on that photo while masks stay unchanged.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

@@ -134,15 +134,15 @@ describe('broker', () => {
     const client = await connect(p);
 
     const own = handler('set_develop_settings', { photo_id: 1, settings: { Exposure2012: 0.1 } });
-    const forwarded = client.callTool('list_masks', { photo_id: 2 });
+    const forwarded = client.callTool('list_spots', { photo_id: 2 });
     await waitFor(() => pending.length > 0);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(pending.map((entry) => entry.action)).toEqual(['write_develop_settings']);
     pending[0].resolve({ id: '1', result: { data: {} } });
     await own;
     await waitFor(() => pending.length > 1);
-    expect(pending[1].action).toBe('list_masks');
-    pending[1].resolve({ id: '2', result: { data: { masks: [] } } });
+    expect(pending[1].action).toBe('list_spots');
+    pending[1].resolve({ id: '2', result: { data: { spots: [] } } });
     expect(envelopeOf(await forwarded).outcome).toBe('done');
   });
 

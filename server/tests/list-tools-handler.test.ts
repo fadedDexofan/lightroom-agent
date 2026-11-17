@@ -364,7 +364,7 @@ describe('Remove spot contracts', () => {
 describe('Develop-driving reads', () => {
   it('say in their published description that they drive Develop and may commit a pending slider change', () => {
     const reads = TOOL_CONTRACTS.filter((contract) => contract.develop === 'drives' && contract.annotations.readOnlyHint);
-    expect(reads.map((contract) => contract.name).sort()).toEqual(['describe_develop_keys', 'get_lens_blur', 'list_masks', 'list_spots']);
+    expect(reads.map((contract) => contract.name).sort()).toEqual(['describe_develop_keys', 'get_lens_blur', 'list_spots']);
     for (const contract of reads) {
       const description = TOOL_DEFINITIONS.find((tool) => tool.name === contract.name)!.description;
       expect(description).toContain('Opens the photo in Develop');

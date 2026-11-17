@@ -6,7 +6,7 @@ Read the tool's own description before a call you have not made in this session;
 
 - The server talks to a plug-in inside a running Lightroom Classic. On a connection error read its text: check that Lightroom runs with the plug-in enabled, that ports match and the token is readable. Several clients normally share one bridge; an owner that stops answering needs diagnosis. Tell the person instead of retrying in a loop.
 - Toolsets: core is always on; `develop`, `masks` or `all` add the rest. They are fixed at server start, so a changed setting needs a restarted server and does not add tools to a running session.
-- Read-only mode hides and refuses every write, including exports, `export_photo_metadata`, `export_develop_preset` and `get_photo_detail`. Reads that use Develop (`list_masks`, `describe_develop_keys`, `get_lens_blur`, `list_spots`) can still switch the module, photo or selected mask briefly, then restore the view; they change no photo data.
+- Read-only mode hides and refuses every write, including exports, `export_photo_metadata`, `export_develop_preset` and `get_photo_detail`. Reads that use Develop (`describe_develop_keys`, `get_lens_blur`, `list_spots`) can still switch the module, photo or selected mask briefly, then restore the view; they change no photo data.
 - `undo_last_step` undoes the last shared history step, which may be the person's or another plug-in's, and Lightroom can merge recent plug-in writes into one step. Use a snapshot or a recorded value to go back instead.
 
 ## Identify photos

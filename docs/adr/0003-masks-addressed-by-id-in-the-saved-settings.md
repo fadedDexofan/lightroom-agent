@@ -31,4 +31,5 @@ These facts were observed on Lightroom Classic 16.0 before the code was written:
 - The call commits pending Develop edits before writing. Do not edit the same photo in Lightroom while a call runs: an edit made during the call may be lost.
 - "Nothing found" for an AI mask is Lightroom's stored `ErrorReason` 1. The call refuses and puts the masks back; no alert appears.
 - The fields Lightroom computes for the photo in an AI component (digests, sizes, origin, reference point, error) are never compared and never copied, so a mask copied to a photo of another size or orientation is computed for that photo.
+- Listing masks reads the same saved array: `list_masks` opens no Develop session and names each component in the words `create_mask` uses.
 - Inverting a mask and Develop's live slider ranges for a selected mask still use the Develop controller. Spot tools address spots by index under the selection.
