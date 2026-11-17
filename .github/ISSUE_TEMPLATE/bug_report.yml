@@ -1,0 +1,51 @@
+name: Bug report
+description: A tool did something wrong, or lightroom-agent does not start.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you asked for, what the tool did, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reply
+    attributes:
+      label: Tool call and reply
+      description: The tool name, its arguments and the JSON envelope it answered with (outcome, error, warnings). Remove anything private.
+      render: json
+  - type: input
+    id: lightroom
+    attributes:
+      label: Lightroom Classic version
+      description: Help → System Info shows it, for example 16.0.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.5
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: Claude Code 2.x, Codex, …
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: lightroom-agent commit
+      description: The output of `git rev-parse --short HEAD` in your checkout.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The relevant lines of the plug-in log (Plug-in Manager → Show Status shows its path) and of the server's stderr in your client's MCP log.
+      render: text

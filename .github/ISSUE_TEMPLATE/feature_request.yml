@@ -1,0 +1,16 @@
+name: Feature request
+description: A Lightroom capability or a tool change you need.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you want the agent to do
+      description: The task in Lightroom terms, and why the current tools cannot do it.
+    validations:
+      required: true
+  - type: textarea
+    id: lightroom
+    attributes:
+      label: How Lightroom does it
+      description: The panel, slider or command in Lightroom Classic, and its SDK function or develop key if you know it.
