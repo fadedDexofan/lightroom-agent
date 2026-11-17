@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { batchCropOffsets, batchFileName } from "../lib/batch.mjs";
-import { catalogWindowState, chooseModalButton, parseModalWindows, watchModalsWhile } from "../lib/ax.mjs";
+import { activeModule, catalogWindowState, chooseModalButton, parseModalWindows, watchModalsWhile } from "../lib/ax.mjs";
 import { absentFixtureIds, fixturesToImport } from "../lib/live-catalog.mjs";
 import { lastExportTimestamp, maskGroupsText, parseLuaTable, pollCatalog, storedMaskGroups, summarizeMaskGroups } from "../lib/catalog-db.mjs";
 import { addedLuaFiles, assertOutsideTemporaryDirectory, listLuaFiles } from "../lib/plugin-bundle.mjs";
@@ -63,6 +63,12 @@ test("modal windows are parsed and the safe button is chosen", () => {
     .join("\u001e");
   const windows = parseModalWindows(raw);
   assert.deepEqual(windows.map(chooseModalButton), ["OK", "Not Now", null]);
+});
+
+test("the active module is the last part of Lightroom's main window title", () => {
+  assert.equal(activeModule(["", "x.lrcat - Adobe Photoshop Lightroom Classic - Library"]), "Library");
+  assert.equal(activeModule(["Lightroom Plug-in Manager", "x.lrcat - Adobe Photoshop Lightroom Classic - Develop"]), "Develop");
+  assert.equal(activeModule(["Lightroom Plug-in Manager"]), null);
 });
 
 test("the open catalog is read from Lightroom's main window title", () => {

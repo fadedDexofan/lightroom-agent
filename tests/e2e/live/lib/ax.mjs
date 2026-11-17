@@ -306,6 +306,19 @@ export async function quitLightroom({ timeoutMs = 120_000 } = {}) {
 
 const MAIN_WINDOW_TITLE = /^.+\.lrcat - .*Lightroom Classic/;
 
+export function activeModule(windowNames) {
+  const main = windowNames.find((name) => MAIN_WINDOW_TITLE.test(name));
+  return main ? main.slice(main.lastIndexOf(" - ") + 3) : null;
+}
+
+function lightroomWindowNames() {
+  return osascript(`tell application "System Events" to tell process "${LIGHTROOM_PROCESS_NAME}" to get name of every window`).split(", ");
+}
+
+export function lightroomModule() {
+  return activeModule(lightroomWindowNames());
+}
+
 export function catalogWindowState(windowNames, catalogPath) {
   const windowPrefix = `${path.basename(catalogPath)} - `;
   if (windowNames.some((name) => name.startsWith(windowPrefix))) return "requested";
@@ -317,13 +330,13 @@ async function launchWithCatalog(catalogPath, deadline) {
   execFileSync("open", ["-a", LIGHTROOM_PROCESS_NAME, catalogPath]);
   while (Date.now() < deadline) {
     await sleep(2000);
-    let names = "";
+    let names;
     try {
-      names = osascript(`tell application "System Events" to tell process "${LIGHTROOM_PROCESS_NAME}" to get name of every window`);
+      names = lightroomWindowNames();
     } catch {
       continue;
     }
-    const state = catalogWindowState(names.split(", "), catalogPath);
+    const state = catalogWindowState(names, catalogPath);
     if (state !== "waiting") return state;
   }
   return "waiting";
