@@ -25,6 +25,11 @@ local COLOR = {
     CorrectionRangeMask = { Type = 1, ColorAmount = 0.494949, PointModels = { "0.522527 0.888059 0.758296 0.050000 0.188000 0" } },
 }
 
+local TWO_SAMPLE_COLOR = {
+    What = "Mask/RangeMask", MaskID = "C8C34215-F979-42B5-9E4B-D235E1FBB96D", MaskInverted = false, MaskBlendMode = 0, MaskValue = 1,
+    CorrectionRangeMask = { Type = 1, PointModels = { "0.947132 0.039424 0.709755 0.747028 0.195453 0", "0.588786 0.645059 0.347055 0.447817 0.552280 1" }, SampleType = 0, ColorAmount = 0.494949, Invert = false, Version = 4 },
+}
+
 local function correction(id, components, fields)
     local entry = { What = "Correction", CorrectionID = id, CorrectionName = "Mask " .. id, CorrectionActive = true,
         CorrectionMasks = components }
@@ -119,12 +124,22 @@ describe("HandlerMasks.listMasks", function()
             { id = "t-radial", type = "radialGradient", inverted = false },
             { id = "t-brush", type = "brush", inverted = false },
             { id = "t-color", type = "rangeMask", subtype = "color", inverted = false,
-                range = { sample = { x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 }, amount = 0.494949 } },
+                range = { samples = { { x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 } }, amount = 0.494949 } },
             { id = "5EDEEEF2-5665-4470-B2FC-756A5328B301", type = "rangeMask", subtype = "luminance", inverted = false,
                 range = { min = 0.6, max = 0.9, lower_falloff = 0.1, upper_falloff = 0.1 } },
             { id = "t-depth", type = "rangeMask", subtype = "depth", inverted = false,
                 range = { min = 0.1, max = 0.4, lower_falloff = 0.1, upper_falloff = 0.1 } },
         }, tools)
+    end)
+
+    it("reports every sample of a colour range Lightroom made from two clicks", function()
+        assert.are.same({
+            samples = {
+                { x = 0.747028, y = 0.195453, l = 0.947132, a = 0.039424, b = 0.709755 },
+                { x = 0.447817, y = 0.55228, l = 0.588786, a = 0.645059, b = 0.347055 },
+            },
+            amount = 0.494949,
+        }, listed({ correction("m-1", { TWO_SAMPLE_COLOR }) }).masks[1].tools[1].range)
     end)
 
     it("reports a colour sample pin in the displayed frame of a cropped, rotated photo", function()
@@ -139,7 +154,7 @@ describe("HandlerMasks.listMasks", function()
             },
         } } })
 
-        local sample = Handler.listMasks({ photo_id = "1" }).masks[1].tools[1].range.sample
+        local sample = Handler.listMasks({ photo_id = "1" }).masks[1].tools[1].range.samples[1]
 
         assert.is_true(math.abs(sample.x) < 1e-6)
         assert.is_true(math.abs(sample.y) < 1e-6)

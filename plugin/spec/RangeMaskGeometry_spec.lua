@@ -260,7 +260,7 @@ describe("RangeMaskGeometry", function()
             }, UPRIGHT)
 
             assert.are.equal("color", kind)
-            assert.are.same({ sample = { x = 0.4, y = 0.5, l = 0.1, a = 0.2, b = 0.3 }, amount = 0.4 }, range)
+            assert.are.same({ samples = { { x = 0.4, y = 0.5, l = 0.1, a = 0.2, b = 0.3 } }, amount = 0.4 }, range)
         end)
 
         it("reads every Lightroom-authored sample back as the l, a and b it stored", function()
@@ -273,7 +273,7 @@ describe("RangeMaskGeometry", function()
 
                 assert.are.equal("color", kind)
                 for field, value in pairs(expected) do
-                    assert.is_true(math.abs(range.sample[field] - value) < 1e-6)
+                    assert.is_true(math.abs(range.samples[1][field] - value) < 1e-6)
                 end
             end
         end)

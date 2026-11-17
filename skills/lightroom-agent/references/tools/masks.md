@@ -38,7 +38,7 @@ Gradient, brush and range positions are normalised 0..1 in the frame of the rend
 
 Lightroom stores masks before the crop, so a mask stays on the same part of the photo when the crop changes; re-read a mask's geometry after a crop change before reshaping it. With Upright, a manual Transform or manual distortion active, a position can land up to about 0.05 of the frame away near the edges (observed on Lightroom Classic 16.0); the write answers with a warning: check the render and move the geometry by the offset you see.
 
-Range masks: luminance and depth bands at least 0.01 wide (depth needs a photo with a depth map); a colour range takes exactly one sample (a second one crashed Lightroom), given as Lightroom's own per-photo l, a, b rankings, not sRGB: read them with `list_masks` from a colour range made in Lightroom, or copy one with `copy_sample_from`.
+Range masks: luminance and depth bands at least 0.01 wide (depth needs a photo with a depth map); a colour range takes exactly one sample (a second one crashed Lightroom), given as Lightroom's own per-photo l, a, b rankings, not sRGB: read them from a colour range made in Lightroom, where `list_masks` gives one entry in the tool's `range.samples` per click (use one sample per range you create, adding more ranges to the mask for more samples), or copy a single-sample range with `copy_sample_from`.
 
 ## AI masks judged on the photo
 

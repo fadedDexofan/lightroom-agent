@@ -114,7 +114,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal(1, #range.PointModels)
         assert.are.equal("0.462745 0.400000 0.100000 0.200000 0.800000 0", range.PointModels[1])
         assert.are.equal("color", result.type)
-        assert.are.same({ x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, result.color.sample)
+        assert.are.same({ x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, result.color.samples[1])
         assert.are.equal(0.4, result.color.amount)
     end)
 
@@ -125,7 +125,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
         local range = stores["1"].writes[1][1].CorrectionMasks[1].CorrectionRangeMask
         assert.are.equal("0.462745 0.400000 0.100000 0.800000 0.800000 0", range.PointModels[1])
-        assert.are.same({ x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, result.color.sample)
+        assert.are.same({ x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, result.color.samples[1])
     end)
 
     it("warns that Upright moves a color sample's pin away from the preview", function()
@@ -311,7 +311,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
             assert.are.equal("Copy", entries[2].CorrectionName)
             assert.are.equal(entries[2].CorrectionID, result.mask_id)
             assert.is_true(result.new_mask)
-            assert.are.same({ x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 }, result.color.sample)
+            assert.are.same({ x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 }, result.color.samples[1])
             assert.are.same({ photo_id = "1", mask_id = "C1", tool_id = "C1T1" }, result.copied_from)
         end)
 
@@ -355,7 +355,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
             local range = written(stores, "1")[1].CorrectionMasks[1].CorrectionRangeMask
             assert.are.equal(1, #range.PointModels)
             assert.are.equal("0.522527 0.888059 0.758296 0.188000 0.950000 0", range.PointModels[1])
-            assert.are.same({ x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 }, result.color.sample)
+            assert.are.same({ x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 }, result.color.samples[1])
             assert.are.equal("2", result.copied_from.photo_id)
             assert.are.equal(0, #stores["2"].writes)
         end)
@@ -418,8 +418,8 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
             local range = written(stores, "1")[1].CorrectionMasks[1].CorrectionRangeMask
             assert.are.equal("0.522527 0.888059 0.758296 0.812000 0.050000 0", range.PointModels[1])
-            assert.are.equal(0.812, result.color.sample.x)
-            assert.are.equal(0.05, result.color.sample.y)
+            assert.are.equal(0.812, result.color.samples[1].x)
+            assert.are.equal(0.05, result.color.samples[1].y)
         end)
 
         it("refuses a source that is not a color range, writing nothing", function()
@@ -606,7 +606,7 @@ describe("colour samples on a cropped photo", function()
 
         local range = stores["1"].writes[1][1].CorrectionMasks[1].CorrectionRangeMask
         assert.are.equal("0.462745 0.400000 0.100000 0.300000 0.740000 0", range.PointModels[1])
-        assert.is_true(math.abs(result.color.sample.x - 0.2) < 1e-5)
-        assert.is_true(math.abs(result.color.sample.y - 0.8) < 1e-5)
+        assert.is_true(math.abs(result.color.samples[1].x - 0.2) < 1e-5)
+        assert.is_true(math.abs(result.color.samples[1].y - 0.8) < 1e-5)
     end)
 end)

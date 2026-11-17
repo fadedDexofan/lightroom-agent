@@ -150,16 +150,18 @@ function RangeMaskGeometry.rangeOf(component, frame)
         }
     end
     if kind == COLOR then
-        local point = type(range.PointModels) == "table" and numbersIn(range.PointModels[1]) or nil
-        if point == nil or #point < 5 then return nil end
-        local x, y = frame.toDisplayed(point[4], point[5])
-        return kind, {
-            sample = {
+        if type(range.PointModels) ~= "table" or #range.PointModels == 0 then return nil end
+        local samples = {}
+        for index, model in ipairs(range.PointModels) do
+            local point = numbersIn(model)
+            if point == nil or #point < 5 then return nil end
+            local x, y = frame.toDisplayed(point[4], point[5])
+            samples[index] = {
                 x = round(x), y = round(y),
                 l = round(point[1]), a = round(point[2]), b = round(point[3]),
-            },
-            amount = round(range.ColorAmount),
-        }
+            }
+        end
+        return kind, { samples = samples, amount = round(range.ColorAmount) }
     end
     return nil
 end
@@ -181,7 +183,7 @@ function RangeMaskGeometry.copiableColorRange(component, frame)
     end
     local _, range = RangeMaskGeometry.rangeOf(component, frame)
     if range == nil then return nil, "has a color sample that cannot be read" end
-    return range
+    return { sample = range.samples[1], amount = range.amount }
 end
 
 return RangeMaskGeometry
