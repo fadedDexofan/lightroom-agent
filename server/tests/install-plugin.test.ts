@@ -5,7 +5,6 @@ import path from 'node:path';
 import {
   ensurePluginInstalled,
   findBundledPlugin,
-  findPluginBesideBinary,
   findPluginInCwd,
   installPlugin,
   isPluginInstalledAnywhere,
@@ -14,7 +13,6 @@ import {
 } from '../src/install-plugin.js';
 
 const realPlatform = process.platform;
-const realExecPath = process.execPath;
 const realAppData = process.env.APPDATA;
 
 function setPlatform(p: NodeJS.Platform): void {
@@ -277,7 +275,7 @@ describe('findBundledPlugin', () => {
   });
 });
 
-describe('plugin lookup beside the binary and in the cwd', () => {
+describe('plugin lookup in the cwd', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -285,7 +283,6 @@ describe('plugin lookup beside the binary and in the cwd', () => {
   });
 
   afterEach(() => {
-    Object.defineProperty(process, 'execPath', { value: realExecPath, configurable: true });
     jest.restoreAllMocks();
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -296,24 +293,6 @@ describe('plugin lookup beside the binary and in the cwd', () => {
     fs.writeFileSync(path.join(plug, 'Info.lua'), '-- fake');
     return path.resolve(plug);
   }
-
-  function setExecPath(exe: string): void {
-    Object.defineProperty(process, 'execPath', { value: exe, configurable: true });
-  }
-
-  it('finds the plugin folder next to the executable', () => {
-    const plug = bundlePluginIn(dir);
-    setExecPath(path.join(dir, 'lightroom-agent.exe'));
-    expect(findPluginBesideBinary()).toBe(plug);
-  });
-
-  it('does not walk parent dirs of the executable', () => {
-    bundlePluginIn(dir);
-    const sub = path.join(dir, 'bin');
-    fs.mkdirSync(sub);
-    setExecPath(path.join(sub, 'lightroom-agent.exe'));
-    expect(findPluginBesideBinary()).toBeNull();
-  });
 
   it('finds the plugin folder in the working directory', () => {
     const plug = bundlePluginIn(dir);
@@ -378,23 +357,6 @@ describe('ensurePluginInstalled', () => {
     expect(
       fs.existsSync(path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin', 'Info.lua')),
     ).toBe(true);
-  });
-
-  it('installs a plugin placed next to the executable', () => {
-    const exeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-exe-'));
-    try {
-      bundlePluginIn(exeDir);
-      Object.defineProperty(process, 'execPath', {
-        value: path.join(exeDir, 'lightroom-agent'),
-        configurable: true,
-      });
-      const log = jest.fn();
-      ensurePluginInstalled(startDir, log);
-      expect(log).toHaveBeenCalledWith(expect.stringContaining('copied'));
-    } finally {
-      Object.defineProperty(process, 'execPath', { value: realExecPath, configurable: true });
-      fs.rmSync(exeDir, { recursive: true, force: true });
-    }
   });
 
   it('never auto-installs a plugin found only in the working directory', () => {

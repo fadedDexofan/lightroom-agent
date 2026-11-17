@@ -78,12 +78,6 @@ export function findBundledPlugin(startDir: string): string | null {
   return firstValidPlugin(candidates);
 }
 
-// A compiled single-file binary resolves `here` inside its bundle, so also
-// look right beside the executable. Only direct children: no parent walk.
-export function findPluginBesideBinary(): string | null {
-  return firstValidPlugin([path.join(path.dirname(process.execPath), PLUGIN_FOLDER)]);
-}
-
 // Explicit `install-plugin` only: the cwd is attacker-influenced when an MCP
 // host starts the server inside an arbitrary project, so never auto-install it.
 export function findPluginInCwd(): string | null {
@@ -117,7 +111,7 @@ export function installPlugin(opts: { source: string; destDir?: string }): Insta
 
 export function ensurePluginInstalled(startDir: string, log: (msg: string) => void): void {
   if (isPluginInstalledAnywhere()) return;
-  const source = findBundledPlugin(startDir) ?? findPluginBesideBinary();
+  const source = findBundledPlugin(startDir);
   if (!source) return;
   try {
     const result = installPlugin({ source });

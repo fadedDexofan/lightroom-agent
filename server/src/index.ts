@@ -26,7 +26,6 @@ import {
   conflictMessage,
   ensurePluginInstalled,
   findBundledPlugin,
-  findPluginBesideBinary,
   findPluginInCwd,
   installPlugin,
   lightroomModulesDir,
@@ -282,12 +281,10 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
 }
 
 function runInstallPlugin(): void {
-  const source = findBundledPlugin(here) ?? findPluginBesideBinary() ?? findPluginInCwd();
+  const source = findBundledPlugin(here) ?? findPluginInCwd();
   if (!source) {
     console.error("Could not locate a LightroomAgent.lrplugin folder.");
-    console.error(
-      "Extract LightroomAgent-<platform>.lrplugin.zip from the release next to this binary (or run from that folder), then retry.",
-    );
+    console.error("Extract LightroomAgent.lrplugin-<version>.zip from the release into this folder, then retry.");
     process.exit(1);
   }
   const dest = lightroomModulesDir();
