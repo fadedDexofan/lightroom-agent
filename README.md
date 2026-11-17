@@ -101,6 +101,10 @@ Starting the plug-in's server writes a random token to `~/.config/lightroom-mcp/
 
 The fork has no npm package, `.mcpb` bundle, standalone binary or MCP registry entry yet. The npm package will be `lightroom-agent`; until it is published, install from a checkout as shown above.
 
+## Roadmap
+
+The [open issues](https://github.com/fadedDexofan/lightroom-agent/issues), grouped by [milestone](https://github.com/fadedDexofan/lightroom-agent/milestones).
+
 ## Development
 
 `mise install` provisions Node.js, Lua with LuaRocks, and selene; `mise run lua:test` installs busted into `lua_modules/` on first use.
