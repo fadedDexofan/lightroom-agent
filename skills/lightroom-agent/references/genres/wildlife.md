@@ -4,13 +4,13 @@ Combine the foundations with the animal's behaviour, the recorded light and the 
 
 ## Cull the moment
 
-Compare same-animal sequences, not detector pairs or single thumbnails. Run the technical gate on every frame of a sequence first, with eye crops at one magnification ([cull](cull.md#the-procedure)), then apply the weak-sequence rule. Weigh differences in gaze, behaviour, wing and body shape, interaction and habitat. Keep four judgments apart: a technical failure that defeats the subject at the intended size; a weaker usable alternative; uncertain; a candidate with a clear development opportunity.
+Compare same-animal sequences, not detector pairs or single thumbnails. Run the technical gate on every frame of a sequence first, with eye crops at one magnification ([cull](../workflow/cull.md#the-procedure)), then apply the weak-sequence rule. Weigh differences in gaze, behaviour, wing and body shape, interaction and habitat. Keep four judgments apart: a technical failure that defeats the subject at the intended size; a weaker usable alternative; uncertain; a candidate with a clear development opportunity.
 
 For action, check the eye first, then behaviour, then wing, leg and prey shape and overlaps, then background and crop. A sharp head with softer moving wings can succeed. Closed eyes can express rest; noise and shallow depth of field are not automatic failures. Image stabilisation addresses camera movement, not the animal's.
 
 ## Compose subject, habitat and water
 
-Choose portrait, action, interaction or animal-in-environment. Keep the space the gaze, movement, wing, tail and reflection need rather than a fixed eye position. A tight crop costs context and magnifies noise and softness; keep the crop at or above the delivery size and judge a frame of marginal sharpness at delivery scale ([cull](cull.md#the-procedure)). Quiet a competing background without a cut-out look; soft foreground can add depth when key anatomy still reads.
+Choose portrait, action, interaction or animal-in-environment. Keep the space the gaze, movement, wing, tail and reflection need rather than a fixed eye position. A tight crop costs context and magnifies noise and softness; keep the crop at or above the delivery size and judge a frame of marginal sharpness at delivery scale ([cull](../workflow/cull.md#the-procedure)). Quiet a competing background without a cut-out look; soft foreground can add depth when key anatomy still reads.
 
 Water is a material: judge droplets, reflections, ripples and smooth water separately. Strong sharpening makes ripples brittle; strong noise reduction makes them plastic. A clear reflection can form one figure with the animal; a distorted one is no straightening reference. A wake can matter more than space in front of the beak. A single background mask need not get one uniform treatment.
 
@@ -31,7 +31,7 @@ Check feather, fur, whisker and limb-gap edges without an overlay. Keep importan
 
 ## Detail
 
-Inspect the eye or head, fine fur or feather structure and a smooth area before accepting noise reduction ([development](development.md#detail-without-damage)). On the eye, enhance a catchlight that exists only modestly; never add one. In monochrome, verify that animal and habitat do not merge in grey.
+Inspect the eye or head, fine fur or feather structure and a smooth area before accepting noise reduction ([development](../workflow/development.md#detail-without-damage)). On the eye, enhance a catchlight that exists only modestly; never add one. In monochrome, verify that animal and habitat do not merge in grey.
 
 ## Capture lessons
 

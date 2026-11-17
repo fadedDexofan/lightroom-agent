@@ -12,7 +12,7 @@ For any crop you judge, record the render size and the crop's pixel box, and the
 
 ## The procedure
 
-1. **Whole-frame pass at `cull` (864 px).** Judge subject, moment and composition. Reject only failures visible at that size: a gross smear as [SKILL.md](../SKILL.md#judge-pictures-on-the-right-evidence) defines it, a cluttered frame, a closed eye where the moment needs an open one. Done when every frame is rejected with a reason visible at 864 px, marked for a detail crop, or marked uncertain.
+1. **Whole-frame pass at `cull` (864 px).** Judge subject, moment and composition. Reject only failures visible at that size: a gross smear as [SKILL.md](../../SKILL.md#judge-pictures-on-the-right-evidence) defines it, a cluttered frame, a closed eye where the moment needs an open one. Done when every frame is rejected with a reason visible at 864 px, marked for a detail crop, or marked uncertain.
 2. **Detail crop** with `get_photo_detail`, regions placed on the cull preview in the same normalised coordinates. Which region:
    - eye-led subjects (animals, people): the nearest eye with a ring of feathers, fur or skin about three to five eye diameters wide, so the eye-ring edge, the catchlight and the nearest hair or feather structure are in one box;
    - a picture led by something else (flight shape, behaviour, a back view, a building edge): the detail that carries it;

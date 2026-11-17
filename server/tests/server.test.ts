@@ -525,10 +525,16 @@ describe('createMcpServer', () => {
       content: { type: 'text', text: expect.stringContaining('# SKILL.md\n\n---\nname: lightroom-agent\n') },
     }]);
     const text = (result.messages[0].content as { text: string }).text;
-    expect(text).toContain('\n# references/tools.md\n\n# Tools: mechanics');
+    expect(text).toContain('\n# references/tools/tools.md\n\n# Tools: mechanics');
+    expect([...text.matchAll(/^# (references\/.+\.md)$/gm)].map((m) => m[1])).toEqual([
+      'references/tools/masks.md', 'references/tools/tools.md',
+      'references/workflow/cull.md', 'references/workflow/development.md', 'references/workflow/foundations.md',
+      'references/workflow/looks.md', 'references/workflow/publishing.md',
+      'references/genres/architecture-landscape.md', 'references/genres/portrait-product.md', 'references/genres/wildlife.md',
+    ]);
     expect(text).toContain('](SKILL.md#read-every-replys-outcome)');
-    expect(text).toContain('](references/cull.md#the-procedure)');
-    expect(text).toContain('](references/masks.md#mask-writes-re-render-a-raw)');
+    expect(text).toContain('](references/workflow/cull.md#the-procedure)');
+    expect(text).toContain('](references/tools/masks.md#mask-writes-re-render-a-raw)');
     expect(text).not.toMatch(/\]\((?!https?:|SKILL\.md|references\/)/);
   });
 

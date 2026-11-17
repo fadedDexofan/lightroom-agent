@@ -30,7 +30,7 @@ For film-inspired work, name the visible qualities you are after; curves and gra
 
 ## Color Grading
 
-Wheels for shadows, midtones, highlights and global, each with hue, saturation and luminance. Balance moves the boundary between the shadow and highlight tints; Blending (default 50) sets how much they overlap without making them stronger; neither affects the global wheel. Grading only adds colour and cannot desaturate; small saturations already show. Adobe's order: white balance and base tone first, then only the wheels you need, then Balance and Blending, global last if at all. Key names are in [tools](tools.md#write-develop-settings). Starting points to verify on the render: saturations of about 5–15 per wheel; for a warm/cool split, shadow hue around 200–230 and highlight hue around 40–55.
+Wheels for shadows, midtones, highlights and global, each with hue, saturation and luminance. Balance moves the boundary between the shadow and highlight tints; Blending (default 50) sets how much they overlap without making them stronger; neither affects the global wheel. Grading only adds colour and cannot desaturate; small saturations already show. Adobe's order: white balance and base tone first, then only the wheels you need, then Balance and Blending, global last if at all. Key names are in [tools](../tools/tools.md#write-develop-settings). Starting points to verify on the render: saturations of about 5–15 per wheel; for a warm/cool split, shadow hue around 200–230 and highlight hue around 40–55.
 
 How a look divides between controls: the composite curve carries tone (fade, contrast, roll-off); the wheels carry the colour of each tonal band; HSL carries desaturation and hue shifts of colour families; per-channel curves stay for a tint pinned to a precise tonal point, such as a cross-processed crossover. Do not correct a colour cast with the wheels: that is white balance or a local correction. Color Grading transfers in a preset and through `match_photo_style`; white balance stays per photo.
 
@@ -44,10 +44,10 @@ Where it serves: sunrise and sunset, backlit or rim-lit scenes, glints on water,
 
 It serves when gesture, form, texture and light carry the picture and colour adds nothing or distracts: clashing colours in the surroundings, a grey day, mixed light no white balance settles, rim light and silhouettes, fur and feather pattern, architectural rhythm. It does not serve when colour is the subject, or when subject and background differ only in hue at the same lightness.
 
-1. Convert a copy with `set_treatment` `black_and_white` ([tools](tools.md#black-and-white)) and judge the converted base before adding contrast.
+1. Convert a copy with `set_treatment` `black_and_white` ([tools](../tools/tools.md#black-and-white)) and judge the converted base before adding contrast.
 2. The mix is the main control: name the colour families of the subject and its surroundings on the colour version, then move each family's `GrayMixer*` key to separate them (darken green and yellow to sink foliage behind a pale animal, darken blue for a deeper sky, lighten orange for skin or fur). Move in steps of about 15–25. Strong opposite moves on neighbouring hues tear smooth gradients and raise noise: check skies in a detail crop.
 3. Then tone: contrast, curve, local light; grain only as a chosen quality.
-4. Fringes: Defringe does not act here ([tools](tools.md#write-develop-settings)); a colour fringe becomes a light or dark edge whose brightness depends on the mix.
+4. Fringes: Defringe does not act here ([tools](../tools/tools.md#write-develop-settings)); a colour fringe becomes a light or dark edge whose brightness depends on the mix.
 
 ## Make a preset from a tuned look
 
@@ -56,7 +56,7 @@ Tune the look on the representative through Lightroom's render, then save only t
 - `create_develop_preset` saves the chosen settings as a versioned plug-in checkpoint (hidden from Lightroom's preset panel); give each version a unique name. `compare_develop_presets` diffs it against an approved earlier preset (read one with `get_develop_preset`, by `preset_uuid` when names repeat). `export_develop_preset` writes the file without overwriting.
 - A preset the person can see in the Develop panel is made in Lightroom's own New Preset dialog, ticking only the look's groups; File > Import Develop Profiles and Presets installs exported files.
 - Before calling a preset done: apply it to test copies (`apply_develop_preset`, with `dry_run` first), read back the persisted settings and look at the renders. Report how far you validated it: saved; imported and visible in Lightroom; rendered and judged on named photos; portable within a stated scope (a typical frame, an extreme of the expected light and an expected failure case). A preset that needs major rescue on most targets is badly scoped: divide it by light instead of adding exceptions.
-- A preset with AI masks recomputes them on each target, and a target whose masks fail keeps the preset and is `unknown` ([masks](masks.md#ai-masks-judged-on-the-photo)); verify their edges per image.
+- A preset with AI masks recomputes them on each target, and a target whose masks fail keeps the preset and is `unknown` ([masks](../tools/masks.md#ai-masks-judged-on-the-photo)); verify their edges per image.
 
 ## Sources
 

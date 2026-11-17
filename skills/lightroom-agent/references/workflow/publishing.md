@@ -25,7 +25,7 @@ A format fits when a box of its ratio inside the final crop (full height for a n
 
 1. Make a virtual copy of the master named for the format (`create_virtual_copies` with `copy_name`, such as `IG 4x5`); it inherits the edit, crop and masks.
 2. Inside the final crop (the default): on the copy, `set_crop` with `relative_to: "crop"`, the format as `aspect` and the planned box's `center` and `scale`, placed on the ordinary preview.
-3. Outside the final crop only when the format needs room the crop lacks and that area holds nothing the person cropped out on purpose, by the re-crop route in [tools](tools.md#crop).
+3. Outside the final crop only when the format needs room the crop lacks and that area holds nothing the person cropped out on purpose, by the re-crop route in [tools](../tools/tools.md#crop).
 4. Check a fresh preview of the copy: the ratio, the whole subject and its room, nothing the final crop had removed on purpose, and mask effects still on the right areas (Lightroom stores masks before the crop, so they stay on the same part of the photo). Otherwise restore the kept crop on the copy and report the format as not made.
 5. Add the copy to a collection when the person keeps variants that way; `add_to_collection` reports `already_in_collection` for photos already there.
 

@@ -35,7 +35,7 @@ Every tool answers `{outcome, data, error, failed, unknown, not_found, remaining
 | `failed` | nothing changed (Lightroom's history may still hold the write and its undo as two steps) | read the reason, fix the cause, retry is safe |
 | `unknown` | something may have been written; the error names what | read the photo's current state before anything else; a blind retry duplicates |
 
-`warnings` never change the outcome but often matter (a mask placed through Upright, a mask shown again, a key a JPEG cannot store). Details, budgets and timeouts: [tools](references/tools.md#outcomes-ordering-and-time).
+`warnings` never change the outcome but often matter (a mask placed through Upright, a mask shown again, a key a JPEG cannot store). Details, budgets and timeouts: [tools](references/tools/tools.md#outcomes-ordering-and-time).
 
 ## Judge pictures on the right evidence
 
@@ -47,21 +47,21 @@ Every tool answers `{outcome, data, error, failed, unknown, not_found, remaining
 ## The workflow
 
 1. **Name the job and how it will be checked:** scope, selection or development, intended output and its size, what must stay true (skin, product colour, a building's proportions), any stop after a pass.
-2. **Cull** whole frames first, then detail crops for the candidates whose verdict depends on sharpness; two separate gates, technical and editorial: [cull](references/cull.md).
-3. **Develop one representative per lighting situation** in small, rendered passes before anything is copied across a set: [development](references/development.md).
-4. **Mask** only where a global change cannot do the job, and check each mask on the render: [masks](references/masks.md).
+2. **Cull** whole frames first, then detail crops for the candidates whose verdict depends on sharpness; two separate gates, technical and editorial: [cull](references/workflow/cull.md).
+3. **Develop one representative per lighting situation** in small, rendered passes before anything is copied across a set: [development](references/workflow/development.md).
+4. **Mask** only where a global change cannot do the job, and check each mask on the render: [masks](references/tools/masks.md).
 5. **Transfer** only what is truly shared (a look, not one photo's white balance, crop or masks), then read back and render every target.
 6. **Report** per photo by filename and catalog id: decision or treatment, what changed, the trade-off, preview resolution, what was not verified, and whether you stopped at a requested pause.
 
 ## Load the reference for the branch you are on
 
-- Any tool call beyond a simple read, an outcome you do not understand, crop, black and white, snapshots, presets, exports: [tools](references/tools.md).
-- Any mask: creation, AI masks, values, positions, admission: [masks](references/masks.md).
-- Selecting frames, judging sharpness, sequences, readiness for publication: [cull](references/cull.md).
-- Developing a RAW, the closed loop of passes, copying settings across a set: [development](references/development.md).
-- Composition, crop, colour and light decisions on a new set: [foundations](references/foundations.md).
-- Birds and animals: [wildlife](references/wildlife.md). Buildings, cities, landscapes, Upright: [architecture and landscape](references/architecture-landscape.md). People, products, food: [portrait and product](references/portrait-product.md).
-- Looks, Color Grading, Glow, black and white, building and saving a preset: [looks and presets](references/looks.md).
-- Preparing photos for a named destination, formats, export settings: [publishing](references/publishing.md).
+- Any tool call beyond a simple read, an outcome you do not understand, crop, black and white, snapshots, presets, exports: [tools](references/tools/tools.md).
+- Any mask: creation, AI masks, values, positions, admission: [masks](references/tools/masks.md).
+- Selecting frames, judging sharpness, sequences, readiness for publication: [cull](references/workflow/cull.md).
+- Developing a RAW, the closed loop of passes, copying settings across a set: [development](references/workflow/development.md).
+- Composition, crop, colour and light decisions on a new set: [foundations](references/workflow/foundations.md).
+- Birds and animals: [wildlife](references/genres/wildlife.md). Buildings, cities, landscapes, Upright: [architecture and landscape](references/genres/architecture-landscape.md). People, products, food: [portrait and product](references/genres/portrait-product.md).
+- Looks, Color Grading, Glow, black and white, building and saving a preset: [looks and presets](references/workflow/looks.md).
+- Preparing photos for a named destination, formats, export settings: [publishing](references/workflow/publishing.md).
 
 The references carry their findings inline; their sources are provenance, not required reading. Observations marked "observed on Lightroom Classic 16.0" were made on that version and can change with Lightroom updates; recheck with `describe_develop_keys` and a render when a result surprises you.

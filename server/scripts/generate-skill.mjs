@@ -2,8 +2,13 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 
 const skillRoot = new URL('../../skills/lightroom-agent/', import.meta.url);
-const files = ['SKILL.md', ...(await readdir(new URL('references/', skillRoot)))
-  .sort().map((name) => `references/${name}`)];
+const groups = ['tools', 'workflow', 'genres'];
+const strays = (await readdir(new URL('references/', skillRoot))).filter((entry) => !groups.includes(entry));
+if (strays.length > 0) {
+  throw new Error(`references/ holds ${strays.join(', ')} outside the groups ${groups.join(', ')}`);
+}
+const files = ['SKILL.md', ...(await Promise.all(groups.map(async (group) =>
+  (await readdir(new URL(`references/${group}/`, skillRoot))).sort().map((name) => `references/${group}/${name}`)))).flat()];
 const sources = new Map(await Promise.all(files.map(async (file) =>
   [file, (await readFile(new URL(file, skillRoot), 'utf8')).replace(/\r\n/g, '\n')])));
 

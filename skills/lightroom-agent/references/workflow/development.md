@@ -18,10 +18,10 @@ Preserve the starting edit first (snapshot or named virtual copy). Then change o
 
 1. **Baseline.** Read the settings, take a preview, write down the intent in one sentence and what must stay true.
 2. **Technical correction.** White balance, Exposure, Highlights, Shadows, Whites, Blacks: usable exposure, protected highlights that hold information, plausible shadows. No creative colour yet. Lens profile and Remove Chromatic Aberration belong here, as part of the camera and lens base.
-3. **Geometry.** Upright or manual transform, then the final crop ([architecture and landscape](architecture-landscape.md#upright-and-projection), [foundations](foundations.md#intent-attention-and-frame)). Solve geometry before the final crop.
+3. **Geometry.** Upright or manual transform, then the final crop ([architecture and landscape](../genres/architecture-landscape.md#upright-and-projection), [foundations](foundations.md#intent-attention-and-frame)). Solve geometry before the final crop.
 4. **Tonal shape.** Contrast, curve, local relationships. Describe the tonal goal (soft highlight roll-off, deep but open blacks) before setting numbers.
 5. **Colour.** White balance refinements, then bounded HSL changes on visible subjects (skin, foliage, sky, neutrals). Do not map a scene label to arbitrary HSL values.
-6. **Local light.** Masks where a global change cannot do it ([masks](masks.md)).
+6. **Local light.** Masks where a global change cannot do it ([masks](../tools/masks.md)).
 7. **Look,** if one is wanted ([looks](looks.md)).
 8. **Detail and noise.** Judged on detail crops of the final state: sharpening, Texture, noise reduction. Low light is a modifier on any look, not a look.
 
@@ -33,7 +33,7 @@ Run Denoise early, before AI masks and Content-Aware Remove, then revisit sharpe
 
 ## Detail without damage
 
-Inspect the eye or key detail, fine structure and a smooth area before accepting noise reduction. The amount depends on exposure, shadow lift, subject size and file, not only ISO; preserve structure rather than maximise cleanness. Texture works on mid-scale detail and barely raises noise; Clarity acts on broader structure and shifts tone and saturation and can look gritty. Sharpening's Masking slider keeps sharpening off smooth areas (sky, walls, skin) but a high value also withholds it from fine hair and feathers; lower Masking plus negative Texture in a background mask is the usual alternative. No slider restores focus. Judge sharpening on the final state, because mask writes on a RAW re-render it at texture level ([masks](masks.md#mask-writes-re-render-a-raw)).
+Inspect the eye or key detail, fine structure and a smooth area before accepting noise reduction. The amount depends on exposure, shadow lift, subject size and file, not only ISO; preserve structure rather than maximise cleanness. Texture works on mid-scale detail and barely raises noise; Clarity acts on broader structure and shifts tone and saturation and can look gritty. Sharpening's Masking slider keeps sharpening off smooth areas (sky, walls, skin) but a high value also withholds it from fine hair and feathers; lower Masking plus negative Texture in a background mask is the usual alternative. No slider restores focus. Judge sharpening on the final state, because mask writes on a RAW re-render it at texture level ([masks](../tools/masks.md#mask-writes-re-render-a-raw)).
 
 ## Highlights, shadows and mixed light
 
@@ -47,4 +47,4 @@ Show the representative's before and after, and get agreement when the direction
 
 ## Final check
 
-Read back changed values and snapshot or copy identity, then look at a fresh whole-frame render plus enough subject detail: mask edges, clipping, colour contamination, geometry and crop losses, noise and halos, at the delivery size. Do not repeat a successful check without a new change or concern. Report as [SKILL.md](../SKILL.md#the-workflow) says, separating executed changes from proposals.
+Read back changed values and snapshot or copy identity, then look at a fresh whole-frame render plus enough subject detail: mask edges, clipping, colour contamination, geometry and crop losses, noise and halos, at the delivery size. Do not repeat a successful check without a new change or concern. Report as [SKILL.md](../../SKILL.md#the-workflow) says, separating executed changes from proposals.

@@ -18,7 +18,7 @@ Read the tool's own description before a call you have not made in this session;
 
 ## Outcomes, ordering and time
 
-The outcome table is in [SKILL.md](../SKILL.md#read-every-replys-outcome). In addition:
+The outcome table is in [SKILL.md](../../SKILL.md#read-every-replys-outcome). In addition:
 
 - `failed` covers every problem found before anything was written: a broken argument rule (each description lists its "Rules:", answered as "Invalid arguments for …"), an unknown id, a value out of range, a rule between develop keys. Fix the argument; nothing needs repair.
 - `unknown` names what was written ("written before this stopped: …"). In a batch each photo is classed by what was written for it. A tool that wrote in Develop and then put things back (an inverted mask copy, a spot update, Denoise) still answers `unknown`: read the photo before retrying.
@@ -52,7 +52,7 @@ Groups observed on Lightroom Classic 16.0 (range, read-back and a render that ch
 | Defringe | `DefringePurpleAmount`, `DefringeGreenAmount` 0..20; hue ranges `DefringePurpleHueLo/Hi`, `DefringeGreenHueLo/Hi`. Renders nothing on a black and white photo |
 | Color Grading | as above; hues 0..360 (about 45 amber, 120 green, 220 blue, 300 magenta), saturations 0..100, luminances and balance −100..100, `ColorGradeBlending` 0..100 (default 50) |
 | Black and white mix | `GrayMixerRed`, `GrayMixerOrange`, `GrayMixerYellow`, `GrayMixerGreen`, `GrayMixerAqua`, `GrayMixerBlue`, `GrayMixerPurple`, `GrayMixerMagenta` −100..100 |
-| Upright and transform | `PerspectiveUpright` 0–4 ([modes](architecture-landscape.md#upright-and-projection)); `PerspectiveVertical`, `PerspectiveHorizontal`, `PerspectiveAspect`, `LensManualDistortionAmount` −100..100; `PerspectiveRotate` −10..10; `PerspectiveScale` 50..150 |
+| Upright and transform | `PerspectiveUpright` 0–4 ([modes](../genres/architecture-landscape.md#upright-and-projection)); `PerspectiveVertical`, `PerspectiveHorizontal`, `PerspectiveAspect`, `LensManualDistortionAmount` −100..100; `PerspectiveRotate` −10..10; `PerspectiveScale` 50..150 |
 | Glow | `Glow`, `GlowRange`, `GlowSpread` 0..100, `GlowWarmth` −100..100, `GlowStyle` 0 diffusion, 1 bloom, 2 halation, 3 motion, 4 streak, `GlowDirection` −180..180 |
 | Projection | `ReshapeAmount` 0..100 |
 
@@ -80,7 +80,7 @@ Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defrin
 - `copy_develop_settings` with a `settings` list copies only those keys and leaves the target's masks and process version alone (`ProcessVersion` cannot be named); without one it copies everything including masks, which then replace the target's masks through the guarded mask write (and a source without masks removes the target's masks). A full copy leaves out Enhance results (Denoise, Raw Details, Super Resolution); a RAW's white balance does not reach a non-RAW target (`not_stored`); a target on another process version first gets the source's, as its own history step. Use `dry_run` first; it lists what would change. For a set, always name the keys.
 - `apply_develop_preset` and `copy_develop_settings` compute AI masks on each target ([masks](masks.md#ai-masks-judged-on-the-photo)).
 - `match_photo_style` transfers the global look (tone, colour, curves, detail, noise, grain, vignette) and leaves out what describes one photo: crop, perspective and Upright, white balance, lens corrections, local adjustments.
-- Saving, comparing and exporting presets: [looks](looks.md#make-a-preset-from-a-tuned-look).
+- Saving, comparing and exporting presets: [looks](../workflow/looks.md#make-a-preset-from-a-tuned-look).
 - `apply_auto_adjustments` gives no completion signal: a photo where no change is seen within 8 s is `unknown`; read its settings before writing to it.
 - `apply_denoise` computes in the background; "applied" does not mean every preview has caught up. An unsaved change answers `unknown`: read the Denoise state before retrying.
 - `set_process_version` can change the look and refuses downgrades of photos with masks; `reset_develop_adjustments` removes every edit, crop and masks included. Both need the person's word.
@@ -88,8 +88,8 @@ Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defrin
 ## Previews and detail crops
 
 - `get_photo_preview` returns one render, whole or a `region` of the rendered frame (after crop, straighten and orientation). Named sizes: `cull` (864 px, the default) and `review` (1728 px); a number 64–2048 asks for exactly that edge. `get_photo_previews` returns up to 20 photos (default edge 256).
-- `width`/`height` are the pixels sent; the server never enlarges, and `scaled_by_server` only means Lightroom answered larger and the server reduced it. Lightroom's preview cache can still hand over an enlargement of a smaller preview without saying so (seen as softness at both named sizes on a cropped RAW); what that means for judging is in [SKILL.md](../SKILL.md#judge-pictures-on-the-right-evidence). Right after a change Lightroom sometimes has no preview pixels; the call asks again for about 20 s and then fails: ask again later, and check whether the photo is the one active in Develop.
-- `get_photo_detail` cuts one to four regions (normalised in the displayed, cropped frame) from a full-resolution render with the current settings, one rendered pixel per returned pixel. `max_edge` defaults to 1024 (at most 2048); keep it within what your model sees without downscaling. A region larger than `max_edge` is refused before rendering with the largest normalised size this photo allows: shrink to it. Each call adds one Export history step and the exported mark (so `summarize_develop_settings`' `exported_only` counts it); settings and pixels stay unchanged ([SKILL.md](../SKILL.md#judge-pictures-on-the-right-evidence) for one call per photo). It shares a lock with `export_photos`: while one runs, the other is refused, not queued.
+- `width`/`height` are the pixels sent; the server never enlarges, and `scaled_by_server` only means Lightroom answered larger and the server reduced it. Lightroom's preview cache can still hand over an enlargement of a smaller preview without saying so (seen as softness at both named sizes on a cropped RAW); what that means for judging is in [SKILL.md](../../SKILL.md#judge-pictures-on-the-right-evidence). Right after a change Lightroom sometimes has no preview pixels; the call asks again for about 20 s and then fails: ask again later, and check whether the photo is the one active in Develop.
+- `get_photo_detail` cuts one to four regions (normalised in the displayed, cropped frame) from a full-resolution render with the current settings, one rendered pixel per returned pixel. `max_edge` defaults to 1024 (at most 2048); keep it within what your model sees without downscaling. A region larger than `max_edge` is refused before rendering with the largest normalised size this photo allows: shrink to it. Each call adds one Export history step and the exported mark (so `summarize_develop_settings`' `exported_only` counts it); settings and pixels stay unchanged ([SKILL.md](../../SKILL.md#judge-pictures-on-the-right-evidence) for one call per photo). It shares a lock with `export_photos`: while one runs, the other is refused, not queued.
 - `get_photo_stats` and `find_duplicate_groups` measure previews: useful to flag frames, never to rank sharpness or prove clipping. Duplicate groups are not reject lists, and similarity says nothing about which frame is better.
 
 ## Exports

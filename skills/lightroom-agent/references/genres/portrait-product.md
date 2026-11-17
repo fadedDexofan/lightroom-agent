@@ -1,6 +1,6 @@
 # Portrait, product and food
 
-Apply the [foundations](foundations.md), then choose how truthful the picture must be and which materials matter.
+Apply the [foundations](../workflow/foundations.md), then choose how truthful the picture must be and which materials matter.
 
 ## People
 
