@@ -61,7 +61,7 @@ export function isPluginInstalledAnywhere(): boolean {
 }
 
 export function conflictMessage(conflicting: string): string {
-  return `${conflicting} is installed: upstream's lightroom-mcp plug-in, or this one before its rename, `
+  return `${conflicting} is installed: upstream's lightroom-mcp plug-in `
     + "binds the same ports. Quit Lightroom, remove that folder, then install again.";
 }
 

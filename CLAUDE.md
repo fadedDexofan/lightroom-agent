@@ -143,7 +143,7 @@ Decisions: [ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md) (a
 - Lightroom runs `LrInitPlugin` only when its window is first activated: a background launch starts no server until Lightroom comes to the front.
 - Reload Plug-in does not reliably stop the old task. `PluginShutdown.lua` stops the old loop; when Lightroom skips it, the old loop exits on a foreign token (`isSuperseded`). Until then the new binds fail with `failed to open`.
 - Reload Plug-in does not see a `.lua` file added after Lightroom started; the plug-in is disabled. Restart Lightroom after adding a file.
-- `install-plugin`, and the stdio server at start when neither Modules nor Plugins holds the bundle, copy the plug-in into Modules. Neither replaces an installed bundle, and both refuse while a `LightroomMCP.lrplugin` (upstream's, or this one before the rename) is installed, because it binds the same ports. Plug-in log: `~/Documents/LrClassicLogs/LightroomAgent.log`.
+- `install-plugin`, and the stdio server at start when neither Modules nor Plugins holds the bundle, copy the plug-in into Modules. Neither replaces an installed bundle, and both refuse while a `LightroomMCP.lrplugin` is installed, because upstream's plug-in binds the same ports. Plug-in log: `~/Documents/LrClassicLogs/LightroomAgent.log`.
 
 ## Adding a tool
 

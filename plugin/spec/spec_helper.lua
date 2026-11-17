@@ -158,10 +158,8 @@ end
 defaultImports.LrLogger = M.defaultLrLogger()
 
 -- Valid Lightroom SDK metadata keys. The real getRawMetadata/getFormattedMetadata
--- THROW on an unsupported key, taking down the enclosing withReadAccessDo. The
--- non-validating mock used to return a value for any key, so a typo'd/invalid key
--- (e.g. `copyrightStatus` for `copyrightState`) shipped green. Validate against
--- this allowlist so specs catch it. Add genuinely-new SDK keys here.
+-- THROW on an unsupported key, taking down the enclosing withReadAccessDo.
+-- Add genuinely-new SDK keys here.
 local VALID_METADATA_KEYS = {}
 for _, key in ipairs({
     -- File / catalog

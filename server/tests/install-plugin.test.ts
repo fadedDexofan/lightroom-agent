@@ -242,7 +242,10 @@ describe.each([
 
     ensurePluginInstalled(startDir, log);
 
-    expect(log).toHaveBeenCalledWith(expect.stringContaining(path.join(dirOf(), 'LightroomMCP.lrplugin')));
+    expect(log).toHaveBeenCalledWith(
+      `[install-plugin] ${path.join(dirOf(), 'LightroomMCP.lrplugin')} is installed: upstream's lightroom-mcp plug-in `
+        + 'binds the same ports. Quit Lightroom, remove that folder, then install again.',
+    );
     expect(fs.existsSync(path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin'))).toBe(false);
   });
 });
