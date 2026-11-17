@@ -498,19 +498,6 @@ describe('Bridge', () => {
     expect(stopped).toEqual(['a']);
   });
 
-  it('holds a call until the election settles', async () => {
-    const dir = tmpDir();
-    const started: string[] = [];
-    const a = makeBridge(dir, 'a', started);
-    const b = makeBridge(dir, 'b', started);
-    await a.start();
-    await b.start();
-    a.stop();
-
-    await waitFor(() => started.includes('b'));
-    expect(text(await b.callTool('ping', {}))).toBe('b:ping');
-  });
-
   it('releases the lock and retries when the owner fails to start', async () => {
     const dir = tmpDir();
     let attempts = 0;

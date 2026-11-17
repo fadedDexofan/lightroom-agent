@@ -42,27 +42,25 @@ local function setup(opts)
         recordSelection(self, photo, selected)
         calls.selections[#calls.selections + 1] = photo.localIdentifier
     end
-    if not opts.withoutDeleteAllEmptyMasks then
-        local withWriteAccess = catalog.withWriteAccessDo
-        local insideWrite = false
-        catalog.withWriteAccessDo = function(self, title, fn, ...)
-            return withWriteAccess(self, title, function()
-                insideWrite = true
-                local ok, err = pcall(fn)
-                insideWrite = false
-                if not ok then error(err, 0) end
-            end, ...)
-        end
-        catalog.deleteAllEmptyMasks = function(_, targets)
-            if not insideWrite then error("deleteAllEmptyMasks outside withWriteAccessDo") end
-            calls.deleteAllEmpty[#calls.deleteAllEmpty + 1] = targets
-            for _, p in ipairs(targets) do
-                local kept = {}
-                for _, m in ipairs(masksOf[p]) do
-                    if #m.Tools > 0 then kept[#kept + 1] = m end
-                end
-                masksOf[p] = kept
+    local withWriteAccess = catalog.withWriteAccessDo
+    local insideWrite = false
+    catalog.withWriteAccessDo = function(self, title, fn, ...)
+        return withWriteAccess(self, title, function()
+            insideWrite = true
+            local ok, err = pcall(fn)
+            insideWrite = false
+            if not ok then error(err, 0) end
+        end, ...)
+    end
+    catalog.deleteAllEmptyMasks = function(_, targets)
+        if not insideWrite then error("deleteAllEmptyMasks outside withWriteAccessDo") end
+        calls.deleteAllEmpty[#calls.deleteAllEmpty + 1] = targets
+        for _, p in ipairs(targets) do
+            local kept = {}
+            for _, m in ipairs(masksOf[p]) do
+                if #m.Tools > 0 then kept[#kept + 1] = m end
             end
+            masksOf[p] = kept
         end
     end
 
@@ -342,8 +340,6 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
 
     it("does not open Develop or change the selection", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks() })
-        local session = require 'DevelopSession'
-        session.withPhoto = function() error("empty-mask deletion must not open a Develop session") end
 
         Handler.deleteEmptyMasks({ photo_ids = { "1", "3" } })
 

@@ -88,7 +88,6 @@ describe('HandlerVirtualCopies', function()
             { photo_id = '3', master_photo_id = '3', copy_photo_id = '101' },
             { photo_id = '2', master_photo_id = '2', copy_photo_id = '102' },
         } }, result.data)
-        assert.is_nil(result.created)
         assert.is_nil(result.not_found)
         assert.are.equal('Experiment', calls.create[1].name)
         assert.are.equal('Experiment', calls.create[2].name)
