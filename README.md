@@ -1,495 +1,132 @@
-# Lightroom Agent
+# lightroom-agent
 
-Local development fork of [Automaat/lightroom-mcp](https://github.com/Automaat/lightroom-mcp), adding a scriptable CLI over the same tool contracts, access policy and Lightroom bridge. The upstream package name and executable remain unchanged. The instructions below this local section describe the published upstream distribution.
+lightroom-agent lets an AI agent edit photos in Adobe Lightroom Classic: search and organize the catalog, change develop settings, build and adjust masks, and render previews and full-resolution crops to check the result. It is a fork of [Automaat/lightroom-mcp](https://github.com/Automaat/lightroom-mcp), released under the same MIT license, and keeps its architecture: a TypeScript MCP server talking over local sockets to a Lua plug-in inside Lightroom. The fork is developed and tested against Lightroom Classic 16.0 on macOS; older Lightroom versions and Windows are untested. It is not affiliated with or endorsed by Adobe.
 
-## Run this checkout
+Some names stay as upstream had them: the plug-in is called Lightroom MCP, the command `lightroom-mcp`, the settings `LIGHTROOM_MCP_*` and the configuration folder `~/.config/lightroom-mcp`.
 
-From the repository root, install the locked dependencies and build:
+## What differs from upstream
+
+- **Every tool answers in one envelope.** The result is `done`, `partial`, `failed` or `unknown`, and the class comes from a per-call ledger of what the plug-in actually wrote, not from how an error was raised. `failed` means nothing changed and the call is safe to retry; `unknown` means something may have changed, so an agent reads the photo before trying again. See [ADR 0001](docs/adr/0001-one-result-envelope.md).
+- **Masks are edited by id in the saved settings.** Mask sliders, curves, Point Color and deletions address a mask by its id in the photo's stored mask list and read the whole list back after the write. They do not depend on which mask is selected in Develop. See [ADR 0003](docs/adr/0003-masks-addressed-by-id-in-the-saved-settings.md).
+- **AI masks are judged on the photo.** Subject, Sky, Background, People and Landscape masks are written as seeds for Lightroom to compute. The call then reports what Lightroom found on the photo, and a mask it could not find is removed.
+- **Mask geometry writes need a per-machine certification.** Gradients, brushes, range masks and AI masks use an undocumented settings format. They run only after the live kit's test suite has passed on a throwaway catalog for the running Lightroom build. See [ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md).
+- **A live test kit.** [`tests/e2e/live/`](tests/e2e/live/README.md) builds a throwaway catalog from fixed fixtures and checks tools against Lightroom's own renders.
+
+[GLOSSARY.md](GLOSSARY.md) defines the terms these documents use.
+
+## Install from this checkout
+
+Use Node.js 26.13.1, the version `.mise.toml` and CI pin; the built server itself runs on Node.js 20 or later. There is no published package yet, so build the server and the plug-in from the repository:
 
 ```sh
+git clone https://github.com/fadedDexofan/lightroom-agent.git
+cd lightroom-agent
 npm --prefix server ci
 npm --prefix server run build
-node server/dist/index.js tools
-LIGHTROOM_MCP_TOOLSETS=all node server/dist/index.js tools create_mask
+node server/dist/index.js install-plugin
 ```
 
-`tools` lists the enabled tools; `tools <name>` prints one tool's schema. Both run without connecting to Lightroom, reading its token or installing a plug-in. They honor `LIGHTROOM_MCP_TOOLSETS` and `LIGHTROOM_MCP_READ_ONLY`.
+`install-plugin` copies `plugin/LightroomMCP.lrplugin` into Lightroom's Modules folder (`~/Library/Application Support/Adobe/Lightroom/Modules/` on macOS, `%APPDATA%\Adobe\Lightroom\Modules\` on Windows). It never replaces a plug-in that is already there. The server also installs it when it starts and finds no `LightroomMCP.lrplugin` in either the Modules or the Plugins folder.
 
-To invoke a tool against an already installed, running compatible plug-in:
+Then quit and reopen Lightroom Classic, open **File → Plug-in Manager**, select **Lightroom MCP** and click **Start Server**.
+
+Some tools need a newer Lightroom than others and refuse on an older one: masks need 11, AI masks and Lens Blur 13.3, Remove spots 14.1 and Denoise 15.
+
+**Updating, or replacing upstream's plug-in.** Pull and rebuild the server, quit Lightroom, delete the installed `LightroomMCP.lrplugin` folder (Plug-in Manager shows where it is, Modules or Plugins), run `node server/dist/index.js install-plugin`, then restart Lightroom and your MCP client. The server and the plug-in must come from the same revision. To uninstall, delete that folder, `~/.config/lightroom-mcp` and the client's server entry.
+
+## Connect an agent
+
+Point your client at `server/dist/index.js` with an absolute path. Codex:
+
+```sh
+codex mcp add lightroom --env LIGHTROOM_MCP_TOOLSETS=all -- node /path/to/lightroom-agent/server/dist/index.js
+```
+
+Claude Code:
+
+```sh
+claude mcp add lightroom -e LIGHTROOM_MCP_TOOLSETS=all -- node /path/to/lightroom-agent/server/dist/index.js
+```
+
+Any other MCP client runs the same command over stdio.
+
+## Toolsets and read-only mode
+
+The server exposes only the core tools unless `LIGHTROOM_MCP_TOOLSETS` asks for more:
+
+| Toolset | Contents |
+| --- | --- |
+| `core` | Catalog search, metadata (with GPS, location and private AI scores), keywords, collections, ratings, flags and labels, previews and detail crops, import, export, undo and removal from the catalog. Always on. |
+| `develop` | Develop settings, crop, presets, style match, snapshots, virtual copies, treatment, process version, Lens Blur, Denoise, Auto, reset, Remove spots. |
+| `masks` | Every mask tool: listing, geometry, AI masks, sliders, curves, Point Color, deletion. |
+| `all` | All of the above. |
+
+Combine them with commas (`develop,masks`). `LIGHTROOM_MCP_READ_ONLY=true` hides every tool that writes and refuses calls to them before they reach Lightroom. Exports count as writes, and so does `get_photo_detail`: its full-resolution render is an export, which leaves an Export step in the photo's history and marks it exported. Previews come from Lightroom's preview cache and stay available. Both settings are read when the server starts.
+
+Each tool describes its arguments, limits and outcomes in its schema. `LIGHTROOM_MCP_TOOLSETS=all node server/dist/index.js tools` prints every schema without connecting to Lightroom; without the variable it prints the core tools only.
+
+## Command line
+
+The same server runs tools from a shell:
+
+```sh
+node server/dist/index.js tools [name]          # print tool schemas
+node server/dist/index.js call <tool> [json]    # call one tool, arguments as a JSON object
+node server/dist/index.js install-plugin        # copy the plug-in into Lightroom
+```
+
+`call` prints the MCP response on stdout: `{"content":[{"type":"text","text":"…"}, …],"isError":true}`. The first text block is the result envelope as JSON, with `outcome` and, depending on it, `data`, `error`, `failed`, `unknown`, `not_found`, `remaining` and `warnings`; image results follow as image blocks. The command exits 0 for `done` and 1 for any other outcome, a call whose arguments the tool's schema rejects included; it exits 2 when the command line itself is malformed. When the reply from Lightroom is lost, the outcome is `unknown` and carries only the transport error, since the server cannot name writes it never heard about. For example:
 
 ```sh
 LIGHTROOM_MCP_READ_ONLY=true node server/dist/index.js call search_photos '{"limit":5}'
 ```
 
-`call <tool> [json]` accepts a JSON object, defaulting to `{}`. It uses the same backend and access restrictions as MCP and does not install the plug-in. Stdout contains one complete JSON tool response, including image blocks when present; diagnostics use stderr. A response whose `outcome` is `done` exits 0; any other outcome carries `isError` and exits 1, and malformed command arguments exit 2. On exit 1 read `outcome`, `failed`, `unknown`, `not_found` and `remaining` in the JSON text inside `content`: a `partial` result still holds the work that finished, and an `unknown` outcome may already have changed Lightroom, so inspect the state before retrying.
+The ports default to 58763 and 58764. To change them, set `LIGHTROOM_MCP_REQUEST_PORT` and `LIGHTROOM_MCP_RESPONSE_PORT` and enter the same values in the plug-in's Plug-in Manager panel. `LIGHTROOM_MCP_TOKEN_PATH` changes where the server reads the token; the plug-in always writes it to `~/.config/lightroom-mcp/token`.
 
-For an MCP client, launch this checkout's `server/dist/index.js` with Node and its default `stdio` command. Use an absolute path in the client configuration. The inherited `.mcp.json` still launches the published npm package; loading a skill from this checkout does not switch that server or the installed Lua plug-in. Keep the server and Lua bundle revisions aligned when deploying.
+## Mask geometry and the certification
 
-This fork's first CLI slice is verified with automated tests and an isolated fake plug-in. It does not establish live Lightroom compatibility of new behavior. Coordinate plug-in installation and disposable-catalog tests with any active photo workflow.
+Until this machine has a certification for the running Lightroom build, the tools that construct masks refuse outside the live kit's throwaway catalog. Those are gradients, brushes, range masks and AI masks. Value edits (sliders, curves, Point Color) and deletions work without it. `get_mask_write_admission` reports the current state.
 
-## Upstream Lightroom MCP
-
-Lets Claude (and other AI assistants) talk to your **Adobe Lightroom Classic** photo catalog. Search photos, set ratings, edit develop settings, manage collections, import/export — all by chatting.
-
-[![npm](https://img.shields.io/npm/v/@mskalski/lightroom-mcp.svg)](https://www.npmjs.com/package/@mskalski/lightroom-mcp)
-[![release](https://img.shields.io/github/v/release/Automaat/lightroom-mcp.svg)](https://github.com/Automaat/lightroom-mcp/releases/latest)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-mskalski-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mskalski)
-
-> **Works with:** Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, VS Code.
-> **Needs:** Lightroom Classic on macOS or Windows. Nothing else — no programming required.
-
----
-
-## Install (Claude Desktop — easiest, 3 steps)
-
-This is the recommended path. Takes ~2 minutes, no terminal needed.
-
-### 1. Download the installer
-
-Go to the [latest release page](https://github.com/Automaat/lightroom-mcp/releases/latest) and download the file ending in **`.mcpb`** (it's near the top, called `lightroom-mcp-<version>.mcpb`).
-
-### 2. Double-click the downloaded file
-
-Claude Desktop opens automatically and asks: *"Install Lightroom Classic extension?"*. Click **Install**.
-
-> Don't have Claude Desktop yet? Get it free from [claude.com/download](https://claude.com/download). It runs on Mac and Windows.
-
-### 3. Turn on the plugin in Lightroom
-
-1. **Quit and reopen Lightroom Classic.** (The plugin needs a restart to show up.)
-2. In Lightroom, click **File** in the menu bar → **Plug-in Manager**.
-3. In the left list, click **Lightroom MCP**.
-4. On the right, click the **Start Server** button.
-5. You should see "Server running" appear. Done!
-
-### Try it
-
-Open Claude Desktop and type:
-
-> *List all my Lightroom collections.*
-
-Claude will list every collection in your catalog.
-
-Some other things to try:
-- *"Find all my 5-star photos from last summer."*
-- *"Add the keyword 'portfolio' to the photos I have selected in Lightroom."*
-- *"Apply the 'Vivid' develop preset to these photos."*
-- *"Compare my approved 'John Warm v3' preset with the current candidate."*
-- *"Create a versioned preset checkpoint from this representative photo and export it."*
-- *"Export the selected photos to my Desktop as JPEGs at 2000px wide."*
-
----
-
-## Install (other AI tools)
-
-Already using Claude Code, Codex, Cursor, Windsurf, or VS Code? Pick your tool below. **All paths still end with the Lightroom step from the section above** — restart Lightroom and click **Start Server** in Plug-in Manager.
-
-The npm server requires Node.js 20 or later.
-
-<details>
-<summary><b>Claude Code</b></summary>
-
-Load the Claude plugin from a checkout to get the MCP server and the bundled skill together:
-
-```bash
-git clone https://github.com/Automaat/lightroom-mcp.git
-claude --plugin-dir ./lightroom-mcp
-```
-
-Use `/plugin` to check that `lightroom` is loaded. The skill is available as
-`/lightroom:raw-photo-lightroom-preset`. Node.js 20 or later is required: the
-plugin starts the published npm server with `npx`. That package includes the Lua bundle and
-installs it on first start when no Lightroom MCP plug-in is already installed.
-Restart Lightroom and click **Start Server** in Plug-in Manager.
-
-The same `.mcpb` file as Claude Desktop also works. To install only the MCP server:
-
-```bash
-claude mcp add lightroom -- npx -y @mskalski/lightroom-mcp
-```
-
-</details>
-
-<details>
-<summary><b>Codex CLI</b></summary>
-
-```bash
-codex mcp add lightroom -- npx -y @mskalski/lightroom-mcp
-```
-
-The Lightroom plugin installs itself the first time Codex talks to the server.
-
-</details>
-
-<details>
-<summary><b>Cursor / Windsurf / VS Code (Continue, Cline, Roo, ...)</b></summary>
-
-Open your client's MCP settings and add:
-
-```json
-{
-  "mcpServers": {
-    "lightroom": {
-      "command": "npx",
-      "args": ["-y", "@mskalski/lightroom-mcp"]
-    }
-  }
-}
-```
-
-The plugin installs itself the first time your client starts the server. If your client only starts the server on first tool call, you can install the plugin upfront:
-
-```bash
-npx -y @mskalski/lightroom-mcp install-plugin
-```
-
-</details>
-
-<details>
-<summary><b>No Node.js installed? Use the standalone binary</b></summary>
-
-1. Download the right file from the [latest release](https://github.com/Automaat/lightroom-mcp/releases/latest):
-   - **Mac (Apple Silicon, M1/M2/M3/M4):** `lightroom-mcp-darwin-arm64`
-   - **Mac (Intel):** `lightroom-mcp-darwin-x64`
-   - **Windows:** `lightroom-mcp-windows-x64.exe`
-
-2. **macOS only** — make it runnable and bypass Gatekeeper (the binary isn't signed):
-   ```bash
-   chmod +x ~/Downloads/lightroom-mcp-darwin-arm64
-   xattr -d com.apple.quarantine ~/Downloads/lightroom-mcp-darwin-arm64
-   ```
-
-3. Download `LightroomMCP-macos.lrplugin.zip` (or `LightroomMCP-windows.lrplugin.zip`) from the same release and extract it next to the binary, so the `LightroomMCP.lrplugin` folder sits beside it. Then install the Lightroom plugin:
-   ```bash
-   ~/Downloads/lightroom-mcp-darwin-arm64 install-plugin
-   ```
-
-4. Point your AI tool at the binary's full path. Example for Codex:
-   ```bash
-   codex mcp add lightroom -- /Users/you/Downloads/lightroom-mcp-darwin-arm64
-   ```
-
-</details>
-
-<details>
-<summary><b>Install the Lightroom plugin manually (any client)</b></summary>
-
-If you'd rather drop the plugin in by hand:
-
-1. Download the matching zip from the [latest release](https://github.com/Automaat/lightroom-mcp/releases/latest):
-   - Mac: `LightroomMCP-macos.lrplugin.zip`
-   - Windows: `LightroomMCP-windows.lrplugin.zip`
-2. Unzip it. You get a folder called `LightroomMCP.lrplugin`.
-3. Move that folder into Lightroom's Modules folder:
-   - **Mac:** `~/Library/Application Support/Adobe/Lightroom/Modules/`
-   - **Windows:** `%APPDATA%\Adobe\Lightroom\Modules\`
-   - (If the `Modules` folder doesn't exist, create it.)
-4. Restart Lightroom → **Plug-in Manager** → **Start Server**.
-
-</details>
-
----
-
-## Something not working?
-
-1. Open Lightroom → **File → Plug-in Manager → Lightroom MCP → Show Status**. Both sockets should say `connected: true`. If not, click **Start Server**.
-2. Make sure you **fully quit and reopened Lightroom** after install (Cmd+Q on Mac, Alt+F4 on Windows). "Reload Plug-in" alone is not enough.
-3. See [Troubleshooting](#troubleshooting) below for specific errors.
-
-## Tools
-
-By default, the server exposes only core catalog and metadata tools. Set `LIGHTROOM_MCP_TOOLSETS` in your MCP client’s server environment to `develop`, `masks`, `develop,masks`, or `all` to add those tools. Core stays enabled. Restart the server after changing the setting; its tool list stays fixed for the session, and disabled tools cannot be called. In the desktop bundle, use **Enabled toolsets**.
-
-Set `LIGHTROOM_MCP_READ_ONLY` to `true` or `1` to hide write tools and refuse calls to them before they reach Lightroom, including when this server forwards through another bridge. The switch applies within the enabled toolsets. Exports (`export_photos`, `export_photo_metadata`, `export_develop_preset`) write files and are blocked. Read tools for masks and other Develop settings can briefly switch the module, photo or selected mask, then restore the previous view; they do not change photo data. Previews return image data in memory using Lightroom's preview cache. In the desktop bundle, enable **Read-only mode**. Restart the server after changing this setting.
-
-The Develop toolset includes presets, settings, snapshots, virtual copies, style summaries, Lens Blur, Denoise and Remove spots. The masks toolset includes all local mask tools. The table below lists every tool, including opt-in tools.
-
-| Tool | What it does |
-| --- | --- |
-| `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
-| `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
-| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location and copyright for 1 to 100 `photo_ids`. Results return `photos` in request order; unknown identifiers are `not_found`. Develop settings are read with `get_develop_settings`. |
-| `summarize_develop_settings` | Read-only medians and ranges of numeric Develop settings by camera and ISO (1–400, 401–1600, 1601–6400, 6401+, unknown). Rating ≥4 by default; optional exported filter intersects rating. Reads up to 200 photos; reports matched/scanned/truncated and settings omitted to keep each group under 6,000 characters. Excludes crop, perspective and white balance. |
-| `get_photo_preview` | JPEG preview of one photo (raw files too), optionally cropped to a rendered-frame region. `size: "cull"` returns an 864-pixel long edge for choosing among frames and is the default; `"review"` returns 1728 for a whole-frame look at rendering, tone and mask edges. Critical sharpness is judged with `get_photo_detail`, not a preview. A numeric size 64–2048 is the long edge returned; the server scales Lightroom's larger cached previews down to it. |
-| `get_photo_detail` | One to four regions cut from a full-resolution render with current Develop settings, one rendered pixel per returned pixel; the temporary export is deleted before the call returns. |
-| `get_photo_previews` | Up to 20 ordered JPEG thumbnails; photos that cannot be rendered are `failed`, unreached ones `remaining`. |
-| `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
-| `find_duplicate_groups` | Find near-duplicate and burst groups using JPEG dHash and raw capture time (up to 100 photos; defaults 5 s / 10 bits; 25 s partial-result budget) |
-| `set_gps` | Set the GPS position (decimal degrees) of photos. |
-| `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
-| `set_ai_metadata` | Store or clear private AI scores (0–100) and reasons (up to 1024 characters). |
-| `get_ai_metadata` | Read private AI scores and reasons for up to 1000 photos in one batch. |
-| `set_metadata` | Set title, caption, headline, creator and copyright fields of photos. |
-| `list_folders` | Catalog folders in tree order, with full paths and direct photo counts (paginated). |
-| `get_folder_photos` | Photos by full folder path, optionally including subfolders (paginated). |
-| `list_collections` | All collections and collection sets. |
-| `create_smart_collection` | Save `search_photos` filters as a smart collection; requires a filter and supports parent collection set paths. |
-| `create_collection` | New collection, optionally inside a collection set path (`Trips / 2026`); missing sets are created. |
-| `add_to_collection` | Add photos to a collection, by name or by its `list_collections` path. |
-| `get_collection_photos` | Photos in a collection, regular or smart (paginated). |
-| `remove_from_collection` | Remove photos from a collection (they stay in the catalog). |
-| `delete_collection` | Delete a collection (its photos stay in the catalog). |
-| `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
-| `remove_keyword_subtree` | Detach a parent keyword and its descendants from selected photos, or explicitly from the whole catalog. Keyword nodes stay in the catalog. |
-| `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
-| `rename_keyword` | Rename a keyword everywhere it is used. |
-| `undo_last_step` | Undo one step in Lightroom’s shared history with `confirm: true`; this includes user and other plug-in actions. |
-| `set_rating_and_flag` | Set a 0-5 star rating, a pick flag (`pick`, `reject`, `none`), or both in one write. |
-| `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Selects in the photos' folders (All Photographs if one is not found), retrying for up to 30 s on large catalogs. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master, and every photo of a collapsed stack. |
-| `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
-| `import_photos` | Import a file or folder into the catalog. A JPEG with a non-DNG raw file of exactly the same name stays the raw's sidecar unless `separate_jpegs` is set. Files already in the catalog are counted and left unchanged. |
-| `export_photos` | Export with format / quality / maximum width and height, or with a saved export preset. One export runs at a time. A photo with outdated AI settings can open Lightroom's AI Updates dialog, which blocks until dismissed. |
-| `list_export_presets` | List saved export presets and whether `export_photos` can use them. |
-| `export_photo_metadata` | Write metadata (incl. keyword paths) for many photos, or the selection, to a JSON file. |
-| `list_develop_presets` | Discover presets and plugin checkpoints by name (`query`) or exact `folder`, with `limit` (default 100) and `offset`. Returns `name`, `folder`, `scope`, `uuid`, total `count` and `has_more`; use `get_develop_preset` for `file`. |
-| `get_develop_preset` | Read settings and backing-file metadata for one exact preset. |
-| `compare_develop_presets` | Diff an approved historical preset against a candidate. |
-| `create_develop_preset` | Capture explicit settings from a photo as a versioned plugin checkpoint. |
-| `export_develop_preset` | Copy a custom/checkpoint preset backing file without overwriting. |
-| `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+); reads the preset's keys back on every photo. |
-| `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+); reads the copied keys back on every target. |
-| `match_photo_style` | Match global style after a confirmed snapshot per target; preserves framing, white balance, lens corrections and local masks. Returns snapshot IDs for restoration. |
-| `set_develop_settings` | Write SDK setting key/values directly. Each key's range and the rules between keys are checked before the write; values finer than Lightroom keeps are rounded; the written values are read back after Lightroom normalises them, and any stored differently are listed as `adjusted`. Crop keys are in the stored frame; use `set_crop` for a frame as displayed. |
-| `describe_develop_keys` | For one photo, every develop key's kind, the range the tools enforce and the range Lightroom reports for it, marking where they differ; local sliders too when a `mask_id` is given. Also Lightroom's version, build and the photo's process version. |
-| `set_crop` | Crop one photo to a rectangle, or to an aspect ratio (4:5, 1:1, 1.91:1 …) with the largest frame around a centre, optionally straightened, stated as the photo is displayed before any crop or, with `relative_to: "crop"`, inside the current crop; any orientation. Refuses a frame whose corners would leave the photo and names the largest that fits; returns the frame's size in pixels and the stored keys. |
-| `get_crop` | Read a photo's current crop the way `set_crop` states it: rectangle in the photo as displayed before any crop, angle, and the cropped frame's size in pixels. |
-| `get_lens_blur` | Read Lens Blur state, controls, focal range and bokeh (LrC 13.3+, Process Version 3+); restores the Develop view. |
-| `get_develop_settings` | Read develop settings exactly as Lightroom stores them, from the catalog without opening Develop, by the SDK names `set_develop_settings` writes: for one photo without `keys` the top-level names, types and table sizes; with `keys` each photo's values (for example `ProcessVersion` or the whole `MaskGroupBasedCorrections`) and the names it does not carry as `absent`. Up to 100 photos with `keys`. |
-| `set_lens_blur` | Set Lens Blur controls after enabling depth computation; validates runtime ranges and saved readback, then restores the view. |
-| `set_process_version` | Set photos to Version 1–6 with confirmation; refuses masked-photo downgrades and reports previous/actual versions. |
-| `list_develop_snapshots` | List a photo’s saved develop snapshots. |
-| `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |
-| `create_virtual_copies` | Create named virtual copies of up to 25 photos; return master and copy IDs and restore selection. |
-| `set_treatment` | Switch up to 100 photos between color and black and white through Lightroom's own conversion; read back the flag and report the profile before and after per photo. |
-| `apply_develop_snapshot` | Restore a saved develop snapshot. |
-| `delete_develop_snapshot` | Delete one saved develop snapshot. |
-| `apply_auto_adjustments` | Apply Lightroom Auto Tone, Auto White Balance, or both, restoring the Develop view afterwards. |
-| `reset_develop_adjustments` | Reset all develop adjustments on up to 100 photos; requires `confirm: true`. Recover edits through Lightroom History. |
-| `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
-| `list_spots` | List Remove spots with their indices and complete SDK parameters (LrC 14.1+) |
-| `update_spot` | Change a Heal spot's uppercase `params.Opacity` from 0 to 1 |
-| `delete_spot` | Delete one Remove spot by index with `confirm: true` |
-| `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
-| `get_mask_write_admission` | Report whether guarded mask-geometry writes are admitted in the open catalog: the running Lightroom version and build, the certified build with its time and checks, whether this is the live kit's throwaway catalog, and the refusal reason; with `photo_id` also that photo's process version, mask count and format problems of its existing masks. Read-only, opens no Develop. |
-| `create_gradient_mask` | Place a linear or radial gradient mask at positions in the displayed frame (after crop, straighten and orientation), as a new mask or a component of one; optional `adjustments` (the `local_*` names) sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
-| `update_gradient_mask` | Move or reshape an existing linear or radial gradient by tool id; same guarded write. |
-| `create_brush_mask` | Paint a brush mask from strokes (points in the displayed frame, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` (the `local_*` names) sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
-| `add_brush_strokes` | Paint more strokes into an existing brush by tool id; same guarded write. |
-| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` (the `local_*` names) sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
-| `delete_masks` | Delete masks or components by id, or all masks, on one `photo_id` in its saved settings, without opening Develop; unknown ids delete nothing, and every other mask must read back unchanged or the photo is put back. |
-| `delete_empty_masks` | Delete masks without components from up to 1000 `photo_ids` without opening Develop or changing selection (LrC 14+). |
-| `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ..., Color Grading `local_colorgrade*` and `local_glow` where Lightroom has them) by mask id in the photo's saved settings, without opening Develop; out-of-range values are rejected before anything is written. |
-| `get_mask` | Read a mask's local adjustments, curves and Point Color from the photo's saved settings in one call, without opening Develop; optional `kinds` selects `adjustments`, `curves` or `point_colors` (default all). |
-| `invert_mask` | Invert a mask by id, in place or as an inverted copy that keeps the original and carries every value of the source (LrC 11.4+); briefly opens the photo in Develop and restores the masking tool and the selected mask. |
-| `create_mask` | Create a Subject/Sky/Background mask with optional adjustments, or People parts/Landscape categories with `type: "people", parts: [...]` or `type: "landscape", categories: [...]`, by writing it into the saved settings for Lightroom to compute (guarded write, certified Lightroom only, no Develop). Returns mask ids; nothing found or a missing part leaves no new masks and fails the call. People/Landscape reject `adjustments`; use `set_mask_adjustments` afterwards. A single person cannot be chosen. |
-| `create_mask_batch` | Add the same Subject, Sky or Background mask with the same adjustments to up to 200 photos, each computed for its own photo, without opening Develop; guarded write, certified Lightroom only. |
-| `set_mask_curves` | Set a mask's local tone curve per channel (main, red, green, blue, up to 16 points each) by mask id in the photo's saved settings, without opening Develop. |
-| `edit_mask_point_colors` | Add, update, delete or clear a mask's local Point Color swatches by mask id in the photo's saved settings, without opening Develop. A new swatch gets the ranges Lightroom's own add gives its source color. |
-| `combine_mask` | Add, subtract or intersect a Subject, Sky or Background component on an existing mask by id in its saved settings and get the component's id; a certified write that Lightroom computes, without opening Develop; nothing found fails with the mask put back. |
-
-Full schemas and parameter docs: [`server/src/tool-contracts.ts`](server/src/tool-contracts.ts) (develop keys and local sliders in [`server/src/develop-keys.ts`](server/src/develop-keys.ts)); `lightroom-mcp tools` prints them.
-
-AI scores and reasons stay in the catalog's private plug-in metadata. They do
-not appear in the Metadata panel, searches, keywords, IPTC, XMP, or exports.
-`set_ai_metadata` leaves omitted fields unchanged; pass `""` to clear a score
-or reason. `get_ai_metadata` omits unset fields and lists unknown photo IDs as `not_found`.
-The initial provider schema is version 1: `aiScore` and `aiReason` are strings
-(the tools convert the score to and from an integer). Changes to these
-persistent field definitions require a schema version bump and migration;
-incompatible field changes also require a field version bump.
-
-`copy_develop_settings` and `apply_develop_preset` accept `dry_run: true` to
-preview without writes or AI recomputation. Replies include per-setting totals
-and detail for at most five targets. `detail_truncated` flags omitted detail;
-`missing_count` and one-based `missing_indices` identify missing inputs when
-`missing_truncated` limits their path detail.
-
-Preset previews compare only declared settings whose current values the SDK
-exposes. `preview_scope` states this limit, and `unknown_current_totals` counts
-unreadable values excluded from the diff. `unknown_effects` lists effects that
-remain unpredicted: SDK-generated values such as `GrainSeed` and preset
-bookkeeping. This preview does not predict the complete result of applying a
-preset.
-
-### First-pass cull workflow
-
-Use vision as a first-pass reject filter for clear blur, closed eyes, missed
-focus and near-duplicates. Leave star ratings of the surviving photos to the
-user; thumbnails do not reliably distinguish a four-star photo from a five.
-
-1. Collect photo IDs with `search_photos`. Read existing flags and labels with
-   `get_photo_metadata`, and private reasons with `get_ai_metadata`.
-2. Call `get_photo_previews` with at most 20 IDs at a time. Each JPEG's longest
-   edge is the requested size (default 256 pixels, at most 2000), scaled down by
-   the server when Lightroom's cached preview is larger; the previews share an
-   8 MiB byte budget. Each preview names its `photo_id` and 1-based `image_index`.
-   Photos that could not be rendered are in `failed`; resend `remaining` when present.
-3. Propose rejects with a reason per photo and show the list to the user before
-   writing. Keep uncertain shots for review; do not reject them automatically.
-4. For approved clear failures, call `set_rating_and_flag` with `flag: "reject"`. Mark
-   uncertain photos with `set_color_label` using `label: "yellow"` for
-   “needs a look”. Preserve existing labels unless the user approves replacing
-   them. Store each decision's reason with `set_ai_metadata` in its `reason`
-   field (private plug-in field `aiReason`), never as keywords.
-5. Verify flags and labels with `get_photo_metadata`, and reasons with
-   `get_ai_metadata`. Undo a reject with `set_rating_and_flag` and `flag: "none"`;
-   restore the previous label and reason when undoing the whole decision.
-
-This workflow deletes nothing and removes no photos from the catalog.
-
-### Iterative preset workflow
-
-Use a representative photo or virtual copy rather than a master edit:
-
-1. Read an approved historical preset with `get_develop_preset`.
-2. Apply bounded setting changes to the representative and export a Lightroom-rendered JPEG.
-3. Create a uniquely named checkpoint such as `John Warm v4` with `create_develop_preset`.
-4. Compare it with the approved preset using `compare_develop_presets`.
-5. Repeat the render/inspect cycle; export the accepted checkpoint with `export_develop_preset`.
-
-`create_develop_preset` uses Adobe's plugin preset API. These checkpoints are intentionally hidden from the Develop panel and are listed with `scope: "plugin"`. They are versioned instead of overwritten. `export_develop_preset` refuses existing destinations and preserves the backing file format Lightroom supplies. Built-in presets without a backing file cannot be exported.
-
-### Point curves
-
-`set_develop_settings` accepts Lightroom's composite and per-channel point curve
-keys: `ToneCurvePV2012`, `ToneCurvePV2012Red`, `ToneCurvePV2012Green`, and
-`ToneCurvePV2012Blue`. Each value is a flat list of 2 to 16 input/output pairs.
-Values are integers from 0 to 255, inputs must be strictly increasing, and each
-curve must start at input 0 and end at input 255. Lightroom renders a channel's
-`Extended` (HDR) curve before its plain one, so a write replaces both, and
-`get_develop_settings` answers the `Extended` curve first. Mask curves follow the
-same rule.
-
-```json
-{
-  "photo_id": "283615",
-  "settings": {
-    "ToneCurveName2012": "Custom",
-    "ToneCurvePV2012": [0, 0, 40, 25, 128, 132, 220, 240, 255, 250],
-    "ToneCurvePV2012Blue": [0, 0, 64, 58, 192, 198, 255, 255]
-  }
-}
-```
-
-## Scope, write safety and limits
-
-### Your local Classic catalog
-
-This server works with the catalog open in Lightroom Classic on your computer through a Lightroom plug-in. Use it to organize photos, adjust edits and masks, and export Lightroom-rendered images. Lightroom Classic must be running. See [How it works](#how-it-works) for the connection and [Security](#security) for local access and authentication.
-
-### Safeguards when changing photos
-
-- Deleting a collection with `delete_collection` keeps its photos in the catalog ([collection handler](plugin/LightroomMCP.lrplugin/HandlerCollections.lua)).
-- Mask tools that write Lightroom's undocumented mask format are admitted only on the live kit's throwaway catalog or after a certification run passed for the running Lightroom build and the photo's process version, and check what they construct or change against the tested format, leaving every other mask as Lightroom stored it. They read the result back (a mask they left alone must come back exactly) and attempt to restore the previous masks if it differs; an unconfirmed restoration is reported as an error. These checks live in [GuardedMaskWrite.lua](plugin/LightroomMCP.lrplugin/GuardedMaskWrite.lua). They apply to those mask writes, not to every edit. Mask value edits (`set_mask_adjustments`, `set_mask_curves`, `edit_mask_point_colors`) construct nothing, so they need no certification: they change only the named fields of a mask Lightroom already saved, read the whole mask list back exactly, and restore the previous masks if anything else differs.
-- Connections require the local token described in [Security](#security), checked by [PluginInfoProvider.lua](plugin/LightroomMCP.lrplugin/PluginInfoProvider.lua).
-
-### What Lightroom's plug-in SDK does not expose
-
-The SDK is Adobe's interface for plug-ins. Its [reference](https://lrc.mcor.dev/) provides no documented calls for these operations:
-
-- Reading raw sensor histograms, individual pixel data or detected face regions. `get_photo_stats` measures the rendered JPEG preview; `get_photo_preview` returns that image for visual inspection.
-- Running an HDR or panorama merge; producing a print or book; creating or editing a slideshow. The SDK does support [slideshow playback](https://lrc.mcor.dev/modules/LrSlideshow.html), but this server has no playback tool.
-- Running Super Resolution or Raw Details through a documented call.
-- Stack create or unstack operations on photos already in the catalog, or auto-stacking. The SDK's import operation can add a new photo to a stack.
-- Folder create, move or delete operations in the catalog, or catalog open or close operations. Importing photos and managing collections are separate operations.
-- Spot creation with the healing tools; Assisted Culling; Dust Removal; or Render to DNG.
-- Running an HTTP server inside the plug-in. The connection uses the SDK's sockets instead; see [How it works](#how-it-works).
-
-Pixel-based AI edits have another limit: copying a table of develop settings does not copy their generated image data. Since Lightroom Classic 15.0, Lightroom stores heavy edits, including AI edits, in [`.acr` sidecars when saving metadata to files](https://helpx.adobe.com/lightroom-classic/help/create-xmp-acr-files.html). Copying develop-settings tables alone does not transfer those sidecar contents.
-
-## How it works
-
-```
-┌─────────────┐    stdio    ┌──────────────────┐  TCP :58763 →   ┌──────────────────┐
-│  AI client  │ ◄─────────► │   MCP server     │ ──────────────► │ Lightroom plugin │
-│ (Claude/    │             │  (Node TCP)      │ ←────────────── │   (LrSocket)     │
-│  Codex/...) │             └──────────────────┘   ← TCP :58764  └──────────────────┘
-└─────────────┘                                                           │
-                                                                          ▼
-                                                                catalog:withReadAccessDo
-```
-
-Plugin binds two `LrSocket` servers on localhost (`58763` request, `58764` response). Server connects as TCP client. Frame: line-delimited JSON, `\n` terminator. Auto-reconnect on both sides. Same dual-port pattern as MIDI2LR.
-
-## CLI reference
-
-```
-lightroom-mcp [stdio]            Run MCP over stdio (default)
-lightroom-mcp tools [name]       Print available tool schemas as JSON without connecting
-lightroom-mcp call <tool> [json] Call a tool with JSON object arguments (default {})
-lightroom-mcp install-plugin     Copy bundled plugin into Lightroom Modules folder
-lightroom-mcp --help | --version
-```
-
-Env vars:
-
-| Var | Default | Purpose |
-| --- | --- | --- |
-| `LIGHTROOM_MCP_REQUEST_PORT` | `58763` | Plugin request port. |
-| `LIGHTROOM_MCP_RESPONSE_PORT` | `58764` | Plugin response port. |
-| `LIGHTROOM_MCP_TOOLSETS` | `core` | Comma-separated `core`, `develop`, `masks`, or `all`; core is always enabled. |
-| `LIGHTROOM_MCP_READ_ONLY` | `false` | `true` or `1` hides and refuses write tools; `false`, `0`, unset or empty disables the switch. Values are case-sensitive and surrounding whitespace is ignored. Invalid values fail startup. |
-| `LIGHTROOM_MCP_TOKEN_PATH` | `~/.config/lightroom-mcp/token` | Auth token file. |
-
-If you change ports on the server side, change them in **Plug-in Manager → Lightroom MCP** to match.
+To certify, set up the live kit as its [README](tests/e2e/live/README.md) describes, including the pinned portrait it needs for the Subject and People steps (`LRMCP_LIVE_PEOPLE_PHOTO`), and run `node tests/e2e/live/certify-mask-writes.mjs` with the throwaway catalog open. The record names the Lightroom build and the process versions the run exercised. It is not tied to a plug-in revision, and a mask kind the run did not exercise stays admitted with the rest, so rerun it after changing the plug-in. After a Lightroom update, mask construction stays refused until the run passes again.
 
 ## Security
 
-The plugin generates a 256-bit token in `~/.config/lightroom-mcp/token` on **Start Server**. The MCP server attaches it to every request. Localhost-only — no remote attack surface.
+Starting the plug-in's server writes a random token to `~/.config/lightroom-mcp/token`. The MCP server sends it with every request, and the plug-in listens on localhost only, so the remaining risk is another user or process on the same machine. Lightroom's plug-in sandbox cannot set file permissions; on a shared machine run `chmod 700 ~/.config/lightroom-mcp`.
 
-## Develop
+## Not yet published
 
-```bash
-mise install                        # tools (node, bun, lua + luarocks, selene)
-mise run install                    # npm install in server/
-mise run build                      # regenerate the skill prompt, then tsc, then Contract.lua and the manifest tools
-mise run test                       # jest
-mise run mcpb                       # build .mcpb bundle
-mise run binary                     # build single-file binaries via Bun
-mise run lua:lint                   # selene-lint the Lua plugin
-mise run lua:test                   # busted specs for the Lua plugin
+The fork has no npm package, `.mcpb` bundle, standalone binary or MCP registry entry yet. The npm package will be `lightroom-agent`; until it is published, install from a checkout as shown above.
+
+## Development
+
+`mise install` provisions Node.js, Lua with LuaRocks, and selene; `mise run lua:test` installs busted into `lua_modules/` on first use.
+
+```sh
+cd server
+npm run check          # type check
+npm run lint
+npm run build          # also regenerates plugin/LightroomMCP.lrplugin/Contract.lua
+npm run test:coverage  # Jest with the coverage thresholds CI uses
+cd ..
+mise run lua:lint      # selene
+mise run lua:test      # busted specs for the plug-in
+mise run live:test     # unit tests of the live kit, no Lightroom needed
 ```
 
-`mise run test` runs Jest in parallel workers: quick for a local loop, but not the check a change has to pass. The port-owner tests run a child process under the production command timeout of 3 s, and on a loaded machine parallel workers can push such a child past it. The check is `cd server && npm run test:coverage`, which runs Jest in band with the coverage thresholds CI enforces.
-
-Repo layout:
-
-- `server/` — TypeScript MCP server (ESM, NodeNext).
-- `plugin/LightroomMCP.lrplugin/` — Lua plugin loaded by Lightroom Classic.
-- `mcpb/manifest.json` — `.mcpb` bundle manifest.
-- `scripts/build-mcpb.mjs` — pack the .mcpb.
-- `scripts/build-binary.mjs` — Bun `--compile` per-target binaries.
-- `manual-test.mjs` — direct TCP probe (bypasses MCP).
-
-## Adding a new tool
-
-1. Add a new `Handler*.lua` under `plugin/LightroomMCP.lrplugin/`.
-2. Add a contract entry in `server/src/tool-contracts.ts` naming the handler in `run: { plugin: "HandlerX.fn" }` (or `run: { server }` for a tool the server runs over internal plug-in actions listed in `PLUGIN_ACTIONS`).
-3. Run `npm run build` in `server/`: it regenerates `plugin/LightroomMCP.lrplugin/Contract.lua`, the plug-in's dispatch map.
-4. Declare any new LR globals in `lightroom.yml` (selene std).
+Instructions for coding agents working on this repository are in [CLAUDE.md](CLAUDE.md), also available as `AGENTS.md`.
 
 ## Troubleshooting
 
-- **`failed to open localhost:58763` after Reload Plug-in** — old async task still owns the port. Quit Lightroom (Cmd+Q on macOS / Alt+F4 on Windows) and reopen.
-- **Server not running right after Lightroom starts** — Lightroom Classic runs the plugin's start-up script only once its window is first brought to the front, even with `LrForceInitPlugin`. Seen on LrC 15.6 macOS: launched in the background (`open -g`), the plugin did nothing for 90 s and started the moment the window was activated. A Lightroom opened hidden (a login item set to hide, `open -g`, a script) therefore has no server until you switch to it once. The plugin log shows `Plugin initialized, auto-start on` when the script runs.
-- **Plugin not connected** — the server now self-restarts after a Reload Plug-in that tore down a running instance. If it's still stopped, click **Start Server** in Plug-in Manager; it reconnects within ~1s.
-- **Lightroom never finishes quitting while an MCP client is connected** — fixed by registering an `LrShutdownApp` script (`PluginShutdown.lua`) that stops the server loop before Lightroom closes the listeners. Without it the loop took the closed request listener for a catalog switch and rebound it; the still-running client reconnected at once and kept Lightroom in quit until the client exited. `LrShutdownApp` requires the script to return a table whose `LrShutdownFunction` calls Lightroom's `doneFunction`; the script does that at once, so the shutdown dialog stays at most a brief flash.
-- **Timeout errors** — handler may be scanning a large catalog without filters; add `rating`, `filename`, `keywords`, or date filters to narrow.
-- **macOS "cannot be opened because the developer cannot be verified"** (binary path) — `xattr -d com.apple.quarantine /path/to/binary`. Or right-click → Open the first time.
-- **Windows SmartScreen blocks the .exe** — More info → Run anyway.
+The server writes its diagnostics to stderr, which MCP clients keep in their server log. **Plug-in Manager → Show Status** shows both sockets, the last event, the number of requests processed and the path of the plug-in log (`~/Documents/LrClassicLogs/LightroomMCP.log` by default).
 
-Logs:
-
-| Component | macOS | Windows |
-| --- | --- | --- |
-| Plugin | `~/Documents/LrClassicLogs/LightroomMCP.log` | `%USERPROFILE%\Documents\LrClassicLogs\LightroomMCP.log` |
-| Claude Desktop | `~/Library/Logs/Claude/mcp*.log` | `%APPDATA%\Claude\Logs\mcp*.log` |
-
-The plugin resolves its log path via the OS (`LrPathUtils`), so on Windows with
-OneDrive-redirected Documents the file follows the redirect. The exact resolved
-path is shown as **Log file:** in Plug-in Manager → **Show Status** — use that if
-the table path above is empty.
+| What you see | Cause and fix |
+| --- | --- |
+| Tools answer "Lightroom plugin not connected" | The plug-in's server is not running. Lightroom starts plug-ins only once its window has come to the front, so a Lightroom launched in the background has none yet: switch to it, or click **Start Server**. |
+| `ECONNREFUSED` in the server log, or `failed to open localhost:58763` in the plug-in log after Reload Plug-in | The old plug-in task still holds the ports. Quit Lightroom and reopen it. |
+| "Lightroom MCP token file not found" | **Start Server** has not run yet, or `LIGHTROOM_MCP_TOKEN_PATH` points somewhere the plug-in never writes. |
+| The connection opens and drops at once | The token does not match. The server reads the token again on every connect, so this happens when `LIGHTROOM_MCP_TOKEN_PATH` points at an old copy. |
+| A call times out | The handler is still running in Lightroom. Check **Last event** in Show Status and the plug-in log; a dialog in Lightroom (an AI update prompt during export, for example) blocks until you dismiss it. |
 
 ## License
 
-MIT
+MIT, as upstream. See [LICENSE](LICENSE).

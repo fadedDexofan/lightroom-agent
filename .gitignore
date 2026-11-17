@@ -12,6 +12,9 @@ build/
 server/LightroomMCP.lrplugin/
 *.tsbuildinfo
 
+# Local, untracked notes for agents
+CLAUDE.local.md
+
 # Environment
 .env
 .env.local
