@@ -1,10 +1,12 @@
 local LrTasks = import 'LrTasks'
 
 local CatalogWrite = require 'CatalogWrite'
+local DevelopSession = require 'DevelopSession'
 local LocalSliders = require 'LocalSliders'
 local Reply = require 'Reply'
 local Log = require 'Log'
 local DecimalText = require 'DecimalText'
+local JsonValue = require 'JsonValue'
 local MaskWriteAdmission = require 'MaskWriteAdmission'
 
 local GuardedMaskWrite = {}
@@ -116,17 +118,22 @@ local function addProblem(problems, text)
     problems[#problems + 1] = text
 end
 
-local function checkFields(item, required, optional, isAllowedExtra, where, problems)
+local function checkFields(item, required, optional, isAllowedExtra, where, problems, before)
+    local function unchanged(name)
+        return before ~= nil and JsonValue.equal(item[name], before[name])
+    end
     for name, expected in pairs(required) do
         local value = item[name]
-        if value == nil then
-            addProblem(problems, where .. ": missing " .. name)
-        elseif not hasType(value, expected) then
-            addProblem(problems, where .. ": " .. name .. " must be a " .. expected)
+        if not unchanged(name) then
+            if value == nil then
+                addProblem(problems, where .. ": missing " .. name)
+            elseif not hasType(value, expected) then
+                addProblem(problems, where .. ": " .. name .. " must be a " .. expected)
+            end
         end
     end
     for name, value in pairs(item) do
-        if required[name] == nil then
+        if required[name] == nil and not unchanged(name) then
             local expected = optional[name]
             if expected ~= nil then
                 if not hasType(value, expected) then
@@ -192,29 +199,55 @@ local function validateComponent(component, where, problems)
     end
 end
 
-local function validateEntry(entry, where, problems)
+local function heldComponent(component, before)
+    for _, held in ipairs(type(before) == "table" and type(before.CorrectionMasks) == "table" and before.CorrectionMasks or {}) do
+        if JsonValue.equal(held, component) then return true end
+    end
+    return false
+end
+
+local function validateEntry(entry, where, problems, before)
     if type(entry) ~= "table" or entry.What ~= "Correction" then
         addProblem(problems, where .. ": not a Correction")
         return
     end
-    checkFields(entry, ENTRY_REQUIRED_FIELDS, ENTRY_OPTIONAL_FIELDS, isLocalAdjustment, where, problems)
+    checkFields(entry, ENTRY_REQUIRED_FIELDS, ENTRY_OPTIONAL_FIELDS, isLocalAdjustment, where, problems, before)
     if type(entry.CorrectionMasks) ~= "table" then return end
     if #entry.CorrectionMasks == 0 then
         addProblem(problems, where .. ": no mask components")
         return
     end
     for index, component in ipairs(entry.CorrectionMasks) do
-        validateComponent(component, where .. ".CorrectionMasks[" .. index .. "]", problems)
+        if not heldComponent(component, before) then
+            validateComponent(component, where .. ".CorrectionMasks[" .. index .. "]", problems)
+        end
     end
 end
 
-function GuardedMaskWrite.validateEntries(entries, label)
+function GuardedMaskWrite.formatProblems(entries)
     local problems = {}
-    for index, entry in ipairs(entries) do
-        validateEntry(entry, label .. " " .. index, problems)
-    end
+    for index, entry in ipairs(entries) do validateEntry(entry, "existing mask " .. index, problems) end
     table.sort(problems)
     return problems
+end
+
+local function plannedEntries(read, proposed)
+    local byId, matched, plan = {}, {}, {}
+    for index, entry in ipairs(read) do
+        if type(entry) == "table" and entry.CorrectionID ~= nil then byId[tostring(entry.CorrectionID)] = index end
+    end
+    for index, entry in ipairs(proposed) do
+        local readIndex = type(entry) == "table" and entry.CorrectionID ~= nil and byId[tostring(entry.CorrectionID)] or nil
+        if readIndex == nil then
+            for candidate, held in ipairs(read) do
+                if not matched[candidate] and JsonValue.equal(held, entry) then readIndex = candidate break end
+            end
+        end
+        if readIndex ~= nil then matched[readIndex] = true end
+        local before = readIndex and read[readIndex] or nil
+        plan[index] = { preserved = before ~= nil and JsonValue.equal(before, entry), before = before }
+    end
+    return plan
 end
 
 local function describeProblems(problems)
@@ -374,15 +407,40 @@ function GuardedMaskWrite.compareEntries(expected, actual)
     return problems
 end
 
-local function readEntries(catalog, photo)
-    local settings
-    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+local function mismatchesFor(plan)
+    return function(expected, actual)
+        local problems = {}
+        if #expected ~= #actual then
+            addProblem(problems, string.format("mask count changed: wrote %d, read back %d", #expected, #actual))
+            return problems
+        end
+        for index, entry in ipairs(expected) do
+            if plan[index] and plan[index].preserved then
+                for _, path in ipairs(JsonValue.differences(entry, actual[index])) do
+                    addProblem(problems, string.format("masks[%d], left alone by this call, changed at %s", index, path))
+                end
+            else
+                compareValue(index, entry, actual[index], "masks", problems)
+            end
+        end
+        table.sort(problems)
+        return problems
+    end
+end
+
+local function entriesOf(settings)
     settings = settings or {}
     local entries = settings.MaskGroupBasedCorrections
     if entries ~= nil and type(entries) ~= "table" then
         error("Lightroom returned mask data that is not a list", 0)
     end
     return deepClone(entries or {}, 0), settings.ProcessVersion
+end
+
+local function readEntries(catalog, photo)
+    local settings
+    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+    return entriesOf(settings)
 end
 
 function GuardedMaskWrite.readEntries(catalog, photo)
@@ -394,22 +452,21 @@ function GuardedMaskWrite.inspect(catalog, photo)
     return {
         process_version = processVersion,
         mask_count = #entries,
-        schema_problems = GuardedMaskWrite.validateEntries(entries, "existing mask"),
+        schema_problems = GuardedMaskWrite.formatProblems(entries),
     }
 end
 
-function GuardedMaskWrite.preflight(catalog, photo, plannedProcessVersion)
+local function admittedEntries(catalog, photo, plannedProcessVersion)
     local read, entries, processVersion = LrTasks.pcall(readEntries, catalog, photo)
     if not read then
         Reply.refuse("The masks already on this photo could not be read, so nothing was written: " .. Reply.messageOf(entries))
     end
     MaskWriteAdmission.requireAdmitted(catalog, plannedProcessVersion or processVersion)
-    local problems = GuardedMaskWrite.validateEntries(entries, "existing mask")
-    if #problems > 0 then
-        Reply.refuse("The masks already on this photo do not match the pinned mask format, so nothing was written: "
-            .. describeProblems(problems))
-    end
     return entries
+end
+
+function GuardedMaskWrite.preflight(catalog, photo, plannedProcessVersion)
+    return admittedEntries(catalog, photo, plannedProcessVersion)
 end
 
 local function writeEntries(catalog, photo, description, entries)
@@ -418,11 +475,11 @@ local function writeEntries(catalog, photo, description, entries)
     end)
 end
 
-local function readBackUntilMatching(catalog, photo, expected)
+local function readBackUntilMatching(catalog, photo, expected, mismatchesOf)
     local waited = 0
     while true do
         local actual = readEntries(catalog, photo)
-        local mismatches = GuardedMaskWrite.compareEntries(expected, actual)
+        local mismatches = mismatchesOf(expected, actual)
         if #mismatches == 0 or waited >= READ_BACK_TIMEOUT_SECONDS then
             return actual, mismatches
         end
@@ -434,7 +491,7 @@ end
 local function restorePrevious(catalog, photo, previous)
     local wrote = LrTasks.pcall(writeEntries, catalog, photo, "Restore masks", previous)
     if not wrote then return false end
-    local read, _, mismatches = LrTasks.pcall(readBackUntilMatching, catalog, photo, previous)
+    local read, _, mismatches = LrTasks.pcall(readBackUntilMatching, catalog, photo, previous, JsonValue.differences)
     return read and #mismatches == 0
 end
 
@@ -450,24 +507,27 @@ local function failAfterRollback(catalog, photo, previous, problems)
         .. " confirmed restored; check the photo's masks in Develop: " .. summary, 0)
 end
 
-function GuardedMaskWrite.apply(catalog, photo, spec)
-    local previous = GuardedMaskWrite.preflight(catalog, photo)
-    local proposed = spec.build(deepClone(previous, 0))
-    if type(proposed) ~= "table" then error("mask change produced no mask list", 0) end
-
-    local problems = GuardedMaskWrite.validateEntries(proposed, "new mask")
-    if #problems > 0 then
-        Reply.refuse("The requested mask change does not match the format this tool was tested with, so nothing was"
-            .. " written: " .. describeProblems(problems), 0)
+function GuardedMaskWrite.submit(catalog, photo, spec)
+    DevelopSession.flushIfShowing(catalog, photo)
+    if spec.unchanged then
+        local current = GuardedMaskWrite.readEntries(catalog, photo)
+        if spec.unchanged(current) then return { previous = current, entries = current } end
     end
-
-    local wrote, writeError = LrTasks.pcall(writeEntries, catalog, photo, spec.description, deepClone(proposed, 0))
-    if not wrote and Reply.refusalOf(writeError) then error(writeError, 0) end
+    local previous, proposed, sent
+    local wrote, writeError = LrTasks.pcall(CatalogWrite.run, catalog, spec.description, function()
+        previous = entriesOf(photo:getDevelopSettings())
+        proposed = spec.build(deepClone(previous, 0))
+        if proposed == nil then return end
+        sent = true
+        photo:applyDevelopSettings({ MaskGroupBasedCorrections = deepClone(proposed, 0) })
+    end)
+    if not wrote and not sent then error(writeError, 0) end
     if not wrote then
         failAfterRollback(catalog, photo, previous, { "Lightroom rejected the write: " .. tostring(writeError) })
     end
+    if proposed == nil then return { previous = previous, entries = previous } end
 
-    local read, actual, mismatches = LrTasks.pcall(readBackUntilMatching, catalog, photo, proposed)
+    local read, actual, mismatches = LrTasks.pcall(readBackUntilMatching, catalog, photo, proposed, spec.mismatches)
     if not read then
         mismatches = { "the masks could not be read back: " .. tostring(actual) }
     end
@@ -483,6 +543,34 @@ function GuardedMaskWrite.apply(catalog, photo, spec)
         failAfterRollback(catalog, photo, previous, mismatches)
     end
     return { previous = previous, entries = actual }
+end
+
+function GuardedMaskWrite.apply(catalog, photo, spec)
+    admittedEntries(catalog, photo)
+    local plan
+    return GuardedMaskWrite.submit(catalog, photo, {
+        description = spec.description,
+        build = function(entries)
+            local read = deepClone(entries, 0)
+            local proposed = spec.build(entries)
+            if type(proposed) ~= "table" then error("mask change produced no mask list", 0) end
+            plan = plannedEntries(read, proposed)
+            local problems = {}
+            for index, entry in ipairs(proposed) do
+                if not plan[index].preserved then
+                    validateEntry(entry, "new mask " .. index, problems, plan[index].before)
+                end
+            end
+            if #problems > 0 then
+                table.sort(problems)
+                Reply.refuse("The requested mask change does not match the format this tool was tested with, so"
+                    .. " nothing was written: " .. describeProblems(problems))
+            end
+            return proposed
+        end,
+        mismatches = function(expected, actual) return mismatchesFor(plan)(expected, actual) end,
+        crossCheck = spec.crossCheck,
+    })
 end
 
 function GuardedMaskWrite.newCorrection(name, components)

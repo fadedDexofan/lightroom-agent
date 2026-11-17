@@ -1,5 +1,6 @@
 local LrApplication = import 'LrApplication'
 
+local DevelopCurves = require 'DevelopCurves'
 local JSON = require 'JSON'
 local JsonValue = require 'JsonValue'
 local PhotoLookup = require 'PhotoLookup'
@@ -27,10 +28,11 @@ end
 function DevelopSettingsRead.values(settings, keys)
     local values, absent = {}, {}
     for _, key in ipairs(keys) do
-        if settings[key] == nil then
+        local value = DevelopCurves.read(settings, key)
+        if value == nil then
             absent[#absent + 1] = key
         else
-            values[key] = JsonValue.of(settings[key])
+            values[key] = JsonValue.of(value)
         end
     end
     return values, absent

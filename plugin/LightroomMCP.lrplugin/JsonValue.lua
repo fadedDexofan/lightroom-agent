@@ -66,16 +66,30 @@ local function convert(value, depth)
     return { [MARKER] = "table", entries = out }
 end
 
+local function collectDifferences(expected, actual, path, out)
+    if type(expected) ~= "table" or type(actual) ~= "table" then
+        if type(expected) ~= type(actual) or expected ~= actual then out[#out + 1] = path end
+        return
+    end
+    local keys = {}
+    for key in pairs(expected) do keys[#keys + 1] = key end
+    for key in pairs(actual) do
+        if expected[key] == nil then keys[#keys + 1] = key end
+    end
+    table.sort(keys, keyOrder)
+    for _, key in ipairs(keys) do
+        collectDifferences(expected[key], actual[key], path == "" and tostring(key) or path .. "." .. tostring(key), out)
+    end
+end
+
+function JsonValue.differences(expected, actual)
+    local out = {}
+    collectDifferences(expected, actual, "", out)
+    return out
+end
+
 function JsonValue.equal(left, right)
-    if type(left) ~= type(right) then return false end
-    if type(left) ~= "table" then return left == right end
-    for key, value in pairs(left) do
-        if not JsonValue.equal(value, right[key]) then return false end
-    end
-    for key in pairs(right) do
-        if left[key] == nil then return false end
-    end
-    return true
+    return #JsonValue.differences(left, right) == 0
 end
 
 function JsonValue.of(value)

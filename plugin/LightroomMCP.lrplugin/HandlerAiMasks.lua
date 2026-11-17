@@ -1,7 +1,5 @@
 local LrApplication = import 'LrApplication'
 
-local Reply = require 'Reply'
-local MaskCreate = require 'HandlerMaskCreate'
 local PhotoLookup = require 'PhotoLookup'
 local AIMaskCompute = require 'AIMaskCompute'
 local AIMaskData = require 'AIMaskData'
@@ -10,8 +8,6 @@ local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
 
 local AiMaskHandler = {}
-
-local COMPUTE_TIMEOUT_SECONDS = 120
 
 local stateOf = AIMaskData.computeState
 
@@ -65,35 +61,15 @@ local function createAiMasks(context, args, request)
     local photoId = tostring(photo.localIdentifier)
     AIMaskCompute.requireSupported(context.title, photo)
 
-    local fresh = MaskCreate.nothingFoundOr(photoId, "an \"Update AI Settings Errors\"", function()
-        return DevelopSession.run(context, catalog, false, function()
-        local expectedCount = #request.specs
-
-        local change = AIMaskCompute.write(catalog, photo, {
+    local fresh = DevelopSession.run(context, catalog, false, function()
+        return AIMaskCompute.run(context, catalog, photo, {
             description = "Create AI masks",
-            keepsExisting = true,
+            subject = "the " .. request.kind .. " masks",
+            expected = #request.specs,
             build = function(entries) return appendEntries(entries, request) end,
-        })
-
-        local computed, state = AIMaskCompute.waitForAdded(catalog, photo, change, COMPUTE_TIMEOUT_SECONDS)
-        if state == "pending" and #computed == expectedCount then
-            error(string.format("Lightroom has not finished computing the %s mask after %d seconds, so it"
-                .. " was left on photo %s untouched. Do not write to this photo until the masks show in Develop:"
-                .. " writing while Lightroom still computes can freeze Lightroom.",
-                request.kind, COMPUTE_TIMEOUT_SECONDS, photoId), 0)
-        end
-        if #computed ~= expectedCount then
-            AIMaskCompute.rollBack(catalog, photo, change, string.format(
-                "Lightroom kept %d of the %d requested masks on photo %s", #computed, expectedCount, photoId))
-        end
-        if state == "failed" then
-            AIMaskCompute.rollBack(catalog, photo, change, missingMessage(request, photoId, computed))
-        end
-        AIMaskCompute.warnIfRecomputedExisting(context, photo, change)
-        return computed
-        end)
+            failure = function(own) return missingMessage(request, photoId, own) end,
+        }).own
     end)
-    if Reply.isParts(fresh) then return fresh end
 
     local result = resultFor(photoId, request, fresh)
     Log.info(string.format("Created %d %s mask(s) on photo %s", #fresh, request.kind, photoId))

@@ -1,6 +1,8 @@
 local LrTasks = import 'LrTasks'
 
 local Contract = require 'Contract'
+local DevelopCurves = require 'DevelopCurves'
+local JSON = require 'JSON'
 local Reply = require 'Reply'
 
 local DevelopReadBack = {}
@@ -10,6 +12,11 @@ local NAMED_IN_PROBLEM = 10
 
 local KEYS = {}
 for _, key in ipairs(Contract.DEVELOP_KEYS) do KEYS[key.name] = key end
+
+local function valueText(value)
+    if type(value) == "table" then return JSON:encode(value) end
+    return tostring(value)
+end
 
 local function same(key, requested, stored)
     if type(requested) == "number" and type(stored) == "number" then
@@ -36,7 +43,7 @@ end
 
 local function unchanged(settings, before, stored)
     for _, key in ipairs(sortedKeys(settings)) do
-        local was, now = before[key], stored[key]
+        local was, now = DevelopCurves.read(before, key), DevelopCurves.read(stored, key)
         if (was == nil) ~= (now == nil) or (was ~= nil and not same(key, was, now)) then return false end
     end
     return true
@@ -45,7 +52,7 @@ end
 function DevelopReadBack.before(settings)
     local kept = {}
     for key, value in pairs(settings or {}) do
-        if KEYS[key] then kept[key] = value end
+        if KEYS[key] or DevelopCurves.isCompanion(key) then kept[key] = value end
     end
     return kept
 end
@@ -63,7 +70,7 @@ function DevelopReadBack.check(catalog, written)
                 result.untouched = entry.before ~= nil and unchanged(entry.settings, entry.before, stored)
             else
             for _, key in ipairs(sortedKeys(entry.settings)) do
-                local requested, value = entry.settings[key], stored[key]
+                local requested, value = entry.settings[key], DevelopCurves.read(stored, key)
                 if value == nil then
                     result.absent[#result.absent + 1] = key
                 else
@@ -111,7 +118,7 @@ function DevelopReadBack.parts(checked, data, lists)
         for index = 1, math.min(#adjusted, NAMED_IN_PROBLEM) do
             local item = adjusted[index]
             named[#named + 1] = string.format("%s %s on photo %s (written %s)",
-                item.key, tostring(item.stored), item.photo_id, tostring(item.requested))
+                item.key, valueText(item.stored), item.photo_id, valueText(item.requested))
         end
         if #adjusted > NAMED_IN_PROBLEM then named[#named + 1] = string.format("%d more in adjusted", #adjusted - NAMED_IN_PROBLEM) end
         parts.problem = "Lightroom stored other values than written: " .. table.concat(named, ", ")

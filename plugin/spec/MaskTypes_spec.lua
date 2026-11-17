@@ -8,6 +8,6 @@ describe("MaskTypes", function()
             assert.is_string(spec.toolType)
             assert.is_string(spec.subtype)
         end
-        assert.are.same({ toolType = "aiSelection", subtype = "sky" }, MaskTypes.SPECS.sky)
+        assert.are.same({ toolType = "aiSelection", subtype = "sky", label = "Sky", stored = { MaskSubType = 2 } }, MaskTypes.SPECS.sky)
     end)
 end)

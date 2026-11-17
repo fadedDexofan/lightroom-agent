@@ -35,6 +35,17 @@ describe("AIMaskData", function()
         assert.are.equal(settings, AIMaskData.withoutComputedData(settings))
     end)
 
+    it("tells whether a correction holds an AI component with neither a digest nor an error reason", function()
+        local function uncomputed(components) return AIMaskData.uncomputed({ CorrectionMasks = components }) end
+        assert.is_true(uncomputed({ { What = "Mask/Image", ErrorReason = 1 }, { What = "Mask/Image" } }))
+        assert.is_true(uncomputed({ { What = "Mask/Image", MaskDigest = "" } }))
+        assert.is_true(uncomputed({ { What = "Mask/Image", MaskDigest = "a" }, { What = "Mask/Image", ErrorReason = 0 } }))
+        assert.is_false(uncomputed({ { What = "Mask/Image", ErrorReason = 1 }, { What = "Mask/Image", MaskDigest = "a" } }))
+        assert.is_false(uncomputed({ { What = "Mask/Image", MaskDigest = "a" } }))
+        assert.is_false(uncomputed({ { What = "Mask/Gradient" } }))
+        assert.is_false(uncomputed({}))
+    end)
+
     it("calls a correction computed only when every AI mask carries its digest, failed on an error reason and none without AI masks", function()
         local function state(components) return AIMaskData.computeState({ CorrectionMasks = components }) end
         assert.are.equal("computed", state({ { What = "Mask/Image", MaskDigest = "a" } }))

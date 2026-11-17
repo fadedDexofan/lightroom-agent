@@ -8,20 +8,6 @@ local function mask(id, name, tools)
     return { ID = id, Name = name, Hidden = false, Tools = tools }
 end
 
-local function copyMask(source, newId)
-    local tools = {}
-    for index, original in ipairs(source.Tools) do
-        tools[index] = {
-            ID = newId .. "-tool-" .. index,
-            Name = original.Name,
-            Type = original.Type,
-            Hidden = original.Hidden,
-            Inverted = not original.Inverted,
-        }
-    end
-    return mask(newId, source.Name .. " Inverted", tools)
-end
-
 local function setup(opts)
     local photos, masksOf = {}, {}
     for _, spec in ipairs(opts.photos) do
@@ -31,12 +17,9 @@ local function setup(opts)
     end
     local active = photos[1]
     local module = "library"
-    local calls = { modules = {}, selections = {}, goToMasking = 0, invert = {}, duplicate = {}, deleted = {}, setValue = {}, selectedMasks = {}, stopTracking = {} }
-    local copiesMade = 0
+    local calls = { modules = {}, selections = {}, goToMasking = 0, invert = {}, duplicate = {} }
     local listBroken = false
-    local selected = opts.startSelected
-    local values = {}
-    for maskId, sliders in pairs(opts.values or {}) do values[maskId] = sliders end
+    local selected
 
     local function currentMasks() return masksOf[active] end
     local function findCurrent(id)
@@ -52,29 +35,8 @@ local function setup(opts)
             if listBroken then error("mask list unavailable") end
             return currentMasks()
         end,
-        selectMask = function(id)
-            if opts.ignoreSelect then return end
-            selected = id
-            calls.selectedMasks[#calls.selectedMasks + 1] = id
-        end,
+        selectMask = function(id) selected = id end,
         getSelectedMask = function() return selected end,
-        getValue = function(param) return values[selected] and values[selected][param] or 0 end,
-        setValue = function(param, value)
-            calls.setValue[#calls.setValue + 1] = { mask = selected, param = param, value = value }
-            values[selected] = values[selected] or {}
-            local ignored = opts.copyIgnoresValues or (opts.copyIgnoresFirstWrite and #calls.setValue == 1)
-            values[selected][param] = ignored and 0 or value
-            if opts.selectAfterFirstWrite and #calls.setValue == 1 then selected = opts.selectAfterFirstWrite end
-        end,
-        stopTracking = function(commit) calls.stopTracking[#calls.stopTracking + 1] = commit end,
-        deleteMask = function(id)
-            calls.deleted[#calls.deleted + 1] = id
-            if opts.deleteIgnored then return end
-            for index = #currentMasks(), 1, -1 do
-                if currentMasks()[index].ID == id then table.remove(currentMasks(), index) end
-            end
-            if opts.listUnreadableAfterDelete then listBroken = true end
-        end,
         selectMaskTool = function() end,
         goToMasking = function() calls.goToMasking = calls.goToMasking + 1 end,
         invertMask = function(id)
@@ -87,24 +49,7 @@ local function setup(opts)
             for _, t in ipairs(target.Tools) do t.Inverted = not t.Inverted end
             return true
         end,
-        duplicateAndInvertMask = function(id)
-            calls.duplicate[#calls.duplicate + 1] = id
-            if opts.duplicateReturns ~= nil then return opts.duplicateReturns end
-            if opts.duplicateIsIgnored then return true end
-            local source = findCurrent(id)
-            local created = opts.copiesPerCall or 1
-            for _ = 1, created do
-                copiesMade = copiesMade + 1
-                table.insert(currentMasks(), 1, copyMask(source, "copy-" .. copiesMade))
-            end
-            if opts.damageOriginalOnCopy then source.Tools[1].Inverted = not source.Tools[1].Inverted end
-            if opts.removeSourceOnCopy then
-                for index = #currentMasks(), 1, -1 do
-                    if currentMasks()[index].ID == id then table.remove(currentMasks(), index) end
-                end
-            end
-            return true
-        end,
+        duplicateAndInvertMask = function(id) calls.duplicate[#calls.duplicate + 1] = id end,
     }
     for _, name in ipairs(opts.withoutFunctions or {}) do controller[name] = nil end
 
@@ -127,6 +72,7 @@ local function setup(opts)
     catalog.getActiveSources = function() return { "folder" } end
     catalog.setActiveSources = function() end
 
+    helper.admitMaskWrites()
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrApplicationView = view,
@@ -135,9 +81,9 @@ local function setup(opts)
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
     })
-    package.loaded.HandlerMaskInvert = nil
-    package.loaded.DevelopSession = nil
-    package.loaded.MaskSelection = nil
+    for _, name in ipairs({ "HandlerMaskInvert", "DevelopSession", "MaskSelection", "MaskValues", "GuardedMaskWrite" }) do
+        package.loaded[name] = nil
+    end
     local Handler = require 'HandlerMaskInvert'
     return Handler, calls, masksOf, catalog
 end
@@ -268,276 +214,288 @@ describe("HandlerMaskInvert.invertMask in place", function()
     end)
 end)
 
+local Store = require 'fake_mask_store'
+
+local DIGEST = "ABCDEF0123456789ABCDEF0123456789"
+
+local function sourceEntries()
+    return {
+        Store.correction("Subject", {
+            { What = "Mask/Image", MaskActive = true, MaskInverted = false, MaskBlendMode = 0, MaskValue = 1, MaskSubType = 1,
+                MaskID = "C1T1", MaskSyncID = "SC1T1", MaskDigest = DIGEST, MaskName = "Subject 1" },
+        }, {
+            CorrectionID = "m-1", CorrectionSyncID = "CS1", CorrectionReferenceX = 0.3, CorrectionReferenceY = 0.7,
+            CorrectionAmount = 0.8, LocalExposure2012 = 0.3125, LocalHue = 0.1, LocalCurveRefineSaturation = 100,
+            MainCurve = { "0,0", "64,48", "255,255" },
+            LocalPointColors = { "3.000000, 0.500000, 0.500000, 0.250000, 0.000000, 0.000000, 0.500000, 0.000000, 0.333333,"
+                .. " 0.666667, 1.000000, 0.000000, 0.320000, 0.680000, 1.000000, 0.005357, 0.555357, 0.915357, 1.000000" },
+            LocalColorVariance = { "0.300000" },
+        }),
+        Store.correction("Sky", { Store.linearComponent({ MaskID = "C2T1" }) }, { CorrectionID = "m-2", LocalExposure2012 = -0.25 }),
+    }
+end
+
+local function nativeCopy(source, id)
+    local copy = { What = "Correction", CorrectionID = id, CorrectionSyncID = "CS-" .. id, CorrectionName = source.CorrectionName .. " Inverted",
+        CorrectionActive = true, CorrectionAmount = 1, CorrectionReferenceX = 0.5, CorrectionReferenceY = 0.5,
+        LocalExposure2012 = 0, LocalHue = 0, LocalCurveRefineSaturation = 100, CorrectionMasks = Store.clone(source.CorrectionMasks) }
+    for index, component in ipairs(copy.CorrectionMasks) do
+        component.MaskID = id .. "T" .. index
+        component.MaskSyncID = "S" .. id .. "T" .. index
+        if index == 1 then component.MaskInverted = not component.MaskInverted end
+    end
+    return copy
+end
+
+local function copySetup(opts)
+    opts = opts or {}
+    local photo = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+    local store = Store.attach(photo, { entries = opts.entries or sourceEntries(), transformWrite = opts.transformWrite })
+    local catalog = helper.fakeCatalog({ photos = { photo } })
+    Store.trackGates(store, catalog)
+    local module, tool, selected = "library", opts.tool or "loupe", "m-2"
+    local calls = { duplicate = {}, deleted = {}, modules = {}, tools = {} }
+    local unsaved, readsUntilSaved = nil, opts.copySavedAfterReads or 0
+    local listedOnly, duplicated = {}, false
+    local getDevelopSettings = photo.getDevelopSettings
+    photo.getDevelopSettings = function(self)
+        if unsaved then
+            if readsUntilSaved <= 0 then
+                store.entries[#store.entries + 1] = unsaved
+                unsaved = nil
+            end
+            readsUntilSaved = readsUntilSaved - 1
+        end
+        return getDevelopSettings(self)
+    end
+    local controller = {
+        getAllMasks = function()
+            if module ~= "develop" then error("Develop module is not active") end
+            local listed = {}
+            for _, entry in ipairs(store.entries) do
+                if not (duplicated and opts.sourceUnlistedAfterCopy and entry.CorrectionID == "m-1") then
+                    listed[#listed + 1] = entry
+                end
+            end
+            if unsaved then listed[#listed + 1] = unsaved end
+            for _, entry in ipairs(listedOnly) do listed[#listed + 1] = entry end
+            return Store.maskListOf(listed)
+        end,
+        getSelectedMask = function() return selected end,
+        selectMask = function(id) selected = id end,
+        getSelectedTool = function() return tool end,
+        selectTool = function(name)
+            tool = name
+            calls.tools[#calls.tools + 1] = name
+        end,
+        selectMaskTool = function() end,
+        goToMasking = function() tool = "masking" end,
+        invertMask = function() return true end,
+        deleteMask = function(id)
+            calls.deleted[#calls.deleted + 1] = id
+            if opts.deleteIgnored then return end
+            if unsaved and unsaved.CorrectionID == id then unsaved = nil end
+            for index = #store.entries, 1, -1 do
+                if store.entries[index].CorrectionID == id then table.remove(store.entries, index) end
+            end
+        end,
+        duplicateAndInvertMask = function(id)
+            calls.duplicate[#calls.duplicate + 1] = id
+            if opts.duplicateReturns ~= nil then return opts.duplicateReturns end
+            if opts.duplicateIgnored then return true end
+            for _, entry in ipairs(store.entries) do
+                if entry.CorrectionID == id then
+                    unsaved = nativeCopy(entry, "copy-1")
+                    if opts.twoCopies then listedOnly[1] = nativeCopy(entry, "copy-2") end
+                    if opts.damageSource then entry.CorrectionMasks[1].MaskInverted = true end
+                end
+            end
+            if opts.neverSaved then readsUntilSaved = math.huge end
+            duplicated = true
+            selected = "copy-1"
+            return true
+        end,
+    }
+    catalog.getTargetPhoto = function() return photo end
+    catalog.kAllPhotos = "all photographs"
+    catalog.getActiveSources = function() return { "folder" } end
+    catalog.setActiveSources = function() end
+    helper.admitMaskWrites({ refuse = "Mask geometry writes are not certified." })
+    helper.installImport({
+        LrApplication = { activeCatalog = function() return catalog end },
+        LrApplicationView = {
+            getCurrentModuleName = function() return module end,
+            switchToModule = function(name)
+                module = name
+                calls.modules[#calls.modules + 1] = name
+            end,
+        },
+        LrDevelopController = controller,
+        LrSelection = { selectNone = function() end },
+        LrTasks = { pcall = pcall, sleep = function() end },
+        LrLogger = helper.defaultLrLogger(),
+    })
+    for _, name in ipairs({ "HandlerMaskInvert", "DevelopSession", "MaskSelection", "MaskValues", "GuardedMaskWrite" }) do
+        package.loaded[name] = nil
+    end
+    calls.selected = function() return selected end
+    calls.tool = function() return tool end
+    return require 'HandlerMaskInvert', store, calls
+end
+
 describe("HandlerMaskInvert.invertMask as a copy", function()
-    it("returns the new mask id and leaves the original unchanged", function()
-        local Handler, calls, masksOf = setup({ photos = { { id = "1", masks = subjectMasks() } } })
+    it("writes every value of the source onto Lightroom's inverted copy by id and leaves the source as it was", function()
+        local Handler, store, calls = copySetup()
+        local source = Store.clone(store.entries[1])
 
         local r = Handler.invertMask(args({ mode = "copy" }))
 
         assert.are.equal("copy", r.mode)
         assert.are.equal("m-1", r.source_mask_id)
         assert.are.equal("copy-1", r.mask_id)
-        assert.are.same({ "curves", "point_colors", "LocalHue" }, r.not_copied)
-        assert.are.same({
-            id = "copy-1",
-            name = "Subject Inverted",
-            tools = { { id = "copy-1-tool-1", inverted = true }, { id = "copy-1-tool-2", inverted = true } },
-        }, r.mask)
+        assert.is_nil(r.not_copied)
+        assert.are.same({ id = "copy-1", name = "Subject Inverted", tools = { { id = "copy-1T1", inverted = true } } }, r.mask)
         assert.are.same({ "m-1" }, calls.duplicate)
-        assert.are.same({}, calls.invert)
-        local masks = masksOf[next(masksOf)]
-        assert.are.equal(3, #masks)
-        assert.are.equal("m-1", masks[2].ID)
-        assert.is_false(masks[2].Tools[1].Inverted)
-        assert.is_false(masks[2].Tools[2].Inverted)
+        local copy = store.entries[3]
+        assert.are.equal("copy-1", copy.CorrectionID)
+        assert.are.equal("CS-copy-1", copy.CorrectionSyncID)
+        assert.are.equal("Subject Inverted", copy.CorrectionName)
+        assert.is_true(copy.CorrectionMasks[1].MaskInverted)
+        assert.are.equal("copy-1T1", copy.CorrectionMasks[1].MaskID)
+        assert.are.same({ 0.5, 0.5 }, { copy.CorrectionReferenceX, copy.CorrectionReferenceY })
+        for _, key in ipairs({ "CorrectionAmount", "LocalExposure2012", "LocalHue", "MainCurve", "LocalPointColors",
+            "LocalColorVariance", "LocalCurveRefineSaturation" }) do
+            assert.are.same(source[key], copy[key])
+        end
+        assert.are.same(source, store.entries[1])
+        assert.are.equal(1, store.attempts)
     end)
 
-    it("copies the local adjustments of the original, which Lightroom's duplicate leaves at 0", function()
-        local Handler, calls = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            values = { ["m-1"] = { local_Exposure = 1.25, local_Contrast = 10 } },
-        })
-
-        local r = Handler.invertMask(args({ mode = "copy" }))
-
-        assert.are.equal(2, r.adjustments_copied)
-        assert.are.same({
-            { mask = "copy-1", param = "local_Exposure", value = 1.25 },
-            { mask = "copy-1", param = "local_Contrast", value = 10 },
-        }, calls.setValue)
-    end)
-
-    it("copies local colour grading and glow too", function()
-        local Handler, calls = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            values = { ["m-1"] = { local_colorgradeMidtoneHue = 200, local_glow = 25 } },
-        })
-
-        local r = Handler.invertMask(args({ mode = "copy" }))
-
-        assert.are.equal(2, r.adjustments_copied)
-        assert.are.same({
-            { mask = "copy-1", param = "local_colorgradeMidtoneHue", value = 200 },
-            { mask = "copy-1", param = "local_glow", value = 25 },
-        }, calls.setValue)
-    end)
-
-    it("commits the copied adjustments to the photo before returning", function()
-        local Handler, calls = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            values = { ["m-1"] = { local_Exposure = 1.25 } },
-        })
+    it("removes a value the copy holds that the source does not", function()
+        local entries = sourceEntries()
+        entries[1].LocalHue = nil
+        local Handler, store = copySetup({ entries = entries })
 
         Handler.invertMask(args({ mode = "copy" }))
 
-        assert.are.same({ true }, calls.stopTracking)
+        assert.is_nil(store.entries[3].LocalHue)
     end)
 
-    it("does not force a commit when nothing was copied", function()
-        local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } } })
-
-        Handler.invertMask(args({ mode = "copy" }))
-
-        assert.are.same({}, calls.stopTracking)
-    end)
-
-    it("writes nothing to the copy when the original has no adjustments", function()
-        local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } } })
+    it("waits until the copy is in the saved settings before writing to it", function()
+        local Handler, store = copySetup({ copySavedAfterReads = 3 })
 
         local r = Handler.invertMask(args({ mode = "copy" }))
 
-        assert.are.equal(0, r.adjustments_copied)
-        assert.are.same({}, calls.setValue)
+        assert.are.equal("copy-1", r.mask_id)
+        assert.are.equal(0.3125, store.entries[3].LocalExposure2012)
     end)
 
-    it("retries a copied adjustment Lightroom ignored once, as set_mask_adjustments does", function()
-        local Handler, calls = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            values = { ["m-1"] = { local_Exposure = 1.25 } },
-            copyIgnoresFirstWrite = true,
-        })
+    it("removes the copy and refuses when the copy never reaches the saved settings", function()
+        local Handler, store, calls = copySetup({ neverSaved = true })
 
-        local r = Handler.invertMask(args({ mode = "copy" }))
+        local refusal = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy" })) end)
 
-        assert.are.equal(1, r.adjustments_copied)
-        assert.are.same({
-            { mask = "copy-1", param = "local_Exposure", value = 1.25 },
-            { mask = "copy-1", param = "local_Exposure", value = 1.25 },
-        }, calls.setValue)
-    end)
-
-    it("removes the copy and fails when Lightroom does not keep the copied adjustments", function()
-        local Handler, calls, masksOf = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            values = { ["m-1"] = { local_Exposure = 1.25 } },
-            copyIgnoresValues = true,
-        })
-
-        local err = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.truthy(err:find("did not keep local_Exposure 1.25", 1, true))
-        assert.truthy(err:find("the copy was removed", 1, true))
+        assert.matches("Lightroom did not save the inverted copy copy-1", refusal, 1, true)
+        assert.matches("the copy was removed", refusal, 1, true)
         assert.are.same({ "copy-1" }, calls.deleted)
-        assert.are.equal(2, #masksOf[next(masksOf)])
+        assert.are.equal(2, #store.entries)
+    end)
+
+    it("removes the copy and refuses when Lightroom does not keep the copied values", function()
+        local Handler, store, calls = copySetup({
+            transformWrite = function(stored, writeNumber)
+                if writeNumber == 1 then stored[3].LocalExposure2012 = 0 end
+                return stored
+            end,
+        })
+
+        local refusal = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy" })) end)
+
+        assert.matches("the copy was removed", refusal, 1, true)
+        assert.are.same({ "copy-1" }, calls.deleted)
+        assert.are.equal(2, #store.entries)
+    end)
+
+    it("puts back the tool and the selected mask after a copy made from the loupe", function()
+        local Handler, _, calls = copySetup({ tool = "loupe" })
+
+        Handler.invertMask(args({ mode = "copy" }))
+
+        assert.are.equal("loupe", calls.tool())
+        assert.are.equal("m-2", calls.selected())
     end)
 
     for _, case in ipairs({
-        {
-            fake = "damageOriginalOnCopy", deleted = { "copy-1" },
-            names = "the copy was removed, but Lightroom changed the source mask m-1 on photo 1",
-        },
-        {
-            fake = "removeSourceOnCopy", deleted = {},
-            names = "did not list every mask on the photo, so the copy copy-1 may still be on the photo: call list_masks",
-        },
-        {
-            fake = "listUnreadableAfterDelete", deleted = { "copy-1" },
-            names = "did not list every mask on the photo, so the copy copy-1 may still be on the photo: call list_masks",
-        },
+        { what = "Lightroom refuses the duplication", opts = { duplicateReturns = false },
+          text = "Lightroom refused duplicateAndInvertMask on mask m-1" },
+        { what = "no new mask appears", opts = { duplicateIgnored = true }, text = "did not create an inverted copy of mask m-1" },
     }) do
-        it("answers unknown when the copy fails and its removal leaves the masks unconfirmed (" .. case.fake .. ")", function()
-            local Handler, calls = setup({
-                photos = { { id = "1", masks = subjectMasks() } },
-                values = { ["m-1"] = { local_Exposure = 1.25 } },
-                copyIgnoresValues = true,
-                [case.fake] = true,
-            })
+        it("answers unknown when " .. case.what, function()
+            local Handler, store = copySetup(case.opts)
 
-            local err = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" }), helper.requestContext()) end)
+            local message = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
 
-            assert.truthy(err:find(case.names, 1, true), err)
+            assert.matches(case.text, message, 1, true)
+            assert.are.equal(0, store.attempts)
+        end)
+    end
+
+    it("returns the copy and warns when Lightroom changed the source while copying", function()
+        local Handler = copySetup({ damageSource = true })
+        local context = helper.requestContext()
+
+        local r = Handler.invertMask(args({ mode = "copy" }), context)
+
+        assert.are.equal("copy-1", r.mask_id)
+        assert.are.equal(1, #context.warnings)
+        assert.truthy(context.warnings[1]:find("changed the source mask m-1", 1, true))
+    end)
+
+    local function keptNothing(stored, writeNumber)
+        stored[#stored].LocalTexture = 0.5 * writeNumber
+        return stored
+    end
+
+    for _, case in ipairs({
+        { what = "the restore after a failed copy is not confirmed", opts = { transformWrite = keptNothing },
+          texts = { "could not be confirmed restored", "the copy was removed: read the masks with list_masks" },
+          deleted = { "copy-1" } },
+        { what = "Lightroom still lists the copy after deleting it", opts = { neverSaved = true, deleteIgnored = true },
+          texts = { "Lightroom did not save the inverted copy copy-1", "copy-1" }, deleted = { "copy-1" } },
+        { what = "the copy fails after Lightroom changed the source", opts = { neverSaved = true, damageSource = true },
+          texts = { "the copy was removed, but Lightroom changed the source mask m-1" }, deleted = { "copy-1" } },
+        { what = "Lightroom made two new masks", opts = { twoCopies = true },
+          texts = { "Lightroom created 2 new masks on photo 1 while copying mask m-1; cannot tell which is the copy" },
+          deleted = {} },
+    }) do
+        it("answers unknown when " .. case.what, function()
+            local Handler, _, calls = copySetup(case.opts)
+
+            local message = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
+
+            for _, text in ipairs(case.texts) do assert.matches(text, message, 1, true) end
             assert.are.same(case.deleted, calls.deleted)
         end)
     end
 
-    it("answers unknown and names the copy when Lightroom still lists it after the delete", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            values = { ["m-1"] = { local_Exposure = 1.25 } },
-            copyIgnoresValues = true,
-            deleteIgnored = true,
-        })
-
-        local err = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.is_nil(err:find("was removed", 1, true))
-        assert.truthy(err:find("could not remove the copy copy-1 (still listed: copy-1)", 1, true), err)
-    end)
-
-    it("removes the copy and answers unknown, writing nothing into the mask selected while copying", function()
-        local Handler, calls, masksOf = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            values = { ["m-1"] = { local_Exposure = 1.25, local_Contrast = 10 } },
-            selectAfterFirstWrite = "m-2",
-        })
-
-        local err = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.are.same({ { mask = "copy-1", param = "local_Exposure", value = 1.25 } }, calls.setValue)
-        assert.are.same({ "copy-1" }, calls.deleted)
-        assert.are.equal(2, #masksOf[next(masksOf)])
-        assert.are.equal("Lightroom does not copy the local adjustments to an inverted copy and they could not be"
-            .. " copied (Another mask became selected while writing on the copy); the copy was removed, but written"
-            .. " before the move: local_Exposure; read the masks with list_masks before retrying", err)
-    end)
-
-    it("selects the previously selected mask again after copying", function()
-        local Handler, calls = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            startSelected = "m-2",
-        })
-
-        Handler.invertMask(args({ mode = "copy", mask_id = "m-1" }))
-
-        assert.are.equal("m-2", calls.selectedMasks[#calls.selectedMasks])
-    end)
-
-    it("picks the copy of the requested mask when other masks exist", function()
-        local Handler = setup({ photos = { { id = "1", masks = subjectMasks() } } })
-
-        local r = Handler.invertMask(args({ mode = "copy", mask_id = "m-2" }))
-
-        assert.are.equal("m-2", r.source_mask_id)
-        assert.are.equal("Sky Inverted", r.mask.name)
-    end)
-
-    it("errors for an unknown mask id without duplicating anything", function()
-        local Handler, calls, masksOf = setup({ photos = { { id = "1", masks = subjectMasks() } } })
-
-        local err = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy", mask_id = "nope" })) end)
-
-        assert.truthy(err:find("Mask not found on photo 1: nope", 1, true))
-        assert.are.same({}, calls.duplicate)
-        assert.are.equal(2, #masksOf[next(masksOf)])
-    end)
-
-    it("refuses without duplicating anything when Lightroom does not select the mask", function()
-        local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } }, ignoreSelect = true })
-
-        local err = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.truthy(err:find("Could not select mask", 1, true))
-        assert.are.same({}, calls.duplicate)
-    end)
-
-    it("errors when Lightroom says the duplication failed", function()
-        local Handler = setup({ photos = { { id = "1", masks = subjectMasks() } }, duplicateReturns = false })
-
-        local err = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.truthy(err:find("Lightroom refused duplicateAndInvertMask on mask m-1", 1, true))
-    end)
-
-    it("errors when no new mask appears", function()
-        local Handler, calls = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            duplicateIsIgnored = true,
-        })
-
-        local err = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.truthy(err:find("did not create an inverted copy of mask m-1", 1, true))
-        assert.are.same({ "develop", "library" }, calls.modules)
-    end)
-
-    it("errors instead of guessing when several new masks appear", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            copiesPerCall = 2,
-        })
-
-        local err = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.truthy(err:find("created 2 new masks", 1, true))
-        assert.truthy(err:find("cannot tell which is the copy", 1, true))
-    end)
-
-    it("returns the copy and warns that the source changed when the original looks changed afterwards", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            damageOriginalOnCopy = true,
-        })
+    it("returns the copy and warns when Lightroom no longer lists the source after copying", function()
+        local Handler = copySetup({ sourceUnlistedAfterCopy = true })
         local context = helper.requestContext()
 
         local r = Handler.invertMask(args({ mode = "copy" }), context)
 
         assert.are.equal("copy-1", r.mask_id)
         assert.are.equal(1, #context.warnings)
-        assert.is_truthy(context.warnings[1]:find("changed the source mask", 1, true))
+        assert.truthy(context.warnings[1]:find("no longer lists the source mask m-1", 1, true))
     end)
 
-    it("returns the copy and warns when Lightroom no longer lists the source mask afterwards", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = subjectMasks() } },
-            removeSourceOnCopy = true,
-        })
-        local context = helper.requestContext()
+    it("refuses a source that is not in the saved settings without duplicating anything", function()
+        local Handler, _, calls = copySetup()
 
-        local r = Handler.invertMask(args({ mode = "copy" }), context)
+        local refusal = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy", mask_id = "m-9" })) end)
 
-        assert.are.equal("copy-1", r.mask_id)
-        assert.are.equal(1, #context.warnings)
-        assert.is_truthy(context.warnings[1]:find("no longer lists the source mask m-1", 1, true), context.warnings[1])
+        assert.matches("Mask m-9 is not in the saved settings of photo 1", refusal, 1, true)
+        assert.are.same({}, calls.duplicate)
     end)
 end)
 
@@ -589,21 +547,5 @@ describe("HandlerMaskInvert.invertMask arguments", function()
 
         assert.are.equal(0, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideReadAccess())
-    end)
-end)
-
-describe("a local slider added to the table", function()
-    it("is copied by invert_mask copy mode", function()
-        helper.withFixtureSlider(function()
-            local Handler, calls = setup({
-                photos = { { id = "1", masks = subjectMasks() } },
-                values = { ["m-1"] = { local_Fixture = 3 } },
-            })
-
-            local r = Handler.invertMask(args({ mode = "copy" }))
-
-            assert.are.equal(1, r.adjustments_copied)
-            assert.are.same({ { mask = "copy-1", param = "local_Fixture", value = 3 } }, calls.setValue)
-        end)
     end)
 end)

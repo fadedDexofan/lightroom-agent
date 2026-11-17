@@ -64,29 +64,29 @@ export function describeSizes(before, after) {
   return { before: `${before.w}x${before.h}`, after: `${after.w}x${after.h}` };
 }
 
-export async function fetchStablePixels(session, photoId, { size = 864, tries = 8, pauseMs = 1500 } = {}) {
+export async function fetchStablePixels(session, photoId, { size = 864, tries = 8, pauseMs = 1500, fetch = fetchPixels } = {}) {
   let previous = null;
   for (let attempt = 0; attempt < tries; attempt++) {
-    const current = await fetchPixels(session, photoId, size);
-    if (
-      previous &&
-      previous.w === current.w &&
-      previous.h === current.h &&
-      maxLuminanceDifference(previous, current) < STABLE_PIXEL_TOLERANCE
-    ) {
-      return current;
-    }
+    const current = await fetch(session, photoId, size);
+    if (previous && sameImage(previous, current)) return current;
     previous = current;
     await sleep(pauseMs);
   }
   throw new Error(`preview of ${photoId} did not stabilise in ${tries} fetches`);
 }
 
-export async function measureChange(session, photoId, applyChange, { size = 864, settleMs = SETTLE_MS } = {}) {
-  const before = await fetchStablePixels(session, photoId, { size });
+const sameImage = (a, b) => a.w === b.w && a.h === b.h && maxLuminanceDifference(a, b) < STABLE_PIXEL_TOLERANCE;
+
+export async function measureChange(session, photoId, applyChange, { size = 864, settleMs = SETTLE_MS, pauseMs = 1500, fetch = fetchPixels } = {}) {
+  const before = await fetchStablePixels(session, photoId, { size, pauseMs, fetch });
   await applyChange();
-  await sleep(settleMs);
-  const after = await fetchStablePixels(session, photoId, { size });
+  const deadline = Date.now() + settleMs;
+  let current = await fetch(session, photoId, size);
+  while (Date.now() < deadline && sameImage(current, before)) {
+    await sleep(Math.min(pauseMs, Math.max(0, deadline - Date.now())));
+    current = await fetch(session, photoId, size);
+  }
+  const after = await fetchStablePixels(session, photoId, { size, pauseMs, fetch });
   return { before, after };
 }
 

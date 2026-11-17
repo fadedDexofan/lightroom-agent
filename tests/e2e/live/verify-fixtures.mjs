@@ -8,6 +8,7 @@ import {
   CHART80_LAYOUT,
   MARKER_ORIENTATIONS,
   RAMP256_LAYOUT,
+  FLAT_FIELD,
   STACK_CARDS,
   chart80Patches,
   pixelAt,
@@ -61,7 +62,7 @@ function checkCheckerboard(fileName) {
 
 checkCheckerboard("checkerboard.png");
 
-for (const card of STACK_CARDS) {
+for (const card of [...STACK_CARDS, FLAT_FIELD]) {
   const filePath = path.join(GENERATED_DIR, `${card.key}.png`);
   if (!fs.existsSync(filePath)) {
     problems.push(`${card.key}.png: missing, run generate-fixtures.mjs`);

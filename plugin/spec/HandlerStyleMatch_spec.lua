@@ -43,7 +43,7 @@ describe('reference style matching', function()
             LrDate = { currentTime = function() return 123 end },
             LrTasks = { pcall = pcall, sleep = function() end }, LrLogger = helper.defaultLrLogger(),
             LrDevelopController = {}, LrFileUtils = {}, LrPathUtils = {},
-            LrApplicationView = {}, LrSelection = {},
+            LrApplicationView = { getCurrentModuleName = function() return 'library' end }, LrSelection = {},
         })
         handler = require 'HandlerDevelop'
     end)
@@ -68,14 +68,23 @@ describe('reference style matching', function()
         end)
         package.loaded.Contract = contract
         assert.is_true(ok, tostring(err))
-        assert.same({ Exposure2012 = 0.5, Contrast2012 = 20, ToneCurvePV2012 = { 0, 0, 255, 255 }, FixtureLook = 3 },
-            applied['2'])
+        assert.same({ Exposure2012 = 0.5, Contrast2012 = 20, ToneCurvePV2012 = { 0, 0, 255, 255 },
+            ExtendedToneCurvePV2012 = { 0, 0, 255, 255 }, FixtureLook = 3 }, applied['2'])
+    end)
+
+    it('transfers the reference curve from its Extended field into both fields of each target', function()
+        local long = { 0, 0, 13, 15, 27, 31, 40, 46, 54, 61, 67, 76, 81, 91, 94, 105, 107, 119, 121, 133, 134, 146, 148, 160, 161, 172, 174, 186, 188, 199, 201, 212, 214, 226, 228, 238, 241, 249, 255, 255 }
+        reference:getDevelopSettings().ExtendedToneCurvePV2012 = long
+        handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2' } })
+        assert.same(long, applied['2'].ToneCurvePV2012)
+        assert.same(long, applied['2'].ExtendedToneCurvePV2012)
     end)
 
     it('snapshots before applying global style and counts changed values', function()
         local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3' } })
         assert.same({ 'snapshot:2', 'apply:2', 'snapshot:3', 'apply:3' }, events)
-        assert.same({ Exposure2012 = 0.5, Contrast2012 = 20, ToneCurvePV2012 = { 0, 0, 255, 255 } }, applied['2'])
+        assert.same({ Exposure2012 = 0.5, Contrast2012 = 20, ToneCurvePV2012 = { 0, 0, 255, 255 },
+            ExtendedToneCurvePV2012 = { 0, 0, 255, 255 } }, applied['2'])
         assert.equals(2, result.data.matched)
         assert.equals(2, result.data.results[1].settings_changed)
         assert.equals('2-snapshot', result.data.results[1].snapshot.id)
@@ -204,7 +213,8 @@ describe('reference style matching within the budget', function()
             LrApplication = { activeCatalog = function() return catalog end },
             LrDate = { currentTime = function() return 123 end },
             LrTasks = { pcall = pcall, sleep = function() end }, LrLogger = helper.defaultLrLogger(),
-            LrDevelopController = {}, LrFileUtils = {}, LrPathUtils = {}, LrApplicationView = {}, LrSelection = {},
+            LrDevelopController = {}, LrFileUtils = {}, LrPathUtils = {}, LrSelection = {},
+            LrApplicationView = { getCurrentModuleName = function() return 'library' end },
         })
         for _, name in ipairs({ 'HandlerDevelop', 'HandlerSnapshots', 'DevelopSession', 'DevelopReadBack' }) do package.loaded[name] = nil end
         local asked = 0

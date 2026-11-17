@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { developHistory } from "./lib/catalog-db.mjs";
+import { developHistory, pollCatalog } from "./lib/catalog-db.mjs";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 import { fetchStablePixels } from "./lib/preview.mjs";
 import { createReport } from "./lib/proof.mjs";
@@ -13,7 +13,6 @@ const TONE_AND_GEOMETRY = {
 const CROP = { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 };
 const GLOBAL_KEYS = [...Object.keys(TONE_AND_GEOMETRY), "CropLeft", "CropTop", "CropRight", "CropBottom", "CropAngle"];
 const VOLATILE = new Set(["CorrectionID", "MaskID", "MaskSyncID", "MaskDigest", "InputDigest", "LocalInputDigest"]);
-const CATALOG_FLUSH_MS = 3000;
 
 const report = createReport("AI mask order in a full copy against a mask made after the settings, and a full copy from a maskless source (proof t, C31 block 3b, N4)");
 const { session, marker, catalogPath } = await openLiveSession();
@@ -81,14 +80,15 @@ async function storedMaskKey(photoId) {
 async function dryRunFromMaskless(source, masked, plain) {
   const historyBefore = [masked, plain].map((id) => developHistory(catalogPath, id).length);
   const reply = await data("copy_develop_settings", { source_id: source, target_ids: [masked, plain], dry_run: true });
-  await new Promise((resolve) => setTimeout(resolve, CATALOG_FLUSH_MS));
+  const lengths = () => [masked, plain].map((id) => developHistory(catalogPath, id).length);
+  const historyAfter = await pollCatalog(lengths, (after) => after.some((length, index) => length !== historyBefore[index]));
   const changesOf = (id) => [(reply.details ?? []).find((detail) => detail.id === id)?.changes ?? []].flat();
   const maskChange = (id) => changesOf(id).find((change) => change.key === "MaskGroupBasedCorrections") ?? null;
   return {
     reply,
     masked: maskChange(masked),
     plain: maskChange(plain),
-    history_added: [masked, plain].map((id, index) => developHistory(catalogPath, id).length - historyBefore[index]),
+    history_added: historyAfter.map((length, index) => length - historyBefore[index]),
     masks_after: await maskCount(masked),
   };
 }
@@ -96,8 +96,7 @@ async function dryRunFromMaskless(source, masked, plain) {
 async function copyFromMaskless(source, target) {
   const historyBefore = developHistory(catalogPath, target);
   const reply = await session.tool("copy_develop_settings", { source_id: source, target_ids: [target] }, { timeoutMs: 300_000 });
-  await new Promise((resolve) => setTimeout(resolve, CATALOG_FLUSH_MS));
-  const historyAfter = developHistory(catalogPath, target);
+  const historyAfter = await pollCatalog(() => developHistory(catalogPath, target), () => false);
   return {
     outcome: reply.outcome,
     error: reply.envelope.error ?? null,

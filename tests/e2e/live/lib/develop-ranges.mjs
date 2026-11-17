@@ -1,13 +1,3 @@
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { REPO_ROOT } from "./paths.mjs";
-
-const keyTable = () => import(pathToFileURL(path.join(REPO_ROOT, "server", "src", "develop-keys.ts")).href);
-
-export async function localKeys() {
-  return (await keyTable()).LOCAL_KEYS;
-}
-
 export function compareRanges(described) {
   const ranges = { compared: [], stale_ranges: [], not_compared: [] };
   for (const entry of described.filter((candidate) => "range" in candidate)) {

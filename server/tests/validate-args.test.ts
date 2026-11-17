@@ -818,8 +818,27 @@ describe('validateToolArgs', () => {
     ['inputs not increasing', [0, 0, 128, 140, 96, 90, 255, 255], 'each curve must start at input 0, end at input 255 and have strictly increasing inputs'],
     ['a first input over 0', [10, 0, 255, 255], 'each curve must start at input 0'],
     ['a last input under 255', [0, 0, 250, 255], 'each curve must start at input 0'],
+    ['17 points', Array.from({ length: 17 }, (_, index) => (index === 16 ? 255 : index * 15)).flatMap((input) => [input, input]), 'curves.green'],
   ])('refuses a set_mask_curves curve with %s before the plug-in sees it', (_case, points, problem) => {
     expect(validateToolArgs('set_mask_curves', { photo_id: 914, mask_id: 'm-1', curves: { green: points } })).toContain(problem);
+  });
+
+  it('takes at most 16 points in a mask curve and in the global point curve', () => {
+    const points = (count: number) => Array.from({ length: count }, (_, index) => {
+      const input = index === count - 1 ? 255 : index * Math.floor(255 / (count - 1));
+      return [input, input];
+    }).flat();
+    expect(validateToolArgs('set_mask_curves', { photo_id: 914, mask_id: 'm-1', curves: { main: points(16) } })).toBeNull();
+    expect(validateToolArgs('set_mask_curves', { photo_id: 914, mask_id: 'm-1', curves: { main: points(17) } })).toContain('curves.main');
+    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: points(16) } })).toBeNull();
+    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: points(17) } })).toContain('ToneCurvePV2012');
+  });
+
+  it('takes a swatch Variance from -1 to 1', () => {
+    const update = (swatch: Record<string, number>) => validateToolArgs('edit_mask_point_colors', { photo_id: 914, mask_id: 'm-1', action: 'update', index: 1, swatch });
+    expect(update({ Variance: 0.3 })).toBeNull();
+    expect(update({ Variance: -1 })).toBeNull();
+    expect(update({ Variance: 1.5 })).toContain('swatch.Variance');
   });
 
   it.each([
@@ -831,6 +850,9 @@ describe('validateToolArgs', () => {
     ['delete with a swatch', { action: 'delete', index: 1, swatch: { SatScale: 0.3 } }, 'delete needs index and no swatch'],
     ['clear with an index', { action: 'clear', index: 1 }, 'clear takes no index or swatch'],
     ['a range missing an edge', { action: 'update', index: 1, swatch: { HueRange: { LowerNone: 0, LowerFull: 0.2, UpperFull: 0.6 } } }, 'UpperNone'],
+    ['update with unordered hue edges', { action: 'update', index: 1, swatch: { HueRange: { LowerNone: 0.6, LowerFull: 0.2, UpperFull: 0.9, UpperNone: 0.4 } } }, 'each swatch range orders LowerNone <= LowerFull <= UpperFull <= UpperNone (Lightroom drops every swatch of the mask otherwise)'],
+    ['update with an inner edge past the outer one', { action: 'update', index: 1, swatch: { LumRange: { LowerNone: 0, LowerFull: 0.5, UpperFull: 0.9, UpperNone: 0.8 } } }, 'each swatch range orders LowerNone <= LowerFull <= UpperFull <= UpperNone (Lightroom drops every swatch of the mask otherwise)'],
+    ['add with unordered saturation edges', { action: 'add', swatch: { SrcHue: 1, SrcSat: 0.4, SrcLum: 0.5, SatRange: { LowerNone: 0.3, LowerFull: 0.2, UpperFull: 0.6, UpperNone: 1 } } }, 'each swatch range orders LowerNone <= LowerFull <= UpperFull <= UpperNone (Lightroom drops every swatch of the mask otherwise)'],
   ])('refuses edit_mask_point_colors %s before the plug-in sees it', (_case, args, problem) => {
     expect(validateToolArgs('edit_mask_point_colors', { photo_id: 914, mask_id: 'm-1', ...args })).toContain(problem);
   });
@@ -844,6 +866,12 @@ describe('validateToolArgs', () => {
       action: 'update',
       index: 2,
       swatch: { SatScale: 0.3, HueRange: { LowerNone: 0, LowerFull: 0.2, UpperFull: 0.6, UpperNone: 1 } },
+    })).toBeNull();
+    expect(validateToolArgs('edit_mask_point_colors', {
+      ...base,
+      action: 'update',
+      index: 1,
+      swatch: { SatRange: { LowerNone: 0.4, LowerFull: 0.4, UpperFull: 0.4, UpperNone: 0.4 } },
     })).toBeNull();
     expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'delete', index: 1 })).toBeNull();
     expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'clear' })).toBeNull();

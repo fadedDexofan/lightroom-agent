@@ -16,12 +16,6 @@ local function idsOf(masks)
     return ids
 end
 
-local function toolIdsOf(m)
-    local ids = {}
-    for _, t in ipairs(m.Tools) do ids[#ids + 1] = t.ID end
-    return ids
-end
-
 local function savedSettingsOf(masks)
     local groups = {}
     for _, m in ipairs(masks) do
@@ -32,126 +26,21 @@ local function savedSettingsOf(masks)
     return { MaskGroupBasedCorrections = groups }
 end
 
-local function copyMasks(masks)
-    local copy = {}
-    for _, m in ipairs(masks) do
-        local tools = {}
-        for _, t in ipairs(m.Tools) do tools[#tools + 1] = t end
-        copy[#copy + 1] = { ID = m.ID, Name = m.Name, Hidden = m.Hidden, Tools = tools }
-    end
-    return copy
-end
-
 local function setup(opts)
-    local photos, masksOf, emptyReadsLeft, frozenSettings = {}, {}, {}, {}
+    local photos, masksOf = {}, {}
     for _, spec in ipairs(opts.photos) do
         local p = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".jpg" })
         photos[#photos + 1] = p
         masksOf[p] = spec.masks or {}
-        emptyReadsLeft[p] = spec.emptyReadsFirst or 0
-        local savedMasks = spec.settingsOnlyMasks or masksOf[p]
-        if opts.neverSaves or spec.settingsOnlyMasks then
-            frozenSettings[p] = savedSettingsOf(copyMasks(savedMasks))
-        end
-        p.getDevelopSettings = function()
-            return frozenSettings[p] or savedSettingsOf(masksOf[p])
-        end
+        p.getDevelopSettings = function() return savedSettingsOf(masksOf[p]) end
     end
-    local active = not opts.nothingSelected and photos[1] or nil
-    local module = "library"
-    local currentTool = opts.initialTool or "loupe"
-    local selectedMaskId
-    local calls = {
-        modules = {}, selections = {}, tools = {}, selectedMasks = {}, deletedMasks = {},
-        deletedTools = {}, deleteAllEmpty = {}, getAllMasks = 0,
-    }
-    local Handler
-
-    local function requireMaskingTool()
-        if module ~= "develop" then error("Develop module is not active") end
-        if currentTool ~= "masking" then error("masking tool is not open") end
-    end
-
-    local function removeMask(list, id)
-        for i, m in ipairs(list) do
-            if m.ID == id then
-                table.remove(list, i)
-                return m
-            end
-        end
-        return nil
-    end
-
-    local controller = {
-        getAllMasks = function()
-            calls.getAllMasks = calls.getAllMasks + 1
-            if module ~= "develop" then error("Develop module is not active") end
-            if emptyReadsLeft[active] > 0 then
-                emptyReadsLeft[active] = emptyReadsLeft[active] - 1
-                return {}
-            end
-            if opts.onGetAllMasks then opts.onGetAllMasks(Handler) end
-            return copyMasks(masksOf[active])
-        end,
-        selectMask = function(id)
-            requireMaskingTool()
-            selectedMaskId = id
-            calls.selectedMasks[#calls.selectedMasks + 1] = id
-        end,
-        selectMaskTool = function() end,
-        selectTool = function(name)
-            currentTool = name
-            calls.tools[#calls.tools + 1] = name
-        end,
-        getSelectedTool = function()
-            if opts.pointColorSubtool and currentTool == "masking" then return "local_point_color" end
-            return currentTool
-        end,
-        deleteMask = function(id)
-            requireMaskingTool()
-            calls.deletedMasks[#calls.deletedMasks + 1] = id
-            if opts.deleteFails then error(opts.deleteFails) end
-            if opts.ignoreDelete then return end
-            removeMask(masksOf[active], id)
-        end,
-        deleteMaskTool = function(id)
-            requireMaskingTool()
-            calls.deletedTools[#calls.deletedTools + 1] = id
-            if opts.ignoreDelete then return end
-            for _, m in ipairs(masksOf[active]) do
-                if m.ID == selectedMaskId then
-                    for i, t in ipairs(m.Tools) do
-                        if t.ID == id then table.remove(m.Tools, i) end
-                    end
-                    if #m.Tools == 0 and not opts.keepEmptyMasks then
-                        removeMask(masksOf[active], m.ID)
-                    end
-                end
-            end
-        end,
-    }
-    if opts.withoutDeleteApi then
-        controller.deleteMask, controller.deleteMaskTool = nil, nil
-    end
-
-    local view = {
-        getCurrentModuleName = function() return module end,
-        switchToModule = function(name)
-            module = name
-            calls.modules[#calls.modules + 1] = name
-        end,
-    }
+    local calls = { modules = {}, selections = {}, deleteAllEmpty = {} }
     local catalog = helper.fakeCatalog({ photos = photos, writeAccessAborts = opts.writeAccessAborts })
     local recordSelection = catalog.setSelectedPhotos
     catalog.setSelectedPhotos = function(self, photo, selected)
         recordSelection(self, photo, selected)
-        active = photo
         calls.selections[#calls.selections + 1] = photo.localIdentifier
     end
-    catalog.getTargetPhoto = function() return active end
-    catalog.kAllPhotos = "all photographs"
-    catalog.getActiveSources = function() return { "folder" } end
-    catalog.setActiveSources = function() end
     if not opts.withoutDeleteAllEmptyMasks then
         local withWriteAccess = catalog.withWriteAccessDo
         local insideWrite = false
@@ -178,287 +67,179 @@ local function setup(opts)
 
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
-        LrApplicationView = view,
-        LrDevelopController = controller,
-        LrSelection = { selectNone = function() active = nil end },
+        LrApplicationView = {
+            getCurrentModuleName = function() return "library" end,
+            switchToModule = function(name) calls.modules[#calls.modules + 1] = name end,
+        },
+        LrDevelopController = {},
+        LrSelection = {},
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerMaskDelete = nil
+    package.loaded.GuardedMaskWrite = nil
     package.loaded.DevelopSession = nil
-    package.loaded.MaskSelection = nil
-    Handler = require 'HandlerMaskDelete'
-    return Handler, calls, catalog, masksOf, photos
+    return require 'HandlerMaskDelete', calls, catalog, masksOf, photos
 end
 
-local function twoPhotosWithMasks()
-    return {
-        { id = "1" },
-        {
-            id = "2",
-            masks = {
-                mask("m-1", { "t-1", "t-2" }),
-                mask("m-2", { "t-3" }),
-                mask("m-3", { "t-4" }),
-            },
+local Store = require 'fake_mask_store'
+
+local function savedSetup(opts)
+    opts = opts or {}
+    local photo = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+    local store = Store.attach(photo, {
+        entries = opts.entries or {
+            Store.correction("A", { Store.linearComponent({ MaskID = "A1" }), Store.radialComponent({ MaskID = "A2" }) },
+                { CorrectionID = "mask-a", LocalExposure2012 = 0.25 }),
+            Store.correction("B", { Store.linearComponent({ MaskID = "B1" }) }, { CorrectionID = "mask-b" }),
+            Store.correction("C", { Store.radialComponent({ MaskID = "C1" }) }, { CorrectionID = "mask-c" }),
         },
-    }
+        transformWrite = opts.transformWrite,
+    })
+    local catalog = helper.fakeCatalog({ photos = { photo }, writeAccessAborts = opts.writeAccessAborts })
+    Store.trackGates(store, catalog)
+    catalog.getTargetPhoto = function() return photo end
+    local modules = {}
+    helper.admitMaskWrites({ refuse = "Mask geometry writes are not certified." })
+    helper.installImport({
+        LrApplication = { activeCatalog = function() return catalog end },
+        LrApplicationView = {
+            getCurrentModuleName = function() return "library" end,
+            switchToModule = function(name) modules[#modules + 1] = name end,
+        },
+        LrDevelopController = {},
+        LrSelection = {},
+        LrTasks = { pcall = pcall, sleep = function() end },
+        LrLogger = helper.defaultLrLogger(),
+    })
+    for _, name in ipairs({ "HandlerMaskDelete", "GuardedMaskWrite", "DevelopSession", "CatalogWrite" }) do
+        package.loaded[name] = nil
+    end
+    return require 'HandlerMaskDelete', store, modules, catalog
 end
 
-describe("HandlerMaskDelete.deleteMasks", function()
-    it("deletes the masks named by mask_ids and keeps the others", function()
-        local Handler, calls, _, masksOf, photos = setup({ photos = twoPhotosWithMasks() })
+local function entryIds(store)
+    local ids = {}
+    for _, entry in ipairs(store.entries) do ids[#ids + 1] = entry.CorrectionID end
+    return ids
+end
 
-        local r = Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1", "m-3" } })
+describe("HandlerMaskDelete.deleteMasks in the saved settings", function()
+    it("removes the masks named by mask_ids and leaves the others byte-identical, without Develop", function()
+        local Handler, store, modules = savedSetup()
+        local kept = Store.clone(store.entries[2])
 
-        assert.are.equal("2", r.photo_id)
-        assert.are.same({ "m-1", "m-3" }, r.deleted_mask_ids)
-        assert.are.same({ "t-1", "t-2", "t-4" }, r.deleted_tool_ids)
+        local r = Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-a", "mask-c" } })
+
+        assert.are.same({ "mask-a", "mask-c" }, r.deleted_mask_ids)
+        assert.are.same({ "A1", "A2", "C1" }, r.deleted_tool_ids)
         assert.are.equal(1, r.remaining_mask_count)
-        assert.are.same({ "m-2" }, idsOf(masksOf[photos[2]]))
-        assert.are.same({ "m-1", "m-3" }, calls.deletedMasks)
+        assert.are.same({ kept }, store.entries)
+        assert.are.same({}, modules)
+        assert.are.equal(1, store.attempts)
     end)
 
-    it("deletes one component tool and keeps its mask when other tools remain", function()
-        local Handler, _, _, masksOf, photos = setup({ photos = twoPhotosWithMasks() })
+    it("removes one component and keeps its mask, every other field and component unchanged", function()
+        local Handler, store = savedSetup()
+        local expected = Store.clone(store.entries[1])
+        table.remove(expected.CorrectionMasks, 1)
 
-        local r = Handler.deleteMasks({ photo_id = "2", tool_ids = { "t-2" } })
+        local r = Handler.deleteMasks({ photo_id = "1", tool_ids = { "A1" } })
 
         assert.are.same({}, r.deleted_mask_ids)
-        assert.are.same({ "t-2" }, r.deleted_tool_ids)
-        assert.are.equal(3, r.remaining_mask_count)
-        assert.are.same({ "t-1" }, toolIdsOf(masksOf[photos[2]][1]))
+        assert.are.same({ "A1" }, r.deleted_tool_ids)
+        assert.are.same(expected, store.entries[1])
+        assert.are.same({ "mask-a", "mask-b", "mask-c" }, entryIds(store))
     end)
 
-    it("removes the mask when its last tool is deleted", function()
-        local Handler, _, _, masksOf, photos = setup({ photos = twoPhotosWithMasks() })
+    it("removes the mask with its last component instead of keeping an empty one", function()
+        local Handler, store = savedSetup()
 
-        local r = Handler.deleteMasks({ photo_id = "2", tool_ids = { "t-1", "t-2", "t-3" } })
+        local r = Handler.deleteMasks({ photo_id = "1", tool_ids = { "B1", "A2" } })
 
-        assert.are.same({ "m-1", "m-2" }, r.deleted_mask_ids)
-        assert.are.same({ "t-1", "t-2", "t-3" }, r.deleted_tool_ids)
-        assert.are.equal(1, r.remaining_mask_count)
-        assert.are.same({ "m-3" }, idsOf(masksOf[photos[2]]))
+        assert.are.same({ "mask-b" }, r.deleted_mask_ids)
+        assert.are.same({ "A2", "B1" }, r.deleted_tool_ids)
+        assert.are.same({ "mask-a", "mask-c" }, entryIds(store))
     end)
 
-    it("deletes the empty mask Lightroom leaves behind after its last tool goes", function()
-        local Handler, calls, _, masksOf, photos = setup({
-            photos = twoPhotosWithMasks(),
-            keepEmptyMasks = true,
-        })
+    it("removes every mask with all=true and leaves no mask list", function()
+        local Handler, store = savedSetup()
 
-        local r = Handler.deleteMasks({ photo_id = "2", tool_ids = { "t-3" } })
+        local r = Handler.deleteMasks({ photo_id = "1", all = true })
 
-        assert.are.same({ "m-2" }, r.deleted_mask_ids)
-        assert.are.same({ "m-2" }, calls.deletedMasks)
-        assert.are.same({ "m-1", "m-3" }, idsOf(masksOf[photos[2]]))
-    end)
-
-    it("deletes every mask with all=true", function()
-        local Handler, _, _, masksOf, photos = setup({ photos = twoPhotosWithMasks() })
-
-        local r = Handler.deleteMasks({ photo_id = "2", all = true })
-
-        assert.are.same({ "m-1", "m-2", "m-3" }, r.deleted_mask_ids)
-        assert.are.same({ "t-1", "t-2", "t-3", "t-4" }, r.deleted_tool_ids)
+        assert.are.same({ "mask-a", "mask-b", "mask-c" }, r.deleted_mask_ids)
         assert.are.equal(0, r.remaining_mask_count)
-        assert.are.same({}, masksOf[photos[2]])
+        assert.are.same({}, store.entries)
     end)
 
-    it("reports nothing deleted for all=true on a photo without masks", function()
-        local Handler, calls = setup({ photos = { { id = "1" } } })
+    it("writes nothing for all=true on a photo without masks", function()
+        local Handler, store = savedSetup({ entries = {} })
 
         local r = Handler.deleteMasks({ photo_id = "1", all = true })
 
         assert.are.same({}, r.deleted_mask_ids)
-        assert.are.same({}, r.deleted_tool_ids)
         assert.are.equal(0, r.remaining_mask_count)
-        assert.are.same({}, calls.deletedMasks)
+        assert.are.equal(0, store.attempts)
     end)
 
-    it("deletes a duplicated mask id once", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks() })
+    it("removes a duplicated mask id once", function()
+        local Handler, store = savedSetup()
 
-        local r = Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-2", "m-2" } })
+        local r = Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b", "mask-b" } })
 
-        assert.are.same({ "m-2" }, r.deleted_mask_ids)
-        assert.are.same({ "m-2" }, calls.deletedMasks)
-    end)
-
-    it("deletes nothing and names every unknown mask id", function()
-        local Handler, calls, _, masksOf, photos = setup({ photos = twoPhotosWithMasks() })
-
-        local err = helper.refusalOf(function()
-            Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1", "nope", "t-1", "also-nope" } })
-        end)
-
-        assert.truthy(err:find("Unknown mask id(s) on photo 2: nope, t-1, also-nope", 1, true))
-        assert.truthy(err:find("nothing was deleted", 1, true))
-        assert.are.same({}, calls.deletedMasks)
-        assert.are.same({ "m-1", "m-2", "m-3" }, idsOf(masksOf[photos[2]]))
-        assert.are.same({ "develop", "library" }, calls.modules)
-    end)
-
-    it("deletes nothing and names every unknown tool id", function()
-        local Handler, calls, _, masksOf, photos = setup({ photos = twoPhotosWithMasks() })
-
-        local err = helper.refusalOf(function()
-            Handler.deleteMasks({ photo_id = "2", tool_ids = { "t-1", "m-2" } })
-        end)
-
-        assert.truthy(err:find("Unknown tool id(s) on photo 2: m-2", 1, true))
-        assert.are.same({}, calls.deletedTools)
-        assert.are.same({}, calls.deletedMasks)
-        assert.are.same({ "t-1", "t-2" }, toolIdsOf(masksOf[photos[2]][1]))
-    end)
-
-    it("accepts a call after a rejected one", function()
-        local Handler = setup({ photos = twoPhotosWithMasks() })
-
-        helper.refusalOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "nope" } }) end)
-        local r = Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } })
-
-        assert.are.same({ "m-1" }, r.deleted_mask_ids)
-    end)
-
-    it("names the photo id when the photo is unknown and never touches Develop", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks() })
-
-        assert.are.equal("404", helper.notFoundOf(function() Handler.deleteMasks({ photo_id = "404", all = true }) end))
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("names the minimum Lightroom version when the delete API is missing", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks(), withoutDeleteApi = true })
-
-        local refusal = helper.refusalOf(function() Handler.deleteMasks({ photo_id = "2", all = true }) end)
-
-        assert.are.equal("delete_masks needs LrDevelopController.deleteMask, which this Lightroom does not offer"
-            .. " (Lightroom Classic 11 or later has it)", refusal)
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("opens the masking tool for the deletion and puts the previous tool back", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks(), initialTool = "crop" })
-
-        Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } })
-
-        assert.are.same({ "masking", "crop" }, calls.tools)
-    end)
-
-    for _, pointColorSubtool in ipairs({ false, true }) do
-        it("leaves the tool alone when the masking tool is already open (local Point Color subtool: "
-            .. tostring(pointColorSubtool) .. ")", function()
-            local Handler, calls = setup({
-                photos = twoPhotosWithMasks(), initialTool = "masking", pointColorSubtool = pointColorSubtool,
-            })
-
-            Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } })
-
-            assert.are.same({ "m-1" }, calls.deletedMasks)
-            assert.are.same({}, calls.tools)
-        end)
-    end
-
-    it("puts back the module and the selection", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks() })
-
-        Handler.deleteMasks({ photo_id = "2", all = true })
-
-        assert.are.same({ "develop", "library" }, calls.modules)
-        assert.are.same({ "2", "1" }, calls.selections)
-    end)
-
-    it("waits until Lightroom reports the masks of a photo that is still loading", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = { mask("m-1", { "t-1" }) }, emptyReadsFirst = 3 } },
-        })
-
-        local r = Handler.deleteMasks({ photo_id = "1", all = true })
-
-        assert.are.same({ "m-1" }, r.deleted_mask_ids)
-    end)
-
-    it("errors instead of reporting success when Lightroom never lists masks the photo has saved", function()
-        local Handler, calls = setup({
-            photos = { { id = "1", settingsOnlyMasks = { mask("m-1", { "t-1" }) } } },
-        })
-
-        local err = helper.refusalOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
-
-        assert.truthy(err:find("Develop lists 0 of the 1 masks in photo 1's saved settings", 1, true))
-        assert.are.same({}, calls.deletedMasks)
-        assert.are.same({ "develop", "library" }, calls.modules)
-    end)
-
-    it("errors and restores the view when Lightroom ignores the deletion", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks(), ignoreDelete = true })
-
-        local err = helper.unknownOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
-
-        assert.truthy(err:find("did not remove the requested masks from photo 2", 1, true))
-        assert.are.same({ "develop", "library" }, calls.modules)
-        assert.are.same({ "2", "1" }, calls.selections)
-    end)
-
-    it("errors when Lightroom shows the deletion but never saves it", function()
-        local Handler = setup({ photos = twoPhotosWithMasks(), neverSaves = true })
-
-        local err = helper.unknownOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
-
-        assert.truthy(err:find("did not save it for photo 2", 1, true))
-    end)
-
-    it("reports the failing call when Lightroom raises while deleting", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks(), deleteFails = "mask is locked" })
-
-        local err = helper.unknownOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
-
-        assert.truthy(err:find("could not delete mask m-1: ", 1, true))
-        assert.truthy(err:find("mask is locked", 1, true))
-        assert.are.same({ "develop", "library" }, calls.modules)
-    end)
-
-    it("rejects a second Develop call while one is running", function()
-        local nested
-        local Handler = setup({
-            photos = twoPhotosWithMasks(),
-            onGetAllMasks = function(handler)
-                if nested == nil then
-                    nested = helper.refusalOf(function() handler.deleteMasks({ photo_id = "2", all = true }) end)
-                end
-            end,
-        })
-
-        Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } })
-
-        assert.truthy(nested:find("delete_masks is already running", 1, true))
+        assert.are.same({ "mask-b" }, r.deleted_mask_ids)
+        assert.are.same({ "mask-a", "mask-c" }, entryIds(store))
     end)
 
     for _, case in ipairs({
-        { name = "a mask", masks = { { Name = "x", Tools = {} } }, names = "mask without an id for photo 1" },
-        { name = "a mask tool", masks = { { ID = "m-1", Name = "x", Tools = { { Type = "brush" } } } },
-            names = "mask tool without an id for photo 1" },
+        { kind = "mask", args = { mask_ids = { "mask-a", "nope", "gone" } }, message = "Unknown mask id(s) on photo 1: nope, gone; nothing was deleted" },
+        { kind = "tool", args = { tool_ids = { "A1", "nope" } }, message = "Unknown tool id(s) on photo 1: nope; nothing was deleted" },
     }) do
-        it("refuses with nothing deleted when " .. case.name .. " has no id", function()
-            local Handler, calls = setup({ photos = { { id = "1", masks = case.masks } } })
+        it("deletes nothing and names every unknown " .. case.kind .. " id", function()
+            local Handler, store = savedSetup()
+            local args = { photo_id = "1" }
+            for key, value in pairs(case.args) do args[key] = value end
 
-            local err = helper.refusalOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
+            local err = helper.refusalOf(function() Handler.deleteMasks(args) end)
 
-            assert.truthy(err:find(case.names, 1, true), err)
-            assert.truthy(err:find("nothing was changed", 1, true), err)
-            assert.are.same({}, calls.deletedMasks)
-            assert.are.same({}, calls.deletedTools)
+            assert.are.equal(case.message, err)
+            assert.are.equal(0, store.attempts)
         end)
     end
 
-    it("never opens a write gate and keeps catalog queries out of the read gate", function()
-        local Handler, _, catalog = setup({ photos = twoPhotosWithMasks() })
+    it("needs no certification, since it constructs nothing", function()
+        local Handler, store = savedSetup()
 
-        Handler.deleteMasks({ photo_id = "2", all = true })
+        Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b" } })
 
-        assert.are.equal(0, catalog.getWriteAccessCount())
-        assert.is_false(catalog.getQueriedInsideReadAccess())
+        assert.are.same({ "mask-a", "mask-c" }, entryIds(store))
+    end)
+
+    it("restores the photo and refuses when Lightroom changes a surviving mask", function()
+        local Handler, store = savedSetup({ transformWrite = function(stored, writeNumber)
+            if writeNumber == 1 then stored[1].LocalExposure2012 = 0.5 end
+            return stored
+        end })
+        local before = Store.clone(store.entries)
+
+        local err = helper.refusalOf(function() Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b" } }) end)
+
+        assert.truthy(err:find("previous masks were restored", 1, true), err)
+        assert.are.same(before, store.entries)
+    end)
+
+    it("refuses with nothing written when the catalog stays busy", function()
+        local Handler, store = savedSetup({ writeAccessAborts = function() return true end })
+
+        local ok = pcall(Handler.deleteMasks, { photo_id = "1", mask_ids = { "mask-b" } })
+
+        assert.is_false(ok)
+        assert.are.equal(0, store.attempts)
+    end)
+
+    it("answers not_found for an unknown photo", function()
+        local Handler = savedSetup()
+        assert.are.equal("404", helper.notFoundOf(function() Handler.deleteMasks({ photo_id = "404", all = true }) end))
     end)
 end)
 
@@ -471,16 +252,6 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
             { id = "4" },
         }
     end
-
-    it("does not require the Develop deletion API for empty-mask deletion", function()
-        local Handler, calls = setup({ photos = photosWithEmptyMasks(), withoutDeleteApi = true })
-
-        local result = Handler.deleteEmptyMasks({ photo_ids = { "1" } })
-
-        assert.are.equal(1, #result.data.changed)
-        assert.are.equal(0, #calls.modules)
-        assert.are.equal(0, #calls.selections)
-    end)
 
     it("deletes empty masks and counts the photos that changed", function()
         local Handler, _, _, masksOf, photos = setup({ photos = photosWithEmptyMasks() })

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-import { developHistory } from "./lib/catalog-db.mjs";
+import { developHistory, pollCatalog } from "./lib/catalog-db.mjs";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 import { createReport } from "./lib/proof.mjs";
 
 const OLDER_VERSION = "Version 5";
-const CATALOG_FLUSH_MS = 3000;
 
 const report = createReport("process version in a full copy (proof v, N5)");
 const { session, marker, catalogPath } = await openLiveSession();
@@ -33,7 +32,7 @@ try {
 
   const historyBefore = developHistory(catalogPath, target);
   const reply = await session.tool("copy_develop_settings", { source_id: source, target_ids: [target] }, { timeoutMs: 300_000 });
-  await new Promise((resolve) => setTimeout(resolve, CATALOG_FLUSH_MS));
+  const historyAfter = await pollCatalog(() => developHistory(catalogPath, target), () => false);
   const after = await processVersion(target);
   const masks = await data("list_masks", { photo_id: target });
   report.check("the full copy is done, the target takes the source's process version and lists the copied sky mask",
@@ -42,7 +41,7 @@ try {
     { reply: reply.envelope, after, masks });
   report.check("the admission under the resulting version, the target's history steps and the source's mask are recorded", true, {
     admission: await data("get_mask_write_admission", { photo_id: target }),
-    history_added: developHistory(catalogPath, target).slice(historyBefore.length),
+    history_added: historyAfter.slice(historyBefore.length),
     source_mask: sky,
   });
   report.check("the refused half (a masked source on an uncertified process version) is recorded as not exercised", true, {

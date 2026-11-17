@@ -6,7 +6,7 @@ local DevelopSession = require 'DevelopSession'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
-local MaskCreationAdjustments = require 'MaskCreationAdjustments'
+local MaskValues = require 'MaskValues'
 local MaskSelection = require 'MaskSelection'
 local Reply = require 'Reply'
 
@@ -25,7 +25,7 @@ local function resultFor(photoId, entries, location, strokesAdded)
     }
 end
 
-local function writeWithBrushCrossCheck(context, catalog, photo, description, build, locationOf, adjustments)
+local function writeWithBrushCrossCheck(context, catalog, photo, description, build, locationOf)
     return DevelopSession.withPhoto(context, catalog, photo, function()
         return GuardedMaskWrite.apply(catalog, photo, {
             description = description,
@@ -34,9 +34,7 @@ local function writeWithBrushCrossCheck(context, catalog, photo, description, bu
                 local location = locationOf()
                 local entry = actual[location.entry]
                 local component = entry.CorrectionMasks[location.component]
-                local problem = MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, BrushStrokes.TOOL_TYPE)
-                if problem then return problem end
-                MaskCreationAdjustments.confirm(catalog, photo, entry.CorrectionID, adjustments)
+                return MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, BrushStrokes.TOOL_TYPE)
             end,
         })
     end)
@@ -46,7 +44,7 @@ local function addBrush(entries, request)
     local component = BrushStrokes.newAggregate(request.strokes)
     if request.maskId == nil then
         entries[#entries + 1] = GuardedMaskWrite.newCorrection(request.name or component.MaskName, { component })
-        MaskCreationAdjustments.write(entries[#entries], request.adjustments)
+        MaskValues.storeAdjustments(entries[#entries], request.adjustments)
         return { entry = #entries, component = 1 }
     end
     local index, entry = GuardedMaskWrite.findCorrection(entries, request.maskId)
@@ -61,7 +59,6 @@ function BrushMaskHandler.createBrushMask(args, context)
     local strokes = BrushStrokes.parseStrokes(args.strokes)
     local maskId = args.mask_id
     local name = args.name
-    local adjustments = MaskCreationAdjustments.parse(args)
     DevelopSession.requireMaskApi("create_brush_mask")
 
     local catalog = LrApplication.activeCatalog()
@@ -74,7 +71,7 @@ function BrushMaskHandler.createBrushMask(args, context)
         strokes = BrushStrokes.toStoredFrame(strokes, frame),
         maskId = maskId,
         name = name,
-        adjustments = adjustments,
+        adjustments = args.adjustments,
     }
     addBrush(GuardedMaskWrite.preflight(catalog, photo), request)
 
@@ -84,7 +81,7 @@ function BrushMaskHandler.createBrushMask(args, context)
             location = addBrush(entries, request)
             return entries
         end,
-        function() return location end, adjustments)
+        function() return location end)
 
     if frame.warning then context:warn(frame.warning) end
     local result = resultFor(photoId, written.entries, location, #strokes)

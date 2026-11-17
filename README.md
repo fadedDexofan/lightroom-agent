@@ -37,7 +37,6 @@ Lets Claude (and other AI assistants) talk to your **Adobe Lightroom Classic** p
 
 > **Works with:** Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, VS Code.
 > **Needs:** Lightroom Classic on macOS or Windows. Nothing else — no programming required.
-> **Other languages:** [繁體中文](README.zh-TW.md)
 
 ---
 
@@ -277,16 +276,16 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `create_brush_mask` | Paint a brush mask from strokes (points in the displayed frame, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` (the `local_*` names) sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
 | `add_brush_strokes` | Paint more strokes into an existing brush by tool id; same guarded write. |
 | `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` (the `local_*` names) sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
-| `delete_masks` | Delete masks or components by id, or all masks, on one `photo_id` (LrC 11+); unknown ids delete nothing; briefly opens Develop. |
+| `delete_masks` | Delete masks or components by id, or all masks, on one `photo_id` in its saved settings, without opening Develop; unknown ids delete nothing, and every other mask must read back unchanged or the photo is put back. |
 | `delete_empty_masks` | Delete masks without components from up to 1000 `photo_ids` without opening Develop or changing selection (LrC 14+). |
-| `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ..., Color Grading `local_colorgrade*` and `local_glow` where Lightroom has them) by mask id; out-of-range values are rejected before anything is written (LrC 11+); briefly opens the photo in Develop. |
-| `get_mask` | Read local adjustments, curves and Point Color in one Develop session; optional `kinds` selects `adjustments`, `curves` or `point_colors` (default all). Returns the kinds Lightroom can read and a named error for each kind whose calls it lacks. |
-| `invert_mask` | Invert a mask by id, in place or as an inverted copy that keeps the original (LrC 11.4+); briefly opens the photo in Develop. |
-| `create_mask` | Create Subject/Sky/Background masks (LrC 11+) with optional adjustments, or People parts/Landscape categories (guarded write, certified Lightroom only) with `type: "people", parts: [...]` or `type: "landscape", categories: [...]`. Returns mask ids; missing AI parts leave no new masks. People/Landscape reject `adjustments`; use `set_mask_adjustments` afterwards. A single person cannot be chosen. |
-| `create_mask_batch` | Add the same Subject, Sky or Background mask with the same adjustments to up to 200 photos, each mask recomputed for its own photo; opens only the first photo in Develop; guarded write, certified Lightroom only. |
-| `set_mask_curves` | Set a mask's local tone curve per channel (main, red, green, blue) by mask id (LrC 12.3+); briefly opens the photo in Develop. |
-| `edit_mask_point_colors` | Add, update, delete or clear a mask's local Point Color swatches by mask id (LrC 13.2+); briefly opens the photo in Develop. |
-| `combine_mask` | Add, subtract or intersect a Subject, Sky or Background component on an existing mask by id and get the component's id (LrC 11+); briefly opens the photo in Develop. |
+| `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ..., Color Grading `local_colorgrade*` and `local_glow` where Lightroom has them) by mask id in the photo's saved settings, without opening Develop; out-of-range values are rejected before anything is written. |
+| `get_mask` | Read a mask's local adjustments, curves and Point Color from the photo's saved settings in one call, without opening Develop; optional `kinds` selects `adjustments`, `curves` or `point_colors` (default all). |
+| `invert_mask` | Invert a mask by id, in place or as an inverted copy that keeps the original and carries every value of the source (LrC 11.4+); briefly opens the photo in Develop and restores the masking tool and the selected mask. |
+| `create_mask` | Create a Subject/Sky/Background mask with optional adjustments, or People parts/Landscape categories with `type: "people", parts: [...]` or `type: "landscape", categories: [...]`, by writing it into the saved settings for Lightroom to compute (guarded write, certified Lightroom only, no Develop). Returns mask ids; nothing found or a missing part leaves no new masks and fails the call. People/Landscape reject `adjustments`; use `set_mask_adjustments` afterwards. A single person cannot be chosen. |
+| `create_mask_batch` | Add the same Subject, Sky or Background mask with the same adjustments to up to 200 photos, each computed for its own photo, without opening Develop; guarded write, certified Lightroom only. |
+| `set_mask_curves` | Set a mask's local tone curve per channel (main, red, green, blue, up to 16 points each) by mask id in the photo's saved settings, without opening Develop. |
+| `edit_mask_point_colors` | Add, update, delete or clear a mask's local Point Color swatches by mask id in the photo's saved settings, without opening Develop. A new swatch gets the ranges Lightroom's own add gives its source color. |
+| `combine_mask` | Add, subtract or intersect a Subject, Sky or Background component on an existing mask by id in its saved settings and get the component's id; a certified write that Lightroom computes, without opening Develop; nothing found fails with the mask put back. |
 
 Full schemas and parameter docs: [`server/src/tool-contracts.ts`](server/src/tool-contracts.ts) (develop keys and local sliders in [`server/src/develop-keys.ts`](server/src/develop-keys.ts)); `lightroom-mcp tools` prints them.
 
@@ -354,9 +353,12 @@ Use a representative photo or virtual copy rather than a master edit:
 
 `set_develop_settings` accepts Lightroom's composite and per-channel point curve
 keys: `ToneCurvePV2012`, `ToneCurvePV2012Red`, `ToneCurvePV2012Green`, and
-`ToneCurvePV2012Blue`. Each value is a flat list of 2 to 32 input/output pairs.
+`ToneCurvePV2012Blue`. Each value is a flat list of 2 to 16 input/output pairs.
 Values are integers from 0 to 255, inputs must be strictly increasing, and each
-curve must start at input 0 and end at input 255.
+curve must start at input 0 and end at input 255. Lightroom renders a channel's
+`Extended` (HDR) curve before its plain one, so a write replaces both, and
+`get_develop_settings` answers the `Extended` curve first. Mask curves follow the
+same rule.
 
 ```json
 {
@@ -378,7 +380,7 @@ This server works with the catalog open in Lightroom Classic on your computer th
 ### Safeguards when changing photos
 
 - Deleting a collection with `delete_collection` keeps its photos in the catalog ([collection handler](plugin/LightroomMCP.lrplugin/HandlerCollections.lua)).
-- Mask tools that write Lightroom's undocumented mask format are admitted only on the live kit's throwaway catalog or after a certification run passed for the running Lightroom build and the photo's process version, and check the format of existing masks before writing. They read the result back and attempt to restore the previous masks if it differs; an unconfirmed restoration is reported as an error. These checks live in [GuardedMaskWrite.lua](plugin/LightroomMCP.lrplugin/GuardedMaskWrite.lua). They apply to those mask writes, not to every edit.
+- Mask tools that write Lightroom's undocumented mask format are admitted only on the live kit's throwaway catalog or after a certification run passed for the running Lightroom build and the photo's process version, and check what they construct or change against the tested format, leaving every other mask as Lightroom stored it. They read the result back (a mask they left alone must come back exactly) and attempt to restore the previous masks if it differs; an unconfirmed restoration is reported as an error. These checks live in [GuardedMaskWrite.lua](plugin/LightroomMCP.lrplugin/GuardedMaskWrite.lua). They apply to those mask writes, not to every edit. Mask value edits (`set_mask_adjustments`, `set_mask_curves`, `edit_mask_point_colors`) construct nothing, so they need no certification: they change only the named fields of a mask Lightroom already saved, read the whole mask list back exactly, and restore the previous masks if anything else differs.
 - Connections require the local token described in [Security](#security), checked by [PluginInfoProvider.lua](plugin/LightroomMCP.lrplugin/PluginInfoProvider.lua).
 
 ### What Lightroom's plug-in SDK does not expose

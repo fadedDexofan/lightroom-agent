@@ -26,6 +26,8 @@ local function fakePreset(name, opts)
     }
 end
 
+local LONG_CURVE = { 0, 0, 13, 15, 27, 31, 40, 46, 54, 61, 67, 76, 81, 91, 94, 105, 107, 119, 121, 133, 134, 146, 148, 160, 161, 172, 174, 186, 188, 199, 201, 212, 214, 226, 228, 238, 241, 249, 255, 255 }
+
 local AI_MASK_SETTINGS = {
     Exposure2012 = 1.0,
     MaskGroupBasedCorrections = {
@@ -424,6 +426,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         assert.are.same({
             Contrast2012 = 12,
             ToneCurvePV2012 = { 0, 0, 64, 58, 255, 255 },
+            ExtendedToneCurvePV2012 = { 0, 0, 64, 58, 255, 255 },
         }, state.pluginPresets[1]:getSetting())
     end)
 
@@ -456,10 +459,22 @@ describe("HandlerDevelop.createDevelopPreset", function()
             settings = { "ToneCurvePV2012" },
         })
 
-        assert.are.same(
-            { ToneCurvePV2012 = { 17, 0, 127.5, 130.2, 255, 240 } },
-            state.pluginPresets[1]:getSetting()
-        )
+        assert.are.same({
+            ToneCurvePV2012 = { 17, 0, 127.5, 130.2, 255, 240 },
+            ExtendedToneCurvePV2012 = { 17, 0, 127.5, 130.2, 255, 240 },
+        }, state.pluginPresets[1]:getSetting())
+    end)
+
+    it("captures a curve from its Extended field first, with the companion", function()
+        local photo = helper.fakePhoto({ id = "7", path = "/raw/source.nef", developSettings = {
+            ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 }, ExtendedToneCurvePV2012 = LONG_CURVE,
+        } })
+        local _, Handler, state = setup({ photos = { photo } })
+
+        Handler.createDevelopPreset({ photo_id = "7", preset_name = "Long v1", settings = { "ToneCurvePV2012" } })
+
+        assert.are.same({ ToneCurvePV2012 = LONG_CURVE, ExtendedToneCurvePV2012 = LONG_CURVE },
+            state.pluginPresets[1]:getSetting())
     end)
 
     it("refuses duplicate names and missing source settings", function()
@@ -647,6 +662,20 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.equal(_G._PLUGIN, p1.getRawMetadata(p1, "__appliedPresetPlugin"))
     end)
 
+    it("applies the preset once to a photo named twice, by id and by path, and names a missing id once", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local _, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "404", "2", "/a.jpg", "1", "404" }, preset_name = "Subject" })
+
+        assert.are.equal(2, r.data.applied)
+        assert.are.equal(2, r.data.ai_updated)
+        assert.are.equal(1, p1.getRawMetadata(p1, "__aiUpdateCalls"))
+        assert.are.same({ "404" }, r.not_found)
+    end)
+
     it("recomputes AI masks on each target after a preset with an AI mask", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
@@ -663,10 +692,13 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.is_false(catalog.getQueriedInsideWriteAccess())
     end)
 
+    local pendingText = "Lightroom has not finished computing the AI masks of photo 1 within 15 s, so nothing more was"
+        .. " written to it. Do not write to this photo until its masks show in Develop: a write while Lightroom still"
+        .. " computes can freeze Lightroom."
     for _, case in ipairs({
-        { aiUpdate = "fail", reason = "Lightroom could not compute the preset's AI masks: AI update failed" },
-        { aiUpdate = "nothing", reason = "Lightroom did not finish computing the preset's AI masks within 15 s" },
-        { aiUpdate = "error", reason = "Lightroom reported an error computing the preset's AI masks" },
+        { aiUpdate = "fail", reason = "Lightroom could not compute the preset's AI masks: AI update failed; " .. pendingText },
+        { aiUpdate = "nothing", reason = pendingText },
+        { aiUpdate = "error", reason = "Lightroom could not compute mask Subject-read-3 on photo 1" },
     }) do
         it("answers unknown for a photo whose AI masks Lightroom did not compute (" .. case.aiUpdate .. ")", function()
             local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = case.aiUpdate })
@@ -685,7 +717,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         end)
     end
 
-    it("answers unknown and stops the batch when reading a photo's masks raises after the preset", function()
+    it("answers unknown for a photo whose masks cannot be read after the preset and goes on with the next", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
@@ -693,7 +725,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local guarded = package.loaded.GuardedMaskWrite
         local readEntries = guarded.readEntries
         guarded.readEntries = function(catalog, photo)
-            if photo.localIdentifier == "1" and photo:getRawMetadata("__appliedPreset") then
+            if photo.localIdentifier == "1" and photo:getRawMetadata("__aiUpdateCalls") then
                 error("Lightroom returned mask data that is not a list")
             end
             return readEntries(catalog, photo)
@@ -701,27 +733,24 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Subject" })
 
-        assert.are.equal(0, r.data.applied)
+        assert.are.equal(1, r.data.applied)
         assert.are.same({ { photo_id = "1", reason = "Lightroom returned mask data that is not a list; the preset was"
             .. " applied, so check the photo's AI masks in Develop before writing to it" } }, r.unknown)
-        assert.are.same({ "2" }, r.remaining)
-        assert.is_nil(p2.getRawMetadata(p2, "__appliedPreset"))
+        assert.is_nil(r.remaining)
     end)
 
-    it("warns that existing AI masks may have changed only on a photo that held them before the preset", function()
+    it("says nothing about an existing AI mask the recompute left as it was", function()
         local held = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok", developSettings = {
-            MaskGroupBasedCorrections = { { CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } } },
+            MaskGroupBasedCorrections = { { CorrectionID = "kept", CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } } },
         } })
-        local plain = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok", developSettings = { Exposure2012 = 0 } })
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
-        local _, Handler = setup({ photos = { held, plain }, folders = { fakeFolder("User", { preset }) } })
+        local _, Handler = setup({ photos = { held }, folders = { fakeFolder("User", { preset }) } })
         local context = helper.requestContext()
 
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Subject" }, context)
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, context)
 
-        assert.are.equal(2, r.data.applied)
-        assert.are.same({ "Photo 1: Lightroom recomputed AI settings for the whole photo, so its existing AI masks may"
-            .. " have changed" }, context.warnings)
+        assert.are.equal(1, r.data.applied)
+        assert.are.same({}, context.warnings)
     end)
 
     it("does not warn about a recompute when the catalog stays busy for Update AI Settings", function()
@@ -746,7 +775,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.same({}, context.warnings)
     end)
 
-    it("judges only the preset's own masks, not a failed AI mask the photo held before", function()
+    it("names an AI mask that was already failed before the preset and does not let it decide", function()
         local held = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok", developSettings = {
             MaskGroupBasedCorrections = {
                 { CorrectionID = "own-mask",
@@ -761,35 +790,10 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         assert.are.equal(1, r.data.applied)
         assert.is_nil(r.unknown)
-        assert.are.same({ "Photo 1: Lightroom recomputed AI settings for the whole photo, so its existing AI masks may"
-            .. " have changed" }, context.warnings)
+        assert.are.same({ "Photo 1: mask own-mask was already failed (ErrorReason 1) before this call" }, context.warnings)
     end)
 
-    it("answers unknown when the recompute fails on a mask the apply changed in place", function()
-        local developSettings = {
-            MaskGroupBasedCorrections = {
-                { CorrectionID = "stored-mask",
-                    CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1, MaskDigest = "earlier" } } },
-            },
-        }
-        local held = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "error", developSettings = developSettings })
-        held.applyDevelopPreset = function(_, applied)
-            local settings = applied:getSetting()
-            developSettings.Exposure2012 = settings.Exposure2012
-            developSettings.MaskGroupBasedCorrections[1].CorrectionMasks =
-                settings.MaskGroupBasedCorrections[1].CorrectionMasks
-        end
-        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
-        local _, Handler = setup({ photos = { held }, folders = { fakeFolder("User", { preset }) } })
-
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, helper.requestContext())
-
-        assert.are.equal(0, r.data.applied)
-        assert.are.same({ { photo_id = "1", reason = "Lightroom reported an error computing the preset's AI masks; the"
-            .. " preset was applied, so check the photo's AI masks in Develop before writing to it" } }, r.unknown)
-    end)
-
-    it("does not judge a mask the apply left unchanged when the recompute changes it", function()
+    it("names, and does not judge, an existing mask the recompute failed: the preset's own entries are new ids", function()
         local developSettings = {
             MaskGroupBasedCorrections = {
                 { CorrectionID = "own-mask", CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } },
@@ -808,42 +812,13 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         end
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
         local _, Handler = setup({ photos = { held }, folders = { fakeFolder("User", { preset }) } })
+        local context = helper.requestContext()
 
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, helper.requestContext())
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, context)
 
         assert.are.equal(1, r.data.applied)
         assert.is_nil(r.unknown)
-    end)
-
-    it("answers unknown when the preset's AI mask shows only after the first read past the apply and fails", function()
-        local held = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "error", developSettings = {
-            MaskGroupBasedCorrections = {
-                { CorrectionID = "own-mask", CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } },
-            },
-        } })
-        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
-        local _, Handler = setup({ photos = { held }, folders = { fakeFolder("User", { preset }) } })
-        local guarded = package.loaded.GuardedMaskWrite
-        local readEntries = guarded.readEntries
-        local beforeApply
-        guarded.readEntries = function(catalog, photo)
-            if not photo:getRawMetadata("__appliedPreset") then
-                beforeApply = readEntries(catalog, photo)
-                return beforeApply
-            end
-            if beforeApply then
-                local lagging = beforeApply
-                beforeApply = nil
-                return deepCopy(lagging)
-            end
-            return readEntries(catalog, photo)
-        end
-
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, helper.requestContext())
-
-        assert.are.equal(0, r.data.applied)
-        assert.are.same({ { photo_id = "1", reason = "Lightroom reported an error computing the preset's AI masks; the"
-            .. " preset was applied, so check the photo's AI masks in Develop before writing to it" } }, r.unknown)
+        assert.are.same({ "Photo 1: Lightroom's photo-wide AI recompute changed mask own-mask; check it" }, context.warnings)
     end)
 
     it("does not touch AI settings for a preset without AI masks", function()
@@ -1074,6 +1049,25 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.is_nil(applied.Contrast2012)
     end)
 
+    for _, case in ipairs({
+        { what = "a named curve", settings = { "ToneCurvePV2012" } },
+        { what = "the full copy", settings = nil },
+    }) do
+        it("copies the source's Extended curve into both fields of the target with " .. case.what, function()
+            local source = helper.fakePhoto({ id = "20", path = "/s.jpg", developSettings = {
+                ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 }, ExtendedToneCurvePV2012 = LONG_CURVE,
+            } })
+            local target = helper.fakePhoto({ id = "21", path = "/t.jpg" })
+            local _, Handler = setup({ photos = { source, target } })
+
+            Handler.copyDevelopSettings({ source_id = "20", target_ids = { "21" }, settings = case.settings })
+
+            local applied = target.getRawMetadata(target, "__appliedSettings")
+            assert.are.same(LONG_CURVE, applied.ToneCurvePV2012)
+            assert.are.same(LONG_CURVE, applied.ExtendedToneCurvePV2012)
+        end)
+    end
+
     it("copies HSL settings by whitelist", function()
         local source = helper.fakePhoto({
             id = "22", path = "/s.jpg",
@@ -1100,6 +1094,19 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         }, target.getRawMetadata(target, "__appliedSettings"))
     end)
 
+    it("copies once to a target named twice, by id and by path, and names a missing id once", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+        local _, Handler = setup({ photos = { source, t1 } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "404", "/t1.jpg", "11", "404" } })
+
+        assert.are.equal(1, r.data.copied)
+        assert.are.same({ "11" }, r.data.computed)
+        assert.are.equal(1, t1.getRawMetadata(t1, "__aiUpdateCalls"))
+        assert.are.same({ "404" }, r.not_found)
+    end)
+
     it("recomputes AI masks on each target when the copy carries them", function()
         local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
@@ -1120,7 +1127,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.is_false(catalog.getQueriedInsideWriteAccess())
     end)
 
-    it("fails a target whose AI mask Lightroom did not compute whole, and reports the others as computed", function()
+    it("answers unknown for a target still computing at the limit and writes nothing more to it", function()
         local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
         local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "nothing", developSettings = { Exposure2012 = 0 } })
@@ -1128,10 +1135,27 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
 
-        assert.are.equal(1, r.data.copied)
         assert.are.same({ "11" }, r.data.computed)
+        assert.is_nil(r.failed)
+        assert.are.equal("12", r.unknown[1].photo_id)
+        assert.truthy(r.unknown[1].reason:find("has not finished computing the AI masks of photo 12", 1, true),
+            r.unknown[1].reason)
+        local kept = t2:getDevelopSettings()
+        assert.are.equal(0, kept.Exposure2012)
+        assert.are.equal(1, #kept.MaskGroupBasedCorrections)
+    end)
+
+    it("fails a target whose copied AI mask Lightroom could not compute, restoring its masks and writing none of the settings", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+        local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "error", developSettings = { Exposure2012 = 0 } })
+        local _, Handler = setup({ photos = { source, t1, t2 } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+
+        assert.are.equal(1, r.data.copied)
         assert.are.equal("12", r.failed[1].photo_id)
-        assert.truthy(r.failed[1].reason:find("did not finish computing", 1, true), r.failed[1].reason)
+        assert.truthy(r.failed[1].reason:find("Lightroom could not compute", 1, true), r.failed[1].reason)
         local kept = t2:getDevelopSettings()
         assert.are.equal(0, kept.Exposure2012)
         assert.are.same({}, kept.MaskGroupBasedCorrections or {})
@@ -1173,7 +1197,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.are.equal("mask-digest", sourceSettings.MaskGroupBasedCorrections[1].CorrectionMasks[1].MaskDigest)
     end)
 
-    it("fails a target whose AI mask recompute raises whole", function()
+    it("answers unknown for a target whose AI mask recompute raises and leaves its masks uncomputed, removing nothing", function()
         local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
         local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "fail" })
@@ -1181,11 +1205,53 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
 
-        assert.are.equal(1, r.data.copied)
         assert.are.same({ "11" }, r.data.computed)
-        assert.are.equal("12", r.failed[1].photo_id)
-        assert.truthy(r.failed[1].reason:find("AI update failed", 1, true))
-        assert.is_nil(t2:getDevelopSettings().Exposure2012)
+        assert.is_nil(r.failed)
+        assert.are.equal("12", r.unknown[1].photo_id)
+        assert.truthy(r.unknown[1].reason:find("AI update failed", 1, true), r.unknown[1].reason)
+        assert.truthy(r.unknown[1].reason:find("has not finished computing", 1, true), r.unknown[1].reason)
+        assert.are.equal(1, #t2:getDevelopSettings().MaskGroupBasedCorrections)
+    end)
+
+    it("judges masks a repeat full copy writes under ids the target already holds as its own", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
+            Exposure2012 = 1.0,
+            MaskGroupBasedCorrections = { { CorrectionID = "S1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1 } } } },
+        } })
+        local held = { { CorrectionID = "S1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-old" } } } }
+        local target = helper.fakePhoto({ id = "11", path = "/t.jpg", aiUpdate = "error", developSettings = {
+            Exposure2012 = 0, MaskGroupBasedCorrections = held,
+        } })
+        local before = { { CorrectionID = "S1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-old" } } } }
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+
+        assert.are.equal("11", r.failed[1].photo_id)
+        assert.truthy(r.failed[1].reason:find("the new masks were removed", 1, true), r.failed[1].reason)
+        assert.are.same(before, target:getDevelopSettings().MaskGroupBasedCorrections)
+        assert.are.equal(0, target:getDevelopSettings().Exposure2012)
+    end)
+
+    it("withholds the restore and answers unknown when an own mask has one failed and one uncomputed component", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
+            MaskGroupBasedCorrections = { { CorrectionMasks = {
+                { What = "Mask/Image", MaskSubType = 3, MaskSubCategoryID = 13 },
+                { What = "Mask/Image", MaskSubType = 0, MaskSubCategoryID = 50001 },
+            } } },
+        } })
+        local target = helper.fakePhoto({ id = "11", path = "/t.jpg", aiUpdate = "mixed" })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+
+        assert.is_nil(r.failed)
+        assert.are.equal("11", r.unknown[1].photo_id)
+        assert.truthy(r.unknown[1].reason:find("has not finished computing the AI masks of photo 11", 1, true), r.unknown[1].reason)
+        local kept = target:getDevelopSettings().MaskGroupBasedCorrections
+        assert.are.equal(1, #kept)
+        assert.are.equal(1, kept[1].CorrectionMasks[1].ErrorReason)
+        assert.is_nil(kept[1].CorrectionMasks[2].MaskDigest)
     end)
 
     it("does not touch AI settings when the copy has no AI masks", function()
@@ -1308,6 +1374,56 @@ describe("HandlerDevelop.setDevelopSettings", function()
         local applied = p.getRawMetadata(p, "__appliedSettings")
         assert.are.same(composite, applied.ToneCurvePV2012)
         assert.are.same(red, applied.ToneCurvePV2012Red)
+    end)
+
+    for _, case in ipairs({ { module = "develop", flushes = 1 }, { module = "library", flushes = 0 } }) do
+        it("commits Develop's pending edits before writing only on the photo shown in Develop (" .. case.module .. ")", function()
+            local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+            local events = {}
+            local apply = p.applyDevelopSettings
+            p.applyDevelopSettings = function(...) events[#events + 1] = "write"; return apply(...) end
+            local catalog, Handler = setup({ photos = { p },
+                applicationView = { getCurrentModuleName = function() return case.module end, switchToModule = function() end },
+                developController = { stopTracking = function() events[#events + 1] = "flush" end } })
+            catalog.getTargetPhoto = function() return p end
+
+            Handler.setDevelopSettings({ photo_id = "1", settings = { Exposure2012 = 0.5 } })
+
+            assert.are.same(case.flushes == 1 and { "flush", "write" } or { "write" }, events)
+        end)
+    end
+
+    it("writes each point curve with its Extended companion holding the same points", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p } })
+        local composite = { 0, 0, 64, 48, 192, 210, 255, 255 }
+        local blue = { 0, 4, 128, 132, 255, 250 }
+
+        local r = Handler.setDevelopSettings({ photo_id = "1", settings = { ToneCurvePV2012 = composite, ToneCurvePV2012Blue = blue } })
+
+        assert.is_nil(r.problem)
+        assert.are.same({ ToneCurvePV2012 = composite, ExtendedToneCurvePV2012 = composite,
+            ToneCurvePV2012Blue = blue, ExtendedToneCurvePV2012Blue = blue }, p.getRawMetadata(p, "__appliedSettings"))
+        assert.are.same(composite, r.data.settings.ToneCurvePV2012)
+    end)
+
+    it("reads back a point curve from its Extended field first, so a curve Lightroom left in place is not reported done", function()
+        local held = LONG_CURVE
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg", developSettings = { ToneCurvePV2012 = { 0, 0, 255, 255 }, ExtendedToneCurvePV2012 = held } })
+        local apply = p.applyDevelopSettings
+        p.applyDevelopSettings = function(self, settings, ...)
+            local plain = {}
+            for key, value in pairs(settings) do
+                if not key:find("^Extended") then plain[key] = value end
+            end
+            return apply(self, plain, ...)
+        end
+        local _, Handler = setup({ photos = { p } })
+
+        local r = Handler.setDevelopSettings({ photo_id = "1", settings = { ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } } })
+
+        assert.truthy(r.problem, "expected a read-back problem")
+        assert.are.same(held, r.data.settings.ToneCurvePV2012)
     end)
 
     it("answers not_found when the photo is missing", function()
@@ -2157,6 +2273,18 @@ describe("HandlerDevelop batch dry runs", function()
         assert.is_nil(r.unknown_effects)
     end)
 
+    it("lists the process version a full copy carries when source and target differ", function()
+        local source = helper.fakePhoto({ id = "1001", developSettings = { ProcessVersion = "15.4", Exposure2012 = 0.5 } })
+        local target = helper.fakePhoto({ id = "1002", developSettings = { ProcessVersion = "11.0", Exposure2012 = 0.5 } })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
+
+        assert.are.same({ ProcessVersion = 1 }, r.setting_totals)
+        assert.are.same({ key = "ProcessVersion", before_present = true, after_present = true, before = "11.0", after = "15.4" },
+            r.details[1].changes[1])
+    end)
+
     it("does not recompute or write copied AI masks", function()
         local source = helper.fakePhoto({ id = "1001", developSettings = AI_MASK_SETTINGS })
         local target = helper.fakePhoto({ id = "1002" })
@@ -2246,6 +2374,7 @@ describe("develop writes read back after Lightroom normalises them", function()
             for key, value in pairs(settings) do
                 if normalise and normalise[key] ~= nil then value = normalise[key] end
                 if normalise and normalise.drops == key then value = nil end
+                if key:find("^Extended") then value = nil end
                 stored[key] = value
             end
             if normalise and normalise.throws then error(normalise.throws) end
@@ -2277,6 +2406,14 @@ describe("develop writes read back after Lightroom normalises them", function()
 
         assert.are.same({ { photo_id = "1", key = "Contrast2012", requested = 100, stored = 0 } }, r.data.adjusted)
         assert.truthy(r.problem:find("Contrast2012", 1, true))
+    end)
+
+    it("names a table value Lightroom stored differently by its contents", function()
+        local _, Handler = setup({ photos = { storingPhoto("1", {}, { ToneCurvePV2012 = { 0, 0, 255, 255 } }) }, tasks = sleeps() })
+
+        local r = Handler.setDevelopSettings({ photo_id = "1", settings = { ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } } })
+
+        assert.truthy(r.problem:find("ToneCurvePV2012 [0,0,255,255] on photo 1 (written [0,0,128,140,255,255])", 1, true), r.problem)
     end)
 
     it("reports a key Lightroom does not show after the write as unknown", function()

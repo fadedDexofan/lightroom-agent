@@ -1,20 +1,14 @@
 local LrApplication = import 'LrApplication'
-local LrDevelopController = import 'LrDevelopController'
-local LrTasks = import 'LrTasks'
 
 local CatalogWrite = require 'CatalogWrite'
-local DevelopSession = require 'DevelopSession'
+local GuardedMaskWrite = require 'GuardedMaskWrite'
+local JsonValue = require 'JsonValue'
 local Log = require 'Log'
-local MaskSelection = require 'MaskSelection'
 local Reply = require 'Reply'
 local PhotoLookup = require 'PhotoLookup'
 
 local MaskDeleteHandler = {}
 
-local DELETION_SETTLE_TIMEOUT_SECONDS = 5
-local SAVE_SETTLE_TIMEOUT_SECONDS = 5
-local DELETE_API_FUNCTIONS = { "deleteMask", "deleteMaskTool", "selectTool" }
-local DELETE_API_MINIMUM_VERSION = "Lightroom Classic 11"
 local DELETE_EMPTY_MINIMUM_VERSION = "Lightroom Classic 14"
 
 local function uniqueIds(values)
@@ -34,61 +28,6 @@ local function parseTarget(args)
     return { kind = kind, ids = uniqueIds(args[kind]) }
 end
 
-local function snapshotFromRaw(raw, photoId)
-    local snapshot = { masksById = {}, maskOrder = {}, maskIdOfTool = {}, count = 0 }
-    for _, mask in ipairs(raw) do
-        local maskId = type(mask) == "table" and MaskSelection.idString(mask.ID)
-        if not maskId then
-            Reply.refuse("Lightroom returned a mask without an id for photo " .. photoId .. "; nothing was changed")
-        end
-        local toolIds = {}
-        if type(mask.Tools) == "table" then
-            for _, tool in ipairs(mask.Tools) do
-                local toolId = type(tool) == "table" and MaskSelection.idString(tool.ID)
-                if not toolId then
-                    Reply.refuse("Lightroom returned a mask tool without an id for photo " .. photoId .. "; nothing was changed")
-                end
-                toolIds[#toolIds + 1] = toolId
-                snapshot.maskIdOfTool[toolId] = maskId
-            end
-        end
-        snapshot.masksById[maskId] = { id = maskId, toolIds = toolIds }
-        snapshot.maskOrder[#snapshot.maskOrder + 1] = maskId
-        snapshot.count = snapshot.count + 1
-    end
-    return snapshot
-end
-
-local function tryReadMaskSnapshot(photoId)
-    local ok, snapshot = LrTasks.pcall(function()
-        return snapshotFromRaw(LrDevelopController.getAllMasks() or {}, photoId)
-    end)
-    if ok then return snapshot end
-    return nil
-end
-
-local function readSavedMasks(catalog, photo)
-    local settings
-    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
-    local saved = { maskIds = {}, toolIds = {}, groupCount = 0 }
-    local groups = type(settings) == "table" and settings.MaskGroupBasedCorrections
-    if type(groups) ~= "table" then return saved end
-    for _, group in ipairs(groups) do
-        saved.groupCount = saved.groupCount + 1
-        if type(group) == "table" then
-            if group.CorrectionID ~= nil then saved.maskIds[group.CorrectionID] = true end
-            if type(group.CorrectionMasks) == "table" then
-                for _, tool in ipairs(group.CorrectionMasks) do
-                    if type(tool) == "table" and tool.MaskID ~= nil then
-                        saved.toolIds[tool.MaskID] = true
-                    end
-                end
-            end
-        end
-    end
-    return saved
-end
-
 local function listUnknown(ids, isKnown)
     local unknown = {}
     for _, id in ipairs(ids) do
@@ -97,185 +36,99 @@ local function listUnknown(ids, isKnown)
     return unknown
 end
 
-local function planDeletion(snapshot, target, photoId)
-    local plan = { maskIds = {}, toolsByMask = {}, removedMaskIds = {}, removedToolIds = {} }
+local function componentsOf(entry)
+    return type(entry) == "table" and type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}
+end
 
-    if target.kind == "all" or target.kind == "mask_ids" then
-        local maskIds = target.ids or snapshot.maskOrder
-        local unknown = listUnknown(maskIds, function(id) return snapshot.masksById[id] ~= nil end)
+local function idOf(value)
+    return value ~= nil and tostring(value) or nil
+end
+
+local function planDeletion(entries, target, photoId)
+    local maskIds, toolIds = {}, {}
+    for _, entry in ipairs(entries) do
+        if idOf(entry.CorrectionID) then maskIds[idOf(entry.CorrectionID)] = true end
+        for _, component in ipairs(componentsOf(entry)) do
+            if idOf(component.MaskID) then toolIds[idOf(component.MaskID)] = true end
+        end
+    end
+    local removeMask, removeTool = {}, {}
+    if target.kind == "mask_ids" then
+        local unknown = listUnknown(target.ids, function(id) return maskIds[id] end)
         if #unknown > 0 then
             Reply.refuse("Unknown mask id(s) on photo " .. photoId .. ": " .. table.concat(unknown, ", ")
                 .. "; nothing was deleted")
         end
-        for _, maskId in ipairs(maskIds) do
-            plan.maskIds[#plan.maskIds + 1] = maskId
-            plan.removedMaskIds[#plan.removedMaskIds + 1] = maskId
-            for _, toolId in ipairs(snapshot.masksById[maskId].toolIds) do
-                plan.removedToolIds[#plan.removedToolIds + 1] = toolId
-            end
+        for _, id in ipairs(target.ids) do removeMask[id] = true end
+    elseif target.kind == "tool_ids" then
+        local unknown = listUnknown(target.ids, function(id) return toolIds[id] end)
+        if #unknown > 0 then
+            Reply.refuse("Unknown tool id(s) on photo " .. photoId .. ": " .. table.concat(unknown, ", ")
+                .. "; nothing was deleted")
         end
-        return plan
+        for _, id in ipairs(target.ids) do removeTool[id] = true end
     end
-
-    local unknown = listUnknown(target.ids, function(id) return snapshot.maskIdOfTool[id] ~= nil end)
-    if #unknown > 0 then
-        Reply.refuse("Unknown tool id(s) on photo " .. photoId .. ": " .. table.concat(unknown, ", ")
-            .. "; nothing was deleted")
-    end
-    local requestedToolIds = {}
-    for _, toolId in ipairs(target.ids) do requestedToolIds[toolId] = true end
-    for _, maskId in ipairs(snapshot.maskOrder) do
-        local toolIds, remaining = {}, 0
-        for _, toolId in ipairs(snapshot.masksById[maskId].toolIds) do
-            if requestedToolIds[toolId] then
-                toolIds[#toolIds + 1] = toolId
+    local plan = { kept = {}, deletedMaskIds = {}, deletedToolIds = {} }
+    for _, entry in ipairs(entries) do
+        local maskId = idOf(entry.CorrectionID)
+        local survivors, removed = {}, {}
+        for _, component in ipairs(componentsOf(entry)) do
+            local toolId = idOf(component.MaskID)
+            if target.kind == "all" or removeMask[maskId] or removeTool[toolId] then
+                removed[#removed + 1] = toolId
             else
-                remaining = remaining + 1
+                survivors[#survivors + 1] = component
             end
         end
-        if #toolIds > 0 then
-            plan.toolsByMask[#plan.toolsByMask + 1] = { maskId = maskId, toolIds = toolIds }
-            for _, toolId in ipairs(toolIds) do
-                plan.removedToolIds[#plan.removedToolIds + 1] = toolId
-            end
-            if remaining == 0 then
-                plan.removedMaskIds[#plan.removedMaskIds + 1] = maskId
-            end
+        for _, toolId in ipairs(removed) do plan.deletedToolIds[#plan.deletedToolIds + 1] = toolId end
+        if target.kind == "all" or removeMask[maskId] or (#removed > 0 and #survivors == 0) then
+            plan.deletedMaskIds[#plan.deletedMaskIds + 1] = maskId
+        else
+            if #removed > 0 then entry.CorrectionMasks = survivors end
+            plan.kept[#plan.kept + 1] = entry
         end
     end
     return plan
 end
 
-local function attempt(description, fn)
-    local ok, err = LrTasks.pcall(fn)
-    if not ok then
-        error("Lightroom could not " .. description .. ": " .. tostring(err), 0)
-    end
+local function nothingDeleted(plan)
+    return #plan.deletedMaskIds == 0 and #plan.deletedToolIds == 0
 end
 
-local function issueDeletions(plan)
-    for _, maskId in ipairs(plan.maskIds) do
-        attempt("delete mask " .. maskId, function()
-            LrDevelopController.selectMask(maskId)
-            LrDevelopController.deleteMask(maskId)
-        end)
-    end
-    for _, entry in ipairs(plan.toolsByMask) do
-        attempt("select mask " .. entry.maskId, function()
-            LrDevelopController.selectMask(entry.maskId)
-        end)
-        for _, toolId in ipairs(entry.toolIds) do
-            attempt("delete mask tool " .. toolId, function()
-                LrDevelopController.deleteMaskTool(toolId)
-            end)
-        end
-    end
-end
-
-local function deletionIsVisible(snapshot, plan)
-    for _, maskId in ipairs(plan.removedMaskIds) do
-        if snapshot.masksById[maskId] ~= nil then return false end
-    end
-    for _, toolId in ipairs(plan.removedToolIds) do
-        if snapshot.maskIdOfTool[toolId] ~= nil then return false end
-    end
-    return true
-end
-
-local function deleteEmptiedMasksLeftBehind(snapshot, plan, alreadyDeleted)
-    for _, maskId in ipairs(plan.removedMaskIds) do
-        local mask = snapshot.masksById[maskId]
-        if mask and #mask.toolIds == 0 and not alreadyDeleted[maskId] then
-            alreadyDeleted[maskId] = true
-            LrTasks.pcall(function()
-                LrDevelopController.selectMask(maskId)
-                LrDevelopController.deleteMask(maskId)
-            end)
-        end
-    end
-end
-
-local function waitUntilDeletionIsVisible(photoId, plan)
-    local emptiedMasksAlreadyDeleted = {}
-    local latest
-    local visible = DevelopSession.waitFor(function()
-        latest = tryReadMaskSnapshot(photoId)
-        if not latest then return false end
-        deleteEmptiedMasksLeftBehind(latest, plan, emptiedMasksAlreadyDeleted)
-        return deletionIsVisible(latest, plan)
-    end, DELETION_SETTLE_TIMEOUT_SECONDS)
-    if not visible then
-        error("Lightroom did not remove the requested masks from photo " .. photoId
-            .. " in Develop; the photo may be partly changed, so list_masks to check")
-    end
-    return latest
-end
-
-local function savedDeletionMatches(saved, plan)
-    for _, maskId in ipairs(plan.removedMaskIds) do
-        if saved.maskIds[maskId] then return false end
-    end
-    for _, toolId in ipairs(plan.removedToolIds) do
-        if saved.toolIds[toolId] then return false end
-    end
-    return true
-end
-
-local function waitUntilDeletionIsSaved(catalog, photo, photoId, plan)
-    local saved = DevelopSession.waitFor(function()
-        return savedDeletionMatches(readSavedMasks(catalog, photo), plan)
-    end, SAVE_SETTLE_TIMEOUT_SECONDS)
-    if not saved then
-        error("Lightroom showed the deletion in Develop but did not save it for photo " .. photoId
-            .. "; list_masks to check, then call again")
-    end
-end
-
-local function deletePhotoMasks(args, context)
+local function deletePhotoMasks(args)
     local target = parseTarget(args)
-    MaskSelection.requireControllerFunctions("delete_masks", DELETE_API_FUNCTIONS, DELETE_API_MINIMUM_VERSION)
-
     local catalog = LrApplication.activeCatalog()
-
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
-
     local photoId = tostring(photo.localIdentifier)
 
-    local plan, remainingCount
-    DevelopSession.withPhoto(context, catalog, photo, function()
-        local previousTool = MaskSelection.openMaskingTool()
-        local ok, err = LrTasks.pcall(function()
-            local snapshot = snapshotFromRaw(MaskSelection.readMasks(catalog, photo), photoId)
-            plan = planDeletion(snapshot, target, photoId)
-            if #plan.removedMaskIds == 0 and #plan.removedToolIds == 0 then return end
-            issueDeletions(plan)
-            remainingCount = waitUntilDeletionIsVisible(photoId, plan).count
-        end)
-        MaskSelection.restoreTool(previousTool)
-        if not ok then error(err, 0) end
-    end)
-
-    if remainingCount == nil then
-        remainingCount = 0
-    else
-        waitUntilDeletionIsSaved(catalog, photo, photoId, plan)
-    end
+    local plan
+    local submitted = GuardedMaskWrite.submit(catalog, photo, {
+        description = "Delete Masks",
+        unchanged = function(entries) return nothingDeleted(planDeletion(entries, target, photoId)) end,
+        build = function(entries)
+            plan = planDeletion(entries, target, photoId)
+            if nothingDeleted(plan) then return nil end
+            return plan.kept
+        end,
+        mismatches = JsonValue.differences,
+    })
+    plan = plan or { deletedMaskIds = {}, deletedToolIds = {} }
 
     Log.info(string.format("Deleted %d masks and %d mask tools from photo %s",
-        #plan.removedMaskIds, #plan.removedToolIds, photoId))
+        #plan.deletedMaskIds, #plan.deletedToolIds, photoId))
 
     return {
         photo_id = photoId,
-        deleted_mask_ids = plan.removedMaskIds,
-        deleted_tool_ids = plan.removedToolIds,
-        remaining_mask_count = remainingCount,
+        deleted_mask_ids = plan.deletedMaskIds,
+        deleted_tool_ids = plan.deletedToolIds,
+        remaining_mask_count = #submitted.entries,
     }
 end
 
 local function countGroups(catalog, photos)
     local counts = {}
     for _, photo in ipairs(photos) do
-        counts[photo] = readSavedMasks(catalog, photo).groupCount
+        counts[photo] = #GuardedMaskWrite.readEntries(catalog, photo)
     end
     return counts
 end
@@ -310,8 +163,8 @@ function MaskDeleteHandler.deleteEmptyMasks(args)
     return Reply.parts({ data = { photos_checked = #photos, changed = changed }, not_found = notFound })
 end
 
-function MaskDeleteHandler.deleteMasks(args, context)
-    return deletePhotoMasks(args, context)
+function MaskDeleteHandler.deleteMasks(args)
+    return deletePhotoMasks(args)
 end
 
 return MaskDeleteHandler

@@ -25,7 +25,7 @@ const REFUSALS = [
 const report = createReport("edit-breadth keys through set_develop_settings (edit-breadth 01, 02, 04, 06; api-shape 18)");
 const { session, marker } = await openLiveSession();
 const data = async (name, args) => (await session.toolOrThrow(name, args, { timeoutMs: 180_000 })).data;
-const copyId = (await data("create_virtual_copies", { photo_ids: [requireFixtureId(marker, "arw_12bit")], copy_name: "LRMCP live edit-breadth keys" })).copies[0].copy_photo_id;
+const copyId = (await data("create_virtual_copies", { photo_ids: [requireFixtureId(marker, "chart80")], copy_name: "LRMCP live edit-breadth keys" })).copies[0].copy_photo_id;
 const stored = async (keys) => (await data("get_develop_settings", { photo_ids: [copyId], keys })).photos[0].settings;
 
 try {
@@ -55,7 +55,7 @@ try {
   const pixels = await measureChange(session, copyId, async () => {
     mixer = await data("set_develop_settings", { photo_id: copyId, settings: { GrayMixerRed: 60, GrayMixerBlue: -60 } });
   });
-  report.check("GrayMixer on a black and white raw: written and visible",
+  report.check("GrayMixer on a black and white photo: written and visible",
     !mixer.adjusted && maxLuminanceDifference(pixels.before, pixels.after) > VISIBLE, { adjusted: mixer.adjusted ?? null, change: maxLuminanceDifference(pixels.before, pixels.after) });
   report.finish({ photo: copyId });
 } finally {

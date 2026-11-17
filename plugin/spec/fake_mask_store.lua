@@ -142,8 +142,22 @@ function FakeMaskStore.attach(photo, opts)
         local number = tostring(entry.CorrectionID):match("^C(%d+)$")
         if number then state.counter.next = math.max(state.counter.next, tonumber(number)) end
     end
+    for index, entry in ipairs(state.entries) do
+        if type(entry) == "table" and entry.CorrectionID == nil then
+            entry.CorrectionID, entry.CorrectionSyncID = "E" .. index, "ES" .. index
+        end
+        for position, component in ipairs(type(entry) == "table" and type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
+            if type(component) == "table" and component.MaskID == nil then
+                component.MaskID = tostring(entry.CorrectionID) .. "T" .. position
+                component.MaskSyncID = "S" .. component.MaskID
+            end
+            if type(component) == "table" and component.What == "Mask/CircularGradient" and component.Flipped == nil then
+                component.Flipped = not component.MaskInverted
+            end
+        end
+    end
     photo.getDevelopSettings = function()
-        if not state.insideRead then state.readsOutsideGate = state.readsOutsideGate + 1 end
+        if not state.insideRead and not state.insideWrite then state.readsOutsideGate = state.readsOutsideGate + 1 end
         state.reads = state.reads + 1
         local settings = {}
         for key, value in pairs(opts.settings or {}) do settings[key] = value end
@@ -190,13 +204,6 @@ function FakeMaskStore.trackGates(state, catalog)
     end
 end
 
-local STORED_SLIDERS = {
-    local_Exposure = { stored = "LocalExposure2012", scale = 4 },
-    local_Contrast = { stored = "LocalContrast2012", scale = 100 },
-    local_colorgradeMidtoneHue = { stored = "LocalColorGradeMidtoneHue", scale = 1 },
-    local_glow = { stored = "LocalGlow", scale = 100 },
-}
-
 function FakeMaskStore.guardedHandler(handlerName, modules, opts)
     local helper = require 'spec_helper'
     opts = opts or {}
@@ -242,16 +249,10 @@ function FakeMaskStore.guardedHandler(handlerName, modules, opts)
             if name:match("Hue$") then return 0, 360 end
             return -100, 100
         end,
-        getValue = function(name)
-            if opts.wrongAdjustment then return 0 end
-            local slider = STORED_SLIDERS[name]
-            for _, entry in ipairs(storeOf[active].entries) do
-                if slider and entry.CorrectionID == selectedMask then return (entry[slider.stored] or 0) * slider.scale end
-            end
-            return 0
-        end,
         selectMaskTool = function() end,
-        stopTracking = function(commit) calls.stopTracking[#calls.stopTracking + 1] = commit end,
+        stopTracking = function(commit)
+            calls.stopTracking[#calls.stopTracking + 1] = { committed = commit, writes = #storeOf[active].writes }
+        end,
     }
     if opts.withoutMaskApi then controller = {} end
 
@@ -276,7 +277,7 @@ function FakeMaskStore.guardedHandler(handlerName, modules, opts)
     })
     for _, name in ipairs(modules) do package.loaded[name] = nil end
     for _, name in ipairs({ handlerName, "GuardedMaskWrite", "DevelopSession", "Log",
-        "MaskCreationAdjustments", "MaskSelection", "LocalSliders" }) do
+        "MaskValues", "MaskSelection", "LocalSliders" }) do
         package.loaded[name] = nil
     end
     return require(handlerName), stores, calls, catalog

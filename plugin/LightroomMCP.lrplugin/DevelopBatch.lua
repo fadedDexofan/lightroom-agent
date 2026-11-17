@@ -6,17 +6,6 @@ local Reply = require 'Reply'
 
 local DevelopBatch = {}
 
-local HALT = { __tostring = function(halt) return halt.message end }
-
-function DevelopBatch.halt(message)
-    error(setmetatable({ message = message }, HALT), 0)
-end
-
-local function haltOf(value)
-    if type(value) == "table" and getmetatable(value) == HALT then return value.message end
-    return nil
-end
-
 function DevelopBatch.run(context, catalog, operation)
     local entries, notFound = PhotoLookup.resolveDistinct(catalog, operation.inputs)
     local results, failed, unknown, remaining = {}, {}, {}, {}
@@ -27,13 +16,7 @@ function DevelopBatch.run(context, catalog, operation)
         if ok then
             value.photo_id = photoId
             results[#results + 1] = value
-            return true
-        end
-        local halt = haltOf(value)
-        if halt then
-            failed[#failed + 1] = { photo_id = photoId, reason = halt }
-            context:warn(halt)
-            return false
+            return
         end
         local item = { photo_id = photoId, reason = Reply.messageOf(value) }
         if Reply.refusalOf(value) then
@@ -41,14 +24,13 @@ function DevelopBatch.run(context, catalog, operation)
         else
             unknown[#unknown + 1] = item
         end
-        return true
     end
 
     if #entries > 0 then
         DevelopSession.run(context, catalog, operation.restoreView, function(state)
-            local prepared, going, attempted = false, true, 0
+            local prepared, attempted = false, 0
             for _, entry in ipairs(entries) do
-                if not going or context:stopping(operation.reserveSeconds) then
+                if #remaining > 0 or context:stopping(operation.reserveSeconds) then
                     remaining[#remaining + 1] = entry.id
                 else
                     context:report(attempted, #entries,
@@ -57,7 +39,7 @@ function DevelopBatch.run(context, catalog, operation)
                         operation.prepare(entry.photo, state)
                         prepared = true
                     end
-                    going = attempt(entry, state)
+                    attempt(entry, state)
                     attempted = attempted + 1
                 end
             end

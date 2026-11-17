@@ -26,28 +26,6 @@ local function idsOf(photosSeen)
 end
 
 describe("DevelopBatch.run", function()
-    it("stops the batch at a halt: that photo failed, the rest remaining, its reason a warning", function()
-        local DevelopBatch, catalog = setup()
-        local context = helper.requestContext()
-        local seen = {}
-
-        local reply = DevelopBatch.run(context, catalog, {
-            inputs = { "1", "2", "3" },
-            reserveSeconds = 0,
-            each = function(photo)
-                seen[#seen + 1] = photo
-                if photo.localIdentifier == "2" then DevelopBatch.halt("No subject detected; click OK in Lightroom") end
-                return { status = "created" }
-            end,
-        })
-
-        assert.are.same({ "1", "2" }, idsOf(seen))
-        assert.are.same({ { status = "created", photo_id = "1" } }, reply.data.results)
-        assert.are.same({ { photo_id = "2", reason = "No subject detected; click OK in Lightroom" } }, reply.failed)
-        assert.are.same({ "3" }, reply.remaining)
-        assert.are.same({ "No subject detected; click OK in Lightroom" }, context.warnings)
-    end)
-
     it("files a refusal under failed and any other error under unknown, without the source location", function()
         local DevelopBatch, catalog = setup()
         local Reply = require 'Reply'

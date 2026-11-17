@@ -554,10 +554,19 @@ describe('set_crop', () => {
   it('rounds the requested angle to the precision Lightroom keeps before planning and says so', async () => {
     const { calls, crop } = photo();
 
-    const result = await crop({ rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 8.004 });
+    const result = await crop({ rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 8.00004 });
 
     expect(calls[0]).toEqual(['plan_crop', { photo_id: 914, rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 8 }]);
-    expect(envelopeOf(result).warnings).toEqual(['Rounded to the precision Lightroom keeps: CropAngle 8.004 -> 8']);
+    expect(envelopeOf(result).warnings).toEqual(['Rounded to the precision Lightroom keeps: CropAngle 8.00004 -> 8']);
+  });
+
+  it('plans an angle Lightroom was seen to keep finer than a hundredth as given, with no warning', async () => {
+    const { calls, crop } = photo();
+
+    const result = await crop({ rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 0.0037 });
+
+    expect(calls[0]).toEqual(['plan_crop', { photo_id: 914, rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 0.0037 }]);
+    expect(envelopeOf(result).warnings).toBeUndefined();
   });
 
   it('passes on the frame warning of the plan', async () => {

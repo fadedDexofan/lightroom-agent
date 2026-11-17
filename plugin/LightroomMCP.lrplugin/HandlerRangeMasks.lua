@@ -5,7 +5,7 @@ local DevelopSession = require 'DevelopSession'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
-local MaskCreationAdjustments = require 'MaskCreationAdjustments'
+local MaskValues = require 'MaskValues'
 local MaskSelection = require 'MaskSelection'
 local RangeMaskGeometry = require 'RangeMaskGeometry'
 local Reply = require 'Reply'
@@ -26,7 +26,7 @@ local function addRangeComponent(entries, request)
     if request.maskId == nil then
         local name = request.name or component.MaskName
         entries[#entries + 1] = GuardedMaskWrite.newCorrection(name, { component })
-        MaskCreationAdjustments.write(entries[#entries], request.adjustments)
+        MaskValues.storeAdjustments(entries[#entries], request.adjustments)
         return { entry = #entries, component = 1 }
     end
     local index, entry = GuardedMaskWrite.findCorrection(entries, request.maskId)
@@ -87,7 +87,6 @@ end
 
 function RangeMaskHandler.createRangeMask(args, context)
     local displayedRequest = RangeMaskGeometry.parseCreate(args)
-    local adjustments = MaskCreationAdjustments.parse(args)
     DevelopSession.requireMaskApi("create_range_mask")
 
     local catalog = LrApplication.activeCatalog()
@@ -102,7 +101,7 @@ function RangeMaskHandler.createRangeMask(args, context)
     local frame = ImageFrame.forPhoto(catalog, photo)
     if displayedRequest.kind == "color" and frame.warning then context:warn(frame.warning) end
     local request = RangeMaskGeometry.toStoredFrame(displayedRequest, frame)
-    request.adjustments = adjustments
+    request.adjustments = args.adjustments
     local existing = GuardedMaskWrite.preflight(catalog, photo)
     addRangeComponent(existing, request)
 
@@ -117,10 +116,8 @@ function RangeMaskHandler.createRangeMask(args, context)
             crossCheck = function(actual)
                 local entry = actual[location.entry]
                 local component = entry.CorrectionMasks[location.component]
-                local problem = problemUnlessDepthMapFound(request.kind, component)
+                return problemUnlessDepthMapFound(request.kind, component)
                     or MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, RangeMaskGeometry.TOOL_TYPE, request.kind)
-                if problem then return problem end
-                MaskCreationAdjustments.confirm(catalog, photo, entry.CorrectionID, adjustments)
             end,
         })
     end)

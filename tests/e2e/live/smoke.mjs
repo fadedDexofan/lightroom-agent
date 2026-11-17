@@ -3,6 +3,7 @@ import { ensureLightroomFrontmost, closePluginManager, dismissBlockingModals } f
 import { requireThrowawayCatalog } from "./lib/catalog-guard.mjs";
 import { readFlushedSettings, storedMaskGroups, summarizeMaskGroups } from "./lib/catalog-db.mjs";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
+import { createReport } from "./lib/proof.mjs";
 import { ORIENTATIONS, classifyOrientation, sampleCorners } from "./lib/patterns.mjs";
 import {
   describeSizes,
@@ -18,11 +19,8 @@ const MAX_EXPECTED_UNTOUCHED_CHANGE = 0.01;
 const MIN_RADIAL_IOU = 0.8;
 const EXPOSURE_STOPS = 2;
 
-const failures = [];
-function check(label, passed, detail) {
-  console.log(`${passed ? "pass" : "FAIL"} ${label} ${JSON.stringify(detail)}`);
-  if (!passed) failures.push(label);
-}
+const report = createReport("kit smoke");
+const check = (label, passed, detail) => report.check(label, passed, detail);
 
 requireThrowawayCatalog();
 await ensureLightroomFrontmost();
@@ -83,7 +81,7 @@ try {
   );
   check("radial gradient on wide_plain matches the analytic ellipse", iou >= MIN_RADIAL_IOU, { iou: Number(iou.toFixed(3)), ...describeSizes(wide.before, wide.after) });
 
-  const stored = await readFlushedSettings(session, rotatedId, wideId);
+  const stored = await readFlushedSettings(session, rotatedId, wideId, (row) => storedMaskGroups(row.text).length > 0);
   const groups = summarizeMaskGroups(storedMaskGroups(stored.text));
   check("stored develop row holds the gradient mask", groups.length === 1 && groups[0].components.length === 1, groups);
 } finally {
@@ -92,8 +90,4 @@ try {
   await session.stop();
 }
 
-if (failures.length > 0) {
-  console.error(`failed: ${failures.join("; ")}`);
-  process.exit(1);
-}
-console.log("kit smoke passed");
+report.finish();

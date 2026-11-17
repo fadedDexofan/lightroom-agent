@@ -61,6 +61,32 @@ function AIMaskData.withoutComputedData(settings)
     return stripped
 end
 
+local function failed(component)
+    return type(component.ErrorReason) == "number" and component.ErrorReason ~= 0
+end
+
+local function computed(component)
+    local digest = component[AIMaskData.COMPUTATION_MARKER_KEY]
+    return type(digest) == "string" and digest ~= ""
+end
+
+function AIMaskData.componentState(component)
+    if failed(component) then return "failed" end
+    if computed(component) then return "computed" end
+    return "pending"
+end
+
+function AIMaskData.uncomputed(correction)
+    for _, component in ipairs(type(correction) == "table" and type(correction.CorrectionMasks) == "table"
+        and correction.CorrectionMasks or {}) do
+        if type(component) == "table" and component.What == AIMaskData.KIND and not failed(component)
+            and not computed(component) then
+            return true
+        end
+    end
+    return false
+end
+
 function AIMaskData.computeState(correction)
     local components = type(correction) == "table" and correction.CorrectionMasks
     if type(components) ~= "table" then return "pending" end
@@ -68,9 +94,8 @@ function AIMaskData.computeState(correction)
     for _, component in ipairs(components) do
         if type(component) == "table" and component.What == AIMaskData.KIND then
             sawAIMask = true
-            if type(component.ErrorReason) == "number" and component.ErrorReason ~= 0 then return "failed" end
-            local digest = component[AIMaskData.COMPUTATION_MARKER_KEY]
-            if type(digest) ~= "string" or digest == "" then allComputed = false end
+            if failed(component) then return "failed" end
+            if not computed(component) then allComputed = false end
         end
     end
     if not sawAIMask then return "none" end

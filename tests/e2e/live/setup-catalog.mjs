@@ -16,7 +16,7 @@ import {
   sleep,
   submitNewCatalogDialog,
 } from "./lib/ax.mjs";
-import { markerPathFor, readCatalogMarker, writeCatalogMarker } from "./lib/live-catalog.mjs";
+import { absentFixtureIds, fixturesToImport, markerPathFor, readCatalogMarker, writeCatalogMarker } from "./lib/live-catalog.mjs";
 import { loadManifest, resolveSuppliedFiles, verifySample } from "./lib/manifest.mjs";
 import { McpSession } from "./lib/mcp.mjs";
 import { GENERATED_DIR, MANIFEST_PATH, SAMPLES_DIR } from "./lib/paths.mjs";
@@ -121,16 +121,18 @@ await assertFixturesReady(manifest);
 if (addMissing) {
   const catalogPath = requireThrowawayCatalog();
   const marker = readCatalogMarker(catalogPath);
-  const missing = files.filter(({ key }) => !marker.fixtures?.[key]);
-  if (missing.length === 0) {
-    console.log("every fixture is already in the throwaway catalog");
-    process.exit(0);
-  }
   const session = await startSessionWhenPluginAnswers();
   try {
-    const added = await importFixtures(session, catalogPath, missing);
-    writeCatalogMarker(catalogPath, { ...marker, fixtures: { ...marker.fixtures, ...added } });
-    console.log(`added ${Object.keys(added).join(", ")} to ${catalogPath}`);
+    const listed = Object.values(marker.fixtures ?? {}).map((fixture) => String(fixture.id));
+    const absent = listed.length === 0 ? [] : absentFixtureIds(await session.tool("get_photo_metadata", { photo_ids: listed }));
+    const missing = fixturesToImport(files, marker, absent);
+    if (missing.length === 0) {
+      console.log("every fixture is already in the throwaway catalog");
+    } else {
+      const added = await importFixtures(session, catalogPath, missing);
+      writeCatalogMarker(catalogPath, { ...marker, fixtures: { ...marker.fixtures, ...added } });
+      console.log(`added ${Object.keys(added).join(", ")} to ${catalogPath}`);
+    }
   } finally {
     await session.stop();
   }

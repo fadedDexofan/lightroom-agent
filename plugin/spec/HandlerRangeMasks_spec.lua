@@ -90,17 +90,17 @@ local function lightroomFillsDepthInfo(stored, writeNumber)
 end
 
 describe("HandlerRangeMasks.createRangeMask", function()
-    it("writes the requested adjustments into the new mask, and restores all previous masks when the SDK read-back differs", function()
+    it("writes the requested adjustments into the new mask as Lightroom stores them, in the one guarded write", function()
         local previous = { correction("Existing", { Store.linearComponent({ MaskID = "C1T1" }) },
             { CorrectionID = "C1" }) }
-        local Handler, stores = setup({ wrongAdjustment = true, photos = { { id = "1", entries = previous } } })
-        assert.matches("restored", helper.refusalOf(function()
-            Handler.createRangeMask(luminanceRequest({ adjustments = { local_Exposure = 1 } }))
-        end))
+        local Handler, stores = setup({ photos = { { id = "1", entries = previous } } })
+
+        Handler.createRangeMask(luminanceRequest({ adjustments = { local_Exposure = 1, local_colorgradeMidtoneHue = 61.83 } }))
+
         local written = stores["1"].writes[1]
         assert.are.equal(0.25, written[#written].LocalExposure2012)
-        assert.are.same(previous, stores["1"].entries)
-        assert.are.equal(2, #stores["1"].writes)
+        assert.are.equal(62, written[#written].LocalColorGradeMidtoneHue)
+        assert.are.equal(1, #stores["1"].writes)
     end)
 
     it("writes a luminance range as a new mask and returns the stored range", function()
@@ -180,18 +180,18 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal(0, stores["1"].attempts)
     end)
 
-    it("refuses a photo that already holds a color range with two PointModels, writing nothing", function()
+    it("creates a mask beside a color range with two PointModels Lightroom already stored, keeping it unchanged", function()
         local entries = colorEntryWithPoints({
             "0.462745 0.462745 0.462745 0.200000 0.200000 0",
             "0.027451 0.027451 0.027451 0.800000 0.800000 0",
         })
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = entries } } })
+        local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
+        local held = Store.clone(stores["1"].entries[1])
 
-        local message = helper.refusalOf(function() Handler.createRangeMask(luminanceRequest()) end)
+        Handler.createRangeMask(luminanceRequest())
 
-        assert.is_truthy(message:find("exactly one PointModels entry", 1, true))
-        assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
+        assert.are.equal(2, #stores["1"].entries)
+        assert.are.same(held, stores["1"].entries[1])
     end)
 
     it("keeps an existing single-point color range verbatim next to the new mask", function()
@@ -204,24 +204,6 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal(2, #written)
         assert.are.equal(1, #written[1].CorrectionMasks[1].CorrectionRangeMask.PointModels)
         assert.are.equal("C2", result.mask_id)
-    end)
-
-    it("refuses an existing range mask of a type it does not know, writing nothing", function()
-        local entries = {
-            correction("Unknown", {
-                {
-                    What = "Mask/RangeMask",
-                    MaskID = "C1T1",
-                    CorrectionRangeMask = { Type = 3, Version = 3, SampleType = 0, DepthRange = "0 0 1 1" },
-                },
-            }, { CorrectionID = "C1" }),
-        }
-        local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
-
-        local message = helper.refusalOf(function() Handler.createRangeMask(luminanceRequest()) end)
-
-        assert.is_truthy(message:find("unsupported range Type 3", 1, true))
-        assert.are.equal(0, #stores["1"].writes)
     end)
 
     it("keeps a depth range mask Lightroom authored verbatim next to the new mask", function()

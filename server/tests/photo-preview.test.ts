@@ -299,7 +299,7 @@ describe('get_photo_previews', () => {
     }
   });
 
-  it('lists a photo that ran out of time as remaining rather than failed', async () => {
+  it('lists a photo whose failure arrives at the deadline as remaining rather than failed', async () => {
     jest.useFakeTimers();
     try {
       const { handler, call } = batch((id) => {

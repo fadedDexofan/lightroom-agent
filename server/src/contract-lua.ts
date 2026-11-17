@@ -1,7 +1,7 @@
 import { DEVELOP_KEYS, LOCAL_KEYS, transfersStyle } from "./develop-keys.js";
 import { DETAIL_RENDER_FOLDER } from "./photo-detail.js";
 import { PREVIEW_REPLY_RESERVE_MS } from "./preview-item.js";
-import { AI_MASK_COMPUTE_WAIT_SECONDS, AUTO_CHANGE_WAIT_SECONDS, CATALOG_WRITE_WAIT_SECONDS, DEFAULT_PAGE_LIMIT, MASK_SAVE_WAIT_SECONDS, PLUGIN_ACTIONS, STORED_MASK_DECIMAL_PLACES, STYLE_SUMMARY_MIN_RATING, STYLE_SUMMARY_PHOTO_LIMIT, TOOL_CONTRACTS } from "./tool-contracts.js";
+import { AI_MASK_COMPUTE_WAIT_SECONDS, AUTO_CHANGE_WAIT_SECONDS, CATALOG_WRITE_WAIT_SECONDS, DEFAULT_PAGE_LIMIT, NEW_MASK_SAVE_WAIT_SECONDS, PLUGIN_ACTIONS, STYLE_SUMMARY_MIN_RATING, STYLE_SUMMARY_PHOTO_LIMIT, TOOL_CONTRACTS } from "./tool-contracts.js";
 import {
   COLOR_LABELS,
   LANDSCAPE_MASK_CATEGORIES,
@@ -9,6 +9,7 @@ import {
   MASK_TYPES,
   PEOPLE_MASK_PARTS,
   PHOTO_FLAGS,
+  STORED_MASK_DECIMAL_PLACES,
 } from "./lightroom-tables.js";
 
 type LuaValue = string | number | boolean | readonly LuaValue[] | { readonly [key: string]: LuaValue };
@@ -53,6 +54,7 @@ export function renderContractLua(): string {
       name: key.name,
       ...(transfersStyle(key) ? { style: true } : {}),
       ...(key.kind === "number" ? { precision: key.precision } : {}),
+      ...(key.kind === "curve" ? { extended: key.extended } : {}),
     })),
     LOCAL_KEYS: LOCAL_KEYS.map(({ range: _range, ...key }): LuaValue => key),
     MASK_TYPES,
@@ -67,7 +69,7 @@ export function renderContractLua(): string {
     CATALOG_WRITE_WAIT_SECONDS,
     AI_MASK_COMPUTE_WAIT_SECONDS,
     AUTO_CHANGE_WAIT_SECONDS,
-    MASK_SAVE_WAIT_SECONDS,
+    NEW_MASK_SAVE_WAIT_SECONDS,
     STORED_MASK_DECIMAL_PLACES,
     STYLE_SUMMARY_MIN_RATING,
     STYLE_SUMMARY_PHOTO_LIMIT,

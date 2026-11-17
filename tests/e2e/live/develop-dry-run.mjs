@@ -9,9 +9,11 @@ const source_id = requireFixtureId(marker, "arw_14bit");
 const target_ids = ["wide_plain", "pano"].map((key) => requireFixtureId(marker, key));
 const keys = ["Exposure2012", "Contrast2012"];
 const tool = async (name, args) => (await session.toolOrThrow(name, args)).data;
-const read = async (id) => {
-  const row = await readFlushedSettings(session, id, source_id);
-  return { row, settings: parseLuaTable(row.text.slice(row.text.indexOf("{"))) };
+const settingsOf = (row) => parseLuaTable(row.text.slice(row.text.indexOf("{")));
+const holds = (values) => (row) => Object.entries(values).every(([key, value]) => isDeepStrictEqual(settingsOf(row)[key], value));
+const read = async (id, until) => {
+  const row = await readFlushedSettings(session, id, source_id, until);
+  return { row, settings: settingsOf(row) };
 };
 const originals = new Map();
 let failure;
@@ -28,21 +30,21 @@ try {
     await tool("set_develop_settings", { photo_id, settings: { Exposure2012: 0, Contrast2012: 0 } });
   }
   const before = new Map();
-  for (const id of target_ids) before.set(id, { ...await read(id), history: developHistory(catalogPath, id) });
+  for (const id of target_ids) before.set(id, { ...await read(id, holds({ Exposure2012: 0, Contrast2012: 0 })), history: developHistory(catalogPath, id) });
   const args = { source_id, target_ids, settings: keys };
   const preview = await tool("copy_develop_settings", { ...args, dry_run: true });
   assert.equal(preview.dry_run, true);
   assert.equal(preview.detail_truncated, false);
   for (const id of target_ids) {
-    assert.deepEqual((await read(id)).row, before.get(id).row, "dry run changed stored row");
+    assert.deepEqual((await read(id, (row) => row.text !== before.get(id).row.text)).row, before.get(id).row, "dry run changed stored row");
     assert.deepEqual(developHistory(catalogPath, id), before.get(id).history, "dry run changed History");
     const detail = preview.details.find((entry) => entry.id === String(id));
     assert.deepEqual(detail.changes.map((change) => change.key).sort(), [...keys].sort());
   }
   await tool("copy_develop_settings", args);
   for (const id of target_ids) {
-    const after = (await read(id)).settings;
     const prior = before.get(id).settings;
+    const after = (await read(id, (row) => !isDeepStrictEqual(settingsOf(row), prior))).settings;
     const changed = [...new Set([...Object.keys(prior), ...Object.keys(after)])]
       .filter((key) => !isDeepStrictEqual(prior[key], after[key])).sort();
     const detail = preview.details.find((entry) => entry.id === String(id));
@@ -59,7 +61,7 @@ try {
   try {
     for (const [photo_id, settings] of originals) await tool("set_develop_settings", { photo_id, settings });
     for (const photo_id of target_ids) {
-      const restored = (await read(photo_id)).settings;
+      const restored = (await read(photo_id, holds(originals.get(photo_id)))).settings;
       for (const key of keys) assert.deepEqual(restored[key], originals.get(photo_id)[key]);
     }
   } catch (cleanupError) {

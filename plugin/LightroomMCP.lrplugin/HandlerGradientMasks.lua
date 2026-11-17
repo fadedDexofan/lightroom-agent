@@ -6,7 +6,7 @@ local GradientGeometry = require 'GradientGeometry'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
-local MaskCreationAdjustments = require 'MaskCreationAdjustments'
+local MaskValues = require 'MaskValues'
 local MaskSelection = require 'MaskSelection'
 local Reply = require 'Reply'
 
@@ -40,7 +40,7 @@ local function addGradient(entries, request, placement)
     if request.maskId == nil then
         local name = request.name or component.MaskName
         entries[#entries + 1] = GuardedMaskWrite.newCorrection(name, { component })
-        MaskCreationAdjustments.write(entries[#entries], request.adjustments)
+        MaskValues.storeAdjustments(entries[#entries], request.adjustments)
         return { entry = #entries, component = 1 }
     end
     local index, entry = GuardedMaskWrite.findCorrection(entries, request.maskId)
@@ -53,7 +53,7 @@ end
 
 function GradientMaskHandler.createGradientMask(args, context)
     local request = GradientGeometry.parseCreate(args)
-    request.adjustments = MaskCreationAdjustments.parse(args)
+    request.adjustments = args.adjustments
     DevelopSession.requireMaskApi("create_gradient_mask")
 
     local catalog = LrApplication.activeCatalog()
@@ -77,9 +77,7 @@ function GradientMaskHandler.createGradientMask(args, context)
             crossCheck = function(actual)
                 local entry = actual[location.entry]
                 local component = entry.CorrectionMasks[location.component]
-                local problem = MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, toolType)
-                if problem then return problem end
-                MaskCreationAdjustments.confirm(catalog, photo, entry.CorrectionID, request.adjustments)
+                return MaskSelection.problemUnlessListed(entry.CorrectionID, component.MaskID, toolType)
             end,
         })
     end)

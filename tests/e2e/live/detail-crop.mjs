@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { developHistory, lastExportTimestamp } from "./lib/catalog-db.mjs";
+import { isDeepStrictEqual } from "node:util";
+import { developHistory, lastExportTimestamp, pollCatalog } from "./lib/catalog-db.mjs";
 import { jpegQuantTables } from "./lib/jpeg.mjs";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 import { alternationRate, decodeJpegBase64 } from "./lib/preview.mjs";
@@ -11,7 +12,6 @@ import { createReport } from "./lib/proof.mjs";
 
 const MIN_ALTERNATION = 0.98;
 const POLL_MS = 25;
-const CATALOG_FLUSH_MS = 3000;
 const SETTING_KEYS = ["ProcessVersion", "Exposure2012", "CropLeft", "CropTop", "CropRight", "CropBottom", "CropAngle"];
 const CROP = { left: 0.1, top: 0.2, right: 0.6, bottom: 0.9 };
 const CENTRE = { x: 0.45, y: 0.45, width: 0.1, height: 0.1 };
@@ -94,8 +94,7 @@ try {
   const traces = () => ({ history: developHistory(catalogPath, ids.board), last_export_timestamp: lastExportTimestamp(catalogPath, ids.board) });
   const tracesBefore = traces();
   const refused = await session.tool("get_photo_detail", { photo_id: ids.board, regions: [WHOLE], max_edge: HINT_EDGE }, { timeoutMs: 300_000 });
-  await new Promise((resolve) => setTimeout(resolve, CATALOG_FLUSH_MS));
-  const tracesRefused = traces();
+  const tracesRefused = await pollCatalog(traces, (now) => !isDeepStrictEqual(now, tracesBefore));
   const hint = /allows regions up to width ([\d.]+) and height ([\d.]+)/.exec(refused.envelope.error ?? "");
   report.check("a region over max_edge is refused before the render and leaves nothing on the photo",
     refused.isError && refused.outcome === "failed" && refused.envelope.error?.includes(`over max_edge ${HINT_EDGE}`)
@@ -109,8 +108,7 @@ try {
   report.check("the next render removes an abandoned render folder and keeps a fresh one and an unrelated entry",
     !kept.abandoned && kept.fresh && kept.unrelated, { directory: detailDirectory, entries, kept, render_folders_seen: [...renderFolders] });
   removePlanted();
-  await new Promise((resolve) => setTimeout(resolve, CATALOG_FLUSH_MS));
-  const tracesAfter = traces();
+  const tracesAfter = await pollCatalog(traces, () => false);
   const added = tracesAfter.history.slice(tracesBefore.history.length);
   report.check("one detail render leaves exactly one Export history step and the exported mark on the photo",
     added.length === 1 && added[0].name.startsWith("Export")

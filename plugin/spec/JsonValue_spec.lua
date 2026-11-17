@@ -24,3 +24,23 @@ describe("JsonValue.equal", function()
         assert.is_false(JsonValue.equal({}, nil))
     end)
 end)
+
+describe("JsonValue.differences", function()
+    local JsonValue
+
+    before_each(function()
+        helper.installImport({})
+        package.loaded.JsonValue = nil
+        JsonValue = require 'JsonValue'
+    end)
+
+    it("lists the path of every value that differs, in both directions, with no tolerance", function()
+        local expected = { { LocalExposure2012 = 0.125, CorrectionMasks = { { MaskDigest = "A" } } }, { Name = "b" } }
+        local actual = { { LocalExposure2012 = 0.1250001, CorrectionMasks = { {} }, Extra = true }, { Name = "b" } }
+
+        assert.are.same({ "1.CorrectionMasks.1.MaskDigest", "1.Extra", "1.LocalExposure2012" },
+            JsonValue.differences(expected, actual))
+        assert.are.same({}, JsonValue.differences(expected, { { LocalExposure2012 = 0.125, CorrectionMasks = { { MaskDigest = "A" } } }, { Name = "b" } }))
+        assert.are.same({ "" }, JsonValue.differences(1, "1"))
+    end)
+end)

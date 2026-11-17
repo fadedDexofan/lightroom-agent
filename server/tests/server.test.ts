@@ -246,15 +246,15 @@ describe('createMcpServer', () => {
     const instructions = pair.client.getInstructions() ?? '';
     const required: Record<string, string[]> = {
       create_range_mask: ['sRGB', 'copy_sample_from', 'second sample point', 'Lightroom crashes', '0.01', 'different colors'],
-      create_mask: ['No sky detected', 'modal alert', 'OK', 'omitted slider', 'AI process is running', 'single-person', '120'],
-      create_mask_batch: ['No sky detected', 'computed', 'may be empty', 'comparing previews', 'remaining', '230'],
+      create_mask: ['ErrorReason', 'no alert to dismiss', 'omitted sliders are neutral', 'AI process is running', 'single-person', 'writes nothing more', 'does not prove'],
+      create_mask_batch: ['saved settings', 'does not prove', 'found nothing', 'compare previews', 'remaining', '230'],
       invert_mask: ['only one component', 'returned mask_id'],
-      combine_mask: ['intersect', 'inverted true', 'No sky detected'],
+      combine_mask: ['intersect', 'inverted true', 'ErrorReason', 'saved settings'],
       get_photo_detail: ['render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}', 'a string ("export" today)', 'a list of phrases', '"the exported mark"'],
       export_photos: ['get_photo_detail or another export', 'refused, not queued', 'separator between names (/ on macOS'],
-      set_mask_adjustments: ['wait up to 8 seconds for saved photo settings', 'not landed by then is unknown'],
-      set_mask_curves: ['wait up to 8 seconds for saved photo settings', 'not landed by then is unknown'],
-      edit_mask_point_colors: ['restores a swatch update or removes an added swatch, and fails once the swatches read as before', 'when another mask became selected'],
+      set_mask_adjustments: ['saved settings by mask_id', 'six decimal places', 'pending in Develop are committed first', 'one history step', 'naming what Lightroom stored'],
+      set_mask_curves: ['saved settings by mask_id', 'at most 16 points', 'pending in Develop are committed first', 'naming what Lightroom stored'],
+      edit_mask_point_colors: ['centred on the source', 'already holds', 'six decimals', 'saved settings by mask_id'],
       list_masks: ['empty list means', 'saved settings hold', 'Develop has not loaded them yet', 'click OK in Lightroom', 'call again', 'failed with nothing changed'],
     };
     for (const [name, phrases] of Object.entries(required)) {

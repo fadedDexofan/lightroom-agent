@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describeMismatch, observedScales, storedMismatch } from "./local-scales.mjs";
 
 const entriesOf = (rawAnswer) => {
   const entries = rawAnswer?.settings?.MaskGroupBasedCorrections;
@@ -11,20 +10,10 @@ export function maskCount(rawAnswer) {
   return entriesOf(rawAnswer).length;
 }
 
-function sliderProblem({ key, value }, before, after) {
-  const known = new Set(entriesOf(before).map((entry) => entry.CorrectionID));
-  const mismatch = storedMismatch(key, value, entriesOf(after).find((entry) => !known.has(entry.CorrectionID)));
-  return mismatch ? describeMismatch(mismatch) : null;
-}
-
-function observation({ keys, values }, answer, after) {
-  const entry = entriesOf(after).find((candidate) => String(candidate.CorrectionID) === String(answer.data?.mask_id));
-  return observedScales(keys, values, entry, answer.data?.unchanged ?? []);
-}
-
 const errorOf = (answer) => answer.envelope?.error ?? answer.text;
 
 export const NOT_EXERCISED = ["depth range (needs a photo with device depth)"];
+const LOCAL_SCALES_NOT_EXERCISED = "local slider stored scales (written and checked through the plug-in's own LOCAL_KEYS formula, so not observed independently)";
 const NO_DEPTH_MAP_READ = ["depth range (Lightroom found no depth map in the supplied depth photo)"];
 
 export function depthCoverage(run) {
@@ -39,7 +28,7 @@ export function requireThrowaway(status) {
   }
 }
 
-function problemOf({ added, expectRefusal, answer, before, after, admission, rendered, slider, observed }) {
+function problemOf({ added, expectRefusal, answer, before, after, admission, rendered }) {
   if (expectRefusal && !answer.isError) return "expected a refusal, the tool succeeded";
   if (expectRefusal && answer.outcome !== "failed") {
     return `expected a refusal with nothing changed (outcome failed), got ${answer.outcome}: ${errorOf(answer)}`;
@@ -50,14 +39,6 @@ function problemOf({ added, expectRefusal, answer, before, after, admission, ren
   const problems = admission?.photo?.schema_problems;
   if (!Array.isArray(problems)) return "the admission read returned no schema check for the photo";
   if (problems.length > 0) return `masks left the pinned format: ${problems.join("; ")}`;
-  if (slider) {
-    const mismatch = sliderProblem(slider, before, after);
-    if (mismatch) return mismatch;
-  }
-  if (observed) {
-    const { mismatches } = observation(observed, answer, after);
-    if (mismatches.length > 0) return mismatches.map(describeMismatch).join("; ");
-  }
   if (rendered && !rendered.passed) return `rendered check failed: ${JSON.stringify(rendered.detail)}`;
   return null;
 }
@@ -65,9 +46,7 @@ function problemOf({ added, expectRefusal, answer, before, after, admission, ren
 export function evaluateStep(step) {
   const problem = problemOf(step);
   if (problem) return { name: step.name, passed: false, problem };
-  const passed = { name: step.name, passed: true, rendered: Boolean(step.rendered), process_version: step.after.settings.ProcessVersion };
-  if (!step.observed) return passed;
-  return { ...passed, not_observed: observation(step.observed, step.answer, step.after).notObserved };
+  return { name: step.name, passed: true, rendered: Boolean(step.rendered), process_version: step.after.settings.ProcessVersion };
 }
 
 export function buildCertificationRecord(status, steps, now, { kitCommit, notExercised = NOT_EXERCISED, ranges } = {}) {
@@ -83,7 +62,7 @@ export function buildCertificationRecord(status, steps, now, { kitCommit, notExe
     certified_at: now.toISOString(),
     checks: steps.map((step) => step.name),
     rendered_checks: steps.filter((step) => step.rendered).map((step) => step.name),
-    not_exercised: notExercised,
+    not_exercised: [LOCAL_SCALES_NOT_EXERCISED, ...notExercised],
     kit_commit: kitCommit ?? null,
     ...(ranges ? { ranges: { build: status.running.build, ...ranges } } : {}),
   };

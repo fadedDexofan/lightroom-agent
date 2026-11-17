@@ -1,4 +1,5 @@
 import type { JSONObject } from "@modelcontextprotocol/server";
+import { POINT_CURVE_MAX_PAIRS, TONE_CURVE_CHANNELS } from "./lightroom-tables.js";
 
 type Bounds = readonly [number, number];
 
@@ -7,7 +8,7 @@ export type DevelopKey = { name: string; note?: string; writtenBy?: string } & (
   | { kind: "enum"; values: readonly (string | number)[]; labels?: readonly string[]; photo?: true }
   | { kind: "boolean"; photo?: true }
   | { kind: "text" }
-  | { kind: "curve" }
+  | { kind: "curve"; extended: string }
 );
 
 const SLIDER: Bounds = [-100, 100];
@@ -37,8 +38,7 @@ export const DEVELOP_KEYS: readonly DevelopKey[] = [
   ...["Saturation", "Hue", "Luminance"].flatMap((part) => COLORS.map((color) => slider(`${part}Adjustment${color}`))),
   ...["ParametricShadows", "ParametricDarks", "ParametricLights", "ParametricHighlights"].map((name) => slider(name)),
   ...["ParametricShadowSplit", "ParametricMidtoneSplit", "ParametricHighlightSplit"].map((name) => slider(name, AMOUNT)),
-  ...["ToneCurvePV2012", "ToneCurvePV2012Red", "ToneCurvePV2012Green", "ToneCurvePV2012Blue"]
-    .map((name): DevelopKey => ({ name, kind: "curve" })),
+  ...TONE_CURVE_CHANNELS.map(({ stored, extended }): DevelopKey => ({ name: stored, kind: "curve", extended })),
   { name: "ToneCurveName2012", kind: "text" },
   { name: "ConvertToGrayscale", kind: "boolean", writtenBy: "set_treatment" },
   ...COLORS.map((color) => slider(`GrayMixer${color}`)),
@@ -94,25 +94,27 @@ export const DEVELOP_KEYS: readonly DevelopKey[] = [
   slider("GlowWarmth"),
   slider("GlowDirection", [-180, 180]),
   ...["CropTop", "CropLeft", "CropBottom", "CropRight"].map((name) => geometry(name, [0, 1], 0.000001)),
-  geometry("CropAngle", [-45, 45], 0.01),
+  geometry("CropAngle", [-45, 45], 0.0001),
 ];
 
 export interface LocalKey {
   name: string;
   range: Bounds;
-  tolerance: number;
   stored: string;
   scale: number;
+  storedDecimals?: number;
   neutral?: number;
 }
 
-const WHOLE = 0.5;
 const local = (name: string, stored: string, range: Bounds = SLIDER, scale = 100): LocalKey =>
-  ({ name, range, tolerance: WHOLE, stored, scale });
+  ({ name, range, stored, scale });
+const STORED_WHOLE_NUMBER = 0;
+const grade = (name: string, stored: string, range: Bounds): LocalKey =>
+  ({ ...local(name, stored, range, 1), storedDecimals: STORED_WHOLE_NUMBER });
 const GRADE_WHEELS = ["Shadow", "Midtone", "Highlight", "Global"];
 
 export const LOCAL_KEYS: readonly LocalKey[] = [
-  { name: "local_Exposure", range: [-4, 4], tolerance: 0.01, stored: "LocalExposure2012", scale: 4 },
+  { name: "local_Exposure", range: [-4, 4], stored: "LocalExposure2012", scale: 4 },
   ...["Contrast", "Highlights", "Shadows", "Whites", "Blacks"].map((name) => local(`local_${name}`, `Local${name}2012`)),
   local("local_Texture", "LocalTexture"),
   local("local_Clarity", "LocalClarity2012"),
@@ -121,12 +123,12 @@ export const LOCAL_KEYS: readonly LocalKey[] = [
   local("local_Moire", "LocalMoire"),
   local("local_Defringe", "LocalDefringe"),
   ...GRADE_WHEELS.flatMap((wheel) => [
-    local(`local_colorgrade${wheel}Hue`, `LocalColorGrade${wheel}Hue`, HUE, 1),
-    local(`local_colorgrade${wheel}Sat`, `LocalColorGrade${wheel}Sat`, AMOUNT, 1),
-    local(`local_colorgrade${wheel}Lum`, `LocalColorGrade${wheel}Lum`, SLIDER, 1),
+    grade(`local_colorgrade${wheel}Hue`, `LocalColorGrade${wheel}Hue`, HUE),
+    grade(`local_colorgrade${wheel}Sat`, `LocalColorGrade${wheel}Sat`, AMOUNT),
+    grade(`local_colorgrade${wheel}Lum`, `LocalColorGrade${wheel}Lum`, SLIDER),
   ]),
-  { ...local("local_colorgradeBlending", "LocalColorGradeBlending", AMOUNT, 1), neutral: 50 },
-  local("local_colorgradeBalance", "LocalColorGradeBalance", SLIDER, 1),
+  { ...grade("local_colorgradeBlending", "LocalColorGradeBlending", AMOUNT), neutral: 50 },
+  grade("local_colorgradeBalance", "LocalColorGradeBalance", SLIDER),
   local("local_glow", "LocalGlow"),
 ];
 
@@ -140,7 +142,6 @@ export function localAdjustmentsSchema(keys: readonly LocalKey[] = LOCAL_KEYS): 
 }
 
 const POINT_CURVE_MIN_PAIRS = 2;
-const POINT_CURVE_MAX_PAIRS = 32;
 const POINT_CURVE_SHAPE = "start at input 0, end at input 255 and have strictly increasing inputs";
 
 export function isPointCurve(points: unknown): boolean {
@@ -162,7 +163,7 @@ export const pointCurveSchema = (subject: string): JSONObject => ({
     const length = (POINT_CURVE_MIN_PAIRS + index) * 2;
     return { minItems: length, maxItems: length };
   }),
-  description: `Flat input/output pairs for ${subject}, e.g. [0, 0, 64, 48, 192, 210, 255, 255]. Values are integers from 0 to 255 and the array holds 2 to 32 pairs, so its length is always even. The curve must ${POINT_CURVE_SHAPE}.`,
+  description: `Flat input/output pairs for ${subject}, e.g. [0, 0, 64, 48, 192, 210, 255, 255]. Values are integers from 0 to 255 and the array holds 2 to ${POINT_CURVE_MAX_PAIRS} pairs, so its length is always even. The curve must ${POINT_CURVE_SHAPE}.`,
 });
 
 function described(schema: JSONObject, ...parts: (string | undefined)[]): JSONObject {

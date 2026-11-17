@@ -3,6 +3,8 @@ import { requireThrowawayCatalog } from "./catalog-guard.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const NEWLINE_PLACEHOLDER = "~NL~";
+const CATALOG_FLUSH_MS = 4000;
+const STABLE_READS = 6;
 const FIELD_SEPARATOR = "@@SEP@@";
 
 export function sqliteRows(catalogPath, query) {
@@ -42,18 +44,27 @@ export function storedSettingsRow(catalogPath, photoId) {
   };
 }
 
-export async function readFlushedSettings(session, photoId, flushPhotoId, { pauseMs = 1500, maxReads = 6 } = {}) {
-  const catalogPath = requireThrowawayCatalog();
-  await session.toolOrThrow("list_masks", { photo_id: flushPhotoId });
-  await sleep(4000);
-  let previous = null;
-  for (let read = 0; read < maxReads; read++) {
-    const row = storedSettingsRow(catalogPath, photoId);
-    if (previous && row && previous.text === row.text) return row;
-    previous = row;
-    await sleep(pauseMs);
+export async function pollCatalog(read, until, { withinMs = CATALOG_FLUSH_MS, pollMs = 250 } = {}) {
+  const deadline = Date.now() + withinMs;
+  for (;;) {
+    const value = read();
+    if (until(value) || Date.now() >= deadline) return value;
+    await sleep(Math.min(pollMs, Math.max(0, deadline - Date.now())));
   }
-  throw new Error(`stored settings of ${photoId} did not stabilise in ${maxReads} reads (two equal reads needed)`);
+}
+
+export async function readFlushedSettings(session, photoId, flushPhotoId, until, { pauseMs = 500 } = {}) {
+  const catalogPath = requireThrowawayCatalog();
+  const read = () => storedSettingsRow(catalogPath, photoId);
+  await session.toolOrThrow("list_masks", { photo_id: flushPhotoId });
+  let row = await pollCatalog(read, (candidate) => candidate !== null && until(candidate), { pollMs: pauseMs });
+  for (let reads = 0; reads < STABLE_READS; reads++) {
+    await sleep(pauseMs);
+    const next = read();
+    if (row && next && row.text === next.text) return next;
+    row = next;
+  }
+  throw new Error(`stored settings of ${photoId} did not stabilise in ${STABLE_READS} reads (two equal reads needed)`);
 }
 
 function matchingBraceBlock(text, start) {

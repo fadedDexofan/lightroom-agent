@@ -76,37 +76,6 @@ test("an expected refusal fails when the tool answered unknown instead of failed
   assert.equal(step.problem, "expected a refusal with nothing changed (outcome failed), got unknown: Lightroom may have changed the photo");
 });
 
-const moire = { name: "local_Moire", range: [-100, 100], tolerance: 0.5, stored: "LocalMoire", scale: 100 };
-
-test("a slider creation passes only when the new mask stores the written value at the table's scale", () => {
-  const base = { name: "local scale Moire", added: 1, answer: ok, before: raw([{ CorrectionID: "a", LocalMoire: 9 }]), admission: admitted() };
-  const created = (stored) => raw([{ CorrectionID: "a", LocalMoire: 9 }, { CorrectionID: "b", LocalMoire: stored }]);
-
-  assert.equal(evaluateStep({ ...base, after: created(0.5), slider: { key: moire, value: 50 } }).passed, true);
-  assert.equal(
-    evaluateStep({ ...base, after: created(50), slider: { key: moire, value: 50 } }).problem,
-    "local_Moire written 50: expected LocalMoire 0.5, stored 50",
-  );
-});
-
-const exposureKey = { name: "local_Exposure", range: [-4, 4], tolerance: 0.01, stored: "LocalExposure2012", scale: 4 };
-
-test("an observation of Lightroom's stored scale fails on any mismatch and passes listing what it could not observe", () => {
-  const keys = [exposureKey, moire];
-  const values = { local_Exposure: 1, local_Moire: 25 };
-  const set = answerOf({ outcome: "done", data: { mask_id: "b", unchanged: [] } });
-  const base = { name: "Lightroom's stored scale", added: 0, answer: set, before: raw([{ CorrectionID: "a" }, { CorrectionID: "b" }]), admission: admitted() };
-  const after = (fields) => raw([{ CorrectionID: "a", LocalMoire: 0.25 }, { CorrectionID: "b", ...fields }]);
-
-  assert.deepEqual(evaluateStep({ ...base, after: after({ LocalExposure2012: 0.25 }), observed: { keys, values } }), {
-    name: "Lightroom's stored scale", passed: true, rendered: false, process_version: "15.4", not_observed: ["local_Moire"],
-  });
-  assert.equal(
-    evaluateStep({ ...base, after: after({ LocalExposure2012: 1, LocalMoire: 25 }), observed: { keys, values } }).problem,
-    "local_Exposure written 1: expected LocalExposure2012 0.25, stored 1; local_Moire written 25: expected LocalMoire 0.25, stored 25",
-  );
-});
-
 const versionTable = { major: 16, minor: 0, revision: 0, build: 1234567 };
 const status = { running: { version: "16.0", build: "16.0.0 build 1234567", version_table: versionTable } };
 
@@ -123,7 +92,7 @@ test("depth range counts as exercised only when a depth photo was supplied and L
     { step: failedStep, notExercised: [] });
 });
 
-test("the record names the running build, the exercised process versions, the time and the checks", () => {
+test("the record names the running build, the exercised process versions, the time, the checks and what it does not exercise", () => {
   const steps = [
     { name: "linear create", passed: true, rendered: true, process_version: "15.4" },
     { name: "sky batch", passed: true, rendered: false, process_version: "15.4" },
@@ -135,7 +104,7 @@ test("the record names the running build, the exercised process versions, the ti
     certified_at: "2026-11-12T10:00:00.000Z",
     checks: ["linear create", "sky batch"],
     rendered_checks: ["linear create"],
-    not_exercised: NOT_EXERCISED,
+    not_exercised: ["local slider stored scales (written and checked through the plug-in's own LOCAL_KEYS formula, so not observed independently)", ...NOT_EXERCISED],
     kit_commit: "abc1234",
   });
 });

@@ -278,6 +278,8 @@ export const STACK_CARDS = [
   { key: "stack_3", width: 600, height: 900, color: [60, 90, 200] },
 ];
 
+export const FLAT_FIELD = { key: "flat_gray", width: 1200, height: 800, color: [128, 128, 128] };
+
 export const MARKER_DISCS = [
   { name: "red", color: [220, 30, 30], x: 0.65, y: 0.4 },
   { name: "blue", color: [30, 60, 220], x: 0.3, y: 0.7 },

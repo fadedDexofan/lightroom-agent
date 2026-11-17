@@ -164,8 +164,7 @@ end tell`);
 }
 
 export async function clickWindowButton(windowTitle, buttonName) {
-  await ensureLightroomFrontmost();
-  onElement(windowTitle, "AXButton", buttonName, 'click e\n      return "clicked"');
+  onElement(windowTitle, "AXButton", buttonName, 'perform action "AXPress" of e\n      return "pressed"');
 }
 
 export async function watchModalsWhile(call, isTarget, {

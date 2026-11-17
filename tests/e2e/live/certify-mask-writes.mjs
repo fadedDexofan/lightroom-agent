@@ -4,9 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { dismissBlockingModals } from "./lib/ax.mjs";
 import { certificationResult, depthCoverage, evaluateStep, requireThrowaway, writeCertification } from "./lib/certification.mjs";
-import { compareRanges, localKeys } from "./lib/develop-ranges.mjs";
+import { compareRanges } from "./lib/develop-ranges.mjs";
 import { fixtureIdOrNull, openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
-import { probeValue, scaleFamilies } from "./lib/local-scales.mjs";
 import { REPO_ROOT } from "./lib/paths.mjs";
 import {
   ellipseInside,
@@ -21,6 +20,7 @@ const MIN_CHANGE = 0.05;
 const MAX_UNTOUCHED_CHANGE = 0.01;
 const MIN_RADIAL_IOU = 0.8;
 
+const startedAt = new Date();
 const { session, marker, catalogPath } = await openLiveSession();
 const id = (key) => String(requireFixtureId(marker, key));
 const ids = {
@@ -173,38 +173,21 @@ await check({
   render: regionsChange([{ name: "sky", x0: 0.3, y0: 0.02, x1: 0.7, y1: 0.12 }, { name: "ground", x0: 0.3, y0: 0.9, x1: 0.7, y1: 0.98 }], "sky", "ground", -1),
 });
 
-const keys = await localKeys();
-let familyMask;
-for (const { family, key } of scaleFamilies(keys)) {
-  const value = probeValue(key);
-  const created = await check({
-    name: `local scale ${family} (${key.name})`, photoId: ids.pano, added: 1, slider: { key, value },
-    call: tool("create_gradient_mask", { photo_id: ids.pano, shape: "linear", start: { x: 0.5, y: 0.9 }, end: { x: 0.5, y: 0.7 }, adjustments: { [key.name]: value } }),
-  });
-  familyMask ??= created.answer?.mask_id;
-}
-
-const observedValues = Object.fromEntries(keys.map((key) => [key.name, probeValue(key, 0.25)]));
-await check({
-  name: "Lightroom's stored scale of every local slider", photoId: ids.pano, added: 0, observed: { keys, values: observedValues },
-  call: tool("set_mask_adjustments", { photo_id: ids.pano, mask_id: familyMask ?? "missing", adjustments: observedValues }),
-});
-const notObserved = steps.flatMap((step) => step.not_observed ?? [])
-  .map((key) => `${key} stored scale (Lightroom stored no field for it on a linear gradient)`);
+const rangeMask = (await toolData("create_gradient_mask", { photo_id: ids.pano, shape: "linear", start: { x: 0.5, y: 0.9 }, end: { x: 0.5, y: 0.7 } })).mask_id;
 
 const global = await toolData("describe_develop_keys", { photo_id: ids.arw12 });
-const local = await toolData("describe_develop_keys", { photo_id: ids.pano, mask_id: familyMask ?? "missing" });
+const local = await toolData("describe_develop_keys", { photo_id: ids.pano, mask_id: rangeMask });
 const ranges = compareRanges([...global.keys, ...local.local]);
 
 const runsDirectory = path.join(path.dirname(catalogPath), "certification-runs");
 fs.mkdirSync(runsDirectory, { recursive: true });
 const runFile = path.join(runsDirectory, `${new Date().toISOString().replaceAll(":", "-")}.json`);
-fs.writeFileSync(runFile, `${JSON.stringify({ status, steps: evidence, ranges }, null, 2)}\n`);
+fs.writeFileSync(runFile, `${JSON.stringify({ status, started_at: startedAt.toISOString(), finished_at: new Date().toISOString(), steps: evidence, ranges }, null, 2)}\n`);
 
 try {
   const kitCommit = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
   const { record, exitCode, lines } = certificationResult(status, steps, new Date(),
-    { kitCommit, notExercised: [...depth.notExercised, ...notObserved], ranges });
+    { kitCommit, notExercised: depth.notExercised, ranges });
   writeCertification(status.certification_file, record);
   console.log(`certified ${record.lightroom.build}, process versions ${record.process_versions.join(", ")}; record ${status.certification_file}; run ${runFile}`);
   for (const line of lines) console.error(line);

@@ -90,7 +90,7 @@ end
 
 function M.withFixtureSlider(fn)
     local keys = require('Contract').LOCAL_KEYS
-    keys[#keys + 1] = { name = "local_Fixture", tolerance = 0.5, stored = "LocalFixture", scale = 100 }
+    keys[#keys + 1] = { name = "local_Fixture", stored = "LocalFixture", scale = 100 }
     package.loaded.LocalSliders = nil
     local ok, err = pcall(fn)
     keys[#keys] = nil
@@ -214,11 +214,18 @@ function M.fakePhoto(meta)
             meta.__appliedFlattenAutoNow = flattenAutoNow
         end,
     }
-    -- Opt in with aiUpdate = "ok" | "error" | "nothing" | "fail"; absent models LrC before 13.3.
+    -- Opt in with aiUpdate = "ok" | "error" | "nothing" | "fail" | "mixed"; absent models LrC before 13.3.
     if meta.aiUpdate then
         photo.updateAISettings = function()
             meta.__aiUpdateCalls = (meta.__aiUpdateCalls or 0) + 1
             if meta.aiUpdate == "fail" then error("AI update failed") end
+            if meta.aiUpdate == "mixed" then
+                for _, correction in ipairs((meta.developSettings or {}).MaskGroupBasedCorrections or {}) do
+                    local first = (correction.CorrectionMasks or {})[1]
+                    if first and first.What == "Mask/Image" and first.MaskDigest == nil then first.ErrorReason = 1 end
+                end
+                return
+            end
             if meta.aiUpdate ~= "ok" and meta.aiUpdate ~= "error" then return end
             for _, correction in ipairs((meta.developSettings or {}).MaskGroupBasedCorrections or {}) do
                 for _, component in ipairs(correction.CorrectionMasks or {}) do

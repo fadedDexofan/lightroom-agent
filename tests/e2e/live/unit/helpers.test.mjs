@@ -6,7 +6,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { batchCropOffsets, batchFileName } from "../lib/batch.mjs";
 import { catalogWindowState, chooseModalButton, parseModalWindows, watchModalsWhile } from "../lib/ax.mjs";
-import { lastExportTimestamp, maskGroupsText, parseLuaTable, storedMaskGroups, summarizeMaskGroups } from "../lib/catalog-db.mjs";
+import { absentFixtureIds, fixturesToImport } from "../lib/live-catalog.mjs";
+import { lastExportTimestamp, maskGroupsText, parseLuaTable, pollCatalog, storedMaskGroups, summarizeMaskGroups } from "../lib/catalog-db.mjs";
 import { addedLuaFiles, assertOutsideTemporaryDirectory, listLuaFiles } from "../lib/plugin-bundle.mjs";
 import { jpegQuantTables } from "../lib/jpeg.mjs";
 import { createReport } from "../lib/proof.mjs";
@@ -18,6 +19,7 @@ import {
   decodeBmp,
   ellipseInside,
   intersectionOverUnion,
+  measureChange,
   meanChroma,
   patchDeltas,
   rectangleInside,
@@ -323,4 +325,76 @@ test("a held modal records whether it was still listed when the call settled", a
     if (scenario.pressed.length === 0) assert.equal(held.pressed_at_seconds, null, scenario.name);
     else assert.ok(held.pressed_at_seconds >= timing.holdMs / 1000, scenario.name);
   }
+});
+
+test("fixtures to import are those the marker does not list and those whose listed photo the catalog no longer holds", () => {
+  const files = ["pano", "chart80", "people_photo"].map((key) => ({ key, source: `/fixtures/${key}` }));
+  const marker = { fixtures: { pano: { id: 535 }, chart80: { id: 49 } } };
+  assert.deepEqual(fixturesToImport(files, marker, []).map(({ key }) => key), ["people_photo"]);
+  assert.deepEqual(fixturesToImport(files, marker, ["535"]).map(({ key }) => key), ["pano", "people_photo"]);
+});
+
+test("measureChange returns once the render after the change is stable, without waiting out the settle time", async () => {
+  const flat = (level) => ({ w: 4, h: 4, L: new Float32Array(16).fill(level) });
+  let changed = false;
+  const fetch = async () => (changed ? flat(0.8) : flat(0.2));
+  const started = Date.now();
+  const { before, after } = await measureChange({}, "1", async () => { changed = true; }, { settleMs: 1500, pauseMs: 20, fetch });
+  assert.ok(Math.abs(before.L[0] - 0.2) < 1e-6);
+  assert.ok(Math.abs(after.L[0] - 0.8) < 1e-6);
+  assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
+});
+
+test("measureChange still waits the settle time for a change that never shows", async () => {
+  const flat = { w: 4, h: 4, L: new Float32Array(16).fill(0.2) };
+  const started = Date.now();
+  const { after } = await measureChange({}, "1", async () => {}, { settleMs: 300, pauseMs: 20, fetch: async () => flat });
+  assert.ok(Math.abs(after.L[0] - 0.2) < 1e-6);
+  assert.ok(Date.now() - started >= 300);
+});
+
+test("pollCatalog returns the read as soon as the expected change shows, without waiting out the window", async () => {
+  const started = Date.now();
+  let reads = 0;
+  const value = await pollCatalog(() => ++reads, (count) => count >= 3, { withinMs: 1500, pollMs: 20 });
+  assert.equal(value, 3);
+  assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
+});
+
+test("pollCatalog waits the whole window for a change that never shows and returns the last read", async () => {
+  const started = Date.now();
+  let reads = 0;
+  const value = await pollCatalog(() => ++reads, () => false, { withinMs: 300, pollMs: 20 });
+  assert.ok(Date.now() - started >= 300);
+  assert.ok(value > 1, `read ${value} times`);
+});
+
+test("a proof's evidence records when it started and when it finished", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-proof-"));
+  const file = path.join(directory, "a.json");
+  const log = console.log;
+  const exitCode = process.exitCode;
+  const times = [new Date("2026-11-16T07:00:00.000Z"), new Date("2026-11-16T07:02:30.000Z")];
+  console.log = () => {};
+  try {
+    const report = createReport("timed", ["node", "x.mjs", "--evidence", file], () => times.shift());
+    report.check("one", true);
+    report.finish();
+    const evidence = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.equal(evidence.started_at, "2026-11-16T07:00:00.000Z");
+    assert.equal(evidence.finished_at, "2026-11-16T07:02:30.000Z");
+    assert.equal(evidence.seconds, 150);
+  } finally {
+    console.log = log;
+    process.exitCode = exitCode;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("absent fixtures come from a metadata answer that settled, and a failed lookup is an error, not an empty list", () => {
+  assert.deepEqual(absentFixtureIds({ outcome: "done", envelope: { outcome: "done" } }), []);
+  assert.deepEqual(absentFixtureIds({ outcome: "partial", envelope: { outcome: "partial", not_found: ["535"] } }), ["535"]);
+  assert.deepEqual(absentFixtureIds({ outcome: "failed", envelope: { outcome: "failed", not_found: ["535", "536"] } }), ["535", "536"]);
+  assert.throws(() => absentFixtureIds({ outcome: "failed", envelope: { outcome: "failed", error: "bridge timed out" } }), /bridge timed out/);
+  assert.throws(() => absentFixtureIds({ outcome: "unknown", envelope: { outcome: "unknown", error: "no answer" } }), /no answer/);
 });

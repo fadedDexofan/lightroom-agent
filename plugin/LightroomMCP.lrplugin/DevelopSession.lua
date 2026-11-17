@@ -143,6 +143,18 @@ function DevelopSession.openDevelop(isReady)
     end
 end
 
+function DevelopSession.flushPendingEdits()
+    if type(LrDevelopController.stopTracking) == "function" then
+        LrTasks.pcall(LrDevelopController.stopTracking, true)
+    end
+end
+
+function DevelopSession.flushIfShowing(catalog, photo)
+    if runningTool == nil and developModuleShowing() and catalog:getTargetPhoto() == photo then
+        DevelopSession.flushPendingEdits()
+    end
+end
+
 local function runBody(context, catalog, restore, body)
     local state = {}
     local view
@@ -150,6 +162,7 @@ local function runBody(context, catalog, restore, body)
         if restore then view = captureView(catalog) end
         return body(state)
     end)
+    if developModuleShowing() then DevelopSession.flushPendingEdits() end
     if view then
         local restored, problems = LrTasks.pcall(restoreView, catalog, view, state)
         if not restored then problems = { tostring(problems) } end
@@ -172,16 +185,6 @@ function DevelopSession.run(context, catalog, restore, body)
     runningTool = nil
     if not ok then error(result, 0) end
     return result
-end
-
-function DevelopSession.restoringView(context, catalog, body)
-    return runBody(context, catalog, true, body)
-end
-
-function DevelopSession.flushPendingEdits()
-    if type(LrDevelopController.stopTracking) == "function" then
-        LrTasks.pcall(LrDevelopController.stopTracking, true)
-    end
 end
 
 function DevelopSession.openPhoto(catalog, photo, state)

@@ -1,7 +1,7 @@
 export const MASK_TYPES = [
-  { name: "subject", toolType: "aiSelection", subtype: "subject" },
-  { name: "sky", toolType: "aiSelection", subtype: "sky" },
-  { name: "background", toolType: "aiSelection", subtype: "background" },
+  { name: "subject", toolType: "aiSelection", subtype: "subject", label: "Subject", stored: { MaskSubType: 1 } },
+  { name: "sky", toolType: "aiSelection", subtype: "sky", label: "Sky", stored: { MaskSubType: 2 } },
+  { name: "background", toolType: "aiSelection", subtype: "background", label: "Background", stored: { MaskSubType: 0, MaskSubCategoryID: 22 } },
 ] as const;
 
 export const MASK_TYPE_NAMES = MASK_TYPES.map((type) => type.name);
@@ -36,11 +36,22 @@ export const LANDSCAPE_MASK_CATEGORIES = [
 export const LANDSCAPE_MASK_CATEGORY_NAMES = LANDSCAPE_MASK_CATEGORIES.map((category) => category.name);
 
 export const MASK_CURVE_CHANNELS = [
-  { name: "main", parameter: "local_Maincurve" },
-  { name: "red", parameter: "local_Redcurve" },
-  { name: "green", parameter: "local_Greencurve" },
-  { name: "blue", parameter: "local_Bluecurve" },
+  { name: "main", stored: "MainCurve", extended: "ExtendedMainCurve" },
+  { name: "red", stored: "RedCurve", extended: "ExtendedRedCurve" },
+  { name: "green", stored: "GreenCurve", extended: "ExtendedGreenCurve" },
+  { name: "blue", stored: "BlueCurve", extended: "ExtendedBlueCurve" },
 ] as const;
+
+export const TONE_CURVE_CHANNELS = [
+  { stored: "ToneCurvePV2012", extended: "ExtendedToneCurvePV2012" },
+  { stored: "ToneCurvePV2012Red", extended: "ExtendedToneCurvePV2012Red" },
+  { stored: "ToneCurvePV2012Green", extended: "ExtendedToneCurvePV2012Green" },
+  { stored: "ToneCurvePV2012Blue", extended: "ExtendedToneCurvePV2012Blue" },
+] as const;
+
+export const POINT_CURVE_MAX_PAIRS = 16;
+
+export const STORED_MASK_DECIMAL_PLACES = 6;
 
 export const MASK_CURVE_CHANNEL_NAMES = MASK_CURVE_CHANNELS.map((channel) => channel.name);
 

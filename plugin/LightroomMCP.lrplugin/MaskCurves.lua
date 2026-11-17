@@ -2,48 +2,48 @@ local Contract = require 'Contract'
 
 local MaskCurves = {}
 
-MaskCurves.MINIMUM_VERSION_LABEL = "Lightroom Classic 12.3"
-
 local MIN_PAIRS = 2
-local VALUE_TOLERANCE = 1
 
 MaskCurves.channels = Contract.MASK_CURVE_CHANNELS
 
-function MaskCurves.requested(curves)
-    local requested = {}
-    for _, channel in ipairs(MaskCurves.channels) do
-        local points = curves[channel.name]
-        if points ~= nil then requested[#requested + 1] = { channel = channel, points = points } end
-    end
-    return requested
-end
+MaskCurves.LINEAR = { 0, 0, 255, 255 }
 
-function MaskCurves.normalize(raw)
-    if type(raw) ~= "table" then return nil end
-    local count = #raw
-    if count < MIN_PAIRS * 2 or count % 2 ~= 0 then return nil end
-    local points = {}
-    for index = 1, count do
-        if type(raw[index]) ~= "number" then return nil end
-        points[index] = raw[index]
-    end
-    return points
-end
-
-function MaskCurves.same(left, right)
-    if left == nil or right == nil or #left ~= #right then return false end
-    for index = 1, #left do
-        if math.abs(left[index] - right[index]) > VALUE_TOLERANCE then return false end
+local function isLinear(points)
+    if #points ~= #MaskCurves.LINEAR then return false end
+    for index, value in ipairs(MaskCurves.LINEAR) do
+        if points[index] ~= value then return false end
     end
     return true
 end
 
-function MaskCurves.copy(points)
-    local copied = {}
-    for index = 1, #points do
-        copied[index] = points[index]
+function MaskCurves.fromStored(strings)
+    if type(strings) ~= "table" or #strings < MIN_PAIRS then return nil end
+    local points = {}
+    for _, pair in ipairs(strings) do
+        if type(pair) ~= "string" then return nil end
+        local input, output = pair:match("^%s*(%-?%d+)%s*,%s*(%-?%d+)%s*$")
+        if not input then return nil end
+        points[#points + 1] = tonumber(input)
+        points[#points + 1] = tonumber(output)
     end
-    return copied
+    return points
+end
+
+function MaskCurves.toStored(points)
+    if isLinear(points) then return nil end
+    local strings = {}
+    for index = 1, #points, 2 do
+        strings[#strings + 1] = string.format("%d,%d", points[index], points[index + 1])
+    end
+    return strings
+end
+
+function MaskCurves.ofEntry(entry, channel)
+    local points = MaskCurves.fromStored(entry[channel.extended]) or MaskCurves.fromStored(entry[channel.stored])
+    if points then return points end
+    local linear = {}
+    for index, value in ipairs(MaskCurves.LINEAR) do linear[index] = value end
+    return linear
 end
 
 return MaskCurves

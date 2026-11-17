@@ -18,6 +18,9 @@ local function setup(opts)
     Store.trackGates(state, catalog)
     local files = opts.files or {}
     helper.installImport({
+        LrApplicationView = {},
+        LrDevelopController = {},
+        LrSelection = {},
         LrApplication = {
             activeCatalog = function() return catalog end,
             versionTable = function() return { major = 16, minor = 0, revision = 0, build = 1234567 } end,
@@ -55,30 +58,21 @@ describe("HandlerMaskAdmission.get", function()
         assert.are.equal(0, state.reads)
     end)
 
-    it("admits a photo of a certified build with a certified process version and pinned masks", function()
-        local Handler = setup({
-            files = { [CERTIFICATION_FILE] = CERTIFIED },
-            entries = { Store.correction("A", { Store.linearComponent() }) },
-        })
+    for _, case in ipairs({
+        { held = "masks of the pinned format", entry = Store.correction("A", { Store.linearComponent() }), problems = {} },
+        { held = "a mask outside the pinned format, listing it", entry = Store.correction("Odd", { { What = "Mask/Mystery", MaskActive = true } }),
+            problems = { "existing mask 1.CorrectionMasks[1]: unknown mask type Mask/Mystery" } },
+    }) do
+        it("admits a photo of a certified build with a certified process version holding " .. case.held, function()
+            local Handler = setup({ files = { [CERTIFICATION_FILE] = CERTIFIED }, entries = { case.entry } })
 
-        local result = Handler.get({ photo_id = "7" })
+            local result = Handler.get({ photo_id = "7" })
 
-        assert.is_true(result.admitted)
-        assert.are.same({
-            photo_id = "7", process_version = "15.4", mask_count = 1, schema_problems = {}, admitted = true,
-        }, result.photo)
-    end)
-
-    it("does not admit a photo whose existing masks leave the pinned format and lists the problems", function()
-        local odd = Store.correction("Odd", { { What = "Mask/Mystery", MaskActive = true } })
-        local Handler = setup({ files = { [CERTIFICATION_FILE] = CERTIFIED }, entries = { odd } })
-
-        local photo = Handler.get({ photo_id = "7" }).photo
-
-        assert.is_false(photo.admitted)
-        assert.are.equal(1, #photo.schema_problems)
-        assert.is_truthy(photo.reason:find("pinned mask format", 1, true))
-    end)
+            assert.is_true(result.admitted)
+            assert.are.same({ photo_id = "7", process_version = "15.4", mask_count = 1, schema_problems = case.problems,
+                admitted = true }, result.photo)
+        end)
+    end
 
     it("does not admit a photo whose process version the certification did not exercise", function()
         local Handler = setup({ files = { [CERTIFICATION_FILE] = CERTIFIED }, processVersion = "11.0" })

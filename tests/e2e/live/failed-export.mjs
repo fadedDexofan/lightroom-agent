@@ -3,11 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { clickWindowButton, listModalWindows, watchModalsWhile } from "./lib/ax.mjs";
-import { developHistory, lastExportTimestamp } from "./lib/catalog-db.mjs";
+import { developHistory, lastExportTimestamp, pollCatalog } from "./lib/catalog-db.mjs";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 import { createReport } from "./lib/proof.mjs";
 
-const CATALOG_FLUSH_MS = 3_000;
 const EXPORT_BUDGET_MS = 300_000;
 const CALL_TIMEOUT_MS = EXPORT_BUDGET_MS + 30_000;
 const MODAL_POLL_MS = 1_000;
@@ -18,10 +17,7 @@ const report = createReport("what a failed export session leaves on the photo (p
 const { session, marker, catalogPath } = await openLiveSession();
 const chart = String(requireFixtureId(marker, "chart80"));
 
-const traces = async () => {
-  await new Promise((resolve) => setTimeout(resolve, CATALOG_FLUSH_MS));
-  return { history: developHistory(catalogPath, chart), last_export_timestamp: lastExportTimestamp(catalogPath, chart) };
-};
+const traces = () => ({ history: developHistory(catalogPath, chart), last_export_timestamp: lastExportTimestamp(catalogPath, chart) });
 const added = (before, after) => after.history.filter((step) => !before.history.some((known) => known.id === step.id));
 const replyOf = (answer) => ({ outcome: answer.outcome, isError: answer.isError, error: answer.envelope.error ?? null,
   failed: answer.envelope.failed ?? [], unknown: answer.envelope.unknown ?? [], warnings: answer.envelope.warnings ?? [], data: answer.data ?? null, ms: answer.ms });
@@ -52,9 +48,9 @@ try {
   const writable = path.join(output, "writable");
   fs.mkdirSync(readOnly, { mode: 0o555 });
   fs.mkdirSync(writable);
-  const before = await traces();
+  const before = traces();
   const denied = await exportWatchingModals(readOnly);
-  const afterDenied = await traces();
+  const afterDenied = await pollCatalog(traces, () => false);
   const failedSession = {
     reply: denied.answer ? replyOf(denied.answer) : null, rpc_error: denied.error ?? null, call_seconds: denied.call_seconds,
     blocked_until_dismissed: denied.modals_during_call.some((window) => window.pressed_at_seconds !== null && !window.settled_while_open),
@@ -72,7 +68,7 @@ try {
 
   const exportedRun = await exportWatchingModals(writable);
   const exported = exportedRun.answer;
-  const afterExported = await traces();
+  const afterExported = await pollCatalog(traces, () => false);
   const control = {
     reply: exported ? replyOf(exported) : null, rpc_error: exportedRun.error ?? null, modals_during_call: exportedRun.modals_during_call,
     files_written: fs.readdirSync(writable),

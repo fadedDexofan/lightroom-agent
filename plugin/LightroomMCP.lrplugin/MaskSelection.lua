@@ -14,8 +14,6 @@ local MASK_SELECT_SETTLE_SECONDS = 0.3
 
 local MASK_LISTED_TIMEOUT_SECONDS = 5
 local TOOL_SWITCH_TIMEOUT_SECONDS = 5
-local SLIDER_CONFIRM_TIMEOUT_SECONDS = 2
-local SLIDER_WRITE_ATTEMPTS = 2
 local MASKING_TOOL = "masking"
 local MASKING_TOOL_NAMES = { masking = true, local_point_color = true }
 
@@ -29,13 +27,13 @@ function MaskSelection.idString(value)
     return nil
 end
 
-function MaskSelection.scalarOrNil(value)
+local function scalarOrNil(value)
     local valueType = type(value)
     if valueType == "string" or valueType == "number" or valueType == "boolean" then return value end
     return nil
 end
 
-function MaskSelection.toolsOf(mask)
+local function toolsOf(mask)
     local tools = type(mask) == "table" and mask.Tools
     if type(tools) ~= "table" then return {} end
     return tools
@@ -70,7 +68,7 @@ local function savedMaskCount(catalog, photo)
     return count
 end
 
-function MaskSelection.holdsSavedMasks(catalog, photo, masks)
+local function holdsSavedMasks(catalog, photo, masks)
     return #masks >= savedMaskCount(catalog, photo)
 end
 
@@ -84,7 +82,7 @@ function MaskSelection.readMasks(catalog, photo)
             return false
         end
         masks = type(result) == "table" and result or {}
-        return MaskSelection.holdsSavedMasks(catalog, photo, masks)
+        return holdsSavedMasks(catalog, photo, masks)
     end, MASK_LIST_TIMEOUT_SECONDS)
     if ready then return masks end
     if masks == nil then
@@ -141,7 +139,7 @@ function MaskSelection.problemUnlessAddedRemoved(catalog, photo, knownIds, subje
     local masks
     local listed = DevelopSession.waitFor(function()
         masks = readMasksListingAll(knownIds)
-        return masks ~= nil and MaskSelection.holdsSavedMasks(catalog, photo, masks)
+        return masks ~= nil and holdsSavedMasks(catalog, photo, masks)
     end, MASK_LISTED_TIMEOUT_SECONDS)
     local leftovers
     if listed then
@@ -166,7 +164,7 @@ function MaskSelection.problemUnlessAddedRemoved(catalog, photo, knownIds, subje
 end
 
 local function toolListed(masks, maskId, toolId, toolType, subtype)
-    for _, tool in ipairs(MaskSelection.toolsOf(MaskSelection.findMask(masks, maskId))) do
+    for _, tool in ipairs(toolsOf(MaskSelection.findMask(masks, maskId))) do
         if tostring(tool.ID) == tostring(toolId) and tool.Type == toolType
             and (subtype == nil or tool.Subtype == subtype) then
             return true
@@ -195,7 +193,7 @@ local function sortedKeyNames(entry)
     return table.concat(names, ", ")
 end
 
-function MaskSelection.normalizeTool(tool, photoId, ranges)
+local function normalizeTool(tool, photoId, ranges)
     if type(tool) ~= "table" then
         error("Lightroom returned a mask tool that is not a table for photo " .. photoId)
     end
@@ -206,8 +204,8 @@ function MaskSelection.normalizeTool(tool, photoId, ranges)
     end
     return {
         id = id,
-        type = MaskSelection.scalarOrNil(tool.Type),
-        subtype = MaskSelection.scalarOrNil(tool.Subtype),
+        type = scalarOrNil(tool.Type),
+        subtype = scalarOrNil(tool.Subtype),
         inverted = tool.Inverted == true,
         range = ranges and ranges[id] or nil,
     }
@@ -223,12 +221,12 @@ function MaskSelection.normalizeMask(mask, photoId, ranges)
             .. " (fields: " .. sortedKeyNames(mask) .. ")")
     end
     local tools = {}
-    for _, tool in ipairs(MaskSelection.toolsOf(mask)) do
-        tools[#tools + 1] = MaskSelection.normalizeTool(tool, photoId, ranges)
+    for _, tool in ipairs(toolsOf(mask)) do
+        tools[#tools + 1] = normalizeTool(tool, photoId, ranges)
     end
     return {
         id = id,
-        name = MaskSelection.scalarOrNil(mask.Name),
+        name = scalarOrNil(mask.Name),
         hidden = mask.Hidden == true,
         tools = tools,
     }
@@ -246,29 +244,14 @@ function MaskSelection.requireMask(masks, maskId, photoId)
         photoId, tostring(maskId), #ids > 0 and table.concat(ids, ", ") or "none"))
 end
 
-function MaskSelection.readSelectedMask()
+local function readSelectedMask()
     local ok, id = LrTasks.pcall(LrDevelopController.getSelectedMask)
     if ok and type(id) == "string" and id ~= "" then return id end
     return nil
 end
 
-MaskSelection.SELECTION_MOVED = "Another mask became selected while writing"
-
-function MaskSelection.isSelected(maskId)
-    return MaskSelection.readSelectedMask() == maskId
-end
-
-function MaskSelection.movedBeforeWriting(maskId)
-    return "Another mask became selected before mask " .. tostring(maskId) .. " was written; nothing was written"
-end
-
-function MaskSelection.movedAfterWriting(maskId, written)
-    return string.format("%s mask %s; written: %s; read the mask before retrying",
-        MaskSelection.SELECTION_MOVED, tostring(maskId), table.concat(written, ", "))
-end
-
-function MaskSelection.refuseUnlessSelected(maskId)
-    if not MaskSelection.isSelected(maskId) then Reply.refuse(MaskSelection.movedBeforeWriting(maskId)) end
+local function isSelected(maskId)
+    return readSelectedMask() == maskId
 end
 
 function MaskSelection.selectableTool(tool)
@@ -304,54 +287,16 @@ function MaskSelection.restoreTool(previousTool)
     LrTasks.pcall(LrDevelopController.selectTool, previousTool)
 end
 
-function MaskSelection.readSlider(name)
-    local ok, value = LrTasks.pcall(LrDevelopController.getValue, name)
-    if ok and type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge then
-        return value
-    end
-    return nil
-end
-
-function MaskSelection.sliderNear(slider, actual, wanted)
-    return actual ~= nil and math.abs(actual - wanted) <= slider.tolerance
-end
-
-function MaskSelection.sliderKept(slider, wanted, timeoutSeconds)
-    return DevelopSession.waitFor(function()
-        return MaskSelection.sliderNear(slider, MaskSelection.readSlider(slider.name), wanted)
-    end, timeoutSeconds)
-end
-
-function MaskSelection.writeSlider(slider, wanted, maskId)
-    local sent = false
-    for _ = 1, SLIDER_WRITE_ATTEMPTS do
-        if not MaskSelection.isSelected(maskId) then return false, MaskSelection.SELECTION_MOVED, sent end
-        sent = true
-        local ok, err = LrTasks.pcall(LrDevelopController.setValue, slider.name, wanted)
-        if not ok then
-            return false, string.format("Lightroom rejected %s %g: %s", slider.name, wanted, tostring(err)), sent
-        end
-        if MaskSelection.sliderKept(slider, wanted, SLIDER_CONFIRM_TIMEOUT_SECONDS) then return true, nil, sent end
-    end
-    return false, MaskSelection.sliderNotKept(slider, wanted), sent
-end
-
-function MaskSelection.sliderNotKept(slider, wanted)
-    local actual = MaskSelection.readSlider(slider.name)
-    return string.format("Lightroom did not keep %s %g (reads %s)",
-        slider.name, wanted, actual and string.format("%g", actual) or "nothing")
-end
-
 local function openMaskingPanel()
     if type(LrDevelopController.goToMasking) == "function" then
         LrTasks.pcall(LrDevelopController.goToMasking)
     end
 end
 
-function MaskSelection.selectMaskAndWait(maskId)
+local function selectMaskAndWait(maskId)
     local sinceSelect = MASK_RESELECT_SECONDS
     return DevelopSession.waitFor(function()
-        if MaskSelection.isSelected(maskId) then return true end
+        if isSelected(maskId) then return true end
         if sinceSelect >= MASK_RESELECT_SECONDS then
             LrTasks.pcall(LrDevelopController.selectMask, maskId)
             sinceSelect = 0
@@ -361,23 +306,28 @@ function MaskSelection.selectMaskAndWait(maskId)
     end, MASK_SELECT_TIMEOUT_SECONDS)
 end
 
+function MaskSelection.keepingSelection(body)
+    local previousMask = readSelectedMask()
+    local ok, result = LrTasks.pcall(body)
+    if previousMask and readSelectedMask() ~= previousMask then
+        LrTasks.pcall(LrDevelopController.selectMask, previousMask)
+    end
+    if not ok then error(result, 0) end
+    return result
+end
+
 function MaskSelection.withMaskSelected(catalog, photo, maskId, body)
     local photoId = tostring(photo.localIdentifier)
     local masks = MaskSelection.readMasks(catalog, photo)
     MaskSelection.requireMask(masks, maskId, photoId)
     openMaskingPanel()
-    local previousMask = MaskSelection.readSelectedMask()
-    if not MaskSelection.selectMaskAndWait(maskId) then
-        Reply.refuse("Could not select mask " .. maskId .. " on photo " .. photoId .. " in Develop")
-    end
-    LrTasks.sleep(MASK_SELECT_SETTLE_SECONDS)
-
-    local ok, result = LrTasks.pcall(body, masks)
-    if previousMask and MaskSelection.readSelectedMask() ~= previousMask then
-        LrTasks.pcall(LrDevelopController.selectMask, previousMask)
-    end
-    if not ok then error(result, 0) end
-    return result
+    return MaskSelection.keepingSelection(function()
+        if not selectMaskAndWait(maskId) then
+            Reply.refuse("Could not select mask " .. maskId .. " on photo " .. photoId .. " in Develop")
+        end
+        LrTasks.sleep(MASK_SELECT_SETTLE_SECONDS)
+        return body(masks)
+    end)
 end
 
 return MaskSelection

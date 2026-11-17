@@ -197,7 +197,6 @@ describe('develop setting schema', () => {
     expect(check([0, 0, 128, 300, 255, 255])).toBe(false);
     expect(check([0, 0, 128, -1, 255, 255])).toBe(false);
     expect(check([0, 0])).toBe(false);
-    expect(check(Array.from({ length: 66 }, () => 0))).toBe(false);
     expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: 1 } })).toContain('ToneCurvePV2012');
     expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { Exposure2012: [0, 0, 255, 255] } })).toContain('Exposure2012');
     expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { NotAKey: 1 } })).toContain('NotAKey');
@@ -246,7 +245,7 @@ describe('local adjustment schema', () => {
   });
 
   it('publishes a new local slider from its one table entry', () => {
-    const fixture = { name: 'local_Fixture', range: [-10, 10], tolerance: 0.5, stored: 'LocalFixture', scale: 100 } as const;
+    const fixture = { name: 'local_Fixture', range: [-10, 10], stored: 'LocalFixture', scale: 100 } as const;
 
     const schema = localAdjustmentsSchema([...LOCAL_KEYS, fixture]) as { properties: Record<string, unknown> };
 
@@ -362,7 +361,7 @@ describe('Remove spot contracts', () => {
 describe('Develop-driving reads', () => {
   it('say in their published description that they drive Develop and may commit a pending slider change', () => {
     const reads = TOOL_CONTRACTS.filter((contract) => contract.develop === 'drives' && contract.annotations.readOnlyHint);
-    expect(reads.map((contract) => contract.name).sort()).toEqual(['describe_develop_keys', 'get_lens_blur', 'get_mask', 'list_masks', 'list_spots']);
+    expect(reads.map((contract) => contract.name).sort()).toEqual(['describe_develop_keys', 'get_lens_blur', 'list_masks', 'list_spots']);
     for (const contract of reads) {
       const description = TOOL_DEFINITIONS.find((tool) => tool.name === contract.name)!.description;
       expect(description).toContain('Opens the photo in Develop');

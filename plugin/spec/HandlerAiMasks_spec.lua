@@ -7,11 +7,14 @@ local function computeEveryEntry(opts)
     return function(state)
         for _, entry in ipairs(state.entries) do
             local component = entry.CorrectionMasks[1]
-            if component.What == "Mask/Image" and component.MaskDigest == nil then
+            if component.What == "Mask/Image" and opts.existingBecomes and entry.CorrectionID == "C1" then
+                for key, value in pairs(opts.existingBecomes) do component[key] = value end
+            elseif component.What == "Mask/Image" and component.MaskDigest == nil and (component.ErrorReason or 0) == 0 then
                 local category = component.MaskSubCategoryID
                 if opts.absentCategories and opts.absentCategories[category] then
                     component.ErrorReason = 1
-                elseif not opts.neverCompute then
+                elseif not opts.neverCompute and not (opts.pendingCategories and opts.pendingCategories[category])
+                    and not (opts.pendingIds and opts.pendingIds[entry.CorrectionID]) then
                     component.MaskDigest = DIGEST
                     component.InputDigest = DIGEST
                     component.LocalInputDigest = DIGEST
@@ -41,7 +44,17 @@ local function setup(opts)
         photo.updateAISettings = function()
             calls.updateAI = calls.updateAI + 1
             if opts.updateFails then error("AI update failed") end
+            if opts.computesOnSecondRead then
+                local reads, getDevelopSettings = 0, photo.getDevelopSettings
+                photo.getDevelopSettings = function(self)
+                    reads = reads + 1
+                    if reads == 2 then computeEveryEntry(opts)(store) end
+                    return getDevelopSettings(self)
+                end
+                return
+            end
             computeEveryEntry(opts)(store)
+            if opts.raisesAfterCompute then error("AI update failed late") end
             if opts.dropLastEntry then store.entries[#store.entries] = nil end
         end
     end
@@ -113,46 +126,61 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal("C2", result.masks[1].mask_id)
     end)
 
-    it("removes the new masks and reports it when the photo has no such part", function()
+    it("removes the new masks and refuses when the photo has no such part", function()
         local Handler, store = setup({ entries = { existingGradient() }, absentCategories = { [5] = true } })
+        local context = helper.requestContext(nil, { title = "create_mask" })
 
-        local reply = Handler.createMask({ type = "people", photo_id = "1", parts = { "face_skin", "hair" } })
+        local refusal = helper.refusalOf(function()
+            Handler.createMask({ type = "people", photo_id = "1", parts = { "face_skin", "hair" } }, context)
+        end)
 
-        assert.is_nil(reply.data)
-        assert.matches("found no hair on any person in photo 1", reply.failed[1].reason, 1, true)
-        assert.matches("the new masks were removed", reply.failed[1].reason, 1, true)
-        assert.matches("Update AI Settings Errors", reply.warnings[1], 1, true)
+        assert.matches("found no hair on any person in photo 1", refusal, 1, true)
+        assert.matches("the new masks were removed", refusal, 1, true)
+        assert.are.same({}, context.warnings)
         assert.are.equal(1, #store.entries)
         assert.are.equal("Sky gradient", store.entries[1].CorrectionName)
     end)
 
-    it("answers unknown when a part is missing on a photo that already had AI masks", function()
-        local existing = Store.correction("Sky", { {
-            What = "Mask/Image", MaskActive = true, MaskInverted = false, MaskBlendMode = 0, MaskValue = 1,
-            MaskSubType = 2, MaskID = "C1T1", MaskDigest = DIGEST, InputDigest = DIGEST, LocalInputDigest = DIGEST,
-        } }, { CorrectionID = "C1" })
-        local Handler, store = setup({ entries = { existing }, absentCategories = { [5] = true } })
+    it("refuses and restores the photo when a part is missing on a photo that already had AI masks", function()
+        local Handler, store = setup({ entries = { existingSky() }, absentCategories = { [5] = true } })
 
-        local reply = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
+        local refusal = helper.refusalOf(function()
+            Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
+        end)
 
-        assert.is_nil(reply.failed)
-        assert.matches("found no hair on any person in photo 1", reply.unknown[1].reason, 1, true)
-        assert.matches("its existing AI masks may have changed", reply.unknown[1].reason, 1, true)
-        assert.matches("Update AI Settings Errors", reply.warnings[1], 1, true)
-        assert.are.equal(1, #store.entries)
-        assert.are.equal("C1", store.entries[1].CorrectionID)
+        assert.matches("found no hair on any person in photo 1; the new masks were removed", refusal, 1, true)
+        assert.are.same({ existingSky() }, store.entries)
     end)
 
-    it("warns when the new masks computed on a photo that already had AI masks", function()
-        local Handler = setup({ entries = { existingSky() } })
+    for _, case in ipairs({
+        { what = "whose result Lightroom's recompute changed", becomes = { MaskDigest = "0123" },
+          warnings = { "Photo 1: Lightroom's photo-wide AI recompute changed mask C1; check it" } },
+        { what = "that became failed", becomes = { ErrorReason = 2 },
+          warnings = { "Photo 1: Lightroom's photo-wide AI recompute changed mask C1; check it" } },
+        { what = "that the recompute left as it was", becomes = nil, warnings = {} },
+    }) do
+        it("answers for an existing AI mask " .. case.what, function()
+            local Handler = setup({ entries = { existingSky() }, existingBecomes = case.becomes })
+            local context = helper.requestContext(nil, { title = "create_mask" })
+
+            local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
+
+            assert.are.equal("C2", result.mask_id)
+            assert.are.same(case.warnings, context.warnings)
+        end)
+    end
+
+    it("names an AI mask that was already failed before the call and does not let it decide", function()
+        local failed = existingSky()
+        failed.CorrectionMasks[1].MaskDigest = nil
+        failed.CorrectionMasks[1].ErrorReason = 1
+        local Handler = setup({ entries = { failed } })
         local context = helper.requestContext(nil, { title = "create_mask" })
 
         local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
 
-        assert.are.equal("1", result.photo_id)
-        assert.are.equal(1, #context.warnings)
-        assert.matches("Photo 1: Lightroom recomputed AI settings for the whole photo, so its existing AI masks may have changed",
-            context.warnings[1], 1, true)
+        assert.are.equal("C2", result.mask_id)
+        assert.are.same({ "Photo 1: mask C1 was already failed (ErrorReason 1) before this call" }, context.warnings)
     end)
 
     it("does not warn about a recompute when the photo had no AI masks", function()
@@ -179,13 +207,29 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(0, store.attempts)
     end)
 
-    it("removes the new masks when the AI update call fails", function()
-        local Handler, store = setup({ updateFails = true })
+    it("answers unknown and writes nothing more when the AI update raises and leaves the new masks uncomputed", function()
+        local Handler, store, calls = setup({ updateFails = true })
 
-        local message = helper.refusalOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end)
+        local message = helper.unknownOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end)
 
-        assert.matches("Lightroom could not compute the AI masks: AI update failed", message, 1, true)
-        assert.are.equal(0, #store.entries)
+        assert.matches("Lightroom could not compute the people masks: AI update failed", message, 1, true)
+        assert.matches("has not finished computing the AI masks of photo 1 within 15 s", message, 1, true)
+        assert.are.equal(1, #store.writes)
+        assert.are.equal(1, #store.entries)
+        assert.are.equal(1, calls.updateAI)
+    end)
+
+    it("judges the photo when the AI update raises after Lightroom computed the new masks", function()
+        local Handler, store = setup({ raisesAfterCompute = true })
+        local context = helper.requestContext(nil, { title = "create_mask" })
+
+        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
+
+        assert.are.equal(1, #result.masks)
+        assert.are.equal(1, #store.entries)
+        assert.are.equal(1, #store.writes)
+        assert.are.same({ "Photo 1: Lightroom could not compute the people masks: AI update failed late; nothing on the"
+            .. " photo was still computing afterwards, so the call judged the photo as it stands" }, context.warnings)
     end)
 
     for _, case in ipairs({
@@ -214,7 +258,7 @@ describe("HandlerMaskCreate.createMask people", function()
     end
 
     it("answers unknown, not a refusal, when the new masks could not be removed", function()
-        local Handler, store = setup({ updateFails = true, rejectWrite = function(attempt) return attempt >= 2 end })
+        local Handler, store = setup({ absentCategories = { [5] = true }, rejectWrite = function(attempt) return attempt >= 2 end })
 
         local message = helper.unknownOf(function()
             Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
@@ -224,19 +268,54 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(1, #store.entries)
     end)
 
-    it("leaves the masks alone and says so when Lightroom never finishes computing", function()
+    it("writes nothing more and answers unknown when Lightroom has not finished computing at the limit", function()
         local Handler, store, calls = setup({ neverCompute = true })
 
         local message = helper.unknownOf(function()
             Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
         end)
 
-        assert.matches("has not finished computing", message, 1, true)
+        assert.matches("Lightroom has not finished computing the AI masks of photo 1 within 15 s", message, 1, true)
         assert.matches("can freeze Lightroom", message, 1, true)
-        assert.matches("Do not write to this photo until the masks show in Develop", message, 1, true)
         assert.are.equal(1, #store.writes)
         assert.are.equal(1, #store.entries)
         assert.are.equal(1, calls.updateAI)
+    end)
+
+    it("answers unknown and writes nothing more while an existing AI mask is still computing at the limit", function()
+        local pending = existingSky()
+        for _, key in ipairs({ "MaskDigest", "InputDigest", "LocalInputDigest" }) do pending.CorrectionMasks[1][key] = nil end
+        local Handler, store = setup({ entries = { pending }, pendingIds = { C1 = true } })
+
+        local message = helper.unknownOf(function()
+            Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
+        end)
+
+        assert.matches("has not finished computing the AI masks of photo 1 within 15 s", message, 1, true)
+        assert.are.equal(1, #store.writes)
+        assert.are.equal(2, #store.entries)
+    end)
+
+    it("withholds the restore while one own part is still computing after another was not found", function()
+        local Handler, store = setup({ absentCategories = { [5] = true }, pendingCategories = { [6] = true } })
+
+        local message = helper.unknownOf(function()
+            Handler.createMask({ type = "people", photo_id = "1", parts = { "hair", "lips" } })
+        end)
+
+        assert.matches("has not finished computing", message, 1, true)
+        assert.are.equal(1, #store.writes)
+        assert.are.equal(2, #store.entries)
+    end)
+
+    it("waits for a compute Lightroom finishes after its first read and answers done", function()
+        local Handler, store = setup({ computesOnSecondRead = true })
+
+        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
+
+        assert.are.equal(1, #result.masks)
+        assert.are.equal(1, #store.writes)
+        assert.is_string(store.entries[1].CorrectionMasks[1].MaskDigest)
     end)
 
     it("removes the new masks when Lightroom drops one of them", function()
@@ -299,9 +378,11 @@ describe("HandlerMaskCreate.createMask landscape", function()
     it("removes every new mask when one category is absent", function()
         local Handler, store = setup({ entries = { existingGradient() }, absentCategories = { [50007] = true } })
 
-        local reply = Handler.createMask({ type = "landscape", photo_id = "1", categories = { "sky", "water" } })
+        local refusal = helper.refusalOf(function()
+            Handler.createMask({ type = "landscape", photo_id = "1", categories = { "sky", "water" } })
+        end)
 
-        assert.matches("found no water in photo 1", reply.failed[1].reason, 1, true)
+        assert.matches("found no water in photo 1; the new masks were removed", refusal, 1, true)
         assert.are.equal(1, #store.entries)
         assert.are.equal("Sky gradient", store.entries[1].CorrectionName)
     end)

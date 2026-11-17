@@ -110,14 +110,63 @@ describe("HandlerPreview.renderPreview", function()
         assert.are.equal("b64(FIRST)", Handler.renderPreview({ photo_ids = { "1" }, size = 512 }).data.image.data)
     end)
 
-    it("reports the renderer's error as failed instead of an empty image", function()
+    it("reports any other renderer error as failed at once, instead of an empty image", function()
+        local requests = 0
         local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, _, _, cb)
+            requests = requests + 1
             cb(nil, "file is offline")
         end)
         local _, Handler = setup({ photo })
 
         assert.are.same({ { photo_id = "1", reason = "Preview failed: file is offline" } },
-            Handler.renderPreview({ photo_ids = { "1" }, size = 512 }).failed)
+            Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30)).failed)
+        assert.are.equal(1, requests)
+    end)
+
+    it("asks again while Lightroom is still rebuilding the preview after a change, and returns the first good render", function()
+        local requests = 0
+        local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
+            requests = requests + 1
+            if requests < 3 then cb(nil, "error loading thumb") else cb("JPEGDATA") end
+        end)
+        local _, Handler = setup({ photo })
+
+        local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30))
+
+        assert.are.equal("b64(JPEGDATA)", reply.data.image.data)
+        assert.are.equal(3, requests)
+    end)
+
+    it("answers failed, saying the preview is still being rebuilt, when no render succeeds within the time", function()
+        local requests, context = 0, nil
+        local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
+            requests = requests + 1
+            if context:timeLeft() < 10 then error("asked again inside the reply reserve", 0) end
+            cb(nil, "error loading thumb")
+        end)
+        local _, Handler = setup({ photo })
+        context = helper.requestContext(30)
+
+        local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, context)
+
+        assert.matches("Lightroom is still rebuilding the preview of photo 1 after a change", reply.failed[1].reason, 1, true)
+        assert.matches("ask again", reply.failed[1].reason, 1, true)
+        assert.is_true(requests > 1)
+        assert.is_true(context:timeLeft() >= 10)
+    end)
+
+    it("says the preview is still being rebuilt when a retry after a rebuilding answer never calls back", function()
+        local requests = 0
+        local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
+            requests = requests + 1
+            if requests == 1 then cb(nil, "error loading thumb") end
+        end)
+        local _, Handler = setup({ photo })
+
+        local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30))
+
+        assert.matches("Lightroom is still rebuilding the preview of photo 1 after a change", reply.failed[1].reason, 1, true)
+        assert.are.equal(2, requests)
     end)
 
     it("gives up when Lightroom never calls back, leaving the reply reserve", function()

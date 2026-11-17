@@ -33,17 +33,17 @@ local function existingBrush()
 end
 
 describe("HandlerBrushMasks.createBrushMask", function()
-    it("writes the requested adjustments into the new mask, and restores all previous masks when the SDK read-back differs", function()
+    it("writes the requested adjustments into the new mask as Lightroom stores them, in the one guarded write", function()
         local previous = { correction("Existing", { Store.linearComponent({ MaskID = "C1T1" }) },
             { CorrectionID = "C1" }) }
-        local Handler, stores = setup({ wrongAdjustment = true, photos = { { id = "1", entries = previous } } })
-        assert.matches("restored", helper.refusalOf(function()
-            Handler.createBrushMask(createRequest({ adjustments = { local_Exposure = 1 } }))
-        end))
+        local Handler, stores = setup({ photos = { { id = "1", entries = previous } } })
+
+        Handler.createBrushMask(createRequest({ adjustments = { local_Exposure = 1, local_colorgradeMidtoneHue = 61.83 } }))
+
         local written = stores["1"].writes[1]
         assert.are.equal(0.25, written[#written].LocalExposure2012)
-        assert.are.same(previous, stores["1"].entries)
-        assert.are.equal(2, #stores["1"].writes)
+        assert.are.equal(62, written[#written].LocalColorGradeMidtoneHue)
+        assert.are.equal(1, #stores["1"].writes)
     end)
 
     it("paints a new brush mask and returns its ids", function()
@@ -265,18 +265,6 @@ describe("HandlerBrushMasks.createBrushMask", function()
         local message = helper.refusalOf(function() Handler.createBrushMask(createRequest()) end)
 
         assert.is_truthy(message:find("is not certified", 1, true))
-        assert.are.equal(0, #stores["1"].writes)
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("refuses a photo whose existing brush uses an unknown field", function()
-        local entries = existingBrush()
-        entries[1].CorrectionMasks[1].Masks[1].Spacing = 0.1
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = entries } } })
-
-        local message = helper.refusalOf(function() Handler.createBrushMask(createRequest()) end)
-
-        assert.is_truthy(message:find("unexpected field Spacing", 1, true))
         assert.are.equal(0, #stores["1"].writes)
         assert.are.equal(0, #calls.modules)
     end)
