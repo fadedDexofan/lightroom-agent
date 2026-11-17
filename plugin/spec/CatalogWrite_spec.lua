@@ -59,6 +59,47 @@ describe("CatalogWrite.developSettings", function()
     end)
 end)
 
+describe("CatalogWrite.developState", function()
+    it("commits Develop's pending edits only for the photo Develop shows, before the operation runs", function()
+        package.loaded.DevelopSession = nil
+        local events = {}
+        local shown, hidden = {}, {}
+        local CatalogWrite = load({
+            LrApplicationView = { getCurrentModuleName = function() return "develop" end },
+            LrDevelopController = { stopTracking = function(committed) events[#events + 1] = "flush " .. tostring(committed) end },
+        })
+        local catalog = catalogAnswering("executed")
+        catalog.getTargetPhoto = function() return shown end
+
+        local answer = CatalogWrite.developState(catalog, { hidden, shown }, function()
+            events[#events + 1] = "operation"
+            return "done"
+        end)
+
+        assert.are.equal("done", answer)
+        assert.are.same({ "flush true", "operation" }, events)
+    end)
+end)
+
+describe("Committing Develop's pending edits", function()
+    it("happens only in CatalogWrite.developState and Develop sessions", function()
+        local directory = "plugin/LightroomAgent.lrplugin/"
+        local homes = { ["CatalogWrite.lua"] = true, ["DevelopSession.lua"] = true }
+        local elsewhere = {}
+        for file in io.popen('ls "' .. directory .. '"'):lines() do
+            if file:match("%.lua$") and not homes[file] then
+                local source = assert(io.open(directory .. file)):read("*a"):gsub("%-%-[^\n]*", "")
+                for name in source:gmatch("DevelopSession%.(flush[%w_]*)") do
+                    if not (file == "HandlerDevelop.lua" and name == "flushPendingEdits") then
+                        elsewhere[#elsewhere + 1] = file .. ": " .. name
+                    end
+                end
+            end
+        end
+        assert.are.same({}, elsewhere)
+    end)
+end)
+
 describe("CatalogWrite.run", function()
     it("waits for write access for WAIT_SECONDS, runs the write and records the gate", function()
         local CatalogWrite, context = load()

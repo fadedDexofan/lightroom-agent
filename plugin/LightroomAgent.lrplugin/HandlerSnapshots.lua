@@ -39,10 +39,12 @@ end
 
 function Handler.create(args, context)
     local catalog, photo, photoId = resolve(args)
-    CatalogWrite.run(context, catalog, 'Create Develop Snapshot', function()
-        if not CatalogWrite.call(context, photo, "createDevelopSnapshot", args.name, args.replace == true) then
-            Reply.refuse('Snapshot name already exists: ' .. args.name)
-        end
+    CatalogWrite.developState(catalog, { photo }, function()
+        CatalogWrite.run(context, catalog, 'Create Develop Snapshot', function()
+            if not CatalogWrite.call(context, photo, "createDevelopSnapshot", args.name, args.replace == true) then
+                Reply.refuse('Snapshot name already exists: ' .. args.name)
+            end
+        end)
     end)
     -- Lightroom publishes the new snapshot only after the write gate returns.
     for _, snapshot in ipairs(snapshots(photo)) do

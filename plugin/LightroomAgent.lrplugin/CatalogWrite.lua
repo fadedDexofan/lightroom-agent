@@ -44,12 +44,18 @@ function CatalogWrite.run(context, catalog, title, fn)
     if returned ~= CatalogWrite.NOTHING then context.ledger:record(title) end
 end
 
+function CatalogWrite.developState(catalog, photos, operation)
+    for _, photo in ipairs(photos) do DevelopSession.flushIfShowing(catalog, photo) end
+    return operation()
+end
+
 function CatalogWrite.developSettings(context, catalog, photo, title, settingsFor)
-    DevelopSession.flushIfShowing(catalog, photo)
-    CatalogWrite.run(context, catalog, title, function()
-        local settings = settingsFor()
-        if settings == nil then return CatalogWrite.NOTHING end
-        CatalogWrite.call(context, photo, "applyDevelopSettings", settings, title)
+    CatalogWrite.developState(catalog, { photo }, function()
+        CatalogWrite.run(context, catalog, title, function()
+            local settings = settingsFor()
+            if settings == nil then return CatalogWrite.NOTHING end
+            CatalogWrite.call(context, photo, "applyDevelopSettings", settings, title)
+        end)
     end)
 end
 

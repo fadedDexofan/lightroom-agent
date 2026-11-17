@@ -367,7 +367,6 @@ end
 local PRESET_AI_MASKS = "the preset's AI masks"
 
 local function applyPreset(context, catalog, selectedPreset, photo)
-    DevelopSession.flushIfShowing(catalog, photo)
     CatalogWrite.run(context, catalog, "Apply Develop Preset", function()
         if selectedPreset.scope == "plugin" then
             CatalogWrite.call(context, photo, "applyDevelopPreset", selectedPreset.preset, _PLUGIN)
@@ -510,7 +509,7 @@ function DevelopHandler.applyDevelopPreset(args, context)
         else
             local from = context.ledger:mark()
             local entriesBefore, before
-            local applied, problem = LrTasks.pcall(function()
+            local applied, problem = LrTasks.pcall(CatalogWrite.developState, catalog, { photo }, function()
                 catalog:withReadAccessDo(function() before = DevelopReadBack.before(photo:getDevelopSettings()) end)
                 entriesBefore = aiPreset and GuardedMaskWrite.readEntries(catalog, photo)
                 applyPreset(context, catalog, selectedPreset, photo)

@@ -595,6 +595,22 @@ describe("HandlerDevelop.exportDevelopPreset", function()
 end)
 
 describe("HandlerDevelop.applyDevelopPreset", function()
+    it("commits Develop's pending edits on the photo it shows before reading the state it keeps as before", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local events = {}
+        local read, apply = p.getDevelopSettings, p.applyDevelopPreset
+        p.getDevelopSettings = function(...) events[#events + 1] = "read"; return read(...) end
+        p.applyDevelopPreset = function(...) events[#events + 1] = "apply"; return apply(...) end
+        local catalog, Handler = setup({ photos = { p }, folders = { fakeFolder("User", { fakePreset("Vibrant") }) },
+            applicationView = { getCurrentModuleName = function() return "develop" end, switchToModule = function() end },
+            developController = { stopTracking = function() events[#events + 1] = "flush" end } })
+        catalog.getTargetPhoto = function() return p end
+
+        Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Vibrant" })
+
+        assert.are.same({ "flush", "read", "apply" }, { events[1], events[2], events[3] })
+    end)
+
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local preset = fakePreset("Vibrant")

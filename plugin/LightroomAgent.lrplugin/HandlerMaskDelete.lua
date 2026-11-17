@@ -1,7 +1,6 @@
 local LrApplication = import 'LrApplication'
 
 local CatalogWrite = require 'CatalogWrite'
-local DevelopSession = require 'DevelopSession'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local JsonValue = require 'JsonValue'
 local Log = require 'Log'
@@ -141,12 +140,13 @@ function MaskDeleteHandler.deleteEmptyMasks(args, context)
     local photos = {}
     for i, entry in ipairs(entries) do photos[i] = entry.photo end
 
-    for _, photo in ipairs(photos) do DevelopSession.flushIfShowing(catalog, photo) end
-    local groupsBefore = countGroups(catalog, photos)
-    CatalogWrite.run(context, catalog, "Delete Empty Masks", function()
-        CatalogWrite.call(context, catalog, "deleteAllEmptyMasks", photos)
+    local groupsBefore, groupsAfter = CatalogWrite.developState(catalog, photos, function()
+        local before = countGroups(catalog, photos)
+        CatalogWrite.run(context, catalog, "Delete Empty Masks", function()
+            CatalogWrite.call(context, catalog, "deleteAllEmptyMasks", photos)
+        end)
+        return before, countGroups(catalog, photos)
     end)
-    local groupsAfter = countGroups(catalog, photos)
     local changed = {}
     for _, photo in ipairs(photos) do
         local removed = groupsBefore[photo] - groupsAfter[photo]

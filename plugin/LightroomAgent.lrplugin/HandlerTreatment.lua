@@ -39,7 +39,6 @@ end
 local function convert(context, catalog, photo, state, name)
     local wanted = TREATMENTS[name]
     local before = profileOf(readSettings(catalog, photo))
-    DevelopSession.flushIfShowing(catalog, photo)
     if not DevelopSession.selectAlone(catalog, photo, state) then
         Reply.refuse('Could not select photo ' .. tostring(photo.localIdentifier) .. ' alone')
     end
@@ -62,7 +61,11 @@ function Handler.set(args, context)
         inputs = args.photo_ids,
         restoreView = true,
         reserveSeconds = RESERVE_SECONDS,
-        each = function(photo, state) return convert(context, catalog, photo, state, args.treatment) end,
+        each = function(photo, state)
+            return CatalogWrite.developState(catalog, { photo }, function()
+                return convert(context, catalog, photo, state, args.treatment)
+            end)
+        end,
     })
 end
 

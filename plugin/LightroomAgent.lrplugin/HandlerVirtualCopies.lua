@@ -32,7 +32,11 @@ function Handler.create(args, context)
         inputs = args.photo_ids,
         restoreView = true,
         reserveSeconds = RESERVE_SECONDS,
-        each = function(photo, state) return createOne(context, catalog, photo, state, args.copy_name) end,
+        each = function(photo, state)
+            return CatalogWrite.developState(catalog, { photo }, function()
+                return createOne(context, catalog, photo, state, args.copy_name)
+            end)
+        end,
     })
     if parts.data then parts.data = { copies = parts.data.results } end
     return parts

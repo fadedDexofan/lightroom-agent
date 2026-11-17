@@ -43,7 +43,10 @@ describe('HandlerTreatment', function()
             LrApplicationView = { getCurrentModuleName = function() return opts.module or 'library' end, switchToModule = function() end },
             LrDate = { currentTime = function() return 0 end },
             LrDevelopController = {
-                stopTracking = function(committed) calls.events[#calls.events + 1] = 'flush ' .. tostring(committed) end,
+                stopTracking = function(committed)
+                    calls.events[#calls.events + 1] = 'flush ' .. tostring(committed)
+                    if opts.pendingLook then settings[state.active].Look = { Name = opts.pendingLook } end
+                end,
             },
             LrLogger = helper.defaultLrLogger(),
             LrProgressScope = function() return { setCancelable = function() end, setPortionComplete = function() end,
@@ -85,6 +88,12 @@ describe('HandlerTreatment', function()
             assert.are.same(case.events, calls.events)
         end)
     end
+
+    it("reports as before the profile the person's pending pick in Develop committed", function()
+        setup({ module = 'develop', pendingLook = 'Adobe Landscape' })
+        local result = Handler.set({ photo_ids = { '3' }, treatment = 'black_and_white' })
+        assert.are.equal('Adobe Landscape', result.data.results[1].profile.before)
+    end)
 
     it('switches back to color', function()
         setup()
