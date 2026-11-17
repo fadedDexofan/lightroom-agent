@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,10 +16,13 @@ import {
   alternationRate,
   bandDeltas,
   changeCentroid,
+  changedShare,
+  changedWhere,
   colorCentroid,
   decodeBmp,
   ellipseInside,
   intersectionOverUnion,
+  luminanceGap,
   measureChange,
   meanChroma,
   patchDeltas,
@@ -107,6 +111,26 @@ test("IoU is 1 for a perfect ellipse, low for a shifted one", () => {
   const shifted = { ...ellipse, center: { x: 0.85, y: 0.5 } };
   assert.ok(intersectionOverUnion(before, after, ellipseInside(shifted)) < 0.3);
   assert.ok(intersectionOverUnion(before, after, ellipseInside({ ...ellipse, rotationDegrees: -40 })) < 0.9);
+});
+
+test("the region one change moved bounds where a later change moves, by direction", () => {
+  const left = rectangleInside({ x0: 0, y0: 0, x1: 0.5, y1: 1 });
+  const base = solidPixels(200, 120, 0.5);
+  const subject = changedWhere(base, brightenWhere(base, left, -0.1), { direction: "darker" });
+  const restored = brightenWhere(base, left, 0.1);
+
+  assert.deepEqual(changedShare(base, restored, subject, { direction: "brighter" }), { changed: 0.5, inside: 1 });
+  assert.deepEqual(changedShare(base, restored, (fx, fy) => !subject(fx, fy), { direction: "brighter" }), { changed: 0.5, inside: 0 });
+  assert.deepEqual(changedShare(base, restored, subject, { direction: "darker" }), { changed: 0, inside: 0 });
+  assert.equal(changedWhere(base, brightenWhere(base, left, 0.03))(0.25, 0.5), false);
+});
+
+test("the luminance gap between two renders gives the mean, the 99th percentile and the largest pixel gap, or both sizes", () => {
+  const base = solidPixels(10, 10, 0.5);
+  const gap = luminanceGap(base, brightenWhere(base, rectangleInside({ x0: 0, y0: 0, x1: 0.5, y1: 1 }), 0.2));
+
+  assert.ok(Math.abs(gap.mean_abs - 0.1) < 1e-6 && Math.abs(gap.p99 - 0.2) < 1e-6 && Math.abs(gap.max - 0.2) < 1e-6);
+  assert.deepEqual(luminanceGap(base, solidPixels(5, 10, 0.5)), { sizes: ["10x10", "5x10"] });
 });
 
 test("a BMP is decoded bottom-up with BGR order", () => {
@@ -266,6 +290,26 @@ test("a proof report passes only when every check passed and writes its evidence
   } finally {
     console.log = log;
     process.exitCode = exitCode;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a proof report keeps its evidence after every check and saves the previews a verdict rests on", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-proof-"));
+  const file = path.join(directory, "c.json");
+  const log = console.log;
+  console.log = () => {};
+  try {
+    const report = createReport("stacks", ["node", "x.mjs", "--evidence", file]);
+    const saved = report.preview("stack_2 by id", { jpeg: Buffer.from("jpeg bytes").toString("base64") });
+    report.check("first", false, { preview: saved });
+    const partial = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.deepEqual([partial.finished_at, partial.checks.map((entry) => entry.label)], [undefined, ["first"]]);
+    assert.equal(fs.readFileSync(path.join(directory, saved.file), "utf8"), "jpeg bytes");
+    assert.equal(saved.sha256, createHash("sha256").update("jpeg bytes").digest("hex"));
+    assert.equal(createReport("no evidence", ["node", "x.mjs"]).preview("x", { jpeg: "AA==" }), null);
+  } finally {
+    console.log = log;
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });

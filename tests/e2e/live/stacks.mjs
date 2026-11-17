@@ -40,7 +40,8 @@ try {
     const colour = colorCentroid(pixels, card.color);
     report.check(`${card.key}: the preview by id is the hidden member's own render`,
       Math.abs(aspect / (card.width / card.height) - 1) <= ASPECT_TOLERANCE && colour !== null && colour.count > pixels.w * pixels.h * 0.9,
-      { decoded: `${pixels.w}x${pixels.h}`, coloured_pixels: colour?.count ?? 0 });
+      { decoded: `${pixels.w}x${pixels.h}`, expected: `${card.width}x${card.height}`, coloured_pixels: colour?.count ?? 0, colour: card.color,
+        preview: report.preview(`${card.key} by id`, { jpeg: preview.image.data }) });
     const detail = await data("get_photo_detail", { photo_id: card.id, regions: [{ x: 0.4, y: 0.4, width: 0.2, height: 0.2 }] });
     report.check(`${card.key}: the detail render by id has the hidden member's size`,
       detail.render.width === card.width && detail.render.height === card.height, { render: detail.render });

@@ -136,6 +136,7 @@ function FakeMaskStore.attach(photo, opts)
         insideRead = false,
         insideWrite = false,
         readsOutsideGate = 0,
+        readsInsideWrite = 0,
         writesOutsideGate = 0,
     }
     for _, entry in ipairs(state.entries) do
@@ -159,6 +160,7 @@ function FakeMaskStore.attach(photo, opts)
     photo.getDevelopSettings = function()
         if not state.insideRead and not state.insideWrite then state.readsOutsideGate = state.readsOutsideGate + 1 end
         state.reads = state.reads + 1
+        if state.insideWrite then state.readsInsideWrite = state.readsInsideWrite + 1 end
         local settings = {}
         for key, value in pairs(opts.settings or {}) do settings[key] = value end
         if not opts.noProcessVersion then settings.ProcessVersion = opts.processVersion or "15.4" end
@@ -184,6 +186,28 @@ function FakeMaskStore.attach(photo, opts)
         state.entries = stored
     end
     return state
+end
+
+FakeMaskStore.DIGEST = "ABCDEF0123456789ABCDEF0123456789"
+
+function FakeMaskStore.computeAI(state, outcomeOf)
+    for _, entry in ipairs(state.entries) do
+        for _, component in ipairs(type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
+            if component.What == "Mask/Image" then
+                local outcome = outcomeOf and outcomeOf(entry, component) or "computed"
+                if type(outcome) == "table" then
+                    for key, value in pairs(outcome) do component[key] = value end
+                elseif component.MaskDigest == nil and (component.ErrorReason or 0) == 0 then
+                    if outcome == "absent" then
+                        component.ErrorReason = 1
+                    elseif outcome == "computed" then
+                        local digest = FakeMaskStore.DIGEST
+                        component.MaskDigest, component.InputDigest, component.LocalInputDigest = digest, digest, digest
+                    end
+                end
+            end
+        end
+    end
 end
 
 function FakeMaskStore.trackGates(state, catalog)

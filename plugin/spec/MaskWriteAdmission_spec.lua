@@ -125,13 +125,13 @@ describe("MaskWriteAdmission.decide", function()
 end)
 
 describe("MaskWriteAdmission.requireAdmitted", function()
-    it("refuses with the decision's reason and says nothing was changed", function()
+    it("refuses with the decision's reason and leaves what was written to the outcome", function()
         local Admission = load({ [CERTIFICATION_FILE] = certification(RUNNING_BUILD) })
 
-        local refusal = helper.refusalOf(function() Admission.requireAdmitted(catalog, "11.0") end)
+        local refusal = helper.failedOf(function() Admission.requireAdmitted(catalog, "11.0") end)
 
         assert.is_truthy(refusal:find("process version (11.0)", 1, true))
-        assert.is_truthy(refusal:find("Nothing was changed.", 1, true))
+        assert.is_nil(refusal:find("othing was", 1, true))
     end)
 
     it("returns quietly when the write is admitted", function()

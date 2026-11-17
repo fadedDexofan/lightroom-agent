@@ -7,6 +7,7 @@ export interface ReplyParts {
   unknown?: ItemFailure[];
   not_found?: Input[];
   remaining?: Input[];
+  written?: string[];
   problem?: string;
   warnings?: string[];
 }
@@ -31,14 +32,15 @@ function lists(parts: ReplyParts): Lists {
   return Object.fromEntries(LIST_KEYS.flatMap((key) => (parts[key]?.length ? [[key, parts[key]]] : []))) as Lists;
 }
 
-function summary(present: Lists, problem: string | undefined): string {
+function summary(present: Lists, parts: ReplyParts): string {
   const counts = [
     present.failed && `${present.failed.length} failed`,
     present.unknown && `${present.unknown.length} with an unknown outcome (read their state before retrying)`,
     present.not_found && `${present.not_found.length} not found`,
     present.remaining && `${present.remaining.length} not reached (resend remaining)`,
   ].filter(Boolean);
-  return [counts.join(", "), problem].filter(Boolean).join("; ");
+  const written = parts.written?.length ? `written before this stopped: ${parts.written.join(", ")}` : undefined;
+  return [counts.join(", "), parts.problem, written].filter(Boolean).join("; ");
 }
 
 function warningsOf(parts: ReplyParts): { warnings?: string[] } {
@@ -51,9 +53,9 @@ export function finishReply(readOnly: boolean, reply: PluginReply): ToolResult {
   }
   const parts = reply.result ?? {};
   const present = lists(parts);
-  const error = summary(present, parts.problem);
+  const error = summary(present, parts);
   const hasData = parts.data !== undefined;
-  if (present.unknown) {
+  if (present.unknown || parts.written?.length) {
     return { outcome: "unknown", ...(hasData ? { data: parts.data } : {}), error, ...present, ...warningsOf(parts) };
   }
   if (!hasData && error) return { outcome: "failed", error, ...present, ...warningsOf(parts) };

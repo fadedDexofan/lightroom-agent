@@ -62,12 +62,6 @@ local function insidePackage(file)
     return false
 end
 
-local function copyFile(source, target)
-    if not LrFileUtils.copy(source, target) or LrFileUtils.exists(target) ~= 'file' then
-        error("could not copy " .. source .. " to " .. target)
-    end
-end
-
 local function sameContent(left, right)
     local leftSize = LrFileUtils.fileAttributes(left).fileSize
     if leftSize == nil or leftSize ~= LrFileUtils.fileAttributes(right).fileSize then return false end
@@ -75,17 +69,17 @@ local function sameContent(left, right)
     return content ~= nil and content == LrFileUtils.readFile(right)
 end
 
-local function copiedTarget(source, relativePath, folder, companions)
+local function copiedTarget(context, source, relativePath, folder, companions)
     local target = LrPathUtils.child(folder, relativePath)
-    LrFileUtils.createAllDirectories(LrPathUtils.parent(target))
+    CatalogWrite.createFolder(context, LrPathUtils.parent(target))
     if not (LrFileUtils.exists(target) == 'file' and sameContent(source, target)) then
         if LrFileUtils.exists(target) then target = LrFileUtils.chooseUniqueFileName(target) end
-        copyFile(source, target)
+        CatalogWrite.copyFile(context, source, target)
     end
     local targetStem = LrPathUtils.removeExtension(target)
     for _, companion in ipairs(companions) do
         local companionTarget = targetStem .. "." .. LrPathUtils.extension(companion)
-        if not LrFileUtils.exists(companionTarget) then copyFile(companion, companionTarget) end
+        if not LrFileUtils.exists(companionTarget) then CatalogWrite.copyFile(context, companion, companionTarget) end
     end
     return target
 end
@@ -381,7 +375,7 @@ function ImportHandler.importPhotos(args, context)
     -- equivalent: the lock is released between photos, letting queued
     -- handlers interleave.
     local collectionPhotos = {}
-    local failed = {}
+    local failed, unknown = {}, {}
     local remaining = {}
     local alreadyInCatalogCount = 0
     local processed = 0
@@ -406,8 +400,7 @@ function ImportHandler.importPhotos(args, context)
             break
         end
         context:report(processed, #photosToImport, filePath)
-        local copyStarted, copiedPath = false, nil
-        local imported, importError = LrTasks.pcall(function()
+        local imported, importError, written = context.ledger:attempt(function()
             local photoPath = filePath
             local rememberFolders
             if args.copy_to then
@@ -419,9 +412,7 @@ function ImportHandler.importPhotos(args, context)
                 rememberFolders = refuseCaseVariantFolder(target)
                 local _, targetClash = catalogPhotoAt(catalog, target, true)
                 if targetClash then refuseCaseVariantFile(target, targetClash) end
-                copyStarted = true
-                photoPath = copiedTarget(filePath, relativePath, args.copy_to, companions)
-                copiedPath = photoPath
+                photoPath = copiedTarget(context, filePath, relativePath, args.copy_to, companions)
             else
                 rememberFolders = refuseCaseVariantFolder(photoPath)
             end
@@ -433,23 +424,26 @@ function ImportHandler.importPhotos(args, context)
                 rememberFolders()
                 return
             end
-            CatalogWrite.run(catalog, "Import Photo", function()
-                local photo = catalog:addPhoto(photoPath)
+            local beforeImport = context.ledger:mark()
+            local added, addError = LrTasks.pcall(CatalogWrite.run, context, catalog, "Import Photo", function()
+                local photo = CatalogWrite.call(context, catalog, "addPhoto", photoPath)
                 if not photo then error("Lightroom did not add the photo") end
                 table.insert(collectionPhotos, photo)
                 importedCount = importedCount + 1
             end)
+            if not added then
+                if catalogPhotoAt(catalog, photoPath) == nil then context.ledger:undone(beforeImport) end
+                error(addError, 0)
+            end
             rememberFolders()
         end)
         if not imported then
-            local reason = Reply.messageOf(importError)
-            if not copyStarted and sourceKind ~= 'directory' then Reply.refuse(filePath .. ": " .. reason) end
-            if copiedPath then
-                reason = reason .. "; the copy " .. copiedPath .. " stays on disk"
-            elseif copyStarted then
-                reason = reason .. "; anything copied into " .. args.copy_to .. " before the failure stays there"
+            if sourceKind ~= 'directory' then
+                error(filePath .. ": " .. Reply.messageOf(importError), 0)
             end
-            failed[#failed + 1] = { path = filePath, reason = reason }
+            local class, reason = Reply.stopped(importError, written)
+            local list = class == "failed" and failed or unknown
+            list[#list + 1] = { path = filePath, reason = reason }
         end
         processed = processed + 1
     end
@@ -459,8 +453,8 @@ function ImportHandler.importPhotos(args, context)
     local addedToCollection = 0
     local problem
     if args.collection_name and #collectionPhotos > 0 then
-        local ok, outcome = LrTasks.pcall(CatalogWrite.run, catalog, "Add Imported Photos to Collection", function()
-            requireTargetCollection():addPhotos(collectionPhotos)
+        local ok, outcome = LrTasks.pcall(CatalogWrite.run, context, catalog, "Add Imported Photos to Collection", function()
+            CatalogWrite.call(context, requireTargetCollection(), "addPhotos", collectionPhotos)
         end)
         if not ok then
             problem = "the photos were not added to collection " .. args.collection_name .. ": " .. Reply.messageOf(outcome)
@@ -483,6 +477,7 @@ function ImportHandler.importPhotos(args, context)
             skipped_sidecar_jpegs = plan.sidecarJpegCount > 0 and plan.sidecarJpegCount or nil,
         } or nil,
         failed = #failed > 0 and failed or nil,
+        unknown = #unknown > 0 and unknown or nil,
         remaining = #remaining > 0 and remaining or nil,
         problem = problem,
     })

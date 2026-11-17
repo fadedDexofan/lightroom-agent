@@ -89,7 +89,7 @@ end
 
 function MaskWriteAdmission.requireAdmitted(catalog, processVersion)
     local decision = MaskWriteAdmission.decide(catalog, processVersion)
-    if not decision.admitted then Reply.refuse(decision.reason .. " Nothing was changed.") end
+    if not decision.admitted then Reply.refuse(decision.reason) end
 end
 
 return MaskWriteAdmission

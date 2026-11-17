@@ -68,7 +68,7 @@ function GradientMaskHandler.createGradientMask(args, context)
     local location
     local toolType = GradientGeometry.TOOL_TYPE_OF_SHAPE[request.shape]
     local written = DevelopSession.withPhoto(context, catalog, photo, function()
-        return GuardedMaskWrite.apply(catalog, photo, {
+        return GuardedMaskWrite.apply(context, catalog, photo, {
             description = "Create gradient mask",
             build = function(entries)
                 location = addGradient(entries, request, placement)
@@ -125,7 +125,7 @@ function GradientMaskHandler.updateGradientMask(args, context)
 
     local location
     local written = DevelopSession.withPhoto(context, catalog, photo, function()
-        return GuardedMaskWrite.apply(catalog, photo, {
+        return GuardedMaskWrite.apply(context, catalog, photo, {
             description = "Update gradient mask",
             build = function(entries)
                 location = reshapeGradient(entries, request, placement)

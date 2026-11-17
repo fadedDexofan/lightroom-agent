@@ -75,17 +75,11 @@ local function findUnresolvable(catalog, addEntries)
     return problems
 end
 
-local function createdText(created)
-    if #created == 0 then return nil end
-    return "the keywords " .. table.concat(created, ", ") .. " were created"
-end
-
 -- Creates every missing level of `pathsToEnsure` (lists of names). Lightroom
 -- rejects a parent created earlier in the same write transaction ("bad
 -- argument #2 to 'format'"), so each depth gets its own transaction, run after
 -- the level above it is committed and visible to getChildren().
-local function createMissingLevels(catalog, pathsToEnsure)
-    local created = {}
+local function createMissingLevels(context, catalog, pathsToEnsure)
     local function prefixOf(parts, depth)
         local prefix = {}
         for i = 1, depth do
@@ -137,20 +131,18 @@ local function createMissingLevels(catalog, pathsToEnsure)
         end)
 
         if #missing > 0 then
-            CatalogWrite.run(catalog, "Create Keywords", function()
+            CatalogWrite.run(context, catalog, "Create Keywords", function()
                 for _, level in ipairs(missing) do
-                    catalog:createKeyword(level.name, {}, true, level.parent, true)
+                    CatalogWrite.call(context, catalog, "createKeyword", level.name, {}, true, level.parent, true)
                 end
-            end, createdText(created))
-            for _, level in ipairs(missing) do created[#created + 1] = level.path end
+            end)
             -- The cached top-level index has not seen what was just created.
             if depth == 1 then KeywordTree.forgetTopIndex() end
         end
     end
-    return created
 end
 
-function OrganizationHandler.setKeywords(args)
+function OrganizationHandler.setKeywords(args, context)
 
     -- Default true: a plain name that does not exist yet is created.
     local createMissing = args.create_missing ~= false
@@ -196,16 +188,15 @@ function OrganizationHandler.setKeywords(args)
     end
 
     -- A plain name is created at the top level.
-    local created = {}
     if createMissing and #addEntries > 0 then
         local pathsToEnsure = {}
         for _, entry in ipairs(addEntries) do
             table.insert(pathsToEnsure, entry.parts or { entry.name })
         end
-        created = createMissingLevels(catalog, pathsToEnsure)
+        createMissingLevels(context, catalog, pathsToEnsure)
     end
 
-    CatalogWrite.run(catalog, "Set Keywords", function()
+    CatalogWrite.run(context, catalog, "Set Keywords", function()
         local keywordObjs = {}
         local seenKeywords = {}
         for _, entry in ipairs(addEntries) do
@@ -240,7 +231,7 @@ function OrganizationHandler.setKeywords(args)
         for _, entry in ipairs(entries) do
             local photo = entry.photo
             for _, kwObj in ipairs(keywordObjs) do
-                photo:addKeyword(kwObj)
+                CatalogWrite.call(context, photo, "addKeyword", kwObj)
             end
 
             if next(removeNames) or hasRemovePaths then
@@ -252,13 +243,13 @@ function OrganizationHandler.setKeywords(args)
                         local byPath = hasRemovePaths
                             and removePaths[KeywordTree.fold(KeywordTree.pathOf(kw))]
                         if removeNames[kw:getName()] or byPath then
-                            photo:removeKeyword(kw)
+                            CatalogWrite.call(context, photo, "removeKeyword", kw)
                         end
                     end
                 end
             end
         end
-    end, createdText(created))
+    end)
 
     keywordCallFailed = false
     Log.info(string.format("Updated keywords for %d photos", #entries))
@@ -266,7 +257,7 @@ function OrganizationHandler.setKeywords(args)
     return Reply.parts({ data = { updated = #entries }, not_found = notFound })
 end
 
-function OrganizationHandler.removeKeywordSubtree(args)
+function OrganizationHandler.removeKeywordSubtree(args, context)
     local catalog = LrApplication.activeCatalog()
     local parent = KeywordTree.resolve(catalog, KeywordTree.split(args.parent))
     if not parent then Reply.refuse("Keyword parent not found: " .. args.parent) end
@@ -297,12 +288,12 @@ function OrganizationHandler.removeKeywordSubtree(args)
     end
 
     local updated, removed = 0, 0
-    CatalogWrite.run(catalog, "Remove Keyword Subtree", function()
+    CatalogWrite.run(context, catalog, "Remove Keyword Subtree", function()
         for _, photo in ipairs(photos) do
             local changed = false
             for _, keyword in ipairs(photo:getRawMetadata('keywords') or {}) do
                 if subtree[keyword] then
-                    photo:removeKeyword(keyword)
+                    CatalogWrite.call(context, photo, "removeKeyword", keyword)
                     removed = removed + 1
                     changed = true
                 end
@@ -316,7 +307,7 @@ end
 local PICK_STATUS = {}
 for _, flag in ipairs(Contract.PHOTO_FLAGS) do PICK_STATUS[flag.name] = flag.pickStatus end
 
-function OrganizationHandler.setRatingAndFlag(args)
+function OrganizationHandler.setRatingAndFlag(args, context)
     local hasRating = args.rating ~= nil
     local hasFlag = args.flag ~= nil
     local pickStatus = hasFlag and PICK_STATUS[args.flag] or nil
@@ -325,15 +316,15 @@ function OrganizationHandler.setRatingAndFlag(args)
     local ratingValue = args.rating
     if ratingValue == 0 then ratingValue = nil end
 
-    return PhotoWrites.each(LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Rating and Flag", write = function(photo)
-        if hasRating then photo:setRawMetadata('rating', ratingValue) end
-        if hasFlag then photo:setRawMetadata('pickStatus', pickStatus) end
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Rating and Flag", write = function(call)
+        if hasRating then call('setRawMetadata', 'rating', ratingValue) end
+        if hasFlag then call('setRawMetadata', 'pickStatus', pickStatus) end
     end })
 end
 
-function OrganizationHandler.setColorLabel(args)
-    return PhotoWrites.each(LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Color Label", write = function(photo)
-        photo:setRawMetadata('colorNameForLabel', args.label)
+function OrganizationHandler.setColorLabel(args, context)
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Color Label", write = function(call)
+        call('setRawMetadata', 'colorNameForLabel', args.label)
     end })
 end
 

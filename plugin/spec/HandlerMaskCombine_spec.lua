@@ -1,7 +1,7 @@
 local helper = require 'spec_helper'
 local Store = require 'fake_mask_store'
 
-local DIGEST = "ABCDEF0123456789ABCDEF0123456789"
+local DIGEST = Store.DIGEST
 
 local function existing()
     return {
@@ -22,16 +22,15 @@ local function setup(opts)
     if not opts.withoutUpdateAi then
         photo.updateAISettings = function()
             calls.updateAI = calls.updateAI + 1
-            for _, entry in ipairs(store.entries) do
-                for _, component in ipairs(entry.CorrectionMasks) do
-                    if component.What == "Mask/Image" and component.MaskDigest == nil and (component.ErrorReason or 0) == 0 then
-                        if opts.absent then
-                            component.ErrorReason = 1
-                        elseif not opts.neverCompute then
-                            component.MaskDigest, component.InputDigest, component.LocalInputDigest = DIGEST, DIGEST, DIGEST
-                        end
-                    end
-                end
+            Store.computeAI(store, function(_, component)
+                if opts.becomes and opts.becomes[component.MaskID] then return opts.becomes[component.MaskID] end
+                if opts.absent then return "absent" end
+                if opts.neverCompute then return "pending" end
+                return "computed"
+            end)
+            if opts.dropAppended then
+                local target = store.entries[1].CorrectionMasks
+                target[#target] = nil
             end
         end
     end
@@ -96,6 +95,7 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
             assert.are.equal(DIGEST, store.entries[1].CorrectionMasks[2].MaskDigest)
             assert.are.same(other, store.entries[2])
             assert.are.equal(1, calls.updateAI)
+            assert.are.equal(1, store.readsInsideWrite)
             assert.are.same({}, calls.modules)
             assert.are.same({}, context.warnings)
         end)
@@ -116,11 +116,11 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
         local Handler, store = setup({ absent = true })
         local before = Store.clone(store.entries)
 
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "sky" })
         end)
 
-        assert.truthy(err:find("Lightroom found no sky to add to mask mask-a on photo 1", 1, true), err)
+        assert.truthy(err:find("Lightroom found nothing for the sky to add to mask mask-a on photo 1", 1, true), err)
         assert.are.same(before, store.entries)
     end)
 
@@ -139,7 +139,7 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
     it("refuses a mask that is not in the saved settings, writing nothing", function()
         local Handler, store = setup()
 
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.combineMask({ photo_id = "1", mask_id = "nope", operation = "add", type = "subject" })
         end)
 
@@ -150,7 +150,7 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
     it("is a certified operation", function()
         local Handler, store = setup({ maskWrites = { refuse = "Mask geometry writes are not certified." } })
 
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "subject" })
         end)
 
@@ -161,7 +161,7 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
     it("refuses on a Lightroom without the AI update call", function()
         local Handler, store = setup({ withoutUpdateAi = true })
 
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "subject" })
         end)
 
@@ -174,5 +174,45 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
         assert.are.equal("404", helper.notFoundOf(function()
             Handler.combineMask({ photo_id = "404", mask_id = "mask-a", operation = "add", type = "subject" })
         end))
+    end)
+end)
+
+describe("HandlerMaskCombine.combineMask judging the target mask", function()
+    local function aiComponent(id)
+        return { What = "Mask/Image", MaskActive = true, MaskInverted = false, MaskBlendMode = 0, MaskValue = 1, MaskVersion = 1,
+            MaskSubType = 2, MaskID = id, MaskSyncID = "S" .. id, MaskDigest = DIGEST, InputDigest = DIGEST,
+            LocalInputDigest = DIGEST }
+    end
+
+    it("warns about another mask whose AI component the photo-wide recompute changed", function()
+        local Handler = setup({ becomes = { B1 = { MaskDigest = "RECOMPUTED" } } })
+        local context = helper.requestContext(nil, { title = "combine_mask" })
+
+        Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "sky" }, context)
+
+        assert.are.same({ "Photo 1: Lightroom's photo-wide AI recompute changed mask mask-b; check it" }, context.warnings)
+    end)
+
+    it("warns when only the second AI component of a mask changed", function()
+        local entries = existing()
+        entries[2].CorrectionMasks = { aiComponent("B1"), aiComponent("B2") }
+        local Handler = setup({ entries = entries, becomes = { B2 = { MaskDigest = "RECOMPUTED" } } })
+        local context = helper.requestContext(nil, { title = "combine_mask" })
+
+        Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "sky" }, context)
+
+        assert.are.same({ "Photo 1: Lightroom's photo-wide AI recompute changed mask mask-b; check it" }, context.warnings)
+    end)
+
+    it("puts the mask back and fails when Lightroom keeps no appended component", function()
+        local Handler, store = setup({ dropAppended = true })
+        local before = Store.clone(store.entries)
+
+        local message = helper.failedOf(function()
+            Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "sky" })
+        end)
+
+        assert.are.equal("Lightroom kept 0 of the 1 requested masks on photo 1; the new masks were removed", message)
+        assert.are.same(before, store.entries)
     end)
 end)

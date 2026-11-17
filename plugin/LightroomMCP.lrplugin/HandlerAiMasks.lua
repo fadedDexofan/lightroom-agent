@@ -67,7 +67,7 @@ local function createAiMasks(context, args, request)
             subject = "the " .. request.kind .. " masks",
             expected = #request.specs,
             build = function(entries) return appendEntries(entries, request) end,
-            failure = function(own) return missingMessage(request, photoId, own) end,
+            nothingFound = function(own) return missingMessage(request, photoId, own) end,
         }).own
     end)
 

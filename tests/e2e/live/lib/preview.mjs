@@ -51,13 +51,19 @@ export function decodeJpegBase64(base64) {
 export async function fetchPixels(session, photoId, size = 864) {
   const answer = await session.tool("get_photo_preview", { photo_id: photoId, size });
   if (answer.isError || !answer.image) throw new Error(`get_photo_preview: ${answer.text}`);
-  return decodeJpegBase64(answer.image.data);
+  return { ...decodeJpegBase64(answer.image.data), jpeg: answer.image.data };
 }
 
 export function maxLuminanceDifference(a, b, step = 7) {
   let max = 0;
   for (let i = 0; i < a.L.length; i += step) max = Math.max(max, Math.abs(a.L[i] - b.L[i]));
   return max;
+}
+
+export function luminanceGap(a, b) {
+  if (a.w !== b.w || a.h !== b.h) return { sizes: [`${a.w}x${a.h}`, `${b.w}x${b.h}`] };
+  const gaps = Float64Array.from(a.L, (value, i) => Math.abs(value - b.L[i])).sort();
+  return { mean_abs: gaps.reduce((sum, value) => sum + value, 0) / gaps.length, p99: gaps[Math.floor(gaps.length * 0.99)], max: gaps[gaps.length - 1] };
 }
 
 export function describeSizes(before, after) {
@@ -156,6 +162,9 @@ export function rectangleInside({ x0, y0, x1, y1 }) {
   return (fx, fy) => fx >= x0 && fx < x1 && fy >= y0 && fy < y1;
 }
 
+const movedBy = (delta, threshold, direction) =>
+  direction === "brighter" ? delta > threshold : direction === "darker" ? delta < -threshold : Math.abs(delta) > threshold;
+
 export function intersectionOverUnion(before, after, inside, { threshold = 0.04, direction = "brighter" } = {}) {
   let intersection = 0;
   let union = 0;
@@ -163,14 +172,39 @@ export function intersectionOverUnion(before, after, inside, { threshold = 0.04,
     for (let x = 0; x < after.w; x++) {
       const fx = (x + 0.5) / after.w;
       const fy = (y + 0.5) / after.h;
-      const delta = after.L[y * after.w + x] - before.L[nearestIndex(before, fx, fy)];
-      const changed = direction === "brighter" ? delta > threshold : direction === "darker" ? delta < -threshold : Math.abs(delta) > threshold;
+      const changed = movedBy(after.L[y * after.w + x] - before.L[nearestIndex(before, fx, fy)], threshold, direction);
       const within = inside(fx, fy, after.w, after.h);
       if (within && changed) intersection++;
       if (within || changed) union++;
     }
   }
   return union === 0 ? 0 : intersection / union;
+}
+
+export function changedWhere(before, after, { threshold = 0.04, direction = "either" } = {}) {
+  const moved = new Uint8Array(after.w * after.h);
+  for (let y = 0; y < after.h; y++) {
+    for (let x = 0; x < after.w; x++) {
+      const i = y * after.w + x;
+      moved[i] = movedBy(after.L[i] - before.L[nearestIndex(before, (x + 0.5) / after.w, (y + 0.5) / after.h)], threshold, direction) ? 1 : 0;
+    }
+  }
+  return (fx, fy) => moved[nearestIndex(after, fx, fy)] === 1;
+}
+
+export function changedShare(before, after, inside, { threshold = 0.04, direction = "either" } = {}) {
+  let moved = 0;
+  let movedInside = 0;
+  for (let y = 0; y < after.h; y++) {
+    for (let x = 0; x < after.w; x++) {
+      const fx = (x + 0.5) / after.w;
+      const fy = (y + 0.5) / after.h;
+      if (!movedBy(after.L[y * after.w + x] - before.L[nearestIndex(before, fx, fy)], threshold, direction)) continue;
+      moved++;
+      if (inside(fx, fy, after.w, after.h)) movedInside++;
+    }
+  }
+  return { changed: moved / (after.w * after.h), inside: moved === 0 ? 0 : movedInside / moved };
 }
 
 export function changeCentroid(before, after, threshold = 0.04) {

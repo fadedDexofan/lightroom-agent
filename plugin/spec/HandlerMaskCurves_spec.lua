@@ -93,7 +93,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
     it("refuses an unknown mask and writes nothing", function()
         local Handler, store = setup()
 
-        local refusal = helper.refusalOf(function()
+        local refusal = helper.failedOf(function()
             Handler.setMaskCurves({ photo_id = "1", mask_id = "nope", curves = { main = LINE } })
         end)
 

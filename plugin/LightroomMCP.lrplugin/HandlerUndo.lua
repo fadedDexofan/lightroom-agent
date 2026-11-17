@@ -1,11 +1,13 @@
 local LrUndo = import 'LrUndo'
 
+local CatalogWrite = require 'CatalogWrite'
+
 local HandlerUndo = {}
 
-function HandlerUndo.undoLastStep()
+function HandlerUndo.undoLastStep(_, context)
     local undone = false
     if LrUndo.canUndo() then
-        LrUndo.undo()
+        CatalogWrite.invoke(context, "Undo", LrUndo.undo)
         undone = true
     end
     return {

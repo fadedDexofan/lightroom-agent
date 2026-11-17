@@ -146,15 +146,15 @@ end
 
 -- Writes a GPS position (decimal degrees) to photos, replacing any position
 -- they already have. Altitude is only touched when given or cleared.
-function MetadataHandler.setGps(args)
+function MetadataHandler.setGps(args, context)
     local clearAltitude = args.clear_altitude == true
 
-    return PhotoWrites.each(LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set GPS", write = function(photo)
-        photo:setRawMetadata('gps', { latitude = args.latitude, longitude = args.longitude })
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set GPS", write = function(call)
+        call('setRawMetadata', 'gps', { latitude = args.latitude, longitude = args.longitude })
         if args.altitude ~= nil then
-            photo:setRawMetadata('gpsAltitude', args.altitude)
+            call('setRawMetadata', 'gpsAltitude', args.altitude)
         elseif clearAltitude then
-            photo:setRawMetadata('gpsAltitude', nil)
+            call('setRawMetadata', 'gpsAltitude', nil)
         end
     end })
 end
@@ -170,7 +170,7 @@ local LOCATION_FIELDS = {
 
 -- Writes the IPTC location fields of photos. Fields left out are unchanged;
 -- an empty string clears a field. GPS is set_gps's job and is not touched.
-function MetadataHandler.setLocation(args)
+function MetadataHandler.setLocation(args, context)
 
     local changes = {}
     for _, field in ipairs(LOCATION_FIELDS) do
@@ -184,10 +184,11 @@ function MetadataHandler.setLocation(args)
     local fields = {}
     for i, change in ipairs(changes) do fields[i] = change.arg end
 
-    return PhotoWrites.each(LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Location", data = { fields = fields },
-        write = function(photo)
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Location",
+        data = { fields = fields },
+        write = function(call)
             for _, change in ipairs(changes) do
-                photo:setRawMetadata(change.key, change.value)
+                call('setRawMetadata', change.key, change.value)
             end
         end })
 end
@@ -196,7 +197,7 @@ end
 -- unchanged; an empty string clears a field. Copyright status is left out on
 -- purpose: Lightroom accepted "copyrighted" for copyrightState but rolled the
 -- whole write back for "unknown" and "public domain", after reporting success.
-function MetadataHandler.setMetadata(args)
+function MetadataHandler.setMetadata(args, context)
 
     local changes = {}
     local fields = {}
@@ -210,12 +211,12 @@ function MetadataHandler.setMetadata(args)
         end
     end
 
-    return PhotoWrites.each(LrApplication.activeCatalog(), {
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), {
         photo_ids = args.photo_ids,
         title = "Set Metadata",
         data = { fields = fields },
-        write = function(photo)
-            for _, change in ipairs(changes) do photo:setRawMetadata(change.key, change.value) end
+        write = function(call)
+            for _, change in ipairs(changes) do call('setRawMetadata', change.key, change.value) end
         end,
     })
 end

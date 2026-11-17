@@ -226,7 +226,7 @@ describe("BrushStrokes.toStoredFrame", function()
         local points = { point(0, 0), point(1, 1) }
 
         assert.is_true(pcall(stored, { stroke({ points = points, radius = 0.0016 }) }))
-        assert.is_truthy(helper.refusalOf(function()
+        assert.is_truthy(helper.failedOf(function()
             stored({ stroke({ points = points, radius = 0.0016, feather = 0 }) })
         end):find("strokes[1] would need", 1, true))
     end)
@@ -238,7 +238,7 @@ describe("BrushStrokes.toStoredFrame", function()
         local mapped = stored(across, portrait)
 
         assert.are.equal(1, #mapped)
-        assert.is_truthy(helper.refusalOf(function() stored(across) end))
+        assert.is_truthy(helper.failedOf(function() stored(across) end))
     end)
 
     it("rounds the radius once, in the stored frame", function()
@@ -254,7 +254,7 @@ describe("BrushStrokes.toStoredFrame", function()
     it("refuses a radius that stores as zero", function()
         local tiny = { stroke({ points = { point(0.5, 0.5) }, radius = 1e-7, feather = 0 }) }
 
-        assert.are.equal("strokes[1].radius is too small to paint", helper.refusalOf(function() stored(tiny) end))
+        assert.are.equal("strokes[1].radius is too small to paint", helper.failedOf(function() stored(tiny) end))
     end)
 
     it("keeps the points and radius of an uncropped upright photo", function()

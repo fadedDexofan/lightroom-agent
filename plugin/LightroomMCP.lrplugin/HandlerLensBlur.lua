@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
 local DecimalText = require 'DecimalText'
 local DevelopSession = require 'DevelopSession'
 local PhotoLookup = require 'PhotoLookup'
@@ -104,9 +105,9 @@ local function flush(catalog, photo)
     assertActive(catalog, photo)
 end
 
-local function write(catalog, photo, parameter, value, matches)
+local function write(context, catalog, photo, parameter, value, matches)
     assertActive(catalog, photo)
-    sdk(LrDevelopController.setValue, parameter, value)
+    sdk(CatalogWrite.develop, context, "setValue", parameter, value)
     if parameter == "LensBlurActive" and not DevelopSession.waitFor(function()
         assertActive(catalog, photo)
         return sdk(LrDevelopController.getValue, parameter) == value
@@ -127,10 +128,10 @@ local function write(catalog, photo, parameter, value, matches)
     end
 end
 
-local function setActive(catalog, photo, active)
+local function setActive(context, catalog, photo, active)
     if not active and sdk(LrDevelopController.getValue, 'LensBlurActive') ~= true
         and stored(photo).Active ~= true then return end
-    write(catalog, photo, 'LensBlurActive', active, function(value, settings)
+    write(context, catalog, photo, 'LensBlurActive', active, function(value, settings)
         return value == active and settings.Active == active
     end)
 end
@@ -152,12 +153,12 @@ function Handler.set(args, context)
         local adjustments = args.bokeh ~= nil or args.focal_range ~= nil
         for _, slider in ipairs(SLIDERS) do adjustments = adjustments or args[slider.key] ~= nil end
         if adjustments or args.active == true then
-            setActive(catalog, photo, true)
+            setActive(context, catalog, photo, true)
         end
         for _, slider in ipairs(SLIDERS) do
             local wanted = args[slider.key]
             if wanted ~= nil then
-                write(catalog, photo, slider.parameter, wanted, function(value, settings)
+                write(context, catalog, photo, slider.parameter, wanted, function(value, settings)
                     return close(value, wanted) and close(settings[slider.stored], wanted)
                 end)
             end
@@ -166,7 +167,7 @@ function Handler.set(args, context)
             local near, far = args.focal_range.near, args.focal_range.far
             local encoded = table.concat({ DecimalText.significant(near - 80, 10), DecimalText.significant(near, 10),
                 DecimalText.significant(far, 10), DecimalText.significant(far + 80, 10) }, ' ')
-            write(catalog, photo, 'LensBlurFocalRange', encoded, function(value, settings)
+            write(context, catalog, photo, 'LensBlurFocalRange', encoded, function(value, settings)
                 local current, saved = focalRange(value), focalRange(settings.FocalRange)
                 return current and saved and close(current.near, near) and close(current.far, far)
                     and close(saved.near, near) and close(saved.far, far)
@@ -176,7 +177,7 @@ function Handler.set(args, context)
             assertActive(catalog, photo)
             local previous = sdk(LrDevelopController.getSelectedLensBlurBokeh)
             local before = stored(photo)
-            sdk(LrDevelopController.setLensBlurBokeh, args.bokeh)
+            sdk(CatalogWrite.develop, context, "setLensBlurBokeh", args.bokeh)
             flush(catalog, photo)
             local saved = DevelopSession.waitFor(function()
                 assertActive(catalog, photo)
@@ -193,7 +194,7 @@ function Handler.set(args, context)
                 error('Lightroom did not save Lens Blur bokeh; earlier changes may remain')
             end
         end
-        if args.active == false then setActive(catalog, photo, false) end
+        if args.active == false then setActive(context, catalog, photo, false) end
         local result = read(catalog, photo)
         result.photo_id = tostring(photo.localIdentifier)
         return result

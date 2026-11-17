@@ -162,9 +162,9 @@ describe("HandlerSelection.getSelectedPhotos", function()
 
         it("errors when photo_ids is missing or empty", function()
             setup({ photos = { threePhotos() } })
-            assert.are.equal("photo_ids is required", helper.unknownOf(function() Handler.setSelection({}) end))
-            assert.are.equal("photo_ids is required",
-                helper.unknownOf(function() Handler.setSelection({ photo_ids = {} }) end))
+            assert.are.same({ "failed", "photo_ids is required" }, { helper.outcomeOf(function(context) Handler.setSelection({}, context) end) })
+            assert.are.same({ "failed", "photo_ids is required" },
+                { helper.outcomeOf(function(context) Handler.setSelection({ photo_ids = {} }, context) end) })
         end)
 
         it("selects nothing and answers only not_found when no input resolves", function()

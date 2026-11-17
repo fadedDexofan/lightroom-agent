@@ -27,7 +27,7 @@ end
 
 local function writeWithBrushCrossCheck(context, catalog, photo, description, build, locationOf)
     return DevelopSession.withPhoto(context, catalog, photo, function()
-        return GuardedMaskWrite.apply(catalog, photo, {
+        return GuardedMaskWrite.apply(context, catalog, photo, {
             description = description,
             build = build,
             crossCheck = function(actual)

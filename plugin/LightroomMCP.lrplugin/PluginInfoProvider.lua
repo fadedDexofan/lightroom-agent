@@ -302,24 +302,10 @@ local function dispatchAction(request)
     end)
     if context:isCanceled() then addLog("Cancelled " .. action .. " id=" .. tostring(id)) end
     context:finish()
-    local missing = Reply.notFoundOf(resultOrErr)
-    if not execOk and missing ~= nil then
-        execOk, resultOrErr = true, Reply.parts({ not_found = { missing } })
-    end
-    if execOk then
-        local parts = Reply.isParts(resultOrErr) and resultOrErr or { data = resultOrErr }
-        if #context.warnings > 0 then
-            parts.warnings = parts.warnings or {}
-            for _, warning in ipairs(context.warnings) do parts.warnings[#parts.warnings + 1] = warning end
-        end
-        sendResponse({ id = id, result = parts }, context:timeLeft())
-    else
-        addLog("Handler " .. action .. " error: " .. tostring(resultOrErr))
-        local message = Reply.messageOf(resultOrErr)
-        if #context.warnings > 0 then message = message .. " Warnings: " .. table.concat(context.warnings, "; ") end
-        sendResponse({ id = id, error = message, effect = Reply.refusalOf(resultOrErr) and "none" or "unknown" },
-            context:timeLeft())
-    end
+    if not execOk then addLog("Handler " .. action .. " error: " .. tostring(resultOrErr)) end
+    local answer = Reply.outcome(execOk, resultOrErr, context)
+    answer.id = id
+    sendResponse(answer, context:timeLeft())
     pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
 end
 

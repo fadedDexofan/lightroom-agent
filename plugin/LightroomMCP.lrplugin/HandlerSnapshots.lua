@@ -37,13 +37,13 @@ function Handler.list(args)
     return { photo_id = photoId, snapshots = snapshots(photo) }
 end
 
-function Handler.create(args)
+function Handler.create(args, context)
     local catalog, photo, photoId = resolve(args)
-    local accepted
-    CatalogWrite.run(catalog, 'Create Develop Snapshot', function()
-        accepted = photo:createDevelopSnapshot(args.name, args.replace == true)
+    CatalogWrite.run(context, catalog, 'Create Develop Snapshot', function()
+        if not CatalogWrite.call(context, photo, "createDevelopSnapshot", args.name, args.replace == true) then
+            Reply.refuse('Snapshot name already exists: ' .. args.name)
+        end
     end)
-    if not accepted then Reply.refuse('Snapshot name already exists: ' .. args.name) end
     -- Lightroom publishes the new snapshot only after the write gate returns.
     for _, snapshot in ipairs(snapshots(photo)) do
         if snapshot.name == args.name then return { photo_id = photoId, snapshot = snapshot } end
@@ -55,8 +55,8 @@ function Handler.apply(args, context)
     local catalog, photo, photoId = resolve(args)
     requireSnapshot(photo, args.snapshot_id)
     DevelopSession.withPhoto(context, catalog, photo, function()
-        CatalogWrite.run(catalog, 'Apply Develop Snapshot', function()
-            photo:applyDevelopSnapshot(find(photo, args.snapshot_id).snapshotID)
+        CatalogWrite.run(context, catalog, 'Apply Develop Snapshot', function()
+            CatalogWrite.call(context, photo, "applyDevelopSnapshot", find(photo, args.snapshot_id).snapshotID)
         end)
     end)
     return { photo_id = photoId, snapshot_id = args.snapshot_id }
@@ -66,8 +66,8 @@ function Handler.delete(args, context)
     local catalog, photo, photoId = resolve(args)
     requireSnapshot(photo, args.snapshot_id)
     DevelopSession.withPhoto(context, catalog, photo, function()
-        CatalogWrite.run(catalog, 'Delete Develop Snapshot', function()
-            photo:deleteDevelopSnapshot(find(photo, args.snapshot_id).id_global)
+        CatalogWrite.run(context, catalog, 'Delete Develop Snapshot', function()
+            CatalogWrite.call(context, photo, "deleteDevelopSnapshot", find(photo, args.snapshot_id).id_global)
         end)
         local deleted = DevelopSession.waitFor(function()
             return find(photo, args.snapshot_id) == nil

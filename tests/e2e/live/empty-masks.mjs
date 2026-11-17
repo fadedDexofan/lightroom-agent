@@ -23,6 +23,5 @@ try {
     emptyIds.every((id) => !left.includes(id)) && left.includes(String(plain.mask_id)), { removed, empty: emptyIds, plain: plain.mask_id, left });
   report.finish({ photo_id: photoId });
 } finally {
-  await session.tool("remove_photos_from_catalog", { photo_ids: [photoId], confirm: true });
   await session.stop();
 }

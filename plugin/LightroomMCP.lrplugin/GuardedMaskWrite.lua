@@ -1,5 +1,6 @@
 local LrTasks = import 'LrTasks'
 
+local AIMaskData = require 'AIMaskData'
 local CatalogWrite = require 'CatalogWrite'
 local DevelopSession = require 'DevelopSession'
 local LocalSliders = require 'LocalSliders'
@@ -232,19 +233,12 @@ function GuardedMaskWrite.formatProblems(entries)
 end
 
 local function plannedEntries(read, proposed)
-    local byId, matched, plan = {}, {}, {}
-    for index, entry in ipairs(read) do
-        if type(entry) == "table" and entry.CorrectionID ~= nil then byId[tostring(entry.CorrectionID)] = index end
+    local byId, plan = {}, {}
+    for _, entry in ipairs(read) do
+        if type(entry) == "table" and entry.CorrectionID ~= nil then byId[tostring(entry.CorrectionID)] = entry end
     end
     for index, entry in ipairs(proposed) do
-        local readIndex = type(entry) == "table" and entry.CorrectionID ~= nil and byId[tostring(entry.CorrectionID)] or nil
-        if readIndex == nil then
-            for candidate, held in ipairs(read) do
-                if not matched[candidate] and JsonValue.equal(held, entry) then readIndex = candidate break end
-            end
-        end
-        if readIndex ~= nil then matched[readIndex] = true end
-        local before = readIndex and read[readIndex] or nil
+        local before = type(entry) == "table" and entry.CorrectionID ~= nil and byId[tostring(entry.CorrectionID)] or nil
         plan[index] = { preserved = before ~= nil and JsonValue.equal(before, entry), before = before }
     end
     return plan
@@ -353,16 +347,12 @@ local function isLocalAdjustmentOmittedAtDefault(name, expected, actual)
         and closeEnough(expected, LocalSliders.storedNeutralOf(name))
 end
 
-local function compareValue(name, expected, actual, parent, problems, inPaint)
-    if DERIVED_FIELDS[name] and not (inPaint and name == "MaskValue") then return end
+local function compareValue(name, expected, actual, parent, problems, valueIsWritten)
+    if DERIVED_FIELDS[name] and not (valueIsWritten and name == "MaskValue") then return end
     local where = pathOf(parent, name)
     if type(expected) == "table" then
         if type(actual) ~= "table" then
             addProblem(problems, where .. ": lost after the write")
-            return
-        end
-        if expected.What == OPAQUE_WHAT then
-            if actual.What ~= OPAQUE_WHAT then addProblem(problems, where .. ": mask type changed") end
             return
         end
         if name == "Dabs" then
@@ -374,7 +364,10 @@ local function compareValue(name, expected, actual, parent, problems, inPaint)
             return
         end
         for key, value in pairs(expected) do
-            compareValue(key, value, actual[key], where, problems, expected.What == PAINT_WHAT)
+            if not (expected.What == OPAQUE_WHAT and AIMaskData.isComputed(key)) then
+                compareValue(key, value, actual[key], where, problems,
+                    expected.What == PAINT_WHAT or expected.What == OPAQUE_WHAT)
+            end
         end
         return
     end
@@ -392,19 +385,6 @@ local function compareValue(name, expected, actual, parent, problems, inPaint)
     if not same then
         addProblem(problems, where .. ": wrote " .. tostring(expected) .. ", read back " .. tostring(actual))
     end
-end
-
-function GuardedMaskWrite.compareEntries(expected, actual)
-    local problems = {}
-    if #expected ~= #actual then
-        addProblem(problems, string.format("mask count changed: wrote %d, read back %d", #expected, #actual))
-        return problems
-    end
-    for index, entry in ipairs(expected) do
-        compareValue(index, entry, actual[index], "masks", problems)
-    end
-    table.sort(problems)
-    return problems
 end
 
 local function mismatchesFor(plan)
@@ -459,7 +439,7 @@ end
 local function admittedEntries(catalog, photo, plannedProcessVersion)
     local read, entries, processVersion = LrTasks.pcall(readEntries, catalog, photo)
     if not read then
-        Reply.refuse("The masks already on this photo could not be read, so nothing was written: " .. Reply.messageOf(entries))
+        Reply.refuse("The masks already on this photo could not be read: " .. Reply.messageOf(entries))
     end
     MaskWriteAdmission.requireAdmitted(catalog, plannedProcessVersion or processVersion)
     return entries
@@ -469,9 +449,9 @@ function GuardedMaskWrite.preflight(catalog, photo, plannedProcessVersion)
     return admittedEntries(catalog, photo, plannedProcessVersion)
 end
 
-local function writeEntries(catalog, photo, description, entries)
-    CatalogWrite.run(catalog, description, function()
-        photo:applyDevelopSettings({ MaskGroupBasedCorrections = entries })
+local function writeEntries(context, catalog, photo, description, entries)
+    CatalogWrite.run(context, catalog, description, function()
+        CatalogWrite.call(context, photo, "applyDevelopSettings", { MaskGroupBasedCorrections = entries })
     end)
 end
 
@@ -488,15 +468,20 @@ local function readBackUntilMatching(catalog, photo, expected, mismatchesOf)
     end
 end
 
-local function restorePrevious(catalog, photo, previous)
-    local wrote = LrTasks.pcall(writeEntries, catalog, photo, "Restore masks", previous)
+function GuardedMaskWrite.restore(context, catalog, photo, previous, from, to)
+    to = to or context.ledger:mark()
+    local beforeRestore = context.ledger:mark()
+    local wrote = LrTasks.pcall(writeEntries, context, catalog, photo, "Restore masks", previous)
     if not wrote then return false end
     local read, _, mismatches = LrTasks.pcall(readBackUntilMatching, catalog, photo, previous, JsonValue.differences)
-    return read and #mismatches == 0
+    if not (read and #mismatches == 0) then return false end
+    context.ledger:undone(from, to)
+    context.ledger:undone(beforeRestore)
+    return true
 end
 
-local function failAfterRollback(catalog, photo, previous, problems)
-    local restored = restorePrevious(catalog, photo, previous)
+local function failAfterRollback(context, catalog, photo, previous, problems, mark)
+    local restored = GuardedMaskWrite.restore(context, catalog, photo, previous, mark)
     local summary = describeProblems(problems)
     Log.warn(string.format("Guarded mask write failed (restored=%s): %s", tostring(restored), summary))
     if restored then
@@ -507,25 +492,28 @@ local function failAfterRollback(catalog, photo, previous, problems)
         .. " confirmed restored; check the photo's masks in Develop: " .. summary, 0)
 end
 
-function GuardedMaskWrite.submit(catalog, photo, spec)
+function GuardedMaskWrite.submit(context, catalog, photo, spec)
     DevelopSession.flushIfShowing(catalog, photo)
     if spec.unchanged then
         local current = GuardedMaskWrite.readEntries(catalog, photo)
         if spec.unchanged(current) then return { previous = current, entries = current } end
     end
-    local previous, proposed, sent
-    local wrote, writeError = LrTasks.pcall(CatalogWrite.run, catalog, spec.description, function()
-        previous = entriesOf(photo:getDevelopSettings())
+    local previous, proposed, sent, settings
+    local mark = context.ledger:mark()
+    local wrote, writeError = LrTasks.pcall(CatalogWrite.run, context, catalog, spec.description, function()
+        settings = photo:getDevelopSettings()
+        previous = entriesOf(settings)
         proposed = spec.build(deepClone(previous, 0))
-        if proposed == nil then return end
+        if proposed == nil then return CatalogWrite.NOTHING end
         sent = true
-        photo:applyDevelopSettings({ MaskGroupBasedCorrections = deepClone(proposed, 0) })
+        CatalogWrite.call(context, photo, "applyDevelopSettings", { MaskGroupBasedCorrections = deepClone(proposed, 0) })
     end)
     if not wrote and not sent then error(writeError, 0) end
     if not wrote then
-        failAfterRollback(catalog, photo, previous, { "Lightroom rejected the write: " .. tostring(writeError) })
+        failAfterRollback(context, catalog, photo, previous, { "Lightroom rejected the write: " .. tostring(writeError) },
+            mark)
     end
-    if proposed == nil then return { previous = previous, entries = previous } end
+    if proposed == nil then return { previous = previous, entries = previous, settings = settings } end
 
     local read, actual, mismatches = LrTasks.pcall(readBackUntilMatching, catalog, photo, proposed, spec.mismatches)
     if not read then
@@ -540,15 +528,15 @@ function GuardedMaskWrite.submit(catalog, photo, spec)
         end
     end
     if #mismatches > 0 then
-        failAfterRollback(catalog, photo, previous, mismatches)
+        failAfterRollback(context, catalog, photo, previous, mismatches, mark)
     end
-    return { previous = previous, entries = actual }
+    return { previous = previous, entries = actual, settings = settings }
 end
 
-function GuardedMaskWrite.apply(catalog, photo, spec)
+function GuardedMaskWrite.apply(context, catalog, photo, spec)
     admittedEntries(catalog, photo)
     local plan
-    return GuardedMaskWrite.submit(catalog, photo, {
+    return GuardedMaskWrite.submit(context, catalog, photo, {
         description = spec.description,
         build = function(entries)
             local read = deepClone(entries, 0)
@@ -563,8 +551,8 @@ function GuardedMaskWrite.apply(catalog, photo, spec)
             end
             if #problems > 0 then
                 table.sort(problems)
-                Reply.refuse("The requested mask change does not match the format this tool was tested with, so"
-                    .. " nothing was written: " .. describeProblems(problems))
+                Reply.refuse("The requested mask change does not match the format this tool was tested with: "
+                    .. describeProblems(problems))
             end
             return proposed
         end,

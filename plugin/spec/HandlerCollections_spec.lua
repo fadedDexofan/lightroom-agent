@@ -83,22 +83,24 @@ describe("HandlerCollections.listCollections", function()
 end)
 
 describe("HandlerCollections.createCollection", function()
-    it("refuses when the catalog stays busy, and answers unknown once it created sets", function()
+    it("fails when the catalog stays busy, and answers unknown once it created sets", function()
         local catalog, Handler = setup({ writeAccessAborts = function() return true end })
-        assert.are.equal(helper.catalogBusy("Create Collection"), helper.refusalOf(function()
-            Handler.createCollection({ name = "Album" })
-        end))
+        assert.are.same({ "failed", helper.catalogBusy("Create Collection") }, { helper.outcomeOf(function(context)
+            Handler.createCollection({ name = "Album" }, context)
+        end) })
 
         catalog, Handler = setup({ writeAccessAborts = function(name) return name == "Create Collection Sets" end })
-        assert.are.equal(helper.catalogBusy("Create Collection Sets"), helper.refusalOf(function()
-            Handler.createCollection({ name = "City", parent = "Trips / 2026" })
-        end))
+        assert.are.same({ "failed", helper.catalogBusy("Create Collection Sets") }, { helper.outcomeOf(function(context)
+            Handler.createCollection({ name = "City", parent = "Trips / 2026" }, context)
+        end) })
         assert.are.same({}, catalog.getCreatedCollectionSets())
         assert.are.same({}, catalog.getCreatedCollections())
 
         catalog, Handler = setup({ writeAccessAborts = function(name) return name == "Create Collection" end })
-        assert.are.equal(helper.catalogBusy("Create Collection", "the collection sets Trips / 2026 were created"),
-            helper.unknownOf(function() Handler.createCollection({ name = "City", parent = "Trips / 2026" }) end))
+        assert.are.same({ "unknown", helper.catalogBusy("Create Collection")
+            .. "; written before this stopped: Create Collection Sets" }, { helper.outcomeOf(function(context)
+            Handler.createCollection({ name = "City", parent = "Trips / 2026" }, context)
+        end) })
         assert.are.equal(2, #catalog.getCreatedCollectionSets())
     end)
 
@@ -115,7 +117,7 @@ describe("HandlerCollections.createCollection", function()
         local existing = helper.fakeCollection("Album", {})
         local catalog, Handler = setup({ collections = { existing } })
 
-        assert.are.equal("Collection already exists: Album", helper.refusalOf(function() Handler.createCollection({ name = "Album" }) end))
+        assert.are.equal("Collection already exists: Album", helper.failedOf(function() Handler.createCollection({ name = "Album" }) end))
         assert.is_nil(catalog.getCreatedCollections()[1])
     end)
 
@@ -160,7 +162,7 @@ describe("HandlerCollections.createCollection", function()
             { collections = { helper.fakeCollection("City", {}) } })
         local catalog, Handler = setup({ collectionSets = { trips } })
 
-        assert.are.equal("Collection already exists: Trips / City", helper.refusalOf(function() Handler.createCollection({ name = "City", parent = "Trips" }) end))
+        assert.are.equal("Collection already exists: Trips / City", helper.failedOf(function() Handler.createCollection({ name = "City", parent = "Trips" }) end))
         assert.are.equal(0, #catalog.getCreatedCollections())
     end)
 
@@ -181,7 +183,7 @@ describe("HandlerCollections.createCollection", function()
     it("rejects a parent path with an empty set name", function()
         local catalog, Handler = setup({})
         for _, parent in ipairs({ "Trips /  / City", " / Trips", "Trips / " }) do
-            assert.are.equal("parent contains an empty collection set name: " .. parent, helper.refusalOf(function() Handler.createCollection({ name = "X", parent = parent }) end))
+            assert.are.equal("parent contains an empty collection set name: " .. parent, helper.failedOf(function() Handler.createCollection({ name = "X", parent = parent }) end))
         end
         assert.are.equal(0, #catalog.getCreatedCollectionSets())
         assert.are.equal(0, #catalog.getCreatedCollections())
@@ -190,7 +192,7 @@ describe("HandlerCollections.createCollection", function()
     it("rejects an empty parent set name", function()
         local catalog, Handler = setup({})
         for _, parent in ipairs({ "", "   " }) do
-            assert.are.equal("parent contains an empty collection set name: " .. parent, helper.refusalOf(function() Handler.createCollection({ name = "X", parent = parent }) end))
+            assert.are.equal("parent contains an empty collection set name: " .. parent, helper.failedOf(function() Handler.createCollection({ name = "X", parent = parent }) end))
         end
         assert.are.equal(0, #catalog.getCreatedCollections())
     end)
@@ -206,7 +208,7 @@ describe("HandlerCollections.createCollection", function()
         for _, case in ipairs(cases) do
             assert.are.equal(string.format(
                     "parent has a malformed collection set name '%s'; separate sets with ' / ': %s",
-                    case[2], case[1]), helper.refusalOf(function() Handler.createCollection({ name = "X", parent = case[1] }) end))
+                    case[2], case[1]), helper.failedOf(function() Handler.createCollection({ name = "X", parent = case[1] }) end))
         end
         assert.are.equal(0, #catalog.getCreatedCollectionSets())
         assert.are.equal(0, #catalog.getCreatedCollections())
@@ -236,8 +238,8 @@ describe("HandlerCollections.createCollection", function()
         local catalog, Handler = setup({ collections = { helper.fakeCollection("Album", {}) },
             collectionSets = { trips } })
 
-        assert.are.equal("Collection already exists: Trips / city", helper.refusalOf(function() Handler.createCollection({ name = "city", parent = "Trips" }) end))
-        assert.are.equal("Collection already exists: ALBUM", helper.refusalOf(function() Handler.createCollection({ name = "ALBUM" }) end))
+        assert.are.equal("Collection already exists: Trips / city", helper.failedOf(function() Handler.createCollection({ name = "city", parent = "Trips" }) end))
+        assert.are.equal("Collection already exists: ALBUM", helper.failedOf(function() Handler.createCollection({ name = "ALBUM" }) end))
         assert.are.equal(0, #catalog.getCreatedCollections())
     end)
 
@@ -246,25 +248,27 @@ describe("HandlerCollections.createCollection", function()
         local outer = helper.fakeCollectionSet("Outer", { sets = { inner } })
         local catalog, Handler = setup({ collectionSets = { outer } })
 
-        assert.are.equal("A collection set named 'Inner' already exists in Outer", helper.refusalOf(function() Handler.createCollection({ name = "inner", parent = "Outer" }) end))
-        assert.are.equal("A collection set named 'Outer' already exists at the top level", helper.refusalOf(function() Handler.createCollection({ name = "Outer" }) end))
+        assert.are.equal("A collection set named 'Inner' already exists in Outer", helper.failedOf(function() Handler.createCollection({ name = "inner", parent = "Outer" }) end))
+        assert.are.equal("A collection set named 'Outer' already exists at the top level", helper.failedOf(function() Handler.createCollection({ name = "Outer" }) end))
         assert.are.equal(0, #catalog.getCreatedCollections())
     end)
 
     it("rejects a parent level that is a collection", function()
         local catalog, Handler = setup({ collections = { helper.fakeCollection("Album", {}) } })
 
-        assert.are.equal("parent 'album' names a collection, not a collection set", helper.refusalOf(function() Handler.createCollection({ name = "X", parent = "album / 2026" }) end))
+        assert.are.equal("parent 'album' names a collection, not a collection set", helper.failedOf(function() Handler.createCollection({ name = "X", parent = "album / 2026" }) end))
         assert.are.equal(0, #catalog.getCreatedCollectionSets())
         assert.are.equal(0, #catalog.getCreatedCollections())
     end)
 
-    it("answers unknown naming the sets it created when Lightroom returns no collection", function()
+    it("answers unknown naming what it wrote when Lightroom returns no collection", function()
         local catalog, Handler = setup({})
         catalog.createCollection = function() return nil end
 
-        assert.are.equal("Lightroom did not create collection: Trips / X; the collection sets Trips were created",
-            helper.unknownOf(function() Handler.createCollection({ name = "X", parent = "Trips" }) end))
+        assert.are.same({ "unknown", "Lightroom did not create collection: Trips / X; written before this stopped:"
+            .. " Create Collection Sets" }, { helper.outcomeOf(function(context)
+            Handler.createCollection({ name = "X", parent = "Trips" }, context)
+        end) })
     end)
 
     it("rolls back the new sets when Lightroom returns no set", function()
@@ -275,7 +279,7 @@ describe("HandlerCollections.createCollection", function()
             return create(self, name, parent, canReturnPrior)
         end
 
-        assert.are.equal("Lightroom did not create collection set: 2026", helper.refusalOf(
+        assert.are.equal("Lightroom did not create collection set: 2026", helper.failedOf(
             function() Handler.createCollection({ name = "X", parent = "Trips / 2026" }) end))
         assert.are.equal(0, #catalog.getChildCollectionSets())
         assert.are.equal(0, #catalog.getCreatedCollections())
@@ -339,7 +343,7 @@ describe("HandlerCollections.createSmartCollection", function()
 
     it("rejects a duplicate name without creating anything", function()
         local catalog, Handler = setup({ collections = { helper.fakeCollection("Review") } })
-        assert.are.equal("Collection already exists: review", helper.refusalOf(function()
+        assert.are.equal("Collection already exists: review", helper.failedOf(function()
             Handler.createSmartCollection({ name = "review", rating = 5 })
         end))
         assert.are.equal(0, #catalog:getCreatedCollections())
@@ -353,12 +357,12 @@ describe("HandlerCollections.createSmartCollection", function()
         assert.are.equal(2, #catalog:getCreatedCollections())
     end)
 
-    it("reports an SDK creation failure", function()
+    it("reports an SDK creation failure as failed, since its gate rolls back", function()
         local _, Handler = setup()
         local catalog = import('LrApplication').activeCatalog()
         catalog.createSmartCollection = function() return nil end
         assert.are.equal("Lightroom did not create collection: Review",
-            helper.refusalOf(function() Handler.createSmartCollection({ name = "Review", rating = 5 }) end))
+            helper.failedOf(function() Handler.createSmartCollection({ name = "Review", rating = 5 }) end))
     end)
 end)
 
@@ -368,7 +372,7 @@ describe("HandlerCollections.addToCollection", function()
         local smart = helper.fakeCollection("Five Stars", {}, { smart = true })
         local catalog, Handler = setup({ photos = { p1 }, collections = { smart } })
 
-        assert.are.equal("Cannot add or remove photos in a smart collection: Five Stars", helper.refusalOf(function()
+        assert.are.equal("Cannot add or remove photos in a smart collection: Five Stars", helper.failedOf(function()
             Handler.addToCollection({ collection_name = "Five Stars", photo_ids = { "1" } })
         end))
         assert.are.equal(0, catalog.getQueryCount())
@@ -419,7 +423,7 @@ describe("HandlerCollections.addToCollection", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local catalog, Handler = setup({ photos = { p1 } })
 
-        assert.are.equal("Collection not found: Nope", helper.refusalOf(function()
+        assert.are.equal("Collection not found: Nope", helper.failedOf(function()
             Handler.addToCollection({ collection_name = "Nope", photo_ids = { "/missing.raw" } })
         end))
 
@@ -462,7 +466,7 @@ describe("HandlerCollections.addToCollection", function()
         local b = helper.fakeCollectionSet("B", { collections = { second } })
         local catalog, Handler = setup({ photos = { p1 }, collectionSets = { a, b } })
 
-        assert.are.equal("2 collections are named 'Shared'; use a collection path", helper.refusalOf(function()
+        assert.are.equal("2 collections are named 'Shared'; use a collection path", helper.failedOf(function()
             Handler.addToCollection({ collection_name = "Shared", photo_ids = { "1" } })
         end))
 
@@ -585,7 +589,7 @@ describe("HandlerCollections.removeFromCollection", function()
         local b = helper.fakeCollectionSet("B", { collections = { second } })
         local catalog, Handler = setup({ photos = { p1 }, collectionSets = { a, b } })
 
-        assert.are.equal("2 collections are named 'Shared'; use a collection path", helper.refusalOf(function()
+        assert.are.equal("2 collections are named 'Shared'; use a collection path", helper.failedOf(function()
             Handler.removeFromCollection({ collection_name = "Shared", photo_ids = { "1" } })
         end))
 
@@ -625,10 +629,10 @@ describe("HandlerCollections.removeFromCollection", function()
         local smart = helper.fakeCollection("Five Stars", { p1 }, { smart = true })
         local catalog, Handler = setup({ photos = { p1 }, collections = { smart } })
 
-        assert.are.equal("Collection not found: Nope", helper.refusalOf(function()
+        assert.are.equal("Collection not found: Nope", helper.failedOf(function()
             Handler.removeFromCollection({ collection_name = "Nope", photo_ids = { "1" } })
         end))
-        assert.are.equal("Cannot add or remove photos in a smart collection: Five Stars", helper.refusalOf(function()
+        assert.are.equal("Cannot add or remove photos in a smart collection: Five Stars", helper.failedOf(function()
             Handler.removeFromCollection({ collection_name = "Five Stars", photo_ids = { "1" } })
         end))
 
@@ -676,6 +680,16 @@ describe("HandlerCollections.deleteCollection", function()
         assert.is_false(other.isDeleted())
     end)
 
+    it("answers unknown, naming delete, when the collection's delete raises inside its gate", function()
+        local target = helper.fakeCollection("Temp", {})
+        target.delete = function() error("delete failed", 0) end
+        local _, Handler = setup({ collections = { target } })
+
+        local message = helper.unknownOf(function() Handler.deleteCollection({ collection_name = "Temp" }) end)
+
+        assert.are.equal("delete failed", message)
+    end)
+
     it("refuses to guess when several nested collections share the name", function()
         local first = helper.fakeCollection("Temp", {})
         local second = helper.fakeCollection("Temp", {})
@@ -684,7 +698,7 @@ describe("HandlerCollections.deleteCollection", function()
         local _, Handler = setup({ collectionSets = { a, b } })
 
         assert.are.equal("2 collections are named 'Temp'; use a collection path",
-            helper.refusalOf(function() Handler.deleteCollection({ collection_name = "Temp" }) end))
+            helper.failedOf(function() Handler.deleteCollection({ collection_name = "Temp" }) end))
         assert.is_false(first.isDeleted())
         assert.is_false(second.isDeleted())
     end)
@@ -720,7 +734,7 @@ describe("HandlerCollections.deleteCollection", function()
     it("refuses an unknown collection", function()
         local _, Handler = setup({})
         assert.are.equal("Collection not found: Nope",
-            helper.refusalOf(function() Handler.deleteCollection({ collection_name = "Nope" }) end))
+            helper.failedOf(function() Handler.deleteCollection({ collection_name = "Nope" }) end))
     end)
 end)
 
@@ -820,7 +834,7 @@ describe("HandlerCollections.getCollectionPhotos", function()
             collectionSets = { set("A", { first }), set("B", { second }) } })
 
         assert.are.equal("2 collections are named 'Shared'; use a collection path",
-            helper.refusalOf(function() Handler.getCollectionPhotos({ collection_name = "Shared" }) end))
+            helper.failedOf(function() Handler.getCollectionPhotos({ collection_name = "Shared" }) end))
         assert.are.equal("2", Handler.getCollectionPhotos({ collection_name = "B / Shared" }).photos[1].photo_id)
     end)
 
@@ -838,7 +852,7 @@ describe("HandlerCollections.getCollectionPhotos", function()
     it("errors on an unknown collection", function()
         local _, Handler = setup({})
         assert.are.equal("Collection not found: Nope",
-            helper.refusalOf(function() Handler.getCollectionPhotos({ collection_name = "Nope" }) end))
+            helper.failedOf(function() Handler.getCollectionPhotos({ collection_name = "Nope" }) end))
     end)
 end)
 

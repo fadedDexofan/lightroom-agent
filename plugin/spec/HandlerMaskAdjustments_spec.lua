@@ -89,7 +89,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
     it("refuses an unknown mask and writes nothing", function()
         local Handler, store = setup()
 
-        local refusal = helper.refusalOf(function()
+        local refusal = helper.failedOf(function()
             Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-z", adjustments = { local_Contrast = 5 } })
         end)
 

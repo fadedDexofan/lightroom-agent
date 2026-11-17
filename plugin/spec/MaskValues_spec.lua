@@ -88,7 +88,7 @@ describe("MaskValues.read", function()
     it("refuses an id that is not in the saved settings, naming the saved ones", function()
         local MaskValues, ctx = setup()
 
-        local refusal = helper.refusalOf(function() MaskValues.read(ctx.catalog, ctx.photo, "C9") end)
+        local refusal = helper.failedOf(function() MaskValues.read(ctx.catalog, ctx.photo, "C9") end)
 
         assert.matches("Mask C9 is not in the saved settings of photo 1 (saved masks: C1, C2)", refusal, 1, true)
         assert.matches("a mask made in Develop in the last few seconds may not be saved yet", refusal, 1, true)
@@ -102,7 +102,7 @@ describe("MaskValues.write", function()
         expected[1].LocalExposure2012 = 0.125
         expected[1].CorrectionActive = true
 
-        local result = MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+        local result = MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
 
         assert.are.same(expected, ctx.store.entries)
         assert.are.equal(1, result.before.adjustments.local_Exposure)
@@ -114,7 +114,7 @@ describe("MaskValues.write", function()
     it("writes nothing and opens no gate when every value is already stored", function()
         local MaskValues, ctx = setup({ subject = { CorrectionActive = false } })
 
-        local result = MaskValues.write(ctx.catalog, ctx.photo, "C1",
+        local result = MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1",
             { adjustments = { local_Exposure = 1, local_Shadows = 0 } })
 
         assert.are.same({}, result.written)
@@ -126,7 +126,7 @@ describe("MaskValues.write", function()
     it("writes the stored whole number of a colour-grade slider and reports it", function()
         local MaskValues, ctx = setup()
 
-        local result = MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_colorgradeShadowHue = 222.59 } })
+        local result = MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_colorgradeShadowHue = 222.59 } })
 
         assert.are.equal(223, ctx.store.entries[1].LocalColorGradeShadowHue)
         assert.are.equal(223, result.after.adjustments.local_colorgradeShadowHue)
@@ -137,7 +137,7 @@ describe("MaskValues.write", function()
             beforeGate = function(store) store.entries[2].LocalExposure2012 = 0.5 end,
         })
 
-        MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Contrast = 20 } })
+        MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Contrast = 20 } })
 
         assert.are.equal(0.2, ctx.store.entries[1].LocalContrast2012)
         assert.are.equal(0.5, ctx.store.entries[2].LocalExposure2012)
@@ -160,8 +160,8 @@ describe("MaskValues.write", function()
             })
             local before = Store.clone(ctx.store.entries)
 
-            local refusal = helper.refusalOf(function()
-                MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+            local refusal = helper.failedOf(function()
+                MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
             end)
 
             assert.matches("previous masks were restored", refusal, 1, true)
@@ -177,7 +177,7 @@ describe("MaskValues.write", function()
 
         local context = helper.requestContext()
 
-        local result = MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } }, context)
+        local result = MaskValues.write(context, ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
 
         assert.are.same({}, result.written)
         assert.are.equal(0, ctx.store.attempts)
@@ -195,7 +195,7 @@ describe("MaskValues.write", function()
         })
 
         local err = helper.unknownOf(function()
-            MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
         end)
 
         assert.matches("could not be confirmed restored", err, 1, true)
@@ -204,7 +204,7 @@ describe("MaskValues.write", function()
     it("writes a slider as the six decimal places Lightroom stores and reports that value", function()
         local MaskValues, ctx = setup()
 
-        local result = MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.33333333 } })
+        local result = MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.33333333 } })
 
         assert.are.equal(0.083333, ctx.store.entries[1].LocalExposure2012)
         assert.are.equal(0.333332, result.after.adjustments.local_Exposure)
@@ -218,8 +218,8 @@ describe("MaskValues.write", function()
             end,
         })
 
-        local refusal = helper.refusalOf(function()
-            MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.33333333 } })
+        local refusal = helper.failedOf(function()
+            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.33333333 } })
         end)
 
         assert.matches("local_Exposure: wrote 0.333332, Lightroom stored 0.333336", refusal, 1, true)
@@ -234,8 +234,8 @@ describe("MaskValues.write", function()
             end,
         })
 
-        local refusal = helper.refusalOf(function()
-            MaskValues.write(ctx.catalog, ctx.photo, "C1", { curves = { main = { 0, 0, 64, 48, 255, 255 } } })
+        local refusal = helper.failedOf(function()
+            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { curves = { main = { 0, 0, 64, 48, 255, 255 } } })
         end)
 
         assert.matches("main curve: wrote 0,0 64,48 255,255, Lightroom stored nothing", refusal, 1, true)
@@ -255,15 +255,15 @@ describe("MaskValues.write", function()
         assert.are.same({ 0, 0, 255, 255 }, curves.main)
     end)
 
-    it("refuses with nothing written when the catalog stays busy", function()
+    it("fails with nothing written when the catalog stays busy", function()
         local MaskValues, ctx = setup({ writeAccessAborts = function() return true end })
         local before = Store.clone(ctx.store.entries)
 
-        local refusal = helper.refusalOf(function()
-            MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+        local class, message = helper.outcomeOf(function(context)
+            MaskValues.write(context, ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
         end)
 
-        assert.matches("stayed busy", refusal, 1, true)
+        assert.are.same({ "failed", helper.catalogBusy("Set Mask Adjustments") }, { class, message })
         assert.are.same(before, ctx.store.entries)
     end)
 
@@ -272,11 +272,11 @@ describe("MaskValues.write", function()
             { CorrectionID = "C3" })
         local MaskValues, ctx = setup({ entries = { subject(), unpinned } })
 
-        MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+        MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
 
         assert.are.equal(0.125, ctx.store.entries[1].LocalExposure2012)
-        local refusal = helper.refusalOf(function()
-            require('GuardedMaskWrite').apply(ctx.catalog, ctx.photo, {
+        local refusal = helper.failedOf(function()
+            require('GuardedMaskWrite').apply(helper.requestContext(), ctx.catalog, ctx.photo, {
                 description = "Create gradient mask",
                 build = function(entries) return entries end,
             })
@@ -299,7 +299,7 @@ describe("MaskValues.write", function()
             local entry = Store.correction("Colors", { case.component }, { CorrectionID = "C3" })
             local MaskValues, ctx = setup({ entries = { subject(), brush(), Store.clone(entry) } })
 
-            MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
 
             assert.are.equal(1, ctx.store.attempts)
             assert.are.equal(0.125, ctx.store.entries[1].LocalExposure2012)
@@ -320,7 +320,7 @@ describe("MaskValues.write on a mask with a Point Color swatch it cannot read", 
         it("writes and reports a " .. case.kind .. " change, decoding only what the change names", function()
             local MaskValues, ctx = setup({ subject = UNREADABLE })
 
-            local result = MaskValues.write(ctx.catalog, ctx.photo, "C1", case.change)
+            local result = MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", case.change)
 
             assert.are.same(case.expected, case.stored(ctx.store.entries[1]))
             assert.is_nil(result.after.swatches)
@@ -330,8 +330,8 @@ describe("MaskValues.write on a mask with a Point Color swatch it cannot read", 
     it("refuses a swatch update before any gate, naming the unreadable swatch", function()
         local MaskValues, ctx = setup({ subject = UNREADABLE })
 
-        local refusal = helper.refusalOf(function()
-            MaskValues.write(ctx.catalog, ctx.photo, "C1", { swatch = { action = "update", index = 1, fields = { HueShift = 0.2 } } })
+        local refusal = helper.failedOf(function()
+            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { swatch = { action = "update", index = 1, fields = { HueShift = 0.2 } } })
         end)
 
         assert.matches("Lightroom stored an unreadable Point Color swatch at index 1", refusal, 1, true)
@@ -346,13 +346,14 @@ describe("MaskValues.write updating a Point Color swatch", function()
     for _, case in ipairs({
         { range = "HueRange", edges = { LowerNone = 0.6, LowerFull = 0.2, UpperFull = 0.9, UpperNone = 0.4 } },
         { range = "LumRange", edges = { LowerNone = 0, LowerFull = 0.5, UpperFull = 0.9, UpperNone = 0.8 } },
+        { range = "LumRange", edges = { LowerNone = 0, LowerFull = 0.7, UpperFull = 0.5, UpperNone = 1 } },
     }) do
         it("refuses unordered " .. case.range .. " edges before any gate, since Lightroom drops every swatch then", function()
             local MaskValues, ctx = setup({ subject = { LocalPointColors = { SWATCH }, LocalColorVariance = { "0.000000" } } })
             local before = Store.clone(ctx.store.entries)
 
-            local refusal = helper.refusalOf(function()
-                MaskValues.write(ctx.catalog, ctx.photo, "C1",
+            local refusal = helper.failedOf(function()
+                MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1",
                     { swatch = { action = "update", index = 1, fields = { [case.range] = case.edges } } })
             end)
 
@@ -379,8 +380,8 @@ describe("MaskValues.write deleting a Point Color swatch", function()
         })
         local before = Store.clone(ctx.store.entries)
 
-        local refusal = helper.refusalOf(function()
-            MaskValues.write(ctx.catalog, ctx.photo, "C1", { swatch = { action = "delete", index = 1 } })
+        local refusal = helper.failedOf(function()
+            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { swatch = { action = "delete", index = 1 } })
         end)
 
         assert.matches("Point Color LocalPointColors: wrote 1 entries, Lightroom stored 2 entries", refusal, 1, true)
@@ -393,7 +394,7 @@ describe("MaskValues.write on the photo open in Develop", function()
     it("flushes Develop's pending edits before it reads the snapshot it writes on", function()
         local MaskValues, ctx = setup({ module = "develop" })
 
-        MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+        MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
 
         assert.are.same({ { committed = true, reads = 0, attempts = 0 } }, ctx.flushes)
         assert.are.equal(0.125, ctx.store.entries[1].LocalExposure2012)
@@ -406,7 +407,7 @@ describe("MaskValues.write on the photo open in Develop", function()
         it("flushes nothing " .. case.where, function()
             local MaskValues, ctx = setup(case.opts)
 
-            MaskValues.write(ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
 
             assert.are.same({}, ctx.flushes)
         end)

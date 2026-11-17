@@ -123,7 +123,7 @@ describe("HandlerPreview.renderPreview", function()
         assert.are.equal(1, requests)
     end)
 
-    it("asks again while Lightroom is still rebuilding the preview after a change, and returns the first good render", function()
+    it("asks again while Lightroom answers that it has no preview pixels, and returns the first good render", function()
         local requests = 0
         local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
             requests = requests + 1
@@ -137,7 +137,7 @@ describe("HandlerPreview.renderPreview", function()
         assert.are.equal(3, requests)
     end)
 
-    it("answers failed, saying the preview is still being rebuilt, when no render succeeds within the time", function()
+    it("answers failed, saying Lightroom still had no preview pixels, when no render succeeds within the time", function()
         local requests, context = 0, nil
         local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
             requests = requests + 1
@@ -149,13 +149,14 @@ describe("HandlerPreview.renderPreview", function()
 
         local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, context)
 
-        assert.matches("Lightroom is still rebuilding the preview of photo 1 after a change", reply.failed[1].reason, 1, true)
-        assert.matches("ask again", reply.failed[1].reason, 1, true)
+        assert.are.equal("Lightroom still had no preview pixels for photo 1 (it answered \"error loading thumb\" until"
+            .. " the time ran out); ask again later, or check whether the photo is the active photo in Develop",
+            reply.failed[1].reason)
         assert.is_true(requests > 1)
         assert.is_true(context:timeLeft() >= 10)
     end)
 
-    it("says the preview is still being rebuilt when a retry after a rebuilding answer never calls back", function()
+    it("says Lightroom still had no preview pixels when a retry after that answer never calls back", function()
         local requests = 0
         local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
             requests = requests + 1
@@ -165,7 +166,7 @@ describe("HandlerPreview.renderPreview", function()
 
         local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30))
 
-        assert.matches("Lightroom is still rebuilding the preview of photo 1 after a change", reply.failed[1].reason, 1, true)
+        assert.matches("Lightroom still had no preview pixels for photo 1", reply.failed[1].reason, 1, true)
         assert.are.equal(2, requests)
     end)
 

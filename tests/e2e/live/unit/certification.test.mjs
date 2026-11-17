@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,10 +7,11 @@ import { test } from "node:test";
 import {
   buildCertificationRecord,
   certificationResult,
-  depthCoverage,
   evaluateStep,
+  judgeRun,
   maskCount,
   NOT_EXERCISED,
+  THRESHOLDS,
   requireThrowaway,
   writeCertification,
 } from "../lib/certification.mjs";
@@ -40,8 +42,40 @@ test("a write passes when it succeeds, adds the expected masks and leaves every 
 test("a write with a rendered check passes only when the rendered check passed", () => {
   const base = { name: "linear create", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted() };
 
-  assert.equal(evaluateStep({ ...base, rendered: { passed: true, detail: { left: 0.2 } } }).rendered, true);
-  assert.match(evaluateStep({ ...base, rendered: { passed: false, detail: { left: 0.001 } } }).problem, /rendered check failed: \{"left":0.001\}/);
+  assert.equal(evaluateStep({ ...base, rendered: { check: "radial_iou", measured: { iou: 0.9 } } }).rendered, true);
+  assert.match(evaluateStep({ ...base, rendered: { check: "radial_iou", measured: { iou: 0.5 } } }).problem, /rendered check radial_iou failed: \{"iou":0.5\}/);
+});
+
+test("a rendered check is judged from its measured numbers against the thresholds it is given", () => {
+  const measured = { darkened: 0.2, share_in_region: 0.65, brightened: 0 };
+  const step = { name: "Background created", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted(), rendered: { check: "darkens_within", measured } };
+
+  assert.match(evaluateStep(step).problem, /rendered check darkens_within failed/);
+  assert.equal(evaluateStep(step, { ...THRESHOLDS, min_share_in_region: 0.6 }).passed, true);
+  assert.match(evaluateStep({ ...step, rendered: { check: "darkens_within", measured: { ...measured, share_in_region: 0.9, brightened: 0.01 } } }).problem, /darkens_within failed/);
+  assert.equal(evaluateStep({ ...step, rendered: { check: "region_moves", measured: { deltas: { full: -0.06, beyond: 0.005 }, changed: "full", untouched: "beyond", direction: -1 } } }).passed, true);
+  assert.equal(evaluateStep({ ...step, rendered: { check: "unchanged", measured: { max_luminance_difference: 0.02 } } }).passed, false);
+});
+
+test("a step that could not run, or changed an entry it had to keep, is a failed step", () => {
+  const kept = { CorrectionID: "sky", CorrectionAmount: 1 };
+  const base = { name: "a computed Sky kept by a guarded write", added: 1, answer: ok, before: raw([kept]), admission: admitted(), unchangedEntry: "sky" };
+
+  assert.equal(evaluateStep({ ...base, after: raw([kept, {}]), failure: "the step threw: busy" }).problem, "the step threw: busy");
+  assert.equal(evaluateStep({ ...base, after: raw([{ ...kept, CorrectionAmount: 0.5 }, {}]) }).problem, "entry sky changed");
+  assert.equal(evaluateStep({ ...base, after: raw([kept, {}]) }).passed, true);
+});
+
+test("a run is judged again from its evidence alone, depth coverage included", () => {
+  const darkening = { name: "Background created", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted(), rendered: { check: "darkens_within", measured: { darkened: 0.2, share_in_region: 0.65, brightened: 0 } } };
+  const noDepth = answerOf({ outcome: "failed", error: "Lightroom found no depth map on this photo" });
+  const depth = { name: "depth range", added: 1, answer: noDepth, before: raw([]), after: raw([]), admission: admitted() };
+  const evidence = JSON.parse(JSON.stringify([darkening, depth]));
+
+  assert.deepEqual(judgeRun(evidence).steps.map((step) => [step.name, step.passed]), [["Background created", false]]);
+  const relaxed = judgeRun(evidence, { ...THRESHOLDS, min_share_in_region: 0.6 });
+  assert.deepEqual(relaxed.steps.map((step) => [step.name, step.passed]), [["Background created", true]]);
+  assert.deepEqual(relaxed.notExercised, ["depth range (Lightroom found no depth map in the supplied depth photo)"]);
 });
 
 test("the command refuses a catalog without the kit marker", () => {
@@ -61,6 +95,29 @@ test("a write fails when the tool errs, the mask count is off or Lightroom's ent
   );
 });
 
+test("the pinned format is judged only on the masks the step added or changed", () => {
+  const neighbour = { CorrectionID: "n", CorrectionMasks: [] };
+  const created = { CorrectionID: "c", CorrectionMasks: [{ What: "Mask/Gradient" }] };
+  const base = { name: "linear create", added: 1, answer: ok, before: raw([neighbour]) };
+
+  assert.equal(evaluateStep({ ...base, after: raw([neighbour, created]), admission: admitted(["existing mask 1: no mask components"]) }).passed, true);
+  assert.match(evaluateStep({ ...base, after: raw([neighbour, created]), admission: admitted(["existing mask 2.CorrectionMasks[1]: unexpected field Spacing"]) }).problem,
+    /pinned format: existing mask 2\.CorrectionMasks\[1\]: unexpected field Spacing/);
+  assert.match(evaluateStep({ ...base, added: 0, after: raw([{ ...neighbour, CorrectionActive: false }]), admission: admitted(["existing mask 1: no mask components"]) }).problem,
+    /pinned format: existing mask 1: no mask components/);
+});
+
+test("a batch step accepts a nothing-found failure only for the photos it names", () => {
+  const partial = (failed) => answerOf({ outcome: "partial", failed, data: { created: 1 } });
+  const nothing = { photo_id: "14", reason: "Lightroom found nothing for Sky on photo 14 (ErrorReason 1); the new masks were removed" };
+  const base = { name: "sky batch", added: 1, before: raw([]), after: raw([{}]), admission: admitted(), nothingFoundAllowed: ["14"] };
+
+  assert.equal(evaluateStep({ ...base, answer: partial([nothing]) }).passed, true);
+  assert.match(evaluateStep({ ...base, answer: partial([{ ...nothing, photo_id: "12" }]) }).problem, /tool failed/);
+  assert.match(evaluateStep({ ...base, answer: partial([{ ...nothing, reason: "the catalog stayed busy" }]) }).problem, /tool failed/);
+  assert.match(evaluateStep({ ...base, nothingFoundAllowed: undefined, answer: partial([nothing]) }).problem, /tool failed/);
+});
+
 test("an expected refusal passes only when the tool refused and left the photo's masks as they were", () => {
   const base = { name: "people refused with cleanup", added: 0, expectRefusal: true, admission: admitted() };
 
@@ -69,27 +126,51 @@ test("an expected refusal passes only when the tool refused and left the photo's
   assert.match(evaluateStep({ ...base, answer: refused, before: raw([]), after: raw([{}]) }).problem, /expected 0 mask\(s\) added, found 1/);
 });
 
-test("an expected refusal fails when the tool answered unknown instead of failed", () => {
+test("a nothing-found refusal passes as failed or as unknown naming Update AI Settings, only with the masks back exactly, and says which", () => {
+  const kept = [{ CorrectionID: "a", CorrectionAmount: 1 }];
+  const base = { name: "nothing found refused with nothing left", added: 0, expectRefusal: true, admission: admitted(), before: raw(kept), after: raw(kept) };
+  const voided = answerOf({ outcome: "unknown", error: "Lightroom found nothing for Subject on photo 9; the new masks were removed; Update AI Settings changed FilterList" });
+
+  assert.deepEqual([evaluateStep({ ...base, answer: refused }).passed, evaluateStep({ ...base, answer: refused }).refusal], [true, "failed"]);
+  assert.deepEqual([evaluateStep({ ...base, answer: voided }).passed, evaluateStep({ ...base, answer: voided }).refusal], [true, "unknown"]);
+  assert.match(evaluateStep({ ...base, answer: voided, after: raw([{ CorrectionID: "a", CorrectionAmount: 0.5 }]) }).problem, /masks are not back exactly/);
+  const record = buildCertificationRecord(status, [evaluateStep({ ...base, answer: voided })], new Date());
+  assert.deepEqual(record.refusals, { "nothing found refused with nothing left": "unknown" });
+});
+
+test("a batch accepts a named photo's nothing-found answer in unknown when it names Update AI Settings", () => {
+  const partial = answerOf({ outcome: "partial", failed: [], unknown: [{ photo_id: "14", reason: "Lightroom found nothing for Sky on photo 14; the new masks were removed; Update AI Settings changed Look" }] });
+  const base = { name: "sky batch", added: 1, before: raw([]), after: raw([{}]), admission: admitted(), nothingFoundAllowed: ["14"] };
+
+  assert.equal(evaluateStep({ ...base, answer: partial }).passed, true);
+  assert.match(evaluateStep({ ...base, nothingFoundAllowed: [], answer: partial }).problem, /tool failed/);
+});
+
+test("an expected refusal fails when the tool answered unknown without naming Update AI Settings", () => {
   const unknown = answerOf({ outcome: "unknown", error: "Lightroom may have changed the photo" });
   const step = evaluateStep({ name: "people refused with cleanup", added: 0, expectRefusal: true, admission: admitted(), answer: unknown, before: raw([]), after: raw([]) });
 
-  assert.equal(step.problem, "expected a refusal with nothing changed (outcome failed), got unknown: Lightroom may have changed the photo");
+  assert.equal(step.problem, "expected a refusal with nothing changed (outcome failed, or unknown naming Update AI Settings), got unknown: Lightroom may have changed the photo");
 });
 
 const versionTable = { major: 16, minor: 0, revision: 0, build: 1234567 };
 const status = { running: { version: "16.0", build: "16.0.0 build 1234567", version_table: versionTable } };
 
 test("depth range counts as exercised only when a depth photo was supplied and Lightroom read its depth map", () => {
-  const passedStep = { name: "depth range", passed: true };
-  const failedStep = { name: "depth range", passed: false, problem: "rendered check failed" };
+  const depthStep = (answer, after = raw([{}])) => ({ name: "depth range", added: 1, answer, before: raw([]), after, admission: admitted() });
   const noDepth = answerOf({ outcome: "failed", error: "Lightroom found no depth map on this photo, so a depth range would select nothing; depth range needs device depth such as an iPhone Portrait HEIC" });
-  assert.deepEqual(depthCoverage(null), { step: null, notExercised: NOT_EXERCISED });
-  assert.deepEqual(depthCoverage({ step: passedStep, answer: ok }), { step: passedStep, notExercised: [] });
-  assert.deepEqual(depthCoverage({ step: failedStep, answer: ok }), { step: failedStep, notExercised: [] });
-  assert.deepEqual(depthCoverage({ step: { name: "depth range", passed: false, problem: "tool failed" }, answer: noDepth }),
-    { step: null, notExercised: ["depth range (Lightroom found no depth map in the supplied depth photo)"] });
-  assert.deepEqual(depthCoverage({ step: failedStep, answer: answerOf({ outcome: "unknown", error: "Lightroom found no depth map on this photo" }) }),
-    { step: failedStep, notExercised: [] });
+  const judged = (evidence) => {
+    const { steps, notExercised } = judgeRun(evidence);
+    return { steps: steps.map((step) => [step.name, step.passed]), notExercised };
+  };
+
+  assert.deepEqual(judged([]), { steps: [], notExercised: NOT_EXERCISED });
+  assert.deepEqual(judged([depthStep(ok)]), { steps: [["depth range", true]], notExercised: [] });
+  assert.deepEqual(judged([depthStep(ok, raw([]))]), { steps: [["depth range", false]], notExercised: [] });
+  assert.deepEqual(judged([depthStep(noDepth, raw([]))]),
+    { steps: [], notExercised: ["depth range (Lightroom found no depth map in the supplied depth photo)"] });
+  assert.deepEqual(judged([depthStep(answerOf({ outcome: "unknown", error: "Lightroom found no depth map on this photo" }), raw([]))]),
+    { steps: [["depth range", false]], notExercised: [] });
 });
 
 test("the record names the running build, the exercised process versions, the time, the checks and what it does not exercise", () => {
@@ -106,7 +187,9 @@ test("the record names the running build, the exercised process versions, the ti
     rendered_checks: ["linear create"],
     not_exercised: ["local slider stored scales (written and checked through the plug-in's own LOCAL_KEYS formula, so not observed independently)", ...NOT_EXERCISED],
     kit_commit: "abc1234",
+    thresholds: THRESHOLDS,
   });
+  assert.equal(buildCertificationRecord(status, steps, new Date(), { judgedFrom: "/runs/a.json" }).judged_from, "/runs/a.json");
 });
 
 test("a stale static range keeps the mask record and fails the run, naming the key with both ranges", () => {
@@ -145,6 +228,26 @@ test("no record is built when any check failed or none ran", () => {
     () => buildCertificationRecord({ running: { version: "16.0", build: null } }, steps.slice(0, 1), new Date()),
     /reports no build number/,
   );
+});
+
+test("--rejudge writes the record from a run file alone, with a corrected threshold, without Lightroom", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-rejudge-"));
+  const certificationFile = path.join(directory, "mask-certification.json");
+  const runFile = path.join(directory, "run.json");
+  const step = { name: "Background created", added: 1, answer: ok, before: raw([]), after: raw([{}]), admission: admitted(), rendered: { check: "darkens_within", measured: { darkened: 0.2, share_in_region: 0.65, brightened: 0 } } };
+  fs.writeFileSync(runFile, JSON.stringify({ status: { ...status, certification_file: certificationFile }, kit_commit: "abc1234", thresholds: THRESHOLDS, steps: [step], ranges: { compared: [], stale_ranges: [], not_compared: [] } }));
+  const script = path.join(REPO_ROOT, "tests", "e2e", "live", "certify-mask-writes.mjs");
+  try {
+    assert.equal(spawnSync(process.execPath, [script, "--rejudge", runFile], { encoding: "utf8" }).status, 1);
+    assert.equal(fs.existsSync(certificationFile), false);
+
+    const relaxed = spawnSync(process.execPath, [script, "--rejudge", runFile, "--threshold", "min_share_in_region=0.6"], { encoding: "utf8" });
+    assert.equal(relaxed.status, 0, relaxed.stderr);
+    const record = JSON.parse(fs.readFileSync(certificationFile, "utf8"));
+    assert.deepEqual([record.checks, record.thresholds.min_share_in_region, record.judged_from, record.kit_commit], [["Background created"], 0.6, runFile, "abc1234"]);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("the record replaces the file whole and leaves no temporary file", () => {

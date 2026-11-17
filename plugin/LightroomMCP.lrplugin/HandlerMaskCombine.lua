@@ -1,7 +1,6 @@
 local LrApplication = import 'LrApplication'
 
 local AIMaskCompute = require 'AIMaskCompute'
-local GuardedMaskWrite = require 'GuardedMaskWrite'
 local Log = require 'Log'
 local MaskTypes = require 'MaskTypes'
 local MaskValues = require 'MaskValues'
@@ -36,13 +35,9 @@ function MaskCombineHandler.combineMask(args, context)
         target = maskId,
         expected = 1,
         build = function(entries)
-            local _, entry = GuardedMaskWrite.findCorrection(entries, maskId)
-            MaskValues.requireSaved(catalog, photo, maskId)
+            local _, entry = MaskValues.savedEntry(photo, entries, maskId)
             entry.CorrectionMasks[#entry.CorrectionMasks + 1] = MaskTypes.component(typeName, operation)
             return entries
-        end,
-        failure = function()
-            return string.format("Lightroom found no %s to %s mask %s on photo %s", typeName, verb, maskId, photoId)
         end,
     })
     local toolId = tostring(result.components[1].MaskID)

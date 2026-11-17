@@ -1,7 +1,7 @@
 local helper = require 'spec_helper'
 local Store = require 'fake_mask_store'
 
-local DIGEST = "ABCDEF0123456789ABCDEF0123456789"
+local DIGEST = Store.DIGEST
 
 local function setup(opts)
     opts = opts or {}
@@ -16,17 +16,11 @@ local function setup(opts)
         if not opts.withoutUpdateApi then
             photo.updateAISettings = function()
                 calls.updates[#calls.updates + 1] = spec.id
-                for _, entry in ipairs(store.entries) do
-                    for _, component in ipairs(entry.CorrectionMasks) do
-                        if component.What == "Mask/Image" and component.MaskDigest == nil and (component.ErrorReason or 0) == 0 then
-                            if spec.ai == "nothing found" then
-                                component.ErrorReason = 1
-                            elseif spec.ai ~= "pending" then
-                                component.MaskDigest, component.InputDigest, component.LocalInputDigest = DIGEST, DIGEST, DIGEST
-                            end
-                        end
-                    end
-                end
+                Store.computeAI(store, function()
+                    if spec.ai == "nothing found" then return "absent" end
+                    if spec.ai == "pending" then return "pending" end
+                    return "computed"
+                end)
             end
         end
     end
@@ -89,7 +83,7 @@ describe("HandlerMaskBatch.createMaskBatch in the saved settings", function()
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "subject" })
 
         local failed = itemFor(r.failed, "1")
-        assert.truthy(failed.reason:find("Lightroom found no subject on photo 1", 1, true), failed.reason)
+        assert.truthy(failed.reason:find("Lightroom found nothing for the subject mask on photo 1", 1, true), failed.reason)
         assert.are.same({}, world.stores["1"].entries)
         assert.are.equal("created", r.data.results[1].status)
         assert.are.equal("2", r.data.results[1].photo_id)
@@ -129,7 +123,7 @@ describe("HandlerMaskBatch.createMaskBatch in the saved settings", function()
     it("refuses on a Lightroom without the AI update call before writing anything", function()
         local Handler, world = setup({ withoutUpdateApi = true })
 
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "sky" }, helper.requestContext(nil, { title = "create_mask_batch" }))
         end)
 

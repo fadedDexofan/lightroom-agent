@@ -13,7 +13,7 @@ function MaskAdjustmentsHandler.setMaskAdjustments(args, context)
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local photoId = tostring(photo.localIdentifier)
 
-    local result = MaskValues.write(catalog, photo, maskId, { adjustments = args.adjustments }, context)
+    local result = MaskValues.write(context, catalog, photo, maskId, { adjustments = args.adjustments })
 
     local adjustments, changed, unchanged = {}, {}, {}
     for _, slider in ipairs(LocalSliders.list) do

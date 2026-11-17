@@ -154,7 +154,7 @@ describe("HandlerKeywords.listKeywords", function()
         local _, Handler = setup(tree())
 
         assert.are.equal("Keyword not found: Places|Africa",
-            helper.refusalOf(function() Handler.listKeywords({ parent = "Places|Africa" }) end))
+            helper.failedOf(function() Handler.listKeywords({ parent = "Places|Africa" }) end))
     end)
 
     it("never calls into the SDK from inside table.sort", function()
@@ -262,9 +262,11 @@ describe("HandlerKeywords.renameKeyword", function()
             end,
         })
 
-        assert.are.equal("Keyword 'callie' was left named 'Callie (renaming)' while changing its case: "
-            .. helper.catalogBusy("Rename Keyword"),
-            helper.unknownOf(function() Handler.renameKeyword({ keyword = "callie", new_name = "Callie" }) end))
+        assert.are.same({ "unknown", "Keyword 'callie' was left named 'Callie (renaming)' while changing its case: "
+            .. helper.catalogBusy("Rename Keyword") .. "; written before this stopped: Rename Keyword" },
+            { helper.outcomeOf(function(context)
+                Handler.renameKeyword({ keyword = "callie", new_name = "Callie" }, context)
+            end) })
         assert.are.equal("Callie (renaming)", callie:getName())
     end)
 
@@ -289,8 +291,11 @@ describe("HandlerKeywords.renameKeyword", function()
             return realSetAttributes(self, attributes)
         end
 
-        assert.matches("Keyword 'callie' was left named 'Callie (renaming)' while changing its case",
-            helper.unknownOf(function() Handler.renameKeyword({ keyword = "callie", new_name = "Callie" }) end), 1, true)
+        local class, message = helper.outcomeOf(function(context)
+            Handler.renameKeyword({ keyword = "callie", new_name = "Callie" }, context)
+        end)
+        assert.are.equal("unknown", class)
+        assert.matches("Keyword 'callie' was left named 'Callie (renaming)' while changing its case", message, 1, true)
         assert.are.equal("Callie (renaming)", callie:getName())
         assert.are.equal("Callie", siblings[2]:getName())
     end)
@@ -300,8 +305,9 @@ describe("HandlerKeywords.renameKeyword", function()
         local _, Handler = setup({ person })
         person.setAttributes = function() return false end
 
-        assert.are.equal("Lightroom refused to rename keyword 'person' to 'people'",
-            helper.unknownOf(function() Handler.renameKeyword({ keyword = "person", new_name = "people" }) end))
+        assert.are.same({ "failed", "Lightroom refused to rename keyword 'person' to 'people'" }, { helper.outcomeOf(function(context)
+            Handler.renameKeyword({ keyword = "person", new_name = "people" }, context)
+        end) })
         assert.are.equal("person", person:getName())
     end)
 
@@ -331,7 +337,7 @@ describe("HandlerKeywords.renameKeyword", function()
         local _, Handler = setup({ callie })
 
         assert.are.equal("Keyword is already named 'Callie'",
-            helper.refusalOf(function() Handler.renameKeyword({ keyword = "Callie", new_name = "Callie" }) end))
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "Callie", new_name = "Callie" }) end))
     end)
 
     it("refuses to guess between keywords that share a name", function()
@@ -341,7 +347,7 @@ describe("HandlerKeywords.renameKeyword", function()
         local _, Handler = setup({ europe, places })
 
         assert.are.equal("Keyword is ambiguous, give its path: Europe (Europe, Places|Europe)",
-            helper.refusalOf(function() Handler.renameKeyword({ keyword = "Europe", new_name = "EU" }) end))
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "Europe", new_name = "EU" }) end))
         assert.are.equal("Europe", europe:getName())
         assert.are.equal("Europe", nested:getName())
     end)
@@ -354,7 +360,7 @@ describe("HandlerKeywords.renameKeyword", function()
         local _, Handler = setup({ places })
 
         assert.are.equal("A keyword named 'Berlin' already exists at Places|Europe|Berlin; rename cannot merge keywords",
-            helper.refusalOf(function() Handler.renameKeyword({ keyword = "Places|Europe|Paris", new_name = "berlin" }) end))
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "Places|Europe|Paris", new_name = "berlin" }) end))
         assert.are.equal("Paris", paris:getName())
     end)
 
@@ -374,8 +380,8 @@ describe("HandlerKeywords.renameKeyword", function()
         local _, Handler = setup(tree())
 
         assert.are.equal("Keyword not found: nope",
-            helper.refusalOf(function() Handler.renameKeyword({ keyword = "nope", new_name = "x" }) end))
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "nope", new_name = "x" }) end))
         assert.are.equal("Keyword not found: Places|Nope",
-            helper.refusalOf(function() Handler.renameKeyword({ keyword = "Places|Nope", new_name = "x" }) end))
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "Places|Nope", new_name = "x" }) end))
     end)
 end)

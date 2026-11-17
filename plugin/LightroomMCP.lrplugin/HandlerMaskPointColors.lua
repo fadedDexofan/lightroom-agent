@@ -12,10 +12,10 @@ function MaskPointColorsHandler.editMaskPointColors(args, context)
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local photoId = tostring(photo.localIdentifier)
 
-    local result = MaskValues.write(catalog, photo, maskId,
-        { swatch = { action = args.action, index = args.index, fields = args.swatch } }, context)
+    local result = MaskValues.write(context, catalog, photo, maskId,
+        { swatch = { action = args.action, index = args.index, fields = args.swatch } })
     local swatches, count = result.after.swatches, result.after.swatch_count
-    if count and context then
+    if count then
         context:warn(string.format("mask %s still holds a Point Color swatch Lightroom stored unreadably, so the reply"
             .. " gives the swatch count instead of the swatches", tostring(maskId)))
     end

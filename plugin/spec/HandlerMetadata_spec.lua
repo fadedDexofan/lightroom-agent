@@ -488,14 +488,15 @@ describe("HandlerMetadata.setMetadata", function()
         end
     end)
 
-    it("answers a write Lightroom fails inside the gate as unknown, not as a refusal", function()
+    it("answers failed for a write Lightroom fails inside the gate, which the transaction rolls back", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
         p2.setRawMetadata = function() error("unknown key: title", 0) end
         local _, Handler = setup({ p1, p2 })
 
-        assert.are.equal("unknown key: title",
-            helper.unknownOf(function() Handler.setMetadata({ photo_ids = { "1", "2" }, title = "New" }) end))
+        assert.are.same({ "failed", "unknown key: title" }, { helper.outcomeOf(function(context)
+            Handler.setMetadata({ photo_ids = { "1", "2" }, title = "New" }, context)
+        end) })
     end)
 
     it("writes every given field to found photos", function()

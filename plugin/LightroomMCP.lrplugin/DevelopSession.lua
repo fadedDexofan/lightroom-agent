@@ -150,7 +150,7 @@ function DevelopSession.flushPendingEdits()
 end
 
 function DevelopSession.flushIfShowing(catalog, photo)
-    if runningTool == nil and developModuleShowing() and catalog:getTargetPhoto() == photo then
+    if developModuleShowing() and catalog:getTargetPhoto() == photo then
         DevelopSession.flushPendingEdits()
     end
 end
@@ -158,11 +158,12 @@ end
 local function runBody(context, catalog, restore, body)
     local state = {}
     local view
+    local mark = context.ledger:mark()
     local ok, result = LrTasks.pcall(function()
         if restore then view = captureView(catalog) end
         return body(state)
     end)
-    if developModuleShowing() then DevelopSession.flushPendingEdits() end
+    if context.ledger:controllerWroteSince(mark) and developModuleShowing() then DevelopSession.flushPendingEdits() end
     if view then
         local restored, problems = LrTasks.pcall(restoreView, catalog, view, state)
         if not restored then problems = { tostring(problems) } end

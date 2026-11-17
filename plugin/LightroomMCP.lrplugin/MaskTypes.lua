@@ -12,9 +12,7 @@ local FORMS = {
 
 MaskTypes.SPECS = {}
 for _, maskType in ipairs(Contract.MASK_TYPES) do
-    MaskTypes.SPECS[maskType.name] = {
-        toolType = maskType.toolType, subtype = maskType.subtype, label = maskType.label, stored = maskType.stored,
-    }
+    MaskTypes.SPECS[maskType.name] = { label = maskType.label, stored = maskType.stored }
 end
 
 function MaskTypes.component(name, operation)

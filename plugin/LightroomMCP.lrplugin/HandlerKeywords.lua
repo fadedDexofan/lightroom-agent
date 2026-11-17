@@ -88,7 +88,7 @@ end
 -- Renames one keyword in place: every photo tagged with it shows the new name,
 -- and its parent, children and synonyms are unchanged. A plain name must match
 -- exactly one keyword; a "Parent|Child" path addresses it directly.
-function KeywordsHandler.renameKeyword(args)
+function KeywordsHandler.renameKeyword(args, context)
     -- Trimmed like a level of a path, so the keyword is found again by name.
     local newName = KeywordTree.trim(args.new_name)
 
@@ -128,7 +128,7 @@ function KeywordsHandler.renameKeyword(args)
     catalog:withReadAccessDo(function() keyword = findKeyword() end)
     photoCount = #(keyword:getPhotos() or {})
 
-    CatalogWrite.run(catalog, "Rename Keyword", function()
+    CatalogWrite.run(context, catalog, "Rename Keyword", function()
         keyword = findKeyword()
 
         local currentName = keyword:getName()
@@ -158,11 +158,11 @@ function KeywordsHandler.renameKeyword(args)
                 n = n + 1
                 tempName = string.format("%s (renaming %d)", newName, n)
             end
-            if not keyword:setAttributes({ keywordName = tempName }) then
+            if not CatalogWrite.call(context, keyword, "setAttributes", { keywordName = tempName }) then
                 error("Lightroom refused to rename keyword '" .. oldPath .. "' to '" .. tempName .. "'")
             end
         else
-            if not keyword:setAttributes({ keywordName = newName }) then
+            if not CatalogWrite.call(context, keyword, "setAttributes", { keywordName = newName }) then
                 error("Lightroom refused to rename keyword '" .. oldPath .. "' to '" .. newName .. "'")
             end
         end
@@ -173,8 +173,8 @@ function KeywordsHandler.renameKeyword(args)
         -- cannot yield, so withWriteAccessDo fails inside it with "must be
         -- called from within an LrTask".
         local ok, err = LrTasks.pcall(function()
-            CatalogWrite.run(catalog, "Rename Keyword", function()
-                if not keyword:setAttributes({ keywordName = newName }) then
+            CatalogWrite.run(context, catalog, "Rename Keyword", function()
+                if not CatalogWrite.call(context, keyword, "setAttributes", { keywordName = newName }) then
                     error("Lightroom refused the final rename to '" .. newName .. "'")
                 end
             end)

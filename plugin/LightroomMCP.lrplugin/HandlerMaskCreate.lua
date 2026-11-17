@@ -2,7 +2,6 @@ local LrApplication = import 'LrApplication'
 
 local AIMaskCompute = require 'AIMaskCompute'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
-local LocalSliders = require 'LocalSliders'
 local Log = require 'Log'
 local MaskTypes = require 'MaskTypes'
 local MaskValues = require 'MaskValues'
@@ -16,17 +15,7 @@ local function newEntry(typeName, values)
     return entry
 end
 
-local function storedAdjustments(entry, values)
-    if next(values) == nil then return nil end
-    local stored = {}
-    for _, slider in ipairs(LocalSliders.list) do
-        if values[slider.name] ~= nil then stored[slider.name] = LocalSliders.valueOf(slider, entry[slider.stored]) end
-    end
-    return stored
-end
-
 function MaskCreateHandler.createAIMask(context, catalog, photo, typeName, values)
-    local photoId = tostring(photo.localIdentifier)
     local own = AIMaskCompute.run(context, catalog, photo, {
         description = "Add " .. MaskTypes.SPECS[typeName].label .. " Mask",
         subject = "the " .. typeName .. " mask",
@@ -35,9 +24,8 @@ function MaskCreateHandler.createAIMask(context, catalog, photo, typeName, value
             entries[#entries + 1] = newEntry(typeName, values)
             return entries
         end,
-        failure = function() return string.format("Lightroom found no %s on photo %s", typeName, photoId) end,
     }).own[1]
-    return { mask_id = tostring(own.CorrectionID), adjustments = storedAdjustments(own, values) }
+    return { mask_id = tostring(own.CorrectionID), adjustments = next(values) and MaskValues.adjustmentsOf(own, values) or nil }
 end
 
 function MaskCreateHandler.createMask(args, context)

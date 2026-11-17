@@ -21,6 +21,9 @@ local defaultImports = {
     LrStringUtils = { lower = string.lower },
     LrTasks = { pcall = pcall },
     LrDate = { currentTime = function() return 0 end },
+    LrDevelopController = {},
+    LrFileUtils = {},
+    LrPathUtils = { parent = function(path) return path:match("^(.+)/[^/]+$") end },
     LrProgressScope = function()
         return {
             setCancelable = function() end, setPortionComplete = function() end, setCaption = function() end,
@@ -30,6 +33,7 @@ local defaultImports = {
 }
 
 function M.installImport(modules)
+    package.loaded.CatalogWrite = nil
     _G.import = function(name)
         local m = modules[name]
         if m == nil then m = defaultImports[name] end
@@ -40,41 +44,76 @@ function M.installImport(modules)
     end
 end
 
-function M.refusalOf(fn)
+local contexts = setmetatable({}, { __mode = "k" })
+
+local function attempt(fn)
+    local marks = {}
+    for context in pairs(contexts) do marks[context] = context.ledger:mark() end
     local ok, err = pcall(fn)
-    if ok then error("expected a refusal, but the call succeeded", 2) end
-    local refusal = require('Reply').refusalOf(err)
-    if refusal == nil then error("expected a refusal, got: " .. tostring(err), 2) end
-    return refusal
+    local written = {}
+    for context in pairs(contexts) do
+        for _, what in ipairs(context.ledger:since(marks[context] or 0)) do written[#written + 1] = what end
+    end
+    return ok, err, written
+end
+
+local function classOf(fn)
+    local ok, err, written = attempt(fn)
+    if ok then return "succeeded", err, written end
+    local answer = require('Reply').outcome(false, err, {
+        ledger = { live = function() return written end },
+        warnings = {},
+    })
+    if answer.result then return "not found", err, written end
+    return answer.effect == "none" and "failed" or "unknown", err, written
+end
+
+local function expected(wanted, class, err, written)
+    local Reply = require('Reply')
+    local detail = class == "succeeded" and "the call succeeded"
+        or class == "not found" and "not found: " .. tostring(err)
+        or #written > 0 and "the call wrote " .. table.concat(written, ", ") .. ": " .. Reply.messageOf(err)
+        or "the call wrote nothing: " .. Reply.messageOf(err)
+    error("expected " .. wanted .. ", but " .. detail, 3)
+end
+
+function M.failedOf(fn)
+    local class, err, written = classOf(fn)
+    if class ~= "failed" then expected("a failed outcome", class, err, written) end
+    return require('Reply').messageOf(err)
 end
 
 function M.unknownOf(fn)
-    local ok, err = pcall(fn)
-    if ok then error("expected an unknown outcome, but the call succeeded", 2) end
-    local Reply = require('Reply')
-    if Reply.refusalOf(err) ~= nil then error("expected an unknown outcome, got a refusal: " .. tostring(err), 2) end
-    if Reply.notFoundOf(err) ~= nil then error("expected an unknown outcome, got: " .. tostring(err), 2) end
-    return Reply.messageOf(err)
+    local class, err, written = classOf(fn)
+    if class ~= "unknown" then expected("an unknown outcome", class, err, written) end
+    return require('Reply').messageOf(err)
 end
 
 function M.notFoundOf(fn)
-    local ok, err = pcall(fn)
-    if ok then error("expected not found, but the call succeeded", 2) end
-    local input = require('Reply').notFoundOf(err)
-    if input == nil then error("expected not found, got: " .. tostring(err), 2) end
-    return input
+    local class, err, written = classOf(fn)
+    if class ~= "not found" then expected("not found", class, err, written) end
+    return require('Reply').notFoundOf(err)
 end
 
-function M.catalogBusy(title, alreadyWritten)
+function M.catalogBusy(title)
     local aborting = { withWriteAccessDo = function() return "aborted" end }
-    local _, err = pcall(require('CatalogWrite').run, aborting, title, function() end, alreadyWritten)
+    local _, err = pcall(require('CatalogWrite').run, { ledger = require('Ledger').new() }, aborting, title,
+        function() end)
     return require('Reply').messageOf(err)
+end
+
+function M.outcomeOf(fn, context)
+    context = context or M.requestContext()
+    local ok, value = pcall(fn, context)
+    local answer = require('Reply').outcome(ok, value, context)
+    if answer.result then return "answered", answer.result end
+    return answer.effect == "none" and "failed" or "unknown", answer.error
 end
 
 function M.admitMaskWrites(decision)
     package.loaded.MaskWriteAdmission = {
         requireAdmitted = function()
-            if decision and decision.refuse then require('Reply').refuse(decision.refuse .. " Nothing was changed.") end
+            if decision and decision.refuse then require('Reply').refuse(decision.refuse) end
         end,
     }
 end
@@ -83,6 +122,7 @@ function M.requestContext(budgetSeconds, overrides)
     package.loaded.RequestContext = nil
     local RequestContext = require 'RequestContext'
     local context = RequestContext.new("test", budgetSeconds and budgetSeconds * 1000, nil)
+    contexts[context] = true
     context.report = function() end
     for key, value in pairs(overrides or {}) do context[key] = value end
     return context

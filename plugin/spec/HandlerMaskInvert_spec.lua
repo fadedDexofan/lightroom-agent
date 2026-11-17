@@ -154,7 +154,7 @@ describe("HandlerMaskInvert.invertMask in place", function()
     it("errors for an unknown mask id without calling invertMask", function()
         local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } } })
 
-        local err = helper.refusalOf(function() Handler.invertMask(args({ mask_id = "nope" })) end)
+        local err = helper.failedOf(function() Handler.invertMask(args({ mask_id = "nope" })) end)
 
         assert.truthy(err:find("Mask not found on photo 1: nope", 1, true))
         assert.are.same({}, calls.invert)
@@ -165,7 +165,7 @@ describe("HandlerMaskInvert.invertMask in place", function()
     it("errors when the photo has no masks at all", function()
         local Handler, calls = setup({ photos = { { id = "1" } } })
 
-        local err = helper.refusalOf(function() Handler.invertMask(args()) end)
+        local err = helper.failedOf(function() Handler.invertMask(args()) end)
 
         assert.truthy(err:find("Mask not found on photo 1: m-1", 1, true))
         assert.are.same({}, calls.invert)
@@ -174,7 +174,9 @@ describe("HandlerMaskInvert.invertMask in place", function()
     it("errors when Lightroom says the inversion failed", function()
         local Handler = setup({ photos = { { id = "1", masks = subjectMasks() } }, invertReturns = false })
 
-        local err = helper.unknownOf(function() Handler.invertMask(args()) end)
+        local class, err = helper.outcomeOf(function(context) Handler.invertMask(args(), context) end)
+
+        assert.are.equal("unknown", class)
 
         assert.truthy(err:find("Lightroom refused invertMask on mask m-1", 1, true))
     end)
@@ -182,7 +184,9 @@ describe("HandlerMaskInvert.invertMask in place", function()
     it("reports the reason when invertMask raises", function()
         local Handler = setup({ photos = { { id = "1", masks = subjectMasks() } }, invertThrows = "boom" })
 
-        local err = helper.unknownOf(function() Handler.invertMask(args()) end)
+        local class, err = helper.outcomeOf(function(context) Handler.invertMask(args(), context) end)
+
+        assert.are.equal("unknown", class)
 
         assert.truthy(err:find("could not run invertMask on mask m-1", 1, true))
         assert.truthy(err:find("boom", 1, true))
@@ -194,7 +198,9 @@ describe("HandlerMaskInvert.invertMask in place", function()
             invertIsIgnored = true,
         })
 
-        local err = helper.unknownOf(function() Handler.invertMask(args()) end)
+        local class, err = helper.outcomeOf(function(context) Handler.invertMask(args(), context) end)
+
+        assert.are.equal("unknown", class)
 
         assert.truthy(err:find("whether it is inverted is unknown", 1, true))
         assert.truthy(err:find("list_masks", 1, true))
@@ -208,7 +214,9 @@ describe("HandlerMaskInvert.invertMask in place", function()
             listUnreadableAfterInvert = true,
         })
 
-        local err = helper.unknownOf(function() Handler.invertMask(args()) end)
+        local class, err = helper.outcomeOf(function(context) Handler.invertMask(args(), context) end)
+
+        assert.are.equal("unknown", class)
 
         assert.truthy(err:find("whether it is inverted is unknown", 1, true), err)
     end)
@@ -390,32 +398,6 @@ describe("HandlerMaskInvert.invertMask as a copy", function()
         assert.are.equal(0.3125, store.entries[3].LocalExposure2012)
     end)
 
-    it("removes the copy and refuses when the copy never reaches the saved settings", function()
-        local Handler, store, calls = copySetup({ neverSaved = true })
-
-        local refusal = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.matches("Lightroom did not save the inverted copy copy-1", refusal, 1, true)
-        assert.matches("the copy was removed", refusal, 1, true)
-        assert.are.same({ "copy-1" }, calls.deleted)
-        assert.are.equal(2, #store.entries)
-    end)
-
-    it("removes the copy and refuses when Lightroom does not keep the copied values", function()
-        local Handler, store, calls = copySetup({
-            transformWrite = function(stored, writeNumber)
-                if writeNumber == 1 then stored[3].LocalExposure2012 = 0 end
-                return stored
-            end,
-        })
-
-        local refusal = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy" })) end)
-
-        assert.matches("the copy was removed", refusal, 1, true)
-        assert.are.same({ "copy-1" }, calls.deleted)
-        assert.are.equal(2, #store.entries)
-    end)
-
     it("puts back the tool and the selected mask after a copy made from the loupe", function()
         local Handler, _, calls = copySetup({ tool = "loupe" })
 
@@ -433,7 +415,9 @@ describe("HandlerMaskInvert.invertMask as a copy", function()
         it("answers unknown when " .. case.what, function()
             local Handler, store = copySetup(case.opts)
 
-            local message = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
+            local class, message = helper.outcomeOf(function(context) Handler.invertMask(args({ mode = "copy" }), context) end)
+
+            assert.are.equal("unknown", class)
 
             assert.matches(case.text, message, 1, true)
             assert.are.equal(0, store.attempts)
@@ -456,7 +440,22 @@ describe("HandlerMaskInvert.invertMask as a copy", function()
         return stored
     end
 
+    local function droppedExposure(stored, writeNumber)
+        if writeNumber == 1 then stored[3].LocalExposure2012 = 0 end
+        return stored
+    end
+
+    local CONTROLLER_WRITES = "written before this stopped: duplicateAndInvertMask, deleteMask"
+
     for _, case in ipairs({
+        { what = "the copy never reaches the saved settings and Develop no longer lists it", opts = { neverSaved = true },
+          texts = { "Lightroom did not save the inverted copy copy-1",
+              "the copy was removed: read the masks with list_masks", CONTROLLER_WRITES },
+          deleted = { "copy-1" }, entries = 2 },
+        { what = "Lightroom does not keep the copied values and Develop no longer lists the copy",
+          opts = { transformWrite = droppedExposure },
+          texts = { "the copy was removed: read the masks with list_masks", CONTROLLER_WRITES },
+          deleted = { "copy-1" }, entries = 2 },
         { what = "the restore after a failed copy is not confirmed", opts = { transformWrite = keptNothing },
           texts = { "could not be confirmed restored", "the copy was removed: read the masks with list_masks" },
           deleted = { "copy-1" } },
@@ -469,12 +468,15 @@ describe("HandlerMaskInvert.invertMask as a copy", function()
           deleted = {} },
     }) do
         it("answers unknown when " .. case.what, function()
-            local Handler, _, calls = copySetup(case.opts)
+            local Handler, store, calls = copySetup(case.opts)
 
-            local message = helper.unknownOf(function() Handler.invertMask(args({ mode = "copy" })) end)
+            local class, message = helper.outcomeOf(function(context) Handler.invertMask(args({ mode = "copy" }), context) end)
+
+            assert.are.equal("unknown", class)
 
             for _, text in ipairs(case.texts) do assert.matches(text, message, 1, true) end
             assert.are.same(case.deleted, calls.deleted)
+            if case.entries then assert.are.equal(case.entries, #store.entries) end
         end)
     end
 
@@ -492,7 +494,7 @@ describe("HandlerMaskInvert.invertMask as a copy", function()
     it("refuses a source that is not in the saved settings without duplicating anything", function()
         local Handler, _, calls = copySetup()
 
-        local refusal = helper.refusalOf(function() Handler.invertMask(args({ mode = "copy", mask_id = "m-9" })) end)
+        local refusal = helper.failedOf(function() Handler.invertMask(args({ mode = "copy", mask_id = "m-9" })) end)
 
         assert.matches("Mask m-9 is not in the saved settings of photo 1", refusal, 1, true)
         assert.are.same({}, calls.duplicate)
@@ -521,7 +523,7 @@ describe("HandlerMaskInvert.invertMask arguments", function()
                 withoutFunctions = { missing },
             })
 
-            local refusal = helper.refusalOf(function() Handler.invertMask(args()) end)
+            local refusal = helper.failedOf(function() Handler.invertMask(args()) end)
 
             assert.are.equal("invert_mask needs LrDevelopController." .. missing
                 .. ", which this Lightroom does not offer (Lightroom Classic 11.4 or later has it)", refusal)
@@ -535,7 +537,7 @@ describe("HandlerMaskInvert.invertMask arguments", function()
             withoutFunctions = { "getAllMasks" },
         })
 
-        local err = helper.refusalOf(function() Handler.invertMask(args()) end)
+        local err = helper.failedOf(function() Handler.invertMask(args()) end)
 
         assert.truthy(err:find("^invert_mask needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
     end)

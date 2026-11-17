@@ -63,14 +63,16 @@ describe("ImageFrame orientation", function()
 
     it("refuses an orientation it does not know", function()
         for _, bad in ipairs({ "AC", "XY", "ABC", "", "ab", 6 }) do
-            assert.is_truthy(helper.refusalOf(function() frameOf(bad) end):find("cannot map", 1, true))
+            local refusal = helper.failedOf(function() frameOf(bad) end)
+            assert.is_truthy(refusal:find("cannot map", 1, true))
+            assert.is_nil(refusal:find("nothing was", 1, true))
         end
-        assert.is_truthy(helper.refusalOf(function() ImageFrame.of({ dimensions = SIZE }) end):find("cannot map", 1, true))
+        assert.is_truthy(helper.failedOf(function() ImageFrame.of({ dimensions = SIZE }) end):find("cannot map", 1, true))
     end)
 
     it("refuses a photo whose pixel size Lightroom does not report", function()
         for _, dimensions in ipairs({ false, {}, { width = 0, height = 10 }, { width = 10 } }) do
-            local message = helper.refusalOf(function()
+            local message = helper.failedOf(function()
                 ImageFrame.of({ orientation = "AB", dimensions = dimensions or nil })
             end)
             assert.is_truthy(message:find("pixel size", 1, true))
@@ -283,7 +285,7 @@ describe("ImageFrame crop planning", function()
         local largest = ImageFrame.rectangleOf(photo, ImageFrame.largestCrop(photo, { width = 3000, height = 2000 },
             { x = 0.5, y = 0.5 }, 5))
 
-        local message = helper.refusalOf(function() ImageFrame.cropSettingsFor(photo, crop) end)
+        local message = helper.failedOf(function() ImageFrame.cropSettingsFor(photo, crop) end)
 
         assert.is_truthy(message:find("corners would be empty", 1, true))
         assert.is_truthy(message:find(string.format("left %.4f, top %.4f", largest.left, largest.top), 1, true))

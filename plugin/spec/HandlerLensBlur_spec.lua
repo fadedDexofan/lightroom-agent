@@ -118,7 +118,9 @@ describe('HandlerLensBlur', function()
     it('stops before Amount when activation never becomes ready', function()
         local ctx = setup({ activationDelay = 30 })
 
-        local err = helper.unknownOf(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
+        local class, err = helper.outcomeOf(function(context) ctx.Handler.set({ photo_id = '1', amount = 50 }, context) end)
+
+        assert.are.equal("unknown", class)
 
         assert.matches('did not finish changing LensBlurActive', err, 1, true)
         assert.are.equal(1, ctx.writes())
@@ -188,7 +190,7 @@ describe('HandlerLensBlur', function()
                 local ctx = setup({ storedProcess = storedProcess, process = case[2], normalizeDevelop = true })
                 local before = ctx.settings()
 
-                local err = helper.refusalOf(function()
+                local err = helper.failedOf(function()
                     ctx.Handler[operation]({ photo_id = '1', amount = 50 })
                 end)
 
@@ -205,7 +207,7 @@ describe('HandlerLensBlur', function()
         it('refuses ' .. version .. ' without writing', function()
             local ctx = setup({ process = version })
 
-            local err = helper.refusalOf(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
+            local err = helper.failedOf(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
 
             assert.matches(version, err, 1, true)
             assert.are.equal(0, ctx.writes())
@@ -216,7 +218,9 @@ describe('HandlerLensBlur', function()
     it('stops when the controller accepts a value but never saves it', function()
         local ctx = setup({ ignoreSave = true })
 
-        local err = helper.unknownOf(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
+        local class, err = helper.outcomeOf(function(context) ctx.Handler.set({ photo_id = '1', amount = 50 }, context) end)
+
+        assert.are.equal("unknown", class)
 
         assert.matches('did not save LensBlurActive', err, 1, true)
         assert.are.equal(35, ctx.saved().BlurAmount)
@@ -226,7 +230,9 @@ describe('HandlerLensBlur', function()
     it('stops later adjustments when Amount readback differs from saved settings', function()
         local ctx = setup({ ignoreAmountSave = true })
 
-        local err = helper.unknownOf(function() ctx.Handler.set({ photo_id = '1', amount = 50, cat_eye = 20 }) end)
+        local class, err = helper.outcomeOf(function(context) ctx.Handler.set({ photo_id = '1', amount = 50, cat_eye = 20 }, context) end)
+
+        assert.are.equal("unknown", class)
 
         assert.matches('did not save LensBlurAmount', err, 1, true)
         assert.are.equal(50, ctx.values.LensBlurAmount)
@@ -246,7 +252,7 @@ describe('HandlerLensBlur', function()
     it('refuses Lightroom below13.3 without writing', function()
         local ctx = setup({ version = { major = 13, minor = 2 } })
 
-        local err = helper.refusalOf(function() ctx.Handler.get({ photo_id = '1' }) end)
+        local err = helper.failedOf(function() ctx.Handler.get({ photo_id = '1' }) end)
 
         assert.matches('13.3', err, 1, true)
         assert.are.equal(0, ctx.writes())

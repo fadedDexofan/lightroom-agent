@@ -14,19 +14,32 @@ describe("AIMaskData", function()
         assert.is_false(AIMaskData.containsAIMasks(nil))
     end)
 
-    it("strips the computed keys from AI masks only and leaves the input untouched", function()
+    it("strips what Lightroom computes for the photo, its failure included, from AI masks only and leaves the input"
+        .. " untouched", function()
         local settings = settingsWith({
-            { What = "Mask/Image", MaskDigest = "a", InputDigest = "b", LocalInputDigest = "c", Origin = "1,0" },
-            { What = "Mask/Gradient", MaskDigest = "kept" },
+            { What = "Mask/Image", MaskSubType = 2, MaskBlendMode = 1, MaskValue = 0, MaskInverted = true, MaskName = "Sky 1",
+                MaskID = "S1", MaskDigest = "a", InputDigest = "b", InputDigestVersion = 1, LocalInputDigest = "c",
+                LocalInputDigestVersion = 1, ModelVersion = 3, FullMaskSize = "6000,4000", Origin = "1,0",
+                ReferencePoint = "0.5 0.5", WholeImageArea = "0 0 1 1", MaskSyncID = "SS1", ErrorReason = 1 },
+            { What = "Mask/Gradient", MaskDigest = "kept", Origin = "kept" },
         })
 
         local stripped = AIMaskData.withoutComputedData(settings)
 
         assert.are.same({
-            { What = "Mask/Image", Origin = "1,0" },
-            { What = "Mask/Gradient", MaskDigest = "kept" },
+            { What = "Mask/Image", MaskSubType = 2, MaskBlendMode = 1, MaskValue = 0, MaskInverted = true,
+                MaskName = "Sky 1", MaskID = "S1" },
+            { What = "Mask/Gradient", MaskDigest = "kept", Origin = "kept" },
         }, stripped.MaskGroupBasedCorrections[1].CorrectionMasks)
         assert.are.equal("a", settings.MaskGroupBasedCorrections[1].CorrectionMasks[1].MaskDigest)
+    end)
+
+    it("names each ErrorReason Lightroom assigns beside its number, and only the number for another value", function()
+        assert.are.same({
+            "ErrorReason 1, no result", "ErrorReason 2, model unavailable or not loaded", "ErrorReason 3, another failure",
+            "ErrorReason 4, model could not be downloaded", "ErrorReason 7",
+        }, { AIMaskData.errorReasonText(1), AIMaskData.errorReasonText(2), AIMaskData.errorReasonText(3),
+            AIMaskData.errorReasonText(4), AIMaskData.errorReasonText(7) })
     end)
 
     it("returns settings without AI masks as they are", function()

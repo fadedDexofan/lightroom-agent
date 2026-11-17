@@ -1,5 +1,3 @@
-local LrTasks = import 'LrTasks'
-
 local DevelopSession = require 'DevelopSession'
 local PhotoLookup = require 'PhotoLookup'
 local Reply = require 'Reply'
@@ -12,18 +10,15 @@ function DevelopBatch.run(context, catalog, operation)
 
     local function attempt(entry, state)
         local photoId = tostring(entry.photo.localIdentifier)
-        local ok, value = LrTasks.pcall(operation.each, entry.photo, state)
+        local ok, value, written = context.ledger:attempt(operation.each, entry.photo, state)
         if ok then
             value.photo_id = photoId
             results[#results + 1] = value
             return
         end
-        local item = { photo_id = photoId, reason = Reply.messageOf(value) }
-        if Reply.refusalOf(value) then
-            failed[#failed + 1] = item
-        else
-            unknown[#unknown + 1] = item
-        end
+        local class, reason = Reply.stopped(value, written)
+        local list = class == "failed" and failed or unknown
+        list[#list + 1] = { photo_id = photoId, reason = reason }
     end
 
     if #entries > 0 then

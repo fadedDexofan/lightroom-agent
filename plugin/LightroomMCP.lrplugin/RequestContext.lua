@@ -1,6 +1,8 @@
 local LrDate = import 'LrDate'
 local LrProgressScope = import 'LrProgressScope'
 
+local Ledger = require 'Ledger'
+
 local RequestContext = {}
 RequestContext.__index = RequestContext
 
@@ -16,6 +18,7 @@ function RequestContext.new(title, budgetMs, sendProgress)
         lastProgress = -1,
         sendProgress = sendProgress,
         warnings = {},
+        ledger = Ledger.new(),
     }, RequestContext)
 end
 

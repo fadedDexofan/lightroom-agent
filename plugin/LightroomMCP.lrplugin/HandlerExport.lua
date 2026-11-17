@@ -5,6 +5,7 @@ local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
 local Contract = require 'Contract'
 local JSON = require 'JSON'
 local CatalogFolders = require 'CatalogFolders'
@@ -181,7 +182,7 @@ end
 
 local EXPORT_PHOTO_RESERVE_SECONDS = 60
 
-local function prepareExport(args, catalog)
+local function prepareExport(context, args, catalog)
     local preset
     if args.export_preset ~= nil then
         preset = ExportPresets.resolve(args.export_preset, args.export_preset_folder)
@@ -238,7 +239,7 @@ local function prepareExport(args, catalog)
         -- language; create it as export_photo_metadata and export_develop_preset do.
         local existing = LrFileUtils.exists(exportFolder)
         if existing == false then
-            LrFileUtils.createAllDirectories(exportFolder)
+            CatalogWrite.createFolder(context, exportFolder)
             if LrFileUtils.exists(exportFolder) ~= "directory" then
                 error("could not create destination folder: " .. exportFolder)
             end
@@ -264,12 +265,9 @@ end
 
 local EXPORT_LEAVES = { "one Export history step", "the exported mark" }
 
-local function mayHaveLeft(reason)
-    return reason .. "; the photo may have gained " .. table.concat(EXPORT_LEAVES, " and ")
-end
-
-local function renderSession(exportSession, plan, photoId)
-    exportSession:doExportOnCurrentTask()
+local function renderSession(context, exportSession, plan, photoId)
+    CatalogWrite.invoke(context, "Export photo " .. photoId .. " (" .. table.concat(EXPORT_LEAVES, " and ") .. ")",
+        function() exportSession:doExportOnCurrentTask() end)
     local outcome = { files = {}, failures = {} }
     local renditionCount = 0
     for _, rendition in exportSession:renditions() do
@@ -295,7 +293,7 @@ local function renderSession(exportSession, plan, photoId)
     return outcome
 end
 
-local function exportOne(plan, photo, index, total)
+local function exportOne(context, plan, photo, index, total)
     local photoId = tostring(photo.localIdentifier)
     local photoSettings, settingsError = plan.exportSettings, nil
     if plan.preset then
@@ -306,14 +304,14 @@ local function exportOne(plan, photo, index, total)
         photosToExport = { photo },
         exportSettings = photoSettings,
     }
-    local ran, outcome = LrTasks.pcall(renderSession, exportSession, plan, photoId)
+    local ran, outcome = LrTasks.pcall(renderSession, context, exportSession, plan, photoId)
     if not ran then return { files = {}, failures = { Reply.messageOf(outcome) } } end
     return outcome
 end
 
 local function runExport(args, context, run)
     local catalog = LrApplication.activeCatalog()
-    local prepared, plan = LrTasks.pcall(prepareExport, args, catalog)
+    local prepared, plan = LrTasks.pcall(prepareExport, context, args, catalog)
     if not prepared then Reply.refuse(Reply.messageOf(plan)) end
     if #plan.entries == 0 then return Reply.parts({ not_found = plan.notFound }) end
 
@@ -328,16 +326,20 @@ local function runExport(args, context, run)
             local photoId = tostring(photo.localIdentifier)
             local name = photo:getFormattedMetadata("fileName") or photoId
             context:report(#files, #plan.entries, name)
-            local exported, outcome = LrTasks.pcall(exportOne, plan, photo, index, #plan.entries)
+            local mark = context.ledger:mark()
+            local function stopped(problem)
+                local class, reason = Reply.stopped(problem, context.ledger:since(mark))
+                local list = class == "failed" and failed or unknown
+                list[#list + 1] = { photo_id = photoId, reason = reason }
+            end
+            local exported, outcome = LrTasks.pcall(exportOne, context, plan, photo, index, #plan.entries)
             if not exported then
-                failed[#failed + 1] = { photo_id = photoId, reason = Reply.messageOf(outcome) }
+                stopped(outcome)
             elseif outcome.failed then
-                failed[#failed + 1] = { photo_id = photoId, reason = outcome.failed }
+                stopped(outcome.failed)
             else
                 for _, file in ipairs(outcome.files) do files[#files + 1] = file end
-                for _, reason in ipairs(outcome.failures) do
-                    unknown[#unknown + 1] = { photo_id = photoId, reason = mayHaveLeft(reason) }
-                end
+                for _, reason in ipairs(outcome.failures) do stopped(reason) end
                 if outcome.skipped then skipped[#skipped + 1] = photoId end
             end
             lastName = name
@@ -426,26 +428,31 @@ local function detailSettings(directory)
     }
 end
 
-local function renderFullResolution(photo, run)
+local function renderFullResolution(context, photo, run)
     local directory = newDetailDirectory()
-    LrFileUtils.createAllDirectories(directory)
+    local beforeFolder = context.ledger:mark()
+    local created = CatalogWrite.createFolder(context, directory) or directory
+    local afterFolder = context.ledger:mark()
     run.lastPhotoAt = LrDate.currentTime()
     local plan = { exportSettings = detailSettings(directory), collisionHandling = 'overwrite' }
-    local rendered, outcome = LrTasks.pcall(exportOne, plan, photo, 1, 1)
+    local rendered, outcome = LrTasks.pcall(exportOne, context, plan, photo, 1, 1)
     if rendered and #outcome.files == 1 and #outcome.failures == 0 then
         return { path = outcome.files[1].path, source = "export", left_on_photo = EXPORT_LEAVES }
     end
     if LrFileUtils.exists(directory) == "directory" then removeDirectory(directory) end
-    if not rendered then return nil, Reply.messageOf(outcome), "failed" end
-    return nil, mayHaveLeft(outcome.failures[1] or "Lightroom rendered no file"), "unknown"
+    if created ~= directory and LrFileUtils.exists(created) == "directory" then LrFileUtils.delete(created) end
+    if not LrFileUtils.exists(created) then context.ledger:undone(beforeFolder, afterFolder) end
+    local problem = not rendered and outcome or outcome.failures[1] or "Lightroom rendered no file"
+    local class, reason = Reply.stopped(problem, context.ledger:since(beforeFolder))
+    return nil, reason, class
 end
 
-function ExportHandler.renderDetailSource(args)
+function ExportHandler.renderDetailSource(args, context)
     return withExportLock("get_photo_detail", function(run)
         local photo = PhotoLookup.resolveOne(LrApplication.activeCatalog(), args.photo_id)
         if not photo then return Reply.parts({ not_found = { args.photo_id } }) end
         local photoId = tostring(photo.localIdentifier)
-        local render, problem, outcome = renderFullResolution(photo, run)
+        local render, problem, outcome = renderFullResolution(context, photo, run)
         if not render then return Reply.parts({ [outcome] = { { photo_id = photoId, reason = problem } } }) end
         render.photo_id = photoId
         return render
@@ -516,7 +523,7 @@ local function prepareMetadataExport(args, catalog)
     return { destination = destination, photos = photos, missingIds = missingIds, checkDestination = checkDestination }
 end
 
-function ExportHandler.exportPhotoMetadata(args)
+function ExportHandler.exportPhotoMetadata(args, context)
     local catalog = LrApplication.activeCatalog()
     local prepared, plan = LrTasks.pcall(prepareMetadataExport, args, catalog)
     if not prepared then Reply.refuse(Reply.messageOf(plan)) end
@@ -554,12 +561,12 @@ function ExportHandler.exportPhotoMetadata(args)
     local checked, existedBefore = LrTasks.pcall(checkDestination)
     if not checked then Reply.refuse(Reply.messageOf(existedBefore)) end
     local parent = LrPathUtils.parent(destination)
-    if parent and not LrFileUtils.exists(parent) then
-        LrFileUtils.createAllDirectories(parent)
-    end
+    if parent then CatalogWrite.createFolder(context, parent) end
 
-    local file, openError = io.open(destination, "w")
+    local beforeFile = context.ledger:mark()
+    local file, openError = CatalogWrite.invoke(context, destination, io.open, destination, "w")
     if not file then
+        if not existedBefore and not LrFileUtils.exists(destination) then context.ledger:undone(beforeFile) end
         error("Could not write " .. destination .. ": " .. tostring(openError))
     end
     local written, writeError = file:write(text)
@@ -569,6 +576,7 @@ function ExportHandler.exportPhotoMetadata(args)
         -- "already exists"; one it replaced was given up by overwrite: true.
         if not existedBefore then
             LrFileUtils.delete(destination)
+            if not LrFileUtils.exists(destination) then context.ledger:undone(beforeFile) end
         end
         error("Could not write " .. destination .. " (the file may be incomplete): "
             .. tostring(writeError or closeError))

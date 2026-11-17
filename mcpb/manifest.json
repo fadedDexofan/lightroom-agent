@@ -203,7 +203,7 @@
     },
     {
       "name": "copy_develop_settings",
-      "description": "Copy Develop settings; omitted settings includes the masks, which replace each target's masks through the guarded mask write (admission, format check of the target's masks, read-back, rollback)."
+      "description": "Copy Develop settings; omitted settings includes the masks, which replace each target's masks through the guarded mask write (admission, the format check of the masks it writes, read-back, rollback)."
     },
     {
       "name": "match_photo_style",
@@ -251,7 +251,7 @@
     },
     {
       "name": "list_develop_snapshots",
-      "description": "List a photo develop snapshots with their ids and names."
+      "description": "List a photo's develop snapshots with their ids and names."
     },
     {
       "name": "create_develop_snapshot",
@@ -259,11 +259,11 @@
     },
     {
       "name": "apply_develop_snapshot",
-      "description": "Restore a photo develop settings from one of its snapshots."
+      "description": "Restore a photo's develop settings from one of the snapshots listed for it; only the photo named changes, not its master or other copies."
     },
     {
       "name": "delete_develop_snapshot",
-      "description": "Delete one snapshot belonging to the photo."
+      "description": "Delete one snapshot listed for the photo."
     },
     {
       "name": "apply_auto_adjustments",

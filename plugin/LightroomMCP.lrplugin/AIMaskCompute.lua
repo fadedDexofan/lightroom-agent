@@ -4,6 +4,7 @@ local AIMaskData = require 'AIMaskData'
 local Contract = require 'Contract'
 local CatalogWrite = require 'CatalogWrite'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
+local JsonValue = require 'JsonValue'
 local Reply = require 'Reply'
 
 local AIMaskCompute = {}
@@ -19,11 +20,11 @@ end
 -- applyDevelopSettings has no AI flag and the applyDevelopPreset one reportedly
 -- reopens the modal-dialog lockup, so recompute in a second write transaction
 -- (same-transaction calls do not see the new settings).
-local function updateAISettings(catalog, photo)
+local function updateAISettings(context, catalog, photo)
     local entered, raised = false, nil
-    local _, gateError = LrTasks.pcall(CatalogWrite.run, catalog, "Update AI Settings", function()
+    local _, gateError = LrTasks.pcall(CatalogWrite.run, context, catalog, "Update AI Settings", function()
         entered = true
-        local ok, err = LrTasks.pcall(function() photo:updateAISettings() end)
+        local ok, err = LrTasks.pcall(CatalogWrite.call, context, photo, "updateAISettings")
         if not ok then raised = err end
     end)
     if not entered then return { error = gateError } end
@@ -71,24 +72,42 @@ local function settled(catalog, photo)
     return entries, anyPending(entries)
 end
 
-local function restoreAndRefuse(catalog, photo, previous, reason)
-    local restored, restoreError = LrTasks.pcall(GuardedMaskWrite.apply, catalog, photo, {
-        description = "Remove AI masks",
-        build = function() return GuardedMaskWrite.deepClone(previous) end,
-    })
-    if not restored then
-        error(reason .. "; the new masks could not be removed, check the photo's masks in Develop: "
-            .. Reply.messageOf(restoreError), 0)
+local MAX_NAMED_KEYS = 10
+
+local function keysChangedSince(catalog, photo, settings)
+    local now
+    catalog:withReadAccessDo(function() now = photo:getDevelopSettings() end)
+    local seen, keys = {}, {}
+    for _, path in ipairs(JsonValue.differences(settings or {}, now or {})) do
+        local key = path:match("^[^.]+")
+        if not seen[key] then
+            seen[key] = true
+            keys[#keys + 1] = key
+        end
     end
-    Reply.refuse(reason .. "; the new masks were removed")
+    return keys
 end
 
-local function namesOf(entries)
-    local names = {}
-    for _, entry in ipairs(entries) do
-        names[#names + 1] = entry.CorrectionName or (idOf(entry) and "mask " .. idOf(entry)) or "an unnamed mask"
+local function namedKeys(keys)
+    local named = {}
+    for index = 1, math.min(#keys, MAX_NAMED_KEYS) do named[index] = keys[index] end
+    if #keys > MAX_NAMED_KEYS then named[#named + 1] = string.format("%d more", #keys - MAX_NAMED_KEYS) end
+    return table.concat(named, ", ")
+end
+
+local function restoreAndRefuse(context, catalog, photo, write, reason)
+    if not GuardedMaskWrite.restore(context, catalog, photo, write.previous, write.from, write.to) then
+        error(reason .. "; the new masks could not be confirmed removed, check the photo's masks in Develop", 0)
     end
-    return table.concat(names, ", ")
+    if #context.ledger:since(write.to) > 0 then
+        local changed = keysChangedSince(catalog, photo, write.settings)
+        if #changed > 0 then
+            error(reason .. "; the new masks were removed, but Update AI Settings also changed " .. namedKeys(changed)
+                .. " on the photo", 0)
+        end
+        context.ledger:undone(write.to)
+    end
+    Reply.refuse(reason .. "; the new masks were removed")
 end
 
 local function aiComponentsById(entry)
@@ -119,8 +138,8 @@ local function warnAboutExisting(context, photoId, before, after)
     for _, entry in ipairs(before) do
         local reason = AIMaskData.computeState(entry) == "failed" and errorReasonOf(entry)
         if reason then
-            context:warn(string.format("Photo %s: mask %s was already failed (ErrorReason %s) before this call",
-                photoId, idOf(entry), tostring(reason)))
+            context:warn(string.format("Photo %s: mask %s was already failed (%s) before this call",
+                photoId, idOf(entry), AIMaskData.errorReasonText(reason)))
         end
     end
     for _, entry in ipairs(after) do
@@ -156,25 +175,38 @@ local function ownOf(spec, existing, after)
     return own, components
 end
 
-local function failedEntries(own)
-    local failed = {}
-    for _, entry in ipairs(own) do
-        if AIMaskData.computeState(entry) == "failed" then failed[#failed + 1] = entry end
+local function failureText(spec, own, failedComponents, photoId)
+    local names, reasons, nothingFound = {}, {}, true
+    for _, component in ipairs(failedComponents) do
+        local name = tostring(component.MaskName or component.MaskID or "an unnamed component")
+        names[#names + 1] = name
+        reasons[#reasons + 1] = name .. ": " .. AIMaskData.errorReasonText(component.ErrorReason)
+        if component.ErrorReason ~= 1 then nothingFound = false end
     end
-    return failed
+    if not nothingFound then
+        return string.format("Lightroom could not compute %s on photo %s (%s)", spec.subject, photoId,
+            table.concat(reasons, "; "))
+    end
+    if spec.nothingFound then return spec.nothingFound(own) end
+    return string.format("Lightroom found nothing for %s on photo %s (%s)", spec.subject, photoId,
+        table.concat(names, ", "))
 end
 
 function AIMaskCompute.run(context, catalog, photo, spec)
     local photoId = tostring(photo.localIdentifier)
     local previous = spec.before
+    local write
     if spec.build then
-        previous = GuardedMaskWrite.apply(catalog, photo, { description = spec.description, build = spec.build }).previous
+        local from = context.ledger:mark()
+        local applied = GuardedMaskWrite.apply(context, catalog, photo, { description = spec.description, build = spec.build })
+        previous = applied.previous
+        write = { previous = previous, settings = applied.settings, from = from, to = context.ledger:mark() }
     end
     local function fail(reason)
-        if spec.build then restoreAndRefuse(catalog, photo, previous, reason) end
+        if write then restoreAndRefuse(context, catalog, photo, write, reason) end
         error(reason, 0)
     end
-    local compute = updateAISettings(catalog, photo)
+    local compute = updateAISettings(context, catalog, photo)
     local computeError = compute.error
         and "Lightroom could not compute " .. spec.subject .. ": " .. Reply.messageOf(compute.error)
     if not compute.entered then fail(computeError) end
@@ -199,11 +231,7 @@ function AIMaskCompute.run(context, catalog, photo, spec)
     for _, component in ipairs(components) do
         if AIMaskData.componentState(component) == "failed" then failedOwn[#failedOwn + 1] = component end
     end
-    if #failedOwn > 0 then
-        local reason = spec.failure and spec.failure(own)
-            or string.format("Lightroom could not compute %s on photo %s", namesOf(failedEntries(own)), photoId)
-        fail(reason)
-    end
+    if #failedOwn > 0 then fail(failureText(spec, own, failedOwn, photoId)) end
     warnAboutExisting(context, photoId, existing, after)
     return { own = own, components = components, previous = previous }
 end

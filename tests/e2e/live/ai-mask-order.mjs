@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { developHistory, pollCatalog } from "./lib/catalog-db.mjs";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
-import { fetchStablePixels } from "./lib/preview.mjs";
+import { fetchStablePixels, luminanceGap } from "./lib/preview.mjs";
 import { createReport } from "./lib/proof.mjs";
 
 const SIZE = 1024;
+const RAW_PREVIEW_TRIES = 40;
 const MASK_ADJUSTMENT = { local_Exposure: -1 };
 const TONE_AND_GEOMETRY = {
   Exposure2012: 1.5, Contrast2012: 60, Highlights2012: -80, Shadows2012: 60,
@@ -44,19 +45,11 @@ function differences(a, b, at = "") {
 }
 
 async function maskEffect(photoId, maskId) {
-  const on = await fetchStablePixels(session, photoId, { size: SIZE });
+  const on = await fetchStablePixels(session, photoId, { size: SIZE, tries: RAW_PREVIEW_TRIES });
   await data("set_mask_adjustments", { photo_id: photoId, mask_id: maskId, adjustments: { local_Exposure: 0 } });
-  const off = await fetchStablePixels(session, photoId, { size: SIZE });
+  const off = await fetchStablePixels(session, photoId, { size: SIZE, tries: RAW_PREVIEW_TRIES });
   await data("set_mask_adjustments", { photo_id: photoId, mask_id: maskId, adjustments: MASK_ADJUSTMENT });
   return { on, effect: { w: on.w, h: on.h, L: on.L.map((value, i) => off.L[i] - value) } };
-}
-
-function compareMaps(a, b) {
-  if (a.w !== b.w || a.h !== b.h) return { sizes: [`${a.w}x${a.h}`, `${b.w}x${b.h}`] };
-  const deltas = a.L.map((value, i) => Math.abs(value - b.L[i]));
-  const sorted = Float64Array.from(deltas).sort();
-  const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
-  return { mean_abs: mean(deltas), p99: sorted[Math.floor(sorted.length * 0.99)], max: sorted[sorted.length - 1] };
 }
 
 const onlyMask = (settings) => (settings.MaskGroupBasedCorrections ?? []).at(-1) ?? null;
@@ -128,19 +121,25 @@ try {
     copied_vs_direct: differences(onlyMask(settings.copied), onlyMask(settings.direct)),
     direct_vs_direct_again: differences(onlyMask(settings.direct), onlyMask(settings.noise)),
   };
-  const effects = {
-    copied: await maskEffect(copied, copiedMask),
-    direct: await maskEffect(direct, directMask),
-    noise: await maskEffect(noise, noiseMask),
-  };
-  const rendered = {
-    effect_copied_vs_direct: compareMaps(effects.copied.effect, effects.direct.effect),
-    effect_direct_vs_direct_again: compareMaps(effects.direct.effect, effects.noise.effect),
-    render_copied_vs_direct: compareMaps(effects.copied.on, effects.direct.on),
-    render_direct_vs_direct_again: compareMaps(effects.direct.on, effects.noise.on),
-  };
-  const beyondNoise = rendered.effect_copied_vs_direct.mean_abs > 2 * rendered.effect_direct_vs_direct_again.mean_abs + 0.002;
-  console.log(`order matters: ${beyondNoise} (effect mean |d| ${rendered.effect_copied_vs_direct.mean_abs?.toFixed(4)} against noise ${rendered.effect_direct_vs_direct_again.mean_abs?.toFixed(4)})`);
+  let rendered;
+  let beyondNoise = null;
+  try {
+    const effects = {
+      copied: await maskEffect(copied, copiedMask),
+      direct: await maskEffect(direct, directMask),
+      noise: await maskEffect(noise, noiseMask),
+    };
+    rendered = {
+      effect_copied_vs_direct: luminanceGap(effects.copied.effect, effects.direct.effect),
+      effect_direct_vs_direct_again: luminanceGap(effects.direct.effect, effects.noise.effect),
+      render_copied_vs_direct: luminanceGap(effects.copied.on, effects.direct.on),
+      render_direct_vs_direct_again: luminanceGap(effects.direct.on, effects.noise.on),
+    };
+    beyondNoise = rendered.effect_copied_vs_direct.mean_abs > 2 * rendered.effect_direct_vs_direct_again.mean_abs + 0.002;
+    console.log(`order matters: ${beyondNoise} (effect mean |d| ${rendered.effect_copied_vs_direct.mean_abs?.toFixed(4)} against noise ${rendered.effect_direct_vs_direct_again.mean_abs?.toFixed(4)})`);
+  } catch (error) {
+    rendered = { error: error.message };
+  }
   report.check("the stored mask and its rendered effect are recorded for copied, direct and direct-again targets", true, { entry, rendered, order_matters: beyondNoise });
 
   const bare = await masklessCopy("LRMCP live maskless source");

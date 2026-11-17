@@ -1,5 +1,4 @@
 local LrApplication = import 'LrApplication'
-local LrTasks = import 'LrTasks'
 
 local CatalogWrite = require 'CatalogWrite'
 local Contract = require 'Contract'
@@ -102,7 +101,7 @@ local function findNamed(items, name)
     return nil
 end
 
-local function createCollection(args, searchDesc)
+local function createCollection(args, context, searchDesc)
     local catalog = LrApplication.activeCatalog()
     local collectionName = args.name
     local setNames = args.parent and splitSetPath(args.parent) or {}
@@ -141,70 +140,51 @@ local function createCollection(args, searchDesc)
     -- created it ("Can't get collection information after creating collection
     -- inside the same withWriteAccessDo function"), so the collection goes in
     -- a second gate, where the new set can be read.
-    local createdSets = nil
     if existingLevels < #setNames then
-        local created, setsError = LrTasks.pcall(CatalogWrite.run, catalog, "Create Collection Sets", function()
+        CatalogWrite.run(context, catalog, "Create Collection Sets", function()
             for i = existingLevels + 1, #setNames do
-                local set = catalog:createCollectionSet(setNames[i], parentSet, true)
+                local set = CatalogWrite.call(context, catalog, "createCollectionSet", setNames[i], parentSet, true)
                 -- A name clash returns nil instead of raising; the failed gate
                 -- rolls back the sets created before it.
-                if not set then
-                    problem = "Lightroom did not create collection set: " .. setNames[i]
-                    error(problem, 0)
-                end
+                if not set then Reply.refuse("Lightroom did not create collection set: " .. setNames[i]) end
                 parentSet = set
             end
         end)
-        if not created then
-            if problem then Reply.refuse(problem) end
-            error(setsError, 0)
-        end
-        createdSets = "the collection sets " .. table.concat(setNames, " / ", existingLevels + 1) .. " were created"
     end
 
-    CatalogWrite.run(catalog, "Create Collection", function()
+    CatalogWrite.run(context, catalog, "Create Collection", function()
         -- Checked inside the gate that creates, so a concurrent create cannot
         -- slip in between. A same-named collection would also make
         -- add_to_collection's bare-name lookup ambiguous.
         local collections = parentSet and parentSet:getChildCollections() or catalog:getChildCollections()
         local sets = parentSet and parentSet:getChildCollectionSets() or catalog:getChildCollectionSets()
-        if findNamed(collections, collectionName) then
-            problem = "Collection already exists: " .. path
-            return
-        end
+        if findNamed(collections, collectionName) then Reply.refuse("Collection already exists: " .. path) end
         local clash = findNamed(sets, collectionName)
         if clash then
-            problem = string.format("A collection set named '%s' already exists %s",
-                clash:getName(), parentSet and ("in " .. parentPath) or "at the top level")
-            return
+            Reply.refuse(string.format("A collection set named '%s' already exists %s",
+                clash:getName(), parentSet and ("in " .. parentPath) or "at the top level"))
         end
 
         local created
         if searchDesc then
-            created = catalog:createSmartCollection(collectionName, searchDesc, parentSet, false)
+            created = CatalogWrite.call(context, catalog, "createSmartCollection", collectionName, searchDesc, parentSet,
+                false)
         else
-            created = catalog:createCollection(collectionName, parentSet, false)
+            created = CatalogWrite.call(context, catalog, "createCollection", collectionName, parentSet, false)
         end
-        if not created then
-            if not createdSets then
-                problem = "Lightroom did not create collection: " .. path
-                return
-            end
-            error("Lightroom did not create collection: " .. path .. "; " .. createdSets, 0)
-        end
+        if not created then Reply.refuse("Lightroom did not create collection: " .. path) end
         Log.info("Created collection: " .. path)
-    end, createdSets)
-    if problem then Reply.refuse(problem) end
+    end)
 
     return { path = path }
 end
 
-function CollectionsHandler.createCollection(args)
-    return createCollection(args)
+function CollectionsHandler.createCollection(args, context)
+    return createCollection(args, context)
 end
 
-function CollectionsHandler.createSmartCollection(args)
-    return createCollection(args, SearchHandler.buildSearchDesc(args))
+function CollectionsHandler.createSmartCollection(args, context)
+    return createCollection(args, context, SearchHandler.buildSearchDesc(args))
 end
 
 -- Match the paths returned by listCollections, then bare names of nested
@@ -266,7 +246,7 @@ end
 
 CollectionsHandler.findOneRegularCollection = findOneRegularCollection
 
-function CollectionsHandler.addToCollection(args)
+function CollectionsHandler.addToCollection(args, context)
 
     local catalog = LrApplication.activeCatalog()
 
@@ -284,7 +264,7 @@ function CollectionsHandler.addToCollection(args)
     local addedCount = 0
     local alreadyInCollection = {}
 
-    CatalogWrite.run(catalog, "Add Photos to Collection", function()
+    CatalogWrite.run(context, catalog, "Add Photos to Collection", function()
         -- Looked up again rather than carried across gates: the check above
         -- only proved the name resolved then, and the write gate is what makes
         -- the result safe to act on.
@@ -300,7 +280,7 @@ function CollectionsHandler.addToCollection(args)
             end
         end
         if #photosToAdd > 0 then
-            targetCollection:addPhotos(photosToAdd)
+            CatalogWrite.call(context, targetCollection, "addPhotos", photosToAdd)
             addedCount = #photosToAdd
         end
     end)
@@ -314,7 +294,7 @@ function CollectionsHandler.addToCollection(args)
 end
 
 -- Removes photos from a collection only; they stay in the catalog.
-function CollectionsHandler.removeFromCollection(args)
+function CollectionsHandler.removeFromCollection(args, context)
 
     local catalog = LrApplication.activeCatalog()
     local removedCount = 0
@@ -329,7 +309,7 @@ function CollectionsHandler.removeFromCollection(args)
     local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
     if #entries == 0 then return Reply.parts({ not_found = notFound }) end
 
-    CatalogWrite.run(catalog, "Remove Photos from Collection", function()
+    CatalogWrite.run(context, catalog, "Remove Photos from Collection", function()
         local targetCollection = findOneRegularCollection(catalog, args.collection_name)
 
         local members = {}
@@ -349,7 +329,7 @@ function CollectionsHandler.removeFromCollection(args)
         end
 
         if #photosToRemove > 0 then
-            targetCollection:removePhotos(photosToRemove)
+            CatalogWrite.call(context, targetCollection, "removePhotos", photosToRemove)
             removedCount = #photosToRemove
         end
     end)
@@ -396,7 +376,7 @@ function CollectionsHandler.getCollectionPhotos(args)
 end
 
 -- Deletes the collection itself; its photos stay in the catalog.
-function CollectionsHandler.deleteCollection(args)
+function CollectionsHandler.deleteCollection(args, context)
 
     local catalog = LrApplication.activeCatalog()
     local found
@@ -405,8 +385,8 @@ function CollectionsHandler.deleteCollection(args)
     end)
     local photoCount = #(found:getPhotos() or {})
 
-    CatalogWrite.run(catalog, "Delete Collection", function()
-        findOneCollection(catalog, args.collection_name):delete()
+    CatalogWrite.run(context, catalog, "Delete Collection", function()
+        CatalogWrite.call(context, findOneCollection(catalog, args.collection_name), "delete")
     end)
 
     Log.info(string.format("Deleted collection: %s (%d photos, still in the catalog)",

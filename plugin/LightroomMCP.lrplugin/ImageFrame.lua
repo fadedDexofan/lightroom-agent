@@ -36,7 +36,7 @@ local function orientationMapOf(orientation)
     local map = type(orientation) == "string" and CROPPED_FROM_DISPLAYED[orientation] or nil
     if not map then
         Reply.refuse(string.format("The photo reports the orientation %s, which this tool cannot map to the stored"
-            .. " mask frame, so nothing was written", tostring(orientation)))
+            .. " mask frame", tostring(orientation)))
     end
     return map
 end

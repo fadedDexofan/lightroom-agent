@@ -94,16 +94,15 @@ describe('reference style matching', function()
         assert.is_false(catalog:getQueriedInsideReadAccess())
     end)
 
-    it('answers unknown for a target whose snapshot step raised, writes nothing to it and continues', function()
+    it('fails a target whose snapshot step raised inside its gate, writes nothing to it and continues', function()
         targets[2].createDevelopSnapshot = function() error('snapshot interrupted') end
         local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3', '4', '999' } })
         assert.same({ 'snapshot:2', 'apply:2', 'snapshot:4', 'apply:4' }, events)
         assert.is_nil(applied['3'])
         assert.same({ '999' }, result.not_found)
-        assert.is_nil(result.failed)
-        assert.equals('3', result.unknown[1].photo_id)
-        assert.matches('snapshot interrupted', result.unknown[1].reason)
-        assert.matches('a recovery snapshot may have been created', result.unknown[1].reason)
+        assert.is_nil(result.unknown)
+        assert.equals('3', result.failed[1].photo_id)
+        assert.matches('snapshot interrupted', result.failed[1].reason)
     end)
 
     it('answers unknown, without writing, when the snapshot it created cannot be read back', function()
@@ -113,7 +112,7 @@ describe('reference style matching', function()
         assert.is_nil(applied['2'])
         assert.is_nil(result.failed)
         assert.matches('could not be read back', result.unknown[1].reason)
-        assert.matches('a recovery snapshot may have been created', result.unknown[1].reason)
+        assert.matches('written before this stopped: Create Develop Snapshot', result.unknown[1].reason)
     end)
 
     it('fails a target whose snapshot Lightroom refused, and writes nothing to it', function()
@@ -127,7 +126,7 @@ describe('reference style matching', function()
 
     it('rejects reference aliases anywhere in the targets before snapshotting', function()
         for _, id in ipairs({ '1', '/reference.raw' }) do
-            assert.are.equal('Reference photo must not appear in target_ids', helper.refusalOf(function()
+            assert.are.equal('Reference photo must not appear in target_ids', helper.failedOf(function()
                 handler.matchPhotoStyle({ reference_id = 1, target_ids = { '2', id } })
             end))
         end

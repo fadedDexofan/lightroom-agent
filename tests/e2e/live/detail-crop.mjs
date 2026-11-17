@@ -119,7 +119,8 @@ try {
     { source: board.render.source, left_on_photo: board.render.left_on_photo });
   const pixels = decodeJpegBase64(board.images[0].data);
   const rate = alternationRate(pixels);
-  report.check("the checkerboard crop alternates pixel by pixel", rate >= MIN_ALTERNATION, { rate, box: board.regions[0].box });
+  report.check("the checkerboard crop alternates pixel by pixel", rate >= MIN_ALTERNATION,
+    { rate, box: board.regions[0].box, crop: report.preview("checkerboard crop", { jpeg: board.images[0].data }) });
   report.check("the checkerboard renders at its own size", sameSize(board.render, 1200, 800), board.render);
   const boardSizes = sizes(board.render, await planned(ids.board));
   report.check("the checkerboard render is the size get_crop plans with", boardSizes.equal, boardSizes);

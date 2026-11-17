@@ -94,7 +94,7 @@ describe("HandlerMaskRead.getMask", function()
                 CorrectionID = "mask-a", LocalExposure2012 = 0.125, LocalPointColors = { "1.0, 0.5" },
             }),
         })
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "point_colors" } })
         end)
         assert.truthy(err:find("Lightroom stored an unreadable Point Color swatch at index 1", 1, true), err)
@@ -112,7 +112,7 @@ describe("HandlerMaskRead.getMask", function()
 
     it("refuses a mask that is not in the saved settings, naming the saved ones", function()
         local Handler = setup()
-        local err = helper.refusalOf(function() Handler.getMask({ photo_id = "1", mask_id = "missing" }) end)
+        local err = helper.failedOf(function() Handler.getMask({ photo_id = "1", mask_id = "missing" }) end)
         assert.truthy(err:find("Mask missing is not in the saved settings of photo 1 (saved masks: mask-a, mask-b)", 1, true), err)
     end)
 end)

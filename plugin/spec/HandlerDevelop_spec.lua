@@ -75,7 +75,7 @@ local function setup(opts)
             exists = function(path) return files[path] or false end,
             createAllDirectories = function(path) files[path] = "directory" return true end,
             copy = function(source, destination)
-                if files[source] ~= "file" or files[destination] then return false, "copy refused" end
+                if opts.copyFails or files[source] ~= "file" or files[destination] then return false, "copy refused" end
                 files[destination] = "file"
                 table.insert(copies, { source = source, destination = destination })
                 return true
@@ -84,6 +84,7 @@ local function setup(opts)
         LrPathUtils = {
             leafName = leafName,
             extension = extension,
+            parent = function(path) return path:match("^(.+)/[^/]+$") end,
             child = function(parent, child) return parent .. "/" .. child end,
             getStandardFilePath = function(name) assert(name == "home"); return "/home/u" end,
         },
@@ -102,10 +103,16 @@ local function setup(opts)
     local function storedMasks(photo) return (photo:getDevelopSettings() or {}).MaskGroupBasedCorrections or {} end
     package.loaded.GuardedMaskWrite = opts.guardedMaskWrite or {
         preflight = function() end,
-        apply = function(_, photo, spec)
+        apply = function(context, _, photo, spec)
             local previous = Store.clone(storedMasks(photo))
+            context.ledger:record(spec.description)
             photo:applyDevelopSettings({ MaskGroupBasedCorrections = Store.clone(spec.build(Store.clone(previous))) })
             return { previous = previous }
+        end,
+        restore = function(context, _, photo, previous, mark)
+            photo:applyDevelopSettings({ MaskGroupBasedCorrections = Store.clone(previous) })
+            context.ledger:undone(mark)
+            return true
         end,
         readEntries = function(_, photo) return Store.clone(storedMasks(photo)) end,
         deepClone = Store.clone,
@@ -261,7 +268,7 @@ describe("HandlerDevelop.getDevelopPreset", function()
         }
         local _, Handler = setup({ folders = folders })
 
-        assert.are.equal("Preset selector is ambiguous; provide preset_uuid or preset_folder", helper.refusalOf(function()
+        assert.are.equal("Preset selector is ambiguous; provide preset_uuid or preset_folder", helper.failedOf(function()
             Handler.getDevelopPreset({ preset_name = "Same" })
         end))
     end)
@@ -484,12 +491,12 @@ describe("HandlerDevelop.createDevelopPreset", function()
         })
         local _, Handler = setup({ photos = { photo }, pluginPresets = { existing } })
 
-        assert.are.equal("Plugin preset already exists; use a versioned preset_name", helper.refusalOf(function()
+        assert.are.equal("Plugin preset already exists; use a versioned preset_name", helper.failedOf(function()
             Handler.createDevelopPreset({
                 photo_id = "7", preset_name = "Existing", settings = { "Exposure2012" },
             })
         end))
-        assert.are.equal("Source photo has no develop setting: Contrast2012", helper.refusalOf(function()
+        assert.are.equal("Source photo has no develop setting: Contrast2012", helper.failedOf(function()
             Handler.createDevelopPreset({
                 photo_id = "7", preset_name = "New", settings = { "Contrast2012" },
             })
@@ -519,6 +526,22 @@ describe("HandlerDevelop.exportDevelopPreset", function()
         assert.are.equal("/exports/John-Warm-v2.xmp", state.copies[1].destination)
     end)
 
+    it("fails a copy Lightroom refused when no file reached the destination, naming its reason", function()
+        local preset = fakePreset("John Warm", { uuid = "warm-1", file = "/user/Warm.xmp" })
+        local _, Handler, state = setup({
+            folders = { fakeFolder("John", { preset }) },
+            files = { ["/user/Warm.xmp"] = "file", ["/exports"] = "directory" },
+            copyFails = true,
+        })
+
+        local message = helper.failedOf(function()
+            Handler.exportDevelopPreset({ preset_uuid = "warm-1", destination_dir = "/exports" })
+        end)
+
+        assert.are.equal("could not copy /user/Warm.xmp to /exports/Warm.xmp: copy refused", message)
+        assert.are.same({}, state.copies)
+    end)
+
     it("expands a leading ~/ in destination_dir", function()
         local preset = fakePreset("John Warm", { uuid = "warm-1", file = "/user/Warm.xmp" })
         local _, Handler, state = setup({
@@ -540,12 +563,12 @@ describe("HandlerDevelop.exportDevelopPreset", function()
         }
         local _, Handler = setup(base)
 
-        assert.are.equal("filename must be a leaf filename without path separators", helper.refusalOf(function()
+        assert.are.equal("filename must be a leaf filename without path separators", helper.failedOf(function()
             Handler.exportDevelopPreset({
                 preset_uuid = "warm-1", destination_dir = "/exports", filename = "../escape.xmp",
             })
         end))
-        assert.are.equal("filename extension must match preset backing file: .xmp", helper.refusalOf(function()
+        assert.are.equal("filename extension must match preset backing file: .xmp", helper.failedOf(function()
             Handler.exportDevelopPreset({
                 preset_uuid = "warm-1", destination_dir = "/exports", filename = "Warm.lrtemplate",
             })
@@ -555,7 +578,7 @@ describe("HandlerDevelop.exportDevelopPreset", function()
             { dir = "exports", refusal = "destination_dir must be an absolute path" },
             { dir = "/exports/../user", refusal = "destination_dir must be written canonically" },
         }) do
-            local refusal = helper.refusalOf(function()
+            local refusal = helper.failedOf(function()
                 Handler.exportDevelopPreset({ preset_uuid = "warm-1", destination_dir = case.dir })
             end)
             assert.truthy(refusal:find(case.refusal, 1, true), refusal)
@@ -563,7 +586,7 @@ describe("HandlerDevelop.exportDevelopPreset", function()
 
         base.files["/exports/Warm.xmp"] = "file"
         local _, ExistingHandler = setup(base)
-        assert.are.equal("destination preset already exists; choose a new filename", helper.refusalOf(function()
+        assert.are.equal("destination preset already exists; choose a new filename", helper.failedOf(function()
             ExistingHandler.exportDevelopPreset({
                 preset_uuid = "warm-1", destination_dir = "/exports", filename = "Warm.xmp",
             })
@@ -698,7 +721,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
     for _, case in ipairs({
         { aiUpdate = "fail", reason = "Lightroom could not compute the preset's AI masks: AI update failed; " .. pendingText },
         { aiUpdate = "nothing", reason = pendingText },
-        { aiUpdate = "error", reason = "Lightroom could not compute mask Subject-read-3 on photo 1" },
+        { aiUpdate = "error", reason = "Lightroom found nothing for the preset's AI masks on photo 1 (an unnamed component)" },
     }) do
         it("answers unknown for a photo whose AI masks Lightroom did not compute (" .. case.aiUpdate .. ")", function()
             local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = case.aiUpdate })
@@ -710,8 +733,8 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
             assert.are.equal(1, r.data.applied)
             assert.are.equal(1, r.data.ai_updated)
-            assert.are.same({ { photo_id = "1", reason = case.reason .. "; the preset was applied, so check the photo's"
-                .. " AI masks in Develop before writing to it" } }, r.unknown)
+            assert.are.same({ { photo_id = "1", reason = case.reason .. "; check the photo's AI masks in Develop before"
+                .. " writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset, updateAISettings, Update AI Settings" } }, r.unknown)
             assert.is_nil(r.warnings)
             assert.are.equal(1, p2.getRawMetadata(p2, "__aiUpdateCalls"))
         end)
@@ -734,9 +757,31 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Subject" })
 
         assert.are.equal(1, r.data.applied)
-        assert.are.same({ { photo_id = "1", reason = "Lightroom returned mask data that is not a list; the preset was"
-            .. " applied, so check the photo's AI masks in Develop before writing to it" } }, r.unknown)
+        assert.are.same({ { photo_id = "1", reason = "Lightroom returned mask data that is not a list; check the photo's"
+            .. " AI masks in Develop before writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset, updateAISettings, Update AI Settings" } },
+            r.unknown)
         assert.is_nil(r.remaining)
+    end)
+
+    it("answers a photo whose masks cannot be read before the preset as failed and keeps the photos before it", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
+        local p3 = helper.fakePhoto({ id = "3", path = "/c.jpg", aiUpdate = "ok" })
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local _, Handler = setup({ photos = { p1, p2, p3 }, folders = { fakeFolder("User", { preset }) } })
+        local guarded = package.loaded.GuardedMaskWrite
+        local readEntries = guarded.readEntries
+        guarded.readEntries = function(catalog, photo)
+            if photo.localIdentifier == "2" then error("Lightroom returned mask data that is not a list", 0) end
+            return readEntries(catalog, photo)
+        end
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Subject" })
+
+        assert.are.equal(1, r.data.applied)
+        assert.are.same({ { photo_id = "2", reason = "Lightroom returned mask data that is not a list" } }, r.failed)
+        assert.is_nil(r.unknown)
+        assert.are.same({ "3" }, r.remaining)
     end)
 
     it("says nothing about an existing AI mask the recompute left as it was", function()
@@ -769,8 +814,8 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         assert.are.equal(0, r.data.applied)
         assert.are.same({ { photo_id = "1", reason = "Lightroom could not compute the preset's AI masks: The catalog"
-            .. " stayed busy with another write for 10 s, so Lightroom did not run Update AI Settings; the preset was"
-            .. " applied, so check the photo's AI masks in Develop before writing to it" } }, r.unknown)
+            .. " stayed busy with another write for 10 s, so Lightroom did not run Update AI Settings; check the photo's"
+            .. " AI masks in Develop before writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset" } }, r.unknown)
         assert.is_nil(held:getRawMetadata("__aiUpdateCalls"))
         assert.are.same({}, context.warnings)
     end)
@@ -790,7 +835,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         assert.are.equal(1, r.data.applied)
         assert.is_nil(r.unknown)
-        assert.are.same({ "Photo 1: mask own-mask was already failed (ErrorReason 1) before this call" }, context.warnings)
+        assert.are.same({ "Photo 1: mask own-mask was already failed (ErrorReason 1, no result) before this call" }, context.warnings)
     end)
 
     it("names, and does not judge, an existing mask the recompute failed: the preset's own entries are new ids", function()
@@ -839,7 +884,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
         local catalog, Handler = setup({ photos = { p1 }, folders = { fakeFolder("User", { preset }) } })
 
-        local refusal = helper.refusalOf(function()
+        local refusal = helper.failedOf(function()
             Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" })
         end)
 
@@ -907,13 +952,16 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
         }
     end
 
-    it("refuses source masks that fail the guarded format check", function()
+    it("refuses a full copy whose source masks the mask-write admission refuses", function()
         local Handler = select(2, setup({
             photos = photos(),
-            guardedMaskWrite = { preflight = function() error("a color range needs exactly one PointModels entry", 0) end },
+            guardedMaskWrite = { preflight = function()
+                error("Mask writes are not certified for this Lightroom build.", 0)
+            end },
         }))
-        local err = helper.refusalOf(function() Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }) end)
-        assert.truthy(err:find("exactly one PointModels entry", 1, true))
+        local err = helper.failedOf(function() Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }) end)
+        assert.are.equal("The source's masks cannot be copied: Mask writes are not certified for this Lightroom build."
+            .. " Name the settings to copy with settings to leave masks out.", err)
     end)
 
     it("does not preview or copy the source's orientation", function()
@@ -1155,13 +1203,14 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
         assert.are.equal(1, r.data.copied)
         assert.are.equal("12", r.failed[1].photo_id)
-        assert.truthy(r.failed[1].reason:find("Lightroom could not compute", 1, true), r.failed[1].reason)
+        assert.truthy(r.failed[1].reason:find("Lightroom found nothing for the copied AI masks on photo 12", 1, true),
+            r.failed[1].reason)
         local kept = t2:getDevelopSettings()
         assert.are.equal(0, kept.Exposure2012)
         assert.are.same({}, kept.MaskGroupBasedCorrections or {})
     end)
 
-    it("drops the source's computed AI mask data so each target recomputes its own", function()
+    it("drops what Lightroom computed for the source's AI masks, frame fields included, so each target gets its own", function()
         local sourceSettings = {
             Exposure2012 = 1.0,
             MaskGroupBasedCorrections = {
@@ -1190,7 +1239,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local applied = t1:getDevelopSettings()
         assert.are.equal(1.0, applied.Exposure2012)
         assert.are.same({
-            { What = "Mask/Image", MaskSubType = 1, Origin = "619,0", MaskDigest = "digest-11" },
+            { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-11" },
             { What = "Mask/Gradient", MaskDigest = "kept-on-geometry-masks" },
         }, applied.MaskGroupBasedCorrections[1].CorrectionMasks)
         assert.are.equal("Mask 1", applied.MaskGroupBasedCorrections[1].CorrectionName)
@@ -1284,7 +1333,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
         local catalog, Handler = setup({ photos = { source, t1 } })
 
-        local refusal = helper.refusalOf(function()
+        local refusal = helper.failedOf(function()
             Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
         end)
 
@@ -1731,7 +1780,7 @@ describe("HandlerDevelop.applyDenoise", function()
             photos = { { id = "1" }, { id = "2" } },
             onEnhance = function(handler)
                 if nested == nil then
-                    nested = helper.refusalOf(function() handler.applyDenoise({ photo_ids = { "2" }, amount = 70 }) end)
+                    nested = helper.failedOf(function() handler.applyDenoise({ photo_ids = { "2" }, amount = 70 }) end)
                 end
             end,
         })
@@ -1768,16 +1817,21 @@ describe("HandlerDevelop.applyDenoise", function()
         assert.truthy(r.unknown[1].reason:find("did not show the new amount", 1, true))
     end)
 
-    it("fails an amount change Lightroom shows but never saves once the panel is back, and answers unknown for a fresh Denoise the panel still shows", function()
+    it("answers unknown for a change Lightroom shows but never saves, naming the amount writes even once the panel"
+        .. " shows the previous amount again", function()
         local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2", denoise = 40 } }, notSaved = true })
 
         local r = Handler.applyDenoise({ photo_ids = { "1", "2" }, amount = 60 })
 
         assert.is_nil(r.data)
+        assert.is_nil(r.failed)
         assert.are.equal("1", r.unknown[1].photo_id)
         assert.truthy(r.unknown[1].reason:find("Denoise state", 1, true))
-        assert.are.equal("2", r.failed[1].photo_id)
-        assert.truthy(r.failed[1].reason:find("did not save the change", 1, true))
+        assert.are.equal("2", r.unknown[2].photo_id)
+        for _, text in ipairs({ "the panel shows the previous amount 40 again", "Denoise state",
+            "written before this stopped: changeDenoiseAmount" }) do
+            assert.truthy(r.unknown[2].reason:find(text, 1, true), r.unknown[2].reason)
+        end
         assert.are.same({ { id = "2", amount = 60 }, { id = "2", amount = 40 } }, calls.amounts)
     end)
 
@@ -1850,18 +1904,18 @@ describe("HandlerDevelop.applyDenoise", function()
     it("refuses without effect, restores the view and releases the run when Develop fails to open", function()
         local Handler, calls = denoiseSetup({ photos = { { id = "1" } }, panelUnavailable = true })
 
-        local refusal = helper.refusalOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
+        local refusal = helper.failedOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
 
         assert.are.equal("Develop module did not open", refusal)
         assert.are.same({ "develop", "library" }, calls.modules)
-        assert.is_nil(helper.refusalOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
+        assert.is_nil(helper.failedOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
             :find("already running", 1, true))
     end)
 
     it("refuses on a Lightroom without the Enhance panel calls before touching Develop", function()
         local Handler, calls = denoiseSetup({ photos = { { id = "1" } }, without = { "changeDenoiseAmount" } })
 
-        local err = helper.refusalOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
+        local err = helper.failedOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
 
         assert.truthy(err:find("needs LrDevelopController.changeDenoiseAmount", 1, true))
         assert.are.equal(0, calls.switched)
@@ -1981,7 +2035,7 @@ describe("HandlerDevelop controller gates", function()
             local expected = case.tool .. " needs LrDevelopController." .. case.missing
                 .. ", which this Lightroom does not offer"
                 .. (case.version and " (" .. case.version .. " or later has it)" or "")
-            assert.are.equal(expected, helper.refusalOf(case.run()))
+            assert.are.equal(expected, helper.failedOf(case.run()))
         end)
     end
 
@@ -2127,7 +2181,8 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
             assert.are.same({}, statuses(reply))
             assert.are.equal("1", reply.unknown[1].photo_id)
             assert.are.equal(case.names .. " was requested but no change was observed within 8 s; it may still be"
-                .. " applied, so read this photo's settings before writing to it", reply.unknown[1].reason)
+                .. " applied, so read this photo's settings before writing to it; written before this stopped: "
+                .. (case.args.tone and "setAutoTone" or "setAutoWhiteBalance"), reply.unknown[1].reason)
             assert.are.same({ "404" }, reply.not_found)
         end)
     end
@@ -2160,7 +2215,7 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
     it("rejects overlap through the shared Develop session lock", function()
         local nested
         local Handler = denoiseSetup({ photos = { { id = "1" } }, onAuto = function(handler)
-            nested = helper.refusalOf(function()
+            nested = helper.failedOf(function()
                 handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true })
             end)
         end })
@@ -2326,7 +2381,7 @@ describe("HandlerDevelop batch dry runs", function()
         local source = helper.fakePhoto({ id = "1001" })
         local _, Handler = setup({ photos = { source } })
         for _, dryRun in ipairs({ false, true }) do
-            assert.are.equal("Preset not found", helper.refusalOf(function()
+            assert.are.equal("Preset not found", helper.failedOf(function()
                 Handler.applyDevelopPreset({ photo_ids = { "1001" }, preset_name = "Unknown", dry_run = dryRun })
             end))
         end
@@ -2640,9 +2695,10 @@ describe("a full copy writes masks only through the guarded mask write", functio
             photos = { source, accepted, refused },
             guardedMaskWrite = {
                 preflight = function() return {} end,
-                apply = function(_, photo, spec)
+                apply = function(context, _, photo, spec)
                     guarded[#guarded + 1] = tostring(photo.localIdentifier)
-                    if photo == refused then Reply.refuse("the masks already on this photo do not match the pinned format") end
+                    if photo == refused then Reply.refuse("Mask writes are not certified for process version 11.0") end
+                    context.ledger:record(spec.description)
                     photo:getDevelopSettings().MaskGroupBasedCorrections = spec.build({})
                     return { entries = photo:getDevelopSettings().MaskGroupBasedCorrections }
                 end,
@@ -2657,7 +2713,7 @@ describe("a full copy writes masks only through the guarded mask write", functio
         assert.are.same(masks, accepted:getDevelopSettings().MaskGroupBasedCorrections)
         assert.are.equal(0, refused:getDevelopSettings().Exposure2012)
         assert.are.equal("12", r.failed[1].photo_id)
-        assert.truthy(r.failed[1].reason:find("pinned format", 1, true))
+        assert.truthy(r.failed[1].reason:find("not certified for process version 11.0", 1, true), r.failed[1].reason)
         assert.are.equal(1, r.data.copied)
     end)
 
@@ -2673,7 +2729,8 @@ describe("a full copy writes masks only through the guarded mask write", functio
             tasks = { sleep = function() end, pcall = pcall },
             guardedMaskWrite = {
                 preflight = function() return stored.MaskGroupBasedCorrections end,
-                apply = function(_, _, spec)
+                apply = function(context, _, _, spec)
+                    context.ledger:record(spec.description)
                     stored.MaskGroupBasedCorrections = spec.build({})
                     error("Lightroom did not keep the mask data that was written, and the previous masks could not be"
                         .. " confirmed restored", 0)
@@ -2708,8 +2765,9 @@ describe("a full copy writes masks only through the guarded mask write", functio
                 writeAccessAborts = case.busy and function(name) return name == "Copy Develop Settings" end or nil,
                 guardedMaskWrite = {
                     preflight = function() return stored.MaskGroupBasedCorrections end,
-                    apply = function(_, _, spec)
+                    apply = function(context, _, _, spec)
                         local previous = stored.MaskGroupBasedCorrections
+                        context.ledger:record(spec.description)
                         stored.MaskGroupBasedCorrections = spec.build({})
                         return { previous = previous }
                     end,
@@ -2722,7 +2780,8 @@ describe("a full copy writes masks only through the guarded mask write", functio
             assert.are.equal(0, stored.Exposure2012, case.name)
             assert.is_nil(r.failed, case.name)
             assert.are.equal("11", r.unknown[1].photo_id, case.name)
-            assert.truthy(r.unknown[1].reason:find("after the masks were written: ", 1, true), r.unknown[1].reason)
+            assert.truthy(r.unknown[1].reason:find("; written before this stopped: Copy Develop Settings", 1, true),
+                r.unknown[1].reason)
             assert.truthy(r.unknown[1].reason:find(case.reason, 1, true), r.unknown[1].reason)
         end
     end)
@@ -2740,7 +2799,7 @@ describe("apply_develop_preset refuses a preset whose settings cannot be read", 
             local catalog, Handler = setup({ photos = { photo }, folders = { fakeFolder("User", { preset }) } })
 
             for _, dryRun in ipairs({ true, false }) do
-                local err = helper.refusalOf(function()
+                local err = helper.failedOf(function()
                     Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Odd", dry_run = dryRun })
                 end)
                 assert.truthy(err:find("Preset settings", 1, true))
@@ -2762,11 +2821,12 @@ describe("a full copy replaces the target's masks and admits them under the proc
                 if opts.refusePreflight then Reply.refuse(opts.refusePreflight) end
                 return photo:getDevelopSettings().MaskGroupBasedCorrections or {}
             end,
-            apply = function(_, photo, spec)
+            apply = function(context, _, photo, spec)
                 local settings = photo:getDevelopSettings()
                 log[#log + 1] = "masks " .. tostring(photo.localIdentifier) .. " at " .. tostring(settings.ProcessVersion)
                 if opts.refuseApply then Reply.refuse(opts.refuseApply) end
                 local previous = settings.MaskGroupBasedCorrections or {}
+                context.ledger:record(spec.description)
                 settings.MaskGroupBasedCorrections = spec.build({})
                 return { previous = previous }
             end,
@@ -2870,7 +2930,8 @@ describe("a full copy replaces the target's masks and admits them under the proc
 
         assert.is_nil(r.failed)
         assert.are.equal("11", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("process version 15.4", 1, true), r.unknown[1].reason)
+        assert.truthy(r.unknown[1].reason:find("written before this stopped: Set Process Version 15.4", 1, true),
+            r.unknown[1].reason)
         assert.truthy(r.unknown[1].reason:find("did not keep the mask data", 1, true), r.unknown[1].reason)
     end)
 
@@ -2887,7 +2948,8 @@ describe("a full copy replaces the target's masks and admits them under the proc
 
         assert.is_nil(r.failed)
         assert.are.equal("11", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("process version 15.4", 1, true), r.unknown[1].reason)
+        assert.truthy(r.unknown[1].reason:find("written before this stopped: Set Process Version 15.4", 1, true),
+            r.unknown[1].reason)
         assert.truthy(r.unknown[1].reason:find("cannot write the rest", 1, true), r.unknown[1].reason)
     end)
 end)

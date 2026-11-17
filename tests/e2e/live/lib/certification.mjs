@@ -12,14 +12,14 @@ export function maskCount(rawAnswer) {
 
 const errorOf = (answer) => answer.envelope?.error ?? answer.text;
 
+export const DEPTH_STEP = "depth range";
 export const NOT_EXERCISED = ["depth range (needs a photo with device depth)"];
 const LOCAL_SCALES_NOT_EXERCISED = "local slider stored scales (written and checked through the plug-in's own LOCAL_KEYS formula, so not observed independently)";
 const NO_DEPTH_MAP_READ = ["depth range (Lightroom found no depth map in the supplied depth photo)"];
 
-export function depthCoverage(run) {
-  if (!run) return { step: null, notExercised: NOT_EXERCISED };
-  if (run.answer.outcome === "failed" && /found no depth map/.test(errorOf(run.answer))) return { step: null, notExercised: NO_DEPTH_MAP_READ };
-  return { step: run.step, notExercised: [] };
+function depthCoverage(step, answer) {
+  if (answer?.outcome === "failed" && /found no depth map/.test(errorOf(answer))) return { step: null, notExercised: NO_DEPTH_MAP_READ };
+  return { step, notExercised: [] };
 }
 
 export function requireThrowaway(status) {
@@ -28,28 +28,107 @@ export function requireThrowaway(status) {
   }
 }
 
-function problemOf({ added, expectRefusal, answer, before, after, admission, rendered }) {
-  if (expectRefusal && !answer.isError) return "expected a refusal, the tool succeeded";
-  if (expectRefusal && answer.outcome !== "failed") {
-    return `expected a refusal with nothing changed (outcome failed), got ${answer.outcome}: ${errorOf(answer)}`;
-  }
-  if (!expectRefusal && answer.isError) return `tool failed: ${errorOf(answer)}`;
-  const found = maskCount(after) - maskCount(before);
-  if (found !== added) return `expected ${added} mask(s) added, found ${found}`;
-  const problems = admission?.photo?.schema_problems;
-  if (!Array.isArray(problems)) return "the admission read returned no schema check for the photo";
-  if (problems.length > 0) return `masks left the pinned format: ${problems.join("; ")}`;
-  if (rendered && !rendered.passed) return `rendered check failed: ${JSON.stringify(rendered.detail)}`;
+const problemPosition = (problem) => {
+  const match = /^existing mask (\d+)\b/.exec(problem);
+  return match ? Number(match[1]) : null;
+};
+
+function writtenBy(before, after) {
+  const held = new Map(entriesOf(before).map((entry) => [String(entry.CorrectionID), JSON.stringify(entry)]));
+  const positions = new Set();
+  entriesOf(after).forEach((entry, index) => {
+    if (held.get(String(entry.CorrectionID)) !== JSON.stringify(entry)) positions.add(index + 1);
+  });
+  return positions;
+}
+
+export const THRESHOLDS = {
+  min_change: 0.05,
+  max_untouched_change: 0.01,
+  min_radial_iou: 0.8,
+  min_changed_share: 0.005,
+  min_share_in_region: 0.7,
+};
+
+const RENDER_CHECKS = {
+  radial_iou: ({ iou }, t) => iou >= t.min_radial_iou,
+  region_moves: ({ deltas, changed, untouched, direction }, t) =>
+    (direction > 0 ? deltas[changed] >= t.min_change : deltas[changed] <= -t.min_change) && Math.abs(deltas[untouched]) < t.max_untouched_change,
+  unchanged: ({ max_luminance_difference }, t) => max_luminance_difference < t.max_untouched_change,
+  darkens: ({ darkened }, t) => darkened >= t.min_changed_share,
+  darkens_within: ({ darkened, share_in_region, brightened }, t) =>
+    darkened >= t.min_changed_share && share_in_region >= t.min_share_in_region && brightened < t.min_changed_share,
+};
+
+const entryOf = (rawAnswer, id) => entriesOf(rawAnswer).find((entry) => String(entry.CorrectionID) === String(id));
+
+const NOTHING_FOUND = /Lightroom found nothing/;
+const VOIDED_BY_AI_UPDATE = /Update AI Settings/;
+
+function refusalClass(answer) {
+  if (answer.outcome === "failed") return "failed";
+  if (answer.outcome === "unknown" && VOIDED_BY_AI_UPDATE.test(errorOf(answer) ?? "")) return "unknown";
   return null;
 }
 
-export function evaluateStep(step) {
-  const problem = problemOf(step);
-  if (problem) return { name: step.name, passed: false, problem };
-  return { name: step.name, passed: true, rendered: Boolean(step.rendered), process_version: step.after.settings.ProcessVersion };
+function onlyNothingFound(answer, allowed = []) {
+  const stopped = [
+    ...(answer.envelope?.failed ?? []).map((entry) => ({ ...entry, voided: false })),
+    ...(answer.envelope?.unknown ?? []).map((entry) => ({ ...entry, voided: true })),
+  ];
+  return answer.outcome === "partial" && stopped.length > 0
+    && stopped.every((entry) => allowed.includes(String(entry.photo_id)) && NOTHING_FOUND.test(entry.reason ?? "")
+      && (!entry.voided || VOIDED_BY_AI_UPDATE.test(entry.reason)));
 }
 
-export function buildCertificationRecord(status, steps, now, { kitCommit, notExercised = NOT_EXERCISED, ranges } = {}) {
+function problemOf({ failure, added, expectRefusal, answer, before, after, admission, rendered, unchangedEntry, nothingFoundAllowed }, thresholds) {
+  if (failure) return failure;
+  if (expectRefusal && !answer.isError) return "expected a refusal, the tool succeeded";
+  if (expectRefusal && refusalClass(answer) === null) {
+    return `expected a refusal with nothing changed (outcome failed, or unknown naming Update AI Settings), got ${answer.outcome}: ${errorOf(answer)}`;
+  }
+  if (!expectRefusal && answer.isError && !onlyNothingFound(answer, nothingFoundAllowed)) return `tool failed: ${errorOf(answer)}`;
+  const found = maskCount(after) - maskCount(before);
+  if (found !== added) return `expected ${added} mask(s) added, found ${found}`;
+  if (expectRefusal && JSON.stringify(entriesOf(before)) !== JSON.stringify(entriesOf(after))) return "the masks are not back exactly after the refusal";
+  const problems = admission?.photo?.schema_problems;
+  if (!Array.isArray(problems)) return "the admission read returned no schema check for the photo";
+  const written = writtenBy(before, after);
+  const judged = problems.filter((problem) => problemPosition(problem) === null || written.has(problemPosition(problem)));
+  if (judged.length > 0) return `masks left the pinned format: ${judged.join("; ")}`;
+  if (unchangedEntry !== undefined && JSON.stringify(entryOf(before, unchangedEntry)) !== JSON.stringify(entryOf(after, unchangedEntry))) {
+    return `entry ${unchangedEntry} changed`;
+  }
+  if (rendered && !RENDER_CHECKS[rendered.check](rendered.measured, thresholds)) {
+    return `rendered check ${rendered.check} failed: ${JSON.stringify(rendered.measured)}`;
+  }
+  return null;
+}
+
+export function evaluateStep(step, thresholds = THRESHOLDS) {
+  const problem = problemOf(step, thresholds);
+  if (problem) return { name: step.name, passed: false, problem };
+  const passed = { name: step.name, passed: true, rendered: Boolean(step.rendered), process_version: step.after.settings.ProcessVersion };
+  return step.expectRefusal ? { ...passed, refusal: refusalClass(step.answer) } : passed;
+}
+
+export function judgeRun(evidence, thresholds = THRESHOLDS) {
+  const steps = [];
+  let notExercised = NOT_EXERCISED;
+  for (const entry of evidence) {
+    const step = evaluateStep(entry, thresholds);
+    if (entry.name !== DEPTH_STEP) {
+      steps.push(step);
+      continue;
+    }
+    const depth = depthCoverage(step, entry.answer);
+    notExercised = depth.notExercised;
+    if (depth.step) steps.push(depth.step);
+  }
+  return { steps, notExercised };
+}
+
+export function buildCertificationRecord(status, steps, now, { kitCommit, notExercised = NOT_EXERCISED, ranges, thresholds = THRESHOLDS, judgedFrom } = {}) {
   if (!status.running.build) throw new Error("Lightroom reports no build number; nothing certified");
   if (steps.length === 0) throw new Error("no checks ran; nothing certified");
   const failed = steps.filter((step) => !step.passed);
@@ -62,8 +141,11 @@ export function buildCertificationRecord(status, steps, now, { kitCommit, notExe
     certified_at: now.toISOString(),
     checks: steps.map((step) => step.name),
     rendered_checks: steps.filter((step) => step.rendered).map((step) => step.name),
+    ...(steps.some((step) => step.refusal) ? { refusals: Object.fromEntries(steps.filter((step) => step.refusal).map((step) => [step.name, step.refusal])) } : {}),
     not_exercised: [LOCAL_SCALES_NOT_EXERCISED, ...notExercised],
     kit_commit: kitCommit ?? null,
+    thresholds,
+    ...(judgedFrom ? { judged_from: judgedFrom } : {}),
     ...(ranges ? { ranges: { build: status.running.build, ...ranges } } : {}),
   };
 }

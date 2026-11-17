@@ -13,7 +13,7 @@ local function maskErrorWhenSavedMasksAreHidden(setupFn)
     local handler = setupFn({
         photos = { { id = "1", masks = {}, developSettings = { MaskGroupBasedCorrections = { entry } } } },
     })
-    return helper.refusalOf(function() handler.listMasks({ photo_id = "1" }) end)
+    return helper.failedOf(function() handler.listMasks({ photo_id = "1" }) end)
 end
 
 local function setup(opts)
@@ -271,7 +271,7 @@ describe("HandlerMasks.listMasks", function()
     it("names the minimum Lightroom version when the mask API is missing", function()
         local Handler, calls = setup({ photos = { { id = "1" } }, withoutMaskApi = true })
 
-        local err = helper.refusalOf(function() Handler.listMasks({ photo_id = "1" }) end)
+        local err = helper.failedOf(function() Handler.listMasks({ photo_id = "1" }) end)
 
         assert.truthy(err:find("^list_masks needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
         assert.are.equal(0, #calls.modules)
@@ -327,7 +327,7 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "1" }, { id = "2", readError = "unsupported photo" } },
         })
 
-        local err = helper.refusalOf(function() Handler.listMasks({ photo_id = "2" }) end)
+        local err = helper.failedOf(function() Handler.listMasks({ photo_id = "2" }) end)
 
         assert.truthy(err:find("could not read the masks of photo 2", 1, true))
         assert.truthy(err:find("unsupported photo", 1, true))
@@ -341,7 +341,7 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "1", masks = {} } },
             onGetAllMasks = function(handler)
                 if nested == nil then
-                    nested = helper.refusalOf(function() handler.listMasks({ photo_id = "1" }) end)
+                    nested = helper.failedOf(function() handler.listMasks({ photo_id = "1" }) end)
                 end
             end,
         })
@@ -354,7 +354,9 @@ describe("HandlerMasks.listMasks", function()
     it("errors with the field names when a mask has no id", function()
         local Handler = setup({ photos = { { id = "1", masks = { { label = "x", Tools = {} } } } } })
 
-        local err = helper.unknownOf(function() Handler.listMasks({ photo_id = "1" }) end)
+        local class, err = helper.outcomeOf(function(context) Handler.listMasks({ photo_id = "1" }, context) end)
+
+        assert.are.equal("failed", class)
 
         assert.truthy(err:find("mask without an id for photo 1", 1, true))
         assert.truthy(err:find("Tools, label", 1, true))
@@ -365,7 +367,9 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "1", masks = { { ID = "m", Tools = { { Type = "brush" } } } } } },
         })
 
-        local err = helper.unknownOf(function() Handler.listMasks({ photo_id = "1" }) end)
+        local class, err = helper.outcomeOf(function(context) Handler.listMasks({ photo_id = "1" }, context) end)
+
+        assert.are.equal("failed", class)
 
         assert.truthy(err:find("mask tool without an id for photo 1", 1, true))
         assert.truthy(err:find("(fields: Type)", 1, true))

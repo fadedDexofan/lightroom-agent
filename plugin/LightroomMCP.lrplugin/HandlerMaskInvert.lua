@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
 local PhotoLookup = require 'PhotoLookup'
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
@@ -29,9 +30,9 @@ local function describeMask(mask)
     return { id = mask.ID, name = type(mask.Name) == "string" and mask.Name or nil, tools = tools }
 end
 
-local function callInvertFunction(name, maskId)
+local function callInvertFunction(context, name, maskId)
     LrDevelopController.goToMasking()
-    local ok, result = LrTasks.pcall(LrDevelopController[name], maskId)
+    local ok, result = LrTasks.pcall(CatalogWrite.develop, context, name, maskId)
     if not ok then
         error("Lightroom could not run " .. name .. " on mask " .. maskId .. ": " .. tostring(result), 0)
     end
@@ -40,11 +41,11 @@ local function callInvertFunction(name, maskId)
     end
 end
 
-local function invertInPlace(catalog, photo, photoId, maskId)
+local function invertInPlace(context, catalog, photo, photoId, maskId)
     local before = MaskSelection.requireMask(MaskSelection.readMasks(catalog, photo), maskId, photoId)
     local fingerprintBefore = MaskSelection.fingerprint(before)
 
-    callInvertFunction("invertMask", maskId)
+    callInvertFunction(context, "invertMask", maskId)
 
     local after
     local changed = DevelopSession.waitFor(function()
@@ -71,16 +72,16 @@ local function newMaskIds(knownIds, masksAfter)
     return fresh
 end
 
-local function copyValues(catalog, photo, maskId, copyId)
+local function copyValues(context, catalog, photo, maskId, copyId)
     MaskValues.waitUntilSaved(catalog, photo, copyId, "the inverted copy")
-    MaskValues.copy(catalog, photo, maskId, copyId)
+    MaskValues.copy(context, catalog, photo, maskId, copyId)
 end
 
 local function duplicateInverted(context, catalog, photo, photoId, maskId, masksBefore)
     local originalFingerprint = MaskSelection.fingerprint(MaskSelection.findMask(masksBefore, maskId))
     local idsBefore = MaskSelection.idSet(masksBefore)
 
-    callInvertFunction("duplicateAndInvertMask", maskId)
+    callInvertFunction(context, "duplicateAndInvertMask", maskId)
 
     local masksAfter
     local fresh = {}
@@ -109,20 +110,17 @@ local function duplicateInverted(context, catalog, photo, photoId, maskId, masks
     if sourceChange then context:warn(sourceChange .. "; read the masks with list_masks before editing it") end
 
     local copyId = fresh[1]
-    local copied, copyError = LrTasks.pcall(copyValues, catalog, photo, maskId, copyId)
+    local copied, copyError = LrTasks.pcall(copyValues, context, catalog, photo, maskId, copyId)
     if not copied then
         local failure = string.format("The adjustments of mask %s could not be copied to its inverted copy (%s)", maskId,
             Reply.messageOf(copyError))
-        local problem = MaskSelection.problemUnlessAddedRemoved(catalog, photo, idsBefore, "the copy " .. copyId)
+        local problem = MaskSelection.problemUnlessAddedRemoved(context, catalog, photo, idsBefore, "the copy " .. copyId)
         if problem then error(failure .. "; " .. problem, 0) end
         if sourceChange then
             error(failure .. "; the copy was removed, but " .. sourceChange .. ": read the masks with list_masks"
                 .. " before retrying", 0)
         end
-        if not Reply.refusalOf(copyError) then
-            error(failure .. "; the copy was removed: read the masks with list_masks before retrying", 0)
-        end
-        Reply.refuse(failure .. "; the copy was removed")
+        error(failure .. "; the copy was removed: read the masks with list_masks before retrying", 0)
     end
 
     local copy = MaskSelection.findMask(MaskSelection.readMasksOrNil(), copyId)
@@ -161,7 +159,7 @@ function MaskInvertHandler.invertMask(args, context)
 
     local result = DevelopSession.withPhoto(context, catalog, photo, function()
         if mode == MODE_COPY then return invertAsCopy(context, catalog, photo, photoId, maskId) end
-        return invertInPlace(catalog, photo, photoId, maskId)
+        return invertInPlace(context, catalog, photo, photoId, maskId)
     end)
 
     Log.info(string.format("Inverted mask %s on photo %s (%s) -> %s", maskId, photoId, mode, result.mask_id))

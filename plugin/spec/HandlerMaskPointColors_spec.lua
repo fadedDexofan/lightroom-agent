@@ -80,6 +80,9 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
             message = "Mask mask-a already holds 8 Point Color swatches, the most Lightroom allows" },
         { what = "a source colour the mask already holds", count = 2, swatch = { SrcHue = 3, SrcSat = 0.5, SrcLum = 0.5 },
             message = "Mask mask-a already has a swatch with that source color at index 1; nothing was added" },
+        { what = "a source colour equal to a held one at the six stored decimals", count = 2,
+            swatch = { SrcHue = 3, SrcSat = 0.5000001, SrcLum = 0.5 },
+            message = "Mask mask-a already has a swatch with that source color at index 1; nothing was added" },
         { what = "unordered range edges", count = 2,
             swatch = { SrcHue = 5, SrcSat = 0.5, SrcLum = 0.5, SatRange = { LowerNone = 0.3, LowerFull = 0.2, UpperFull = 0.6, UpperNone = 1 } },
             message = "Point Color swatch 3's SatRange edges are not ordered" },
@@ -93,7 +96,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
             end
             store.entries[1].LocalPointColors, store.entries[1].LocalColorVariance = colors, variances
 
-            local err = helper.refusalOf(function()
+            local err = helper.failedOf(function()
                 Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "add", swatch = case.swatch })
             end)
 
@@ -101,6 +104,19 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
             assert.are.equal(0, store.attempts)
         end)
     end
+end)
+
+describe("HandlerMaskPointColors.editMaskPointColors add beside a held source colour", function()
+    it("adds a swatch with the held swatch's hue at another saturation", function()
+        local Handler, store = savedSetup()
+        store.entries[1].LocalPointColors = { LIGHTROOM_SWATCH, SECOND_SWATCH }
+        store.entries[1].LocalColorVariance = { "0.000000", "0.000000" }
+
+        Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "add",
+            swatch = { SrcHue = 3, SrcSat = 0.6, SrcLum = 0.5 } })
+
+        assert.are.equal(3, #store.entries[1].LocalPointColors)
+    end)
 end)
 
 describe("HandlerMaskPointColors.editMaskPointColors update", function()
@@ -154,7 +170,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
     it("refuses an index past the last swatch naming the count", function()
         local Handler, store = savedSetup()
 
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.editMaskPointColors({
                 photo_id = "1", mask_id = "mask-b", action = "update", index = 1, swatch = { HueShift = 0.1 },
             })
@@ -241,7 +257,7 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
     it("refuses an index past the last swatch naming the count, writing nothing", function()
         local Handler, store = savedSetup()
 
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "delete", index = 3 })
         end)
 
@@ -262,7 +278,7 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
     it("refuses a mask that is not in the saved settings, writing nothing", function()
         local Handler, store = savedSetup()
 
-        local err = helper.refusalOf(function()
+        local err = helper.failedOf(function()
             Handler.editMaskPointColors({ photo_id = "1", mask_id = "nope", action = "clear" })
         end)
 

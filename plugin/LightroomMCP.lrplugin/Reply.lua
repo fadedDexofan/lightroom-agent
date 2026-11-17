@@ -21,7 +21,7 @@ function Reply.refuse(message)
     error(setmetatable({ message = message }, REFUSAL), 0)
 end
 
-function Reply.refusalOf(value)
+local function refusalOf(value)
     if type(value) == "table" and getmetatable(value) == REFUSAL then return value.message end
     return nil
 end
@@ -36,7 +36,7 @@ function Reply.notFoundOf(value)
 end
 
 function Reply.messageOf(value)
-    local refusal = Reply.refusalOf(value)
+    local refusal = refusalOf(value)
     if refusal then return refusal end
     if Reply.notFoundOf(value) ~= nil then return tostring(value) end
     local message = tostring(value)
@@ -48,6 +48,32 @@ function Reply.messageOf(value)
         return detail
     end
     return message
+end
+
+function Reply.stopped(value, written)
+    local reason = Reply.messageOf(value)
+    if #written == 0 then return "failed", reason end
+    return "unknown", reason .. "; written before this stopped: " .. table.concat(written, ", ")
+end
+
+function Reply.outcome(ok, value, context)
+    local written = context.ledger:live()
+    local missing = Reply.notFoundOf(value)
+    if not ok and missing ~= nil and #written == 0 then
+        ok, value = true, Reply.parts({ not_found = { missing } })
+    end
+    if ok then
+        local parts = Reply.isParts(value) and value or { data = value }
+        if parts.data == nil and parts.unknown == nil and #written > 0 then parts.written = written end
+        if #context.warnings > 0 then
+            parts.warnings = parts.warnings or {}
+            for _, warning in ipairs(context.warnings) do parts.warnings[#parts.warnings + 1] = warning end
+        end
+        return { result = parts }
+    end
+    local class, message = Reply.stopped(value, written)
+    if #context.warnings > 0 then message = message .. " Warnings: " .. table.concat(context.warnings, "; ") end
+    return { error = message, effect = class == "failed" and "none" or "unknown" }
 end
 
 return Reply

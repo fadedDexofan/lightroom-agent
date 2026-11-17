@@ -400,25 +400,73 @@ describe("PluginInfoProvider server task", function()
             assert.are.same({ data = { collections = {} }, not_found = { "x" } }, JSON:decode(sends[2]).result)
         end)
 
-        it("marks a refusal as having no effect and any other handler error as unknown", function()
-            local binds, sends, state = serving()
-            local Reply = require 'Reply'
-            package.loaded.HandlerOrganization = {
-                setRatingAndFlag = function()
-                    Reply.refuse("The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Rating and Flag")
+        local function gates(outcomes)
+            return {
+                withWriteAccessDo = function(_, _, fn)
+                    local outcome = table.remove(outcomes, 1)
+                    if outcome == "aborted" then return "aborted" end
+                    fn()
+                    return "executed"
                 end,
-                setColorLabel = function() error("Lightroom threw") end,
             }
+        end
 
+        local function answers(handlersFrom)
+            local binds, sends, state = serving()
+            package.loaded.HandlerOrganization = handlersFrom(require 'Reply', require 'CatalogWrite')
             binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"r1","action":"set_rating_and_flag"}')
             binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"r2","action":"set_color_label"}')
-
             local JSON = require 'JSON'
-            local refused, failed = JSON:decode(sends[1]), JSON:decode(sends[2])
-            assert.are.same({ "The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Rating and Flag", "none" },
+            return JSON:decode(sends[1]), JSON:decode(sends[2])
+        end
+
+        it("answers failed for any error raised before anything was written", function()
+            local refused, failed = answers(function(Reply)
+                return {
+                    setRatingAndFlag = function() Reply.refuse("rating out of range") end,
+                    setColorLabel = function() error("Lightroom threw", 0) end,
+                }
+            end)
+
+            assert.are.same({ "rating out of range", "none" }, { refused.error, refused.effect })
+            assert.are.same({ "Lightroom threw", "none" }, { failed.error, failed.effect })
+        end)
+
+        it("answers unknown, naming what was written, for any error raised after a gate returned", function()
+            local refused, failed = answers(function(Reply, CatalogWrite)
+                return {
+                    setRatingAndFlag = function(_, context)
+                        CatalogWrite.run(context, gates({ "executed" }), "Set Rating", function() end)
+                        Reply.refuse("the rating did not read back")
+                    end,
+                    setColorLabel = function(_, context)
+                        CatalogWrite.run(context, gates({ "executed" }), "Create Keywords", function() end)
+                        CatalogWrite.run(context, gates({ "aborted" }), "Set Keywords", function() end)
+                    end,
+                }
+            end)
+            local CatalogWrite = require 'CatalogWrite'
+
+            assert.are.same({ "the rating did not read back; written before this stopped: Set Rating", "unknown" },
                 { refused.error, refused.effect })
-            assert.are.equal("unknown", failed.effect)
-            assert.truthy(failed.error:find("Lightroom threw", 1, true))
+            assert.are.same({ "The catalog stayed busy with another write for " .. CatalogWrite.WAIT_SECONDS
+                .. " s, so Lightroom did not run Set Keywords; written before this stopped: Create Keywords", "unknown" },
+                { failed.error, failed.effect })
+        end)
+
+        it("answers unknown rather than not_found when a photo goes missing after a write", function()
+            local missing = answers(function(Reply, CatalogWrite)
+                return {
+                    setRatingAndFlag = function(_, context)
+                        CatalogWrite.run(context, gates({ "executed" }), "Set Rating", function() end)
+                        Reply.notFound(404)
+                    end,
+                    setColorLabel = function() end,
+                }
+            end)
+
+            assert.are.same({ "Photo not found: 404; written before this stopped: Set Rating", "unknown" },
+                { missing.error, missing.effect })
         end)
 
         it("answers a photo a handler could not find with not_found", function()

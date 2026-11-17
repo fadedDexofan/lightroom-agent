@@ -90,7 +90,7 @@ local function savedSetup(opts)
     local store = Store.attach(photo, {
         entries = opts.entries or {
             Store.correction("A", { Store.linearComponent({ MaskID = "A1" }), Store.radialComponent({ MaskID = "A2" }) },
-                { CorrectionID = "mask-a", LocalExposure2012 = 0.25 }),
+                { CorrectionID = "mask-a", LocalExposure2012 = 0.25, LocalGlow = 0 }),
             Store.correction("B", { Store.linearComponent({ MaskID = "B1" }) }, { CorrectionID = "mask-b" }),
             Store.correction("C", { Store.radialComponent({ MaskID = "C1" }) }, { CorrectionID = "mask-c" }),
         },
@@ -124,7 +124,7 @@ local function entryIds(store)
     return ids
 end
 
-describe("HandlerMaskDelete.deleteMasks in the saved settings", function()
+describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing writes not certified", function()
     it("removes the masks named by mask_ids and leaves the others byte-identical, without Develop", function()
         local Handler, store, modules = savedSetup()
         local kept = Store.clone(store.entries[2])
@@ -200,33 +200,33 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings", function()
             local args = { photo_id = "1" }
             for key, value in pairs(case.args) do args[key] = value end
 
-            local err = helper.refusalOf(function() Handler.deleteMasks(args) end)
+            local err = helper.failedOf(function() Handler.deleteMasks(args) end)
 
             assert.are.equal(case.message, err)
             assert.are.equal(0, store.attempts)
         end)
     end
 
-    it("needs no certification, since it constructs nothing", function()
-        local Handler, store = savedSetup()
+    for _, case in ipairs({
+        { what = "a slider", change = function(survivor) survivor.LocalExposure2012 = 0.5 end },
+        { what = "a number by less than the constructed tolerance", change = function(survivor)
+            survivor.LocalExposure2012 = 0.2500001 end },
+        { what = "a derived field", change = function(survivor) survivor.CorrectionMasks[1].MaskSyncID = "OTHER" end },
+        { what = "a zero local adjustment dropped", change = function(survivor) survivor.LocalGlow = nil end },
+    }) do
+        it("restores the photo and refuses when Lightroom changes a surviving mask by " .. case.what, function()
+            local Handler, store = savedSetup({ transformWrite = function(stored, writeNumber)
+                if writeNumber == 1 then case.change(stored[1]) end
+                return stored
+            end })
+            local before = Store.clone(store.entries)
 
-        Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b" } })
+            local err = helper.failedOf(function() Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b" } }) end)
 
-        assert.are.same({ "mask-a", "mask-c" }, entryIds(store))
-    end)
-
-    it("restores the photo and refuses when Lightroom changes a surviving mask", function()
-        local Handler, store = savedSetup({ transformWrite = function(stored, writeNumber)
-            if writeNumber == 1 then stored[1].LocalExposure2012 = 0.5 end
-            return stored
-        end })
-        local before = Store.clone(store.entries)
-
-        local err = helper.refusalOf(function() Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b" } }) end)
-
-        assert.truthy(err:find("previous masks were restored", 1, true), err)
-        assert.are.same(before, store.entries)
-    end)
+            assert.truthy(err:find("previous masks were restored", 1, true), err)
+            assert.are.same(before, store.entries)
+        end)
+    end
 
     it("refuses with nothing written when the catalog stays busy", function()
         local Handler, store = savedSetup({ writeAccessAborts = function() return true end })
@@ -267,14 +267,14 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
         assert.are.same({}, masksOf[photos[3]])
     end)
 
-    it("refuses without deleting when the catalog stays busy", function()
+    it("fails without deleting when the catalog stays busy", function()
         local Handler, calls, _, masksOf, photos = setup({
             photos = photosWithEmptyMasks(), writeAccessAborts = function() return true end,
         })
 
-        local refusal = helper.refusalOf(function() Handler.deleteEmptyMasks({ photo_ids = { "1" } }) end)
-
-        assert.matches("stayed busy with another write", refusal, 1, true)
+        assert.are.same({ "failed", helper.catalogBusy("Delete Empty Masks") }, { helper.outcomeOf(function(context)
+            Handler.deleteEmptyMasks({ photo_ids = { "1" } }, context)
+        end) })
         assert.are.same({}, calls.deleteAllEmpty)
         assert.are.same({ "a", "empty-a" }, idsOf(masksOf[photos[1]]))
     end)
@@ -328,7 +328,7 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks(), withoutDeleteAllEmptyMasks = true })
 
         assert.matches("delete_empty_masks needs Lightroom Classic 14 or later",
-            helper.refusalOf(function() Handler.deleteEmptyMasks({ photo_ids = { "1" } }) end), 1, true)
+            helper.failedOf(function() Handler.deleteEmptyMasks({ photo_ids = { "1" } }) end), 1, true)
         assert.are.equal(0, #calls.deleteAllEmpty)
     end)
 

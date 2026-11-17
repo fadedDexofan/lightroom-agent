@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
 local DevelopSession = require 'DevelopSession'
 local JsonValue = require 'JsonValue'
 local MaskSelection = require 'MaskSelection'
@@ -90,9 +91,7 @@ local function withSelected(context, index, body)
     local restoreProblem = not restored and ('Could not restore Remove tool state: ' .. Reply.messageOf(restoreError))
     if not ok then
         if not restoreProblem then error(result, 0) end
-        local message = Reply.messageOf(result) .. '; ' .. restoreProblem
-        if Reply.refusalOf(result) then Reply.refuse(message) end
-        error(message, 0)
+        error(Reply.messageOf(result) .. '; ' .. restoreProblem, 0)
     end
     if restoreProblem then context:warn(restoreProblem) end
     return result
@@ -132,7 +131,7 @@ function HandlerSpots.update(args, context)
             desired.Opacity = params.Opacity
             local opacityKept = false
             local ok, err = LrTasks.pcall(function()
-                LrDevelopController.setSelectedSpotParams(desired)
+                CatalogWrite.develop(context, "setSelectedSpotParams", desired)
                 if not DevelopSession.waitFor(function()
                     local current = LrDevelopController.getSelectedSpotParams()
                     return type(current) == 'table' and current.Opacity == params.Opacity
@@ -150,7 +149,7 @@ function HandlerSpots.update(args, context)
                     if LrDevelopController.setSelectedSpotIndex(args.index) ~= true then
                         error('Original spot is no longer selectable')
                     end
-                    LrDevelopController.setSelectedSpotParams(original)
+                    CatalogWrite.develop(context, "setSelectedSpotParams", original)
                     return DevelopSession.waitFor(function()
                         return JsonValue.equal(LrDevelopController.getSelectedSpotParams(), original)
                     end, 5)
@@ -161,7 +160,7 @@ function HandlerSpots.update(args, context)
                         error(Reply.messageOf(err) .. '; original parameters restored, but ' .. problem
                             .. '; list_spots to inspect', 0)
                     end
-                    Reply.refuse(Reply.messageOf(err) .. '; original parameters restored')
+                    error(Reply.messageOf(err) .. '; original parameters restored', 0)
                 end
                 error(Reply.messageOf(err) .. '; rollback not confirmed; list_spots to inspect', 0)
             end
@@ -174,7 +173,7 @@ end
 function HandlerSpots.delete(args, context)
     return withPhoto(context, args, function()
         return withSelected(context, args.index, function(before)
-            LrDevelopController.deleteSelectedSpot()
+            CatalogWrite.develop(context, "deleteSelectedSpot")
             local after
             if not DevelopSession.waitFor(function()
                 after = readSpots()

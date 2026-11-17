@@ -247,7 +247,7 @@ describe('createMcpServer', () => {
     const required: Record<string, string[]> = {
       create_range_mask: ['sRGB', 'copy_sample_from', 'second sample point', 'Lightroom crashes', '0.01', 'different colors'],
       create_mask: ['ErrorReason', 'no alert to dismiss', 'omitted sliders are neutral', 'AI process is running', 'single-person', 'writes nothing more', 'does not prove'],
-      create_mask_batch: ['saved settings', 'does not prove', 'found nothing', 'compare previews', 'remaining', '230'],
+      create_mask_batch: ['saved settings', 'does not prove', 'reports finding nothing', 'compare previews', 'remaining', '230'],
       invert_mask: ['only one component', 'returned mask_id'],
       combine_mask: ['intersect', 'inverted true', 'ErrorReason', 'saved settings'],
       get_photo_detail: ['render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}', 'a string ("export" today)', 'a list of phrases', '"the exported mark"'],

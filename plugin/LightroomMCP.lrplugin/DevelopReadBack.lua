@@ -57,7 +57,7 @@ function DevelopReadBack.before(settings)
     return kept
 end
 
-function DevelopReadBack.check(catalog, written)
+function DevelopReadBack.check(context, catalog, written)
     if #written == 0 then return {} end
     LrTasks.sleep(NORMALISE_SECONDS)
     local checked = {}
@@ -67,7 +67,10 @@ function DevelopReadBack.check(catalog, written)
             local result = { photo_id = tostring(entry.photo.localIdentifier), stored = {}, adjusted = {}, absent = {} }
             if entry.error ~= nil then
                 result.error = entry.error
-                result.untouched = entry.before ~= nil and unchanged(entry.settings, entry.before, stored)
+                result.written = context.ledger:since(entry.from, entry.to)
+                if #result.written == 0 and entry.before ~= nil and not unchanged(entry.settings, entry.before, stored) then
+                    result.written = { "settings Lightroom now shows changed" }
+                end
             else
             for _, key in ipairs(sortedKeys(entry.settings)) do
                 local requested, value = entry.settings[key], DevelopCurves.read(stored, key)
@@ -96,13 +99,10 @@ function DevelopReadBack.parts(checked, data, lists)
     local adjusted = {}
     parts.failed = parts.failed or {}
     for _, result in ipairs(checked) do
-        if result.error ~= nil and result.untouched then
-            parts.failed[#parts.failed + 1] = { photo_id = result.photo_id, reason = result.error }
-        elseif result.error ~= nil then
-            parts.unknown[#parts.unknown + 1] = {
-                photo_id = result.photo_id,
-                reason = result.error .. "; Lightroom may have stored part of the settings, read the photo before retrying",
-            }
+        if result.error ~= nil then
+            local class, reason = Reply.stopped(result.error, result.written)
+            local list = class == "failed" and parts.failed or parts.unknown
+            list[#list + 1] = { photo_id = result.photo_id, reason = reason }
         end
         for _, item in ipairs(result.adjusted) do adjusted[#adjusted + 1] = item end
         if #result.absent > 0 then

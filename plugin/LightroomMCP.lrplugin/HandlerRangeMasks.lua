@@ -107,7 +107,7 @@ function RangeMaskHandler.createRangeMask(args, context)
 
     local location
     local written = DevelopSession.withPhoto(context, catalog, photo, function()
-        return GuardedMaskWrite.apply(catalog, photo, {
+        return GuardedMaskWrite.apply(context, catalog, photo, {
             description = "Create range mask",
             build = function(entries)
                 location = addRangeComponent(entries, request)

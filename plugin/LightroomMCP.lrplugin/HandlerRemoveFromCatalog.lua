@@ -4,6 +4,7 @@ local LrPathUtils = import 'LrPathUtils'
 local LrSelection = import 'LrSelection'
 local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
 local PhotoLookup = require 'PhotoLookup'
@@ -138,7 +139,7 @@ function Handler.removePhotos(args, context)
                 or not DevelopSession.selectionMatches(catalog, photos[1], photos) then
                 Reply.refuse("The selection changed; nothing was removed")
             end
-            LrSelection.removeFromCatalog()
+            CatalogWrite.invoke(context, "Remove from Catalog", LrSelection.removeFromCatalog)
             if not DevelopSession.waitFor(function() return #surviving(catalog, photos) == 0 end, 10) then
                 error("Lightroom did not remove every requested photo; check the catalog before retrying")
             end
@@ -146,10 +147,8 @@ function Handler.removePhotos(args, context)
         end)
         local restored, restoreError = LrTasks.pcall(restore, catalog, view)
         if not restored then
-            local message = (ok and "Photos removed" or Reply.messageOf(result))
-                .. "; could not restore selection: " .. Reply.messageOf(restoreError)
-            if not ok and Reply.refusalOf(result) then Reply.refuse(message) end
-            error(message, 0)
+            error((ok and "Photos removed" or Reply.messageOf(result))
+                .. "; could not restore selection: " .. Reply.messageOf(restoreError), 0)
         end
         if not ok then error(result, 0) end
         return result

@@ -1,8 +1,30 @@
 local AIMaskData = {}
 
 AIMaskData.KIND = "Mask/Image"
-AIMaskData.COMPUTED_KEYS = { "MaskDigest", "InputDigest", "LocalInputDigest" }
+local COMPUTED_KEYS = {
+    "MaskDigest", "InputDigest", "InputDigestVersion", "LocalInputDigest", "LocalInputDigestVersion", "ModelVersion",
+    "FullMaskSize", "Origin", "ReferencePoint", "WholeImageArea", "MaskSyncID", "ErrorReason",
+}
 AIMaskData.COMPUTATION_MARKER_KEY = "MaskDigest"
+
+local COMPUTED = {}
+for _, key in ipairs(COMPUTED_KEYS) do COMPUTED[key] = true end
+
+function AIMaskData.isComputed(key)
+    return COMPUTED[key] == true
+end
+
+local ERROR_REASONS = {
+    [1] = "no result",
+    [2] = "model unavailable or not loaded",
+    [3] = "another failure",
+    [4] = "model could not be downloaded",
+}
+
+function AIMaskData.errorReasonText(reason)
+    local meaning = ERROR_REASONS[reason]
+    return "ErrorReason " .. tostring(reason) .. (meaning and ", " .. meaning or "")
+end
 
 function AIMaskData.containsAIMasks(settings)
     local groups = type(settings) == "table" and settings.MaskGroupBasedCorrections
@@ -48,7 +70,7 @@ function AIMaskData.withoutComputedData(settings)
                 if type(mask) == "table" then
                     strippedMask = shallowCopy(mask)
                     if mask.What == AIMaskData.KIND then
-                        for _, key in ipairs(AIMaskData.COMPUTED_KEYS) do
+                        for _, key in ipairs(COMPUTED_KEYS) do
                             strippedMask[key] = nil
                         end
                     end

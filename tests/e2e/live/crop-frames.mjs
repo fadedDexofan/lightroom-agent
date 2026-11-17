@@ -26,9 +26,10 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const touched = new Set();
 
 async function redDisc(photoId) {
-  const disc = colorCentroid(await fetchStablePixels(session, photoId, { size: SIZE }), RED);
+  const pixels = await fetchStablePixels(session, photoId, { size: SIZE });
+  const disc = colorCentroid(pixels, RED);
   if (!disc) throw new Error(`no red disc visible on photo ${photoId}`);
-  return disc;
+  return { ...disc, preview: report.preview(`photo ${photoId} disc`, pixels) };
 }
 
 async function radialLands(label, photoId, crop) {
@@ -42,7 +43,8 @@ async function radialLands(label, photoId, crop) {
   const rendered = changeCentroid(pixels.before, pixels.after);
   const error = rendered ? distance(rendered, target) : null;
   report.check(`${label}: a radial at the disc's displayed position renders on it`, error !== null && error <= MAX_ERROR,
-    { target, rendered, error, warnings: created.envelope.warnings ?? [] });
+    { target, rendered, error, warnings: created.envelope.warnings ?? [],
+      previews: { before: report.preview(`${label} radial before`, pixels.before), after: report.preview(`${label} radial after`, pixels.after) } });
   await data("delete_masks", { photo_id: photoId, all: true });
   return target;
 }

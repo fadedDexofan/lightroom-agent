@@ -50,7 +50,7 @@ describe("GradientGeometry.parseCreate", function()
     end)
 
     it("rejects identical start and end", function()
-        local message = helper.refusalOf(function()
+        local message = helper.failedOf(function()
             GradientGeometry.parseCreate(linearArgs({ start = point(0.3, 0.3), ["end"] = point(0.3, 0.3) }))
         end)
 
@@ -173,7 +173,7 @@ describe("GradientGeometry stored form", function()
         assert.are.same(point(0.5, 0.2), merged.start)
         assert.are.same(point(0.9, 0.9), merged["end"])
         assert.are.same(point(0.5, 0.6), current["end"])
-        assert.is_truthy(helper.refusalOf(function()
+        assert.is_truthy(helper.failedOf(function()
             GradientGeometry.mergeChanges("linear", current, { ["end"] = point(0.5, 0.2) })
         end):find("same point", 1, true))
     end)
@@ -181,7 +181,7 @@ describe("GradientGeometry stored form", function()
     it("refuses a field of the other shape when merging", function()
         local current = GradientGeometry.parseCreate(linearArgs()).geometry
 
-        local message = helper.refusalOf(function() GradientGeometry.mergeChanges("linear", current, { feather = 5 }) end)
+        local message = helper.failedOf(function() GradientGeometry.mergeChanges("linear", current, { feather = 5 }) end)
 
         assert.is_truthy(message:find("feather only applies to radial gradients, but this tool is a linear", 1, true))
     end)

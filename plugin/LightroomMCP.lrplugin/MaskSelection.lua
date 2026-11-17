@@ -1,6 +1,7 @@
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
 local Reply = require 'Reply'
 local DevelopSession = require 'DevelopSession'
 
@@ -86,12 +87,12 @@ function MaskSelection.readMasks(catalog, photo)
     end, MASK_LIST_TIMEOUT_SECONDS)
     if ready then return masks end
     if masks == nil then
-        Reply.refuse(string.format("Lightroom could not read the masks of photo %s: %s; nothing was changed",
+        Reply.refuse(string.format("Lightroom could not read the masks of photo %s: %s",
             photoId, Reply.messageOf(lastError)))
     end
     Reply.refuse(string.format("Develop lists %d of the %d masks in photo %s's saved settings; Develop has not"
         .. " loaded them yet or an alert such as \"No sky detected\" is open: click OK in Lightroom if one is open,"
-        .. " then call again; nothing was changed", #masks, savedMaskCount(catalog, photo), photoId))
+        .. " then call again", #masks, savedMaskCount(catalog, photo), photoId))
 end
 
 function MaskSelection.readMasksOrNil()
@@ -135,7 +136,7 @@ local function readMasksListingAll(knownIds)
     return masks
 end
 
-function MaskSelection.problemUnlessAddedRemoved(catalog, photo, knownIds, subject)
+function MaskSelection.problemUnlessAddedRemoved(context, catalog, photo, knownIds, subject)
     local masks
     local listed = DevelopSession.waitFor(function()
         masks = readMasksListingAll(knownIds)
@@ -144,7 +145,7 @@ function MaskSelection.problemUnlessAddedRemoved(catalog, photo, knownIds, subje
     local leftovers
     if listed then
         for _, mask in ipairs(MaskSelection.masksNotIn(masks, knownIds)) do
-            LrTasks.pcall(LrDevelopController.deleteMask, mask.ID)
+            LrTasks.pcall(CatalogWrite.develop, context, "deleteMask", mask.ID)
         end
         DevelopSession.waitFor(function()
             local after = readMasksListingAll(knownIds)
@@ -276,7 +277,7 @@ function MaskSelection.openMaskingTool()
         end, TOOL_SWITCH_TIMEOUT_SECONDS)
         if not opened then
             LrTasks.pcall(LrDevelopController.selectTool, previousTool)
-            Reply.refuse("Lightroom did not open the masking tool; nothing was changed")
+            Reply.refuse("Lightroom did not open the masking tool")
         end
     end
     return previousTool
@@ -326,7 +327,13 @@ function MaskSelection.withMaskSelected(catalog, photo, maskId, body)
             Reply.refuse("Could not select mask " .. maskId .. " on photo " .. photoId .. " in Develop")
         end
         LrTasks.sleep(MASK_SELECT_SETTLE_SECONDS)
-        return body(masks)
+        local result = body(masks)
+        local selected = readSelectedMask()
+        if selected ~= maskId then
+            Reply.refuse(string.format("%s became selected in Develop while mask %s was read on photo %s; call again"
+                .. " without changing the selection", selected and "Mask " .. selected or "No mask", maskId, photoId))
+        end
+        return result
     end)
 end
 

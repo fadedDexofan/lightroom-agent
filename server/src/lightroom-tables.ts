@@ -1,7 +1,7 @@
 export const MASK_TYPES = [
-  { name: "subject", toolType: "aiSelection", subtype: "subject", label: "Subject", stored: { MaskSubType: 1 } },
-  { name: "sky", toolType: "aiSelection", subtype: "sky", label: "Sky", stored: { MaskSubType: 2 } },
-  { name: "background", toolType: "aiSelection", subtype: "background", label: "Background", stored: { MaskSubType: 0, MaskSubCategoryID: 22 } },
+  { name: "subject", label: "Subject", stored: { MaskSubType: 1 } },
+  { name: "sky", label: "Sky", stored: { MaskSubType: 2 } },
+  { name: "background", label: "Background", stored: { MaskSubType: 0, MaskSubCategoryID: 22 } },
 ] as const;
 
 export const MASK_TYPE_NAMES = MASK_TYPES.map((type) => type.name);

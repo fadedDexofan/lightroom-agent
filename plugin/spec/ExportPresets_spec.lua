@@ -578,7 +578,7 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         files["/prints/Batch"] = "not a folder"
         local _, Handler, calls = setup({ files = files, photos = { photo() } })
 
-        assert.are.equal("destination is not a directory: /prints/Batch", helper.refusalOf(function()
+        assert.are.equal("destination is not a directory: /prints/Batch", helper.failedOf(function()
             Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "To Prints" })
         end))
         assert.are.equal(0, #calls)
@@ -636,7 +636,7 @@ s = {
                 { files = defaultFiles(), preset = "To Prints" },
             }) do
                 local _, Handler, calls = setup({ files = case.files, photos = { inFolder() }, folders = catalogFolders() })
-                local refusal = helper.refusalOf(function()
+                local refusal = helper.failedOf(function()
                     Handler.exportPhotos({ photo_ids = { "1" }, export_preset = case.preset, on_existing = "overwrite" })
                 end)
                 assert.truthy(refusal:find("/prints/Batch, a folder of this catalog", 1, true))
@@ -680,7 +680,7 @@ s = {
     it("requires a destination for a choose-later preset", function()
         local _, Handler, calls = setup({ photos = { photo() } })
         assert.are.equal("Export preset 'For Editing' has no fixed destination (chooseLater); pass destination",
-            helper.refusalOf(function()
+            helper.failedOf(function()
                 Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "For Editing" })
             end))
         assert.are.equal(0, #calls)
@@ -688,7 +688,7 @@ s = {
 
     it("refuses an unusable preset before exporting anything", function()
         local _, Handler, calls = setup({ photos = { photo() } })
-        helper.refusalOf(function()
+        helper.failedOf(function()
             Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "DxO PureRAW 6" })
         end)
         assert.are.equal(0, #calls)

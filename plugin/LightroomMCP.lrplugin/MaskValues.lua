@@ -107,6 +107,14 @@ function MaskValues.requireSaved(catalog, photo, maskId)
     entryOf(photo, GuardedMaskWrite.readEntries(catalog, photo), maskId)
 end
 
+MaskValues.savedEntry = entryOf
+
+function MaskValues.adjustmentsOf(entry, requested)
+    local all, picked = DECODERS.adjustments(entry), {}
+    for name in pairs(requested) do picked[name] = all[name] end
+    return picked
+end
+
 local function sliderEdit(slider, value)
     local stored = LocalSliders.storedOf(slider, value)
     local fields = { { key = slider.stored, value = stored } }
@@ -376,9 +384,9 @@ local function mismatchesOf(index, plan)
     end
 end
 
-local function submitEdits(catalog, photo, maskId, description, kinds, editsFrom, context)
+local function submitEdits(context, catalog, photo, maskId, description, kinds, editsFrom)
     local index, before, plan
-    local submitted = GuardedMaskWrite.submit(catalog, photo, {
+    local submitted = GuardedMaskWrite.submit(context, catalog, photo, {
         description = description,
         unchanged = function(entries)
             local _, current = entryOf(photo, entries, maskId)
@@ -402,7 +410,7 @@ local function submitEdits(catalog, photo, maskId, description, kinds, editsFrom
         local values = writtenValues(current, kinds)
         return { before = values, after = values, written = {} }
     end
-    if context and #plan > 0 and before.CorrectionActive == false then
+    if #plan > 0 and before.CorrectionActive == false then
         context:warn(string.format("mask %s was hidden (CorrectionActive false); this write showed it again, as"
             .. " Lightroom's own sliders do", tostring(maskId)))
     end
@@ -410,14 +418,14 @@ local function submitEdits(catalog, photo, maskId, description, kinds, editsFrom
         written = keysOf(plan) }
 end
 
-function MaskValues.write(catalog, photo, maskId, change, context)
+function MaskValues.write(context, catalog, photo, maskId, change)
     local edits = editsOf(maskId, change)
-    return submitEdits(catalog, photo, maskId, historyStepOf(change), kindsOf(change), function() return edits end,
-        context)
+    return submitEdits(context, catalog, photo, maskId, historyStepOf(change), kindsOf(change),
+        function() return edits end)
 end
 
-function MaskValues.copy(catalog, photo, sourceId, targetId)
-    return submitEdits(catalog, photo, targetId, COPY_STEP, {}, function(entries)
+function MaskValues.copy(context, catalog, photo, sourceId, targetId)
+    return submitEdits(context, catalog, photo, targetId, COPY_STEP, {}, function(entries)
         local _, source = entryOf(photo, entries, sourceId)
         return { copyEdit(sourceId, source) }
     end)

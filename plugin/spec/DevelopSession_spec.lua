@@ -22,13 +22,15 @@ local function setup()
         },
         LrDevelopController = {
             stopTracking = function(committed) events[#events + 1] = "flush " .. tostring(committed) end,
+            setValue = function(key, value) events[#events + 1] = "set " .. key .. " " .. tostring(value) end,
         },
         LrSelection = { selectNone = function() end },
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.DevelopSession = nil
-    local ctx = { catalog = catalog, first = first, second = second, events = events }
+    package.loaded.CatalogWrite = nil
+    local ctx = { catalog = catalog, first = first, second = second, events = events, write = require 'CatalogWrite' }
     function ctx.state() return active, selected end
     return require 'DevelopSession', ctx
 end
@@ -51,18 +53,47 @@ describe("DevelopSession.run", function()
         { ending = "returns", body = function() end },
         { ending = "raises", body = function() error("controller failed", 0) end },
     }) do
-        it("commits Develop's pending edits before it restores the view when the body " .. case.ending, function()
+        it("commits its controller writes before it restores the view when the body " .. case.ending, function()
             local DevelopSession, ctx = setup()
+            local context = helper.requestContext(nil, { title = "tool" })
 
-            pcall(DevelopSession.run, helper.requestContext(nil, { title = "tool" }), ctx.catalog, true, function()
+            pcall(DevelopSession.run, context, ctx.catalog, true, function()
                 DevelopSession.openDevelop()
                 ctx.catalog:setSelectedPhotos(ctx.second, { ctx.second })
+                ctx.write.develop(context, "setValue", "Exposure", 1)
                 case.body()
             end)
 
-            assert.are.same({ "module develop", "select 2", "flush true", "module library", "select 1" }, ctx.events)
+            assert.are.same({ "module develop", "select 2", "set Exposure 1", "flush true", "module library",
+                "select 1" }, ctx.events)
         end)
     end
+
+    it("commits nothing when the session made no controller write", function()
+        local DevelopSession, ctx = setup()
+        local context = helper.requestContext(nil, { title = "tool" })
+        context.ledger:record("Apply Develop Snapshot")
+
+        DevelopSession.run(context, ctx.catalog, true, function()
+            DevelopSession.openDevelop()
+            ctx.catalog:setSelectedPhotos(ctx.second, { ctx.second })
+            context.ledger:record("Delete Develop Snapshot")
+        end)
+
+        assert.are.same({ "module develop", "select 2", "module library", "select 1" }, ctx.events)
+    end)
+
+    it("lets a write inside a session that never opened the photo commit Develop's pending edits first", function()
+        local DevelopSession, ctx = setup()
+        DevelopSession.openDevelop()
+        ctx.catalog:setSelectedPhotos(ctx.second, { ctx.second })
+
+        DevelopSession.run(helper.requestContext(nil, { title = "tool" }), ctx.catalog, false, function()
+            DevelopSession.flushIfShowing(ctx.catalog, ctx.second)
+        end)
+
+        assert.are.same({ "module develop", "select 2", "flush true" }, ctx.events)
+    end)
 
     it("commits nothing when the session never opened Develop", function()
         local DevelopSession, ctx = setup()
@@ -77,7 +108,7 @@ describe("DevelopSession.run", function()
         local blocked
 
         DevelopSession.run(helper.requestContext(nil, { title = "outer" }), ctx.catalog, false, function()
-            blocked = helper.refusalOf(function()
+            blocked = helper.failedOf(function()
                 DevelopSession.run(helper.requestContext(nil, { title = "inner" }), ctx.catalog, false, function() end)
             end)
         end)

@@ -76,7 +76,7 @@ describe('develop snapshots', function()
     it('refuses duplicate names unless replacement is requested', function()
         local first = handler.create({ photo_id = '1', name = 'before' }).snapshot
         assert.equals('Snapshot name already exists: before',
-            helper.refusalOf(function() handler.create({ photo_id = '1', name = 'before' }) end))
+            helper.failedOf(function() handler.create({ photo_id = '1', name = 'before' }) end))
         assert.same({ first }, handler.list({ photo_id = '1' }).snapshots)
         assert.is_nil(calls.replaced)
         assert.same(first, handler.create({ photo_id = '1', name = 'before', replace = true }).snapshot)
@@ -98,8 +98,11 @@ describe('develop snapshots', function()
     it('answers unknown when Lightroom silently ignores a deletion', function()
         local first = handler.create({ photo_id = '1', name = 'a' }).snapshot
         photo.deleteDevelopSnapshot = function() end
-        assert.matches('Lightroom did not delete snapshot',
-            helper.unknownOf(function() handler.delete({ photo_id = '1', snapshot_id = first.id }) end), 1, true)
+        local class, message = helper.outcomeOf(function(context)
+            handler.delete({ photo_id = '1', snapshot_id = first.id }, context)
+        end)
+        assert.equals('unknown', class)
+        assert.matches('Lightroom did not delete snapshot', message, 1, true)
         assert.same({ first }, handler.list({ photo_id = '1' }).snapshots)
     end)
 
@@ -107,9 +110,9 @@ describe('develop snapshots', function()
         it('refuses unknown and foreign snapshot ids for ' .. action, function()
             local first = handler.create({ photo_id = '1', name = 'a' }).snapshot
             assert.equals('Snapshot not found on this photo: missing',
-                helper.refusalOf(function() handler[action]({ photo_id = '1', snapshot_id = 'missing' }) end))
+                helper.failedOf(function() handler[action]({ photo_id = '1', snapshot_id = 'missing' }) end))
             assert.equals('Snapshot not found on this photo: ' .. first.id,
-                helper.refusalOf(function() handler[action]({ photo_id = '2', snapshot_id = first.id }) end))
+                helper.failedOf(function() handler[action]({ photo_id = '2', snapshot_id = first.id }) end))
             assert.same({}, calls)
             assert.same({ first }, handler.list({ photo_id = '1' }).snapshots)
         end)

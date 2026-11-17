@@ -14,7 +14,7 @@ function MaskCurvesHandler.setMaskCurves(args, context)
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local photoId = tostring(photo.localIdentifier)
 
-    local result = MaskValues.write(catalog, photo, maskId, { curves = args.curves }, context)
+    local result = MaskValues.write(context, catalog, photo, maskId, { curves = args.curves })
 
     local curves, changed, unchanged = {}, {}, {}
     for _, channel in ipairs(MaskCurves.channels) do

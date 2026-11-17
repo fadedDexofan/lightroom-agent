@@ -95,14 +95,14 @@ local function nothingDeleted(plan)
     return #plan.deletedMaskIds == 0 and #plan.deletedToolIds == 0
 end
 
-local function deletePhotoMasks(args)
+function MaskDeleteHandler.deleteMasks(args, context)
     local target = parseTarget(args)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local photoId = tostring(photo.localIdentifier)
 
     local plan
-    local submitted = GuardedMaskWrite.submit(catalog, photo, {
+    local submitted = GuardedMaskWrite.submit(context, catalog, photo, {
         description = "Delete Masks",
         unchanged = function(entries) return nothingDeleted(planDeletion(entries, target, photoId)) end,
         build = function(entries)
@@ -133,7 +133,7 @@ local function countGroups(catalog, photos)
     return counts
 end
 
-function MaskDeleteHandler.deleteEmptyMasks(args)
+function MaskDeleteHandler.deleteEmptyMasks(args, context)
     local catalog = LrApplication.activeCatalog()
     if type(catalog.deleteAllEmptyMasks) ~= "function" then
         Reply.refuse("delete_empty_masks needs " .. DELETE_EMPTY_MINIMUM_VERSION .. " or later")
@@ -145,8 +145,8 @@ function MaskDeleteHandler.deleteEmptyMasks(args)
     for i, entry in ipairs(entries) do photos[i] = entry.photo end
 
     local groupsBefore = countGroups(catalog, photos)
-    CatalogWrite.run(catalog, "Delete Empty Masks", function()
-        catalog:deleteAllEmptyMasks(photos)
+    CatalogWrite.run(context, catalog, "Delete Empty Masks", function()
+        CatalogWrite.call(context, catalog, "deleteAllEmptyMasks", photos)
     end)
     local groupsAfter = countGroups(catalog, photos)
     local changed = {}
@@ -161,10 +161,6 @@ function MaskDeleteHandler.deleteEmptyMasks(args)
         #changed, #photos, #notFound))
 
     return Reply.parts({ data = { photos_checked = #photos, changed = changed }, not_found = notFound })
-end
-
-function MaskDeleteHandler.deleteMasks(args)
-    return deletePhotoMasks(args)
 end
 
 return MaskDeleteHandler

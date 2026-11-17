@@ -50,6 +50,25 @@ describe("RequestContext", function()
         assert.is_true(byScope:isCanceled())
     end)
 
+    it("keeps a ledger whose live entries are the writes not confirmed undone, each named once", function()
+        local ledger = load({ now = 0 }, {}).new("copy", 30000).ledger
+        ledger:record("Set Rating")
+        local beforeMasks = ledger:mark()
+        ledger:record("Set Mask", false)
+        ledger:record("setValue", true)
+        ledger:record("Set Mask")
+
+        assert.are.same({ "Set Rating", "Set Mask", "setValue" }, ledger:live())
+        assert.are.same({ "Set Mask", "setValue" }, ledger:since(beforeMasks))
+        assert.is_true(ledger:controllerWroteSince(beforeMasks))
+
+        ledger:undone(beforeMasks)
+
+        assert.are.same({ "Set Rating" }, ledger:live())
+        assert.are.same({}, ledger:since(beforeMasks))
+        assert.is_false(ledger:controllerWroteSince(ledger:mark()))
+    end)
+
     it("opens a progress scope on first report and sends only increasing progress", function()
         local scopes, sent = {}, {}
         local context = load({ now = 0 }, scopes).new("apply_denoise", 30000, function(progress)

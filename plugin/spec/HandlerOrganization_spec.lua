@@ -17,13 +17,13 @@ local function setup(opts)
 end
 
 describe("HandlerOrganization.setRatingAndFlag rating path", function()
-    it("refuses when the catalog stays busy with another write", function()
+    it("fails when the catalog stays busy with another write", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 0 })
         local _, Handler = setup({ photos = { p1 }, writeAccessAborts = function() return true end })
 
-        assert.are.equal(helper.catalogBusy("Set Rating and Flag"), helper.refusalOf(function()
-            Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = 4 })
-        end))
+        assert.are.same({ "failed", helper.catalogBusy("Set Rating and Flag") }, { helper.outcomeOf(function(context)
+            Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = 4 }, context)
+        end) })
         assert.are.equal(0, p1:getRawMetadata("rating"))
     end)
 
@@ -178,11 +178,10 @@ describe("HandlerOrganization.setKeywords", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
         local _, Handler = setup({ photos = { p1 }, writeAccessAborts = function(name) return name == "Set Keywords" end })
 
-        local message = helper.unknownOf(function()
-            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places|Paris" } })
-        end)
-
-        assert.are.equal(helper.catalogBusy("Set Keywords", "the keywords Places, Places|Paris were created"), message)
+        assert.are.same({ "unknown", helper.catalogBusy("Set Keywords") .. "; written before this stopped: Create Keywords" },
+            { helper.outcomeOf(function(context)
+                Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places|Paris" } }, context)
+            end) })
     end)
 
     it("answers unknown, naming the level it created, when the catalog stays busy before the next level", function()
@@ -194,11 +193,10 @@ describe("HandlerOrganization.setKeywords", function()
             return createGates == 2
         end })
 
-        local message = helper.unknownOf(function()
-            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B" } })
-        end)
-
-        assert.are.equal(helper.catalogBusy("Create Keywords", "the keywords A were created"), message)
+        assert.are.same({ "unknown", helper.catalogBusy("Create Keywords") .. "; written before this stopped: Create Keywords" },
+            { helper.outcomeOf(function(context)
+                Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B" } }, context)
+            end) })
         assert.are.equal(1, #catalog.getCreatedKeywords())
     end)
 
@@ -402,8 +400,11 @@ describe("HandlerOrganization.setKeywords", function()
         p1.addKeyword = function() error("write failed") end
         local catalog, Handler = setup({ photos = { p1 } })
 
-        assert.are.equal("write failed",
-            helper.unknownOf(function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B" } }) end))
+        local class, message = helper.outcomeOf(function(context)
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B" } }, context)
+        end)
+        assert.are.equal("unknown", class)
+        assert.matches("write failed; written before this stopped: Create Keywords$", message)
         -- The levels were committed before the photo write; they stay, empty.
         assert.are.equal(2, #catalog.getCreatedKeywords())
     end)
@@ -412,7 +413,7 @@ describe("HandlerOrganization.setKeywords", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
         local catalog, Handler = setup({ photos = { p1 } })
 
-        assert.are.equal("Invalid keyword path (empty level): Places||Paris", helper.refusalOf(function()
+        assert.are.equal("Invalid keyword path (empty level): Places||Paris", helper.failedOf(function()
             Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places||Paris" } })
         end))
         assert.are.equal(0, catalog.getWriteAccessCount())
@@ -456,7 +457,7 @@ describe("HandlerOrganization.setKeywords", function()
             local catalog, Handler = setup({ photos = { p1 }, keywords = t.top })
 
             assert.are.equal("Keywords not resolved (create_missing is false): not found: Places|Asia; "
-                .. "not found: winter; ambiguous: portrait (Orientation|portrait, Type|portrait)", helper.refusalOf(function()
+                .. "not found: winter; ambiguous: portrait (Orientation|portrait, Type|portrait)", helper.failedOf(function()
                 Handler.setKeywords({
                     photo_ids = { "1" },
                     add_keywords = { "summer", "Places|Asia", "winter", "portrait" },
@@ -556,8 +557,7 @@ describe("HandlerOrganization.setKeywords", function()
             p1.addKeyword = function() error("write failed") end
             local _, Handler = setup({ photos = { p1, p2 }, keywords = top })
 
-            assert.are.equal("write failed",
-                helper.unknownOf(function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } }) end))
+            assert.has_error(function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } }) end)
             Handler.setKeywords({ photo_ids = { "2" }, add_keywords = { "k20" } })
             Handler.setKeywords({ photo_ids = { "2" }, add_keywords = { "k19" } })
 
@@ -633,7 +633,7 @@ describe("HandlerOrganization.setKeywords", function()
         assert.are.equal(1, #created)
         assert.are.equal("summer", created[1]:getName())
         assert.are.same({ created[1] }, added(p1))
-        assert.are.equal("Invalid keyword (empty): '  '", helper.refusalOf(function()
+        assert.are.equal("Invalid keyword (empty): '  '", helper.failedOf(function()
             Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "  " } })
         end))
     end)
@@ -734,7 +734,7 @@ describe("HandlerOrganization.removeKeywordSubtree", function()
     it("rejects unknown parents before changing photos", function()
         local _, Handler, photo = fixture()
 
-        assert.are.equal("Keyword parent not found: Unknown|Parent", helper.refusalOf(function()
+        assert.are.equal("Keyword parent not found: Unknown|Parent", helper.failedOf(function()
             Handler.removeKeywordSubtree({ parent = "Unknown|Parent", photo_ids = { "1" } })
         end))
 
@@ -744,7 +744,7 @@ describe("HandlerOrganization.removeKeywordSubtree", function()
     it("refuses a malformed path without changes", function()
         local _, Handler, photo = fixture()
 
-        assert.are.equal("Invalid keyword path (empty level): AI Keywords||Sea", helper.refusalOf(function()
+        assert.are.equal("Invalid keyword path (empty level): AI Keywords||Sea", helper.failedOf(function()
             Handler.removeKeywordSubtree({ parent = "AI Keywords||Sea", photo_ids = { "1" } })
         end))
 

@@ -7,19 +7,19 @@ local Reply = require 'Reply'
 local Handler = {}
 local FIELD_IDS = { 'aiScore', 'aiReason' }
 
-function Handler.setAiMetadata(args)
+function Handler.setAiMetadata(args, context)
     local score, reason = args.score, args.reason
 
-    return PhotoWrites.each(LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = 'Set AI Metadata', write = function(photo)
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = 'Set AI Metadata', write = function(call)
         if score ~= nil then
             local value
             if score ~= '' then value = DecimalText.number(score) end
-            photo:setPropertyForPlugin(_PLUGIN, 'aiScore', value)
+            call('setPropertyForPlugin', _PLUGIN, 'aiScore', value)
         end
         if reason ~= nil then
             local value
             if reason ~= '' then value = reason end
-            photo:setPropertyForPlugin(_PLUGIN, 'aiReason', value)
+            call('setPropertyForPlugin', _PLUGIN, 'aiReason', value)
         end
     end })
 end

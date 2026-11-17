@@ -103,7 +103,7 @@ describe("HandlerCrop", function()
     it("refuses a frame whose turned corners cross in the crop keys, in set_crop's own words", function()
         local Handler = setup()
 
-        local refusal = helper.refusalOf(function()
+        local refusal = helper.failedOf(function()
             Handler.plan({ photo_id = "7", aspect = { width = 1, height = 3 }, angle = 40 }, helper.requestContext())
         end)
 
@@ -114,7 +114,7 @@ describe("HandlerCrop", function()
     it("refuses a frame inside the current crop whose turned corners cross", function()
         local Handler = setup({ CropLeft = 0.2, CropTop = 0, CropRight = 0.8, CropBottom = 1, CropAngle = 0 })
 
-        local refusal = helper.refusalOf(function()
+        local refusal = helper.failedOf(function()
             Handler.plan({ photo_id = "7", relative_to = "crop", aspect = { width = 1, height = 4 }, angle = 40 },
                 helper.requestContext())
         end)

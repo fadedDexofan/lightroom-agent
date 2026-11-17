@@ -236,22 +236,16 @@ return {
     MASK_TYPES = {
         {
             name = "subject",
-            toolType = "aiSelection",
-            subtype = "subject",
             label = "Subject",
             stored = { MaskSubType = 1 },
         },
         {
             name = "sky",
-            toolType = "aiSelection",
-            subtype = "sky",
             label = "Sky",
             stored = { MaskSubType = 2 },
         },
         {
             name = "background",
-            toolType = "aiSelection",
-            subtype = "background",
             label = "Background",
             stored = { MaskSubType = 0, MaskSubCategoryID = 22 },
         },
