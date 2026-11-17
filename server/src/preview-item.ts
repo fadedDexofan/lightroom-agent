@@ -1,5 +1,5 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
-import type { Input, ItemFailure, ReplyParts } from "./tool-result.js";
+import type { Input, ItemFailure, PluginReply, ReplyParts } from "./tool-result.js";
 
 export interface RenderedPreview {
   photo_id: string;
@@ -51,6 +51,16 @@ export interface PreviewBatch {
   notFound: Input[];
   remaining: Input[];
   warnings: string[];
+}
+
+export function batchReply(batch: PreviewBatch, data: unknown): PluginReply {
+  return {
+    result: {
+      ...(data !== undefined ? { data } : {}),
+      failed: batch.failed, not_found: batch.notFound, remaining: batch.remaining,
+      ...(batch.warnings.length ? { warnings: batch.warnings } : {}),
+    },
+  };
 }
 
 export async function previewBatch(

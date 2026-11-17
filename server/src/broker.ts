@@ -295,6 +295,9 @@ export class BrokerServer {
   }
 }
 
+export const NOT_CONNECTED_TO_OWNER_MESSAGE =
+  "This process is not connected to the Lightroom MCP process that owns the plugin connection, so nothing was sent. Retry in a few seconds.";
+
 export const OWNER_LOST_MESSAGE =
   "The Lightroom MCP process that owned the plugin connection exited during this call, " +
   "so its result is unknown. Check Lightroom before retrying a call that changes photos.";
@@ -377,14 +380,10 @@ export class BrokerClient {
     pending?.resolve((data as unknown as BrokerReply).result);
   }
 
-  isConnected(): boolean {
-    return this.sock !== null;
-  }
-
   callTool(name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> {
     if (options?.signal?.aborted) return Promise.resolve(refusedResponse("Request cancelled"));
     const sock = this.sock;
-    if (!sock) return Promise.resolve(refusedResponse(OWNER_LOST_MESSAGE));
+    if (!sock) return Promise.resolve(refusedResponse(NOT_CONNECTED_TO_OWNER_MESSAGE));
     const id = this.nextId++;
     const req: BrokerRequest = {
       id,

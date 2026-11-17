@@ -1,5 +1,5 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
-import { jpegOf, previewBatch, reasonOf } from "./preview-item.js";
+import { batchReply, jpegOf, previewBatch, reasonOf } from "./preview-item.js";
 import { areaAverage, decodeJpeg } from "./rendered-image.js";
 import type { Input, PluginReply } from "./tool-result.js";
 
@@ -22,7 +22,7 @@ function hashPreview(encoded: Buffer): boolean[] {
 }
 
 export async function findDuplicateGroups(
-  dispatcher: Pick<Dispatcher, "call">, args: DuplicateGroupArgs, budgetMs: number, options?: CallOptions,
+  args: DuplicateGroupArgs, dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
 ): Promise<PluginReply> {
   const window = args.time_window_seconds ?? 5;
   const distance = args.max_hamming_distance ?? 10;
@@ -48,16 +48,8 @@ export async function findDuplicateGroups(
       else samples.push([sample]);
     });
   const photos = samples.flat().map(({ photo_id, capture_time }) => ({ photo_id, capture_time }));
-  return {
-    result: {
-      ...(photos.length ? {
-        data: {
-          groups: samples.filter(group => group.length >= 2).map(group => ({ photo_ids: group.map(sample => sample.photo_id) })),
-          photos, time_window_seconds: window, max_hamming_distance: distance,
-        },
-      } : {}),
-      failed: batch.failed, not_found: batch.notFound, remaining: batch.remaining,
-      ...(batch.warnings.length ? { warnings: batch.warnings } : {}),
-    },
-  };
+  return batchReply(batch, photos.length ? {
+    groups: samples.filter(group => group.length >= 2).map(group => ({ photo_ids: group.map(sample => sample.photo_id) })),
+    photos, time_window_seconds: window, max_hamming_distance: distance,
+  } : undefined);
 }

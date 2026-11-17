@@ -1,5 +1,5 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
-import { jpegOf, previewBatch, reasonOf } from "./preview-item.js";
+import { batchReply, jpegOf, previewBatch, reasonOf } from "./preview-item.js";
 import { areaAverage, decodeJpeg } from "./rendered-image.js";
 import type { Input, PluginReply } from "./tool-result.js";
 
@@ -47,8 +47,8 @@ export function photoStats(encoded: Buffer) {
 }
 
 export async function getPhotoStats(
+  { photo_ids: photoIds }: { photo_ids: Input[] },
   dispatcher: Pick<Dispatcher, "call">,
-  photoIds: Input[],
   budgetMs: number,
   options?: CallOptions,
 ): Promise<PluginReply> {
@@ -61,11 +61,5 @@ export async function getPhotoStats(
         fail({ photo_id: preview.photo_id, reason: reasonOf(error) });
       }
     });
-  return {
-    result: {
-      ...(results.length ? { data: { results } } : {}),
-      failed: batch.failed, not_found: batch.notFound, remaining: batch.remaining,
-      ...(batch.warnings.length ? { warnings: batch.warnings } : {}),
-    },
-  };
+  return batchReply(batch, results.length ? { results } : undefined);
 }

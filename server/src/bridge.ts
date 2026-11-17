@@ -14,16 +14,14 @@ export interface BridgeOptions {
   startLeader: () => Leader;
   readToken: () => string | null;
   /** True when the lock holder stopped beating; followers then re-elect. */
-  holderUnresponsive?: () => boolean;
+  holderUnresponsive: () => boolean;
   /** The pid the lock names now; a follower whose owner lost the lock re-elects. */
-  lockHolder?: () => number | null;
+  lockHolder: () => number | null;
   holderCheckMs?: number;
   retryMs?: number;
   readyWaitMs?: number;
   log?: (msg: string) => void;
 }
-
-export type BridgeRole = "none" | "leader" | "follower";
 
 export const NO_OWNER_MESSAGE =
   "No Lightroom MCP bridge owns the plugin connection yet. Retry in a few seconds.";
@@ -39,7 +37,7 @@ export function unreachableOwnerMessage(pid: number): string {
 type RoleState =
   | { kind: "none" }
   | { kind: "leader"; leader: Leader; server: BrokerServer; lock: InstanceLock }
-  | { kind: "follower"; client: BrokerClient; watch: NodeJS.Timeout | null };
+  | { kind: "follower"; client: BrokerClient; watch: NodeJS.Timeout };
 
 /**
  * Elects one bridge per port pair to own the plugin connection. The lock
@@ -73,10 +71,6 @@ export class Bridge {
   start(): Promise<void> {
     this.started ??= this.elect();
     return this.started;
-  }
-
-  role(): BridgeRole {
-    return this.state.kind;
   }
 
   async callTool(name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> {
@@ -131,7 +125,7 @@ export class Bridge {
       state.leader.stop();
       state.lock.release();
     } else if (state.kind === "follower") {
-      if (state.watch) clearInterval(state.watch);
+      clearInterval(state.watch);
       state.client.close();
     }
     this.notify();
@@ -218,7 +212,7 @@ export class Bridge {
       readToken: this.opts.readToken,
       onClose: () => {
         if (this.state.kind !== "follower" || this.state.client !== client) return;
-        if (this.state.watch) clearInterval(this.state.watch);
+        clearInterval(this.state.watch);
         this.state = { kind: "none" };
         this.log("[bridge] owning bridge went away, re-electing");
         this.scheduleElection();
@@ -246,14 +240,13 @@ export class Bridge {
    * once its heartbeat goes stale, or once another follower has reclaimed
    * its lock, and let the election sort out the new owner.
    */
-  private watchHolder(client: BrokerClient, holder: number | null): NodeJS.Timeout | null {
+  private watchHolder(client: BrokerClient, holder: number | null): NodeJS.Timeout {
     const { holderUnresponsive, lockHolder } = this.opts;
-    if (!holderUnresponsive && !lockHolder) return null;
     let strikes = 0;
     const watch = setInterval(() => {
-      const current = lockHolder?.() ?? null;
+      const current = lockHolder();
       const moved = holder !== null && current !== null && current !== holder;
-      strikes = holderUnresponsive?.() ? strikes + 1 : 0;
+      strikes = holderUnresponsive() ? strikes + 1 : 0;
       // Two in a row: after a sleep the owner's overdue beat may just not have run yet.
       if (!moved && strikes < 2) return;
       clearInterval(watch);
@@ -295,11 +288,6 @@ export class Bridge {
       }, this.readyWaitMs);
       this.waiters.push(waiter);
     });
-  }
-
-  /** Waiters still parked for a role; exposed for leak tests. */
-  pendingWaiters(): number {
-    return this.waiters.length;
   }
 
   private notify(): void {

@@ -4,7 +4,6 @@ import { LineBuffer } from "./line-buffer.js";
 export interface PluginSocketOptions {
   port: number;
   label: string;
-  host?: string;
   reconnectDelayMs?: number;
   onLine?: (line: string) => void;
   onConnect?: () => void;
@@ -20,7 +19,6 @@ export class PluginSocket {
   private stopped = false;
 
   private readonly port: number;
-  private readonly host: string;
   private readonly label: string;
   private readonly reconnectDelayMs: number;
   private readonly onLine?: (line: string) => void;
@@ -31,7 +29,6 @@ export class PluginSocket {
   constructor(opts: PluginSocketOptions) {
     this.port = opts.port;
     this.label = opts.label;
-    this.host = opts.host ?? "127.0.0.1";
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 1000;
     this.onLine = opts.onLine;
     this.onConnect = opts.onConnect;
@@ -47,7 +44,7 @@ export class PluginSocket {
 
     sock.on("connect", () => {
       this.connected = true;
-      this.log(`[${this.label}] connected to ${this.host}:${this.port}`);
+      this.log(`[${this.label}] connected to 127.0.0.1:${this.port}`);
       this.onConnect?.();
     });
 
@@ -71,7 +68,7 @@ export class PluginSocket {
       this.scheduleReconnect();
     });
 
-    sock.connect(this.port, this.host);
+    sock.connect(this.port, "127.0.0.1");
   }
 
   private scheduleReconnect(): void {

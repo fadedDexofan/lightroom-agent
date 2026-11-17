@@ -1,4 +1,4 @@
-export const TOOLSET_NAMES = ["core", "develop", "masks"] as const;
+const TOOLSET_NAMES = ["core", "develop", "masks"] as const;
 export type Toolset = typeof TOOLSET_NAMES[number];
 
 export function parseToolsets(raw?: string): readonly Toolset[] {

@@ -3,9 +3,8 @@ import os from "node:os";
 import path from "node:path";
 
 export interface InstallResult {
-  status: "installed" | "already-present" | "skipped";
+  status: "installed" | "already-present";
   destination: string;
-  reason?: string;
 }
 
 export function lightroomModulesDir(): string {
@@ -97,37 +96,11 @@ function firstValidPlugin(candidates: string[]): string | null {
   return null;
 }
 
-export function installPlugin(opts: {
-  source: string;
-  destDir?: string;
-  force?: boolean;
-}): InstallResult {
+export function installPlugin(opts: { source: string; destDir?: string }): InstallResult {
   const destDir = opts.destDir ?? lightroomModulesDir();
   const destination = path.join(destDir, "LightroomMCP.lrplugin");
-
-  if (!fs.existsSync(opts.source)) {
-    return {
-      status: "skipped",
-      destination,
-      reason: `Source plugin not found at ${opts.source}`,
-    };
-  }
-  if (!fs.existsSync(path.join(opts.source, "Info.lua"))) {
-    return {
-      status: "skipped",
-      destination,
-      reason: `Source ${opts.source} is not a valid .lrplugin (missing Info.lua)`,
-    };
-  }
-
-  if (!opts.force && fs.existsSync(destination)) {
-    return { status: "already-present", destination };
-  }
-
+  if (fs.existsSync(destination)) return { status: "already-present", destination };
   fs.mkdirSync(destDir, { recursive: true });
-  if (opts.force && fs.existsSync(destination)) {
-    fs.rmSync(destination, { recursive: true, force: true });
-  }
   copyDirRecursive(opts.source, destination);
   return { status: "installed", destination };
 }

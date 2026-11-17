@@ -1,3 +1,5 @@
+import type { PluginReply } from "./tool-result.js";
+
 export interface ToolProgress {
   progress: number;
   total?: number;
@@ -9,12 +11,7 @@ export interface CallOptions {
   onProgress?: (progress: ToolProgress) => void;
 }
 
-export interface PluginResponse {
-  id: string;
-  result?: unknown;
-  error?: string;
-  effect?: "none" | "unknown";
-}
+export type PluginResponse = PluginReply & { id: string };
 
 export class PluginNotSentError extends Error {
   constructor(message: string) {
@@ -172,7 +169,4 @@ export class Dispatcher {
     }
   }
 
-  pendingCount(): number {
-    return this.pending.size;
-  }
 }

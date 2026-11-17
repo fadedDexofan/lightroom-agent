@@ -1,18 +1,18 @@
 import type { ToolCaller } from "./broker.js";
 import { TOOL_CONTRACTS } from "./tool-contracts.js";
 import { listToolsHandler } from "./list-tools-handler.js";
-import { parseToolsets, type Toolset } from "./toolsets.js";
-import { parseReadOnly } from "./read-only.js";
+import type { Toolset } from "./toolsets.js";
 import { refusedResponse, unknownToolResponse } from "./tool-result.js";
 
 export interface ToolAccessOptions {
-  toolsets?: readonly Toolset[];
-  readOnly?: boolean;
+  toolsets: readonly Toolset[];
+  readOnly: boolean;
 }
 
-export function createToolAccess(options: ToolAccessOptions = {}) {
-  const enabledToolsets = new Set<Toolset>(["core", ...(options.toolsets ?? parseToolsets())]);
-  const readOnly = options.readOnly ?? parseReadOnly(process.env.LIGHTROOM_MCP_READ_ONLY);
+export type ToolAccess = ReturnType<typeof createToolAccess>;
+
+export function createToolAccess({ toolsets, readOnly }: ToolAccessOptions) {
+  const enabledToolsets = new Set<Toolset>(["core", ...toolsets]);
   const tools = listToolsHandler(enabledToolsets, readOnly);
   const allowedTools = new Set(tools.tools.map((tool) => tool.name));
   const hiddenTools = new Map(TOOL_CONTRACTS.filter((tool) => !enabledToolsets.has(tool.toolset))

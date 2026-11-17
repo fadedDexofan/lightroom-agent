@@ -11,16 +11,16 @@ interface StoredRead {
   photos?: { settings?: Record<string, unknown> }[];
 }
 
-export async function beforeWrite(read: Promise<unknown>): Promise<PluginReply> {
+export async function beforeWrite(read: Promise<PluginReply>): Promise<PluginReply> {
   try {
-    const reply = await read as PluginReply;
+    const reply = await read;
     return reply.error === undefined ? reply : { ...reply, error: `${reply.error}; nothing was written`, effect: "none" };
   } catch (error) {
     return { error: `${error instanceof Error ? error.message : String(error)}; nothing was written`, effect: "none" };
   }
 }
 
-export async function storedValues(
+async function storedValues(
   photoId: Input, keys: string[], dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
 ): Promise<{ values: Record<string, unknown> } | { reply: PluginReply }> {
   if (!keys.length) return { values: {} };
@@ -56,7 +56,7 @@ export async function writeDevelopSettings(
     return { error: `Refused before writing: ${broken.map((rule) => rule.text).join("; ")}`, effect: "none" };
   }
   return await dispatcher.call("write_develop_settings", { photo_id: photoId, settings }, deadline - performance.now(),
-    options) as PluginReply;
+    options);
 }
 
 export async function setDevelopSettings(

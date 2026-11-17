@@ -87,8 +87,9 @@ async function main() {
     process.exit(1);
   }
 
+  const access = createToolAccess({ toolsets, readOnly });
   if (cli.command === "tools") {
-    const { tools } = createToolAccess({ toolsets, readOnly });
+    const { tools } = access;
     if (cli.name === undefined) {
       process.stdout.write(JSON.stringify(tools) + "\n");
       return;
@@ -124,7 +125,7 @@ async function main() {
   });
 
   if (cli.command === "call") {
-    const callTool = createToolAccess({ toolsets, readOnly }).restrict(
+    const callTool = access.restrict(
       (name, args, options) => bridge.callTool(name, args, options),
     );
     try {
@@ -137,7 +138,7 @@ async function main() {
     return;
   }
 
-  const server = createMcpServer({ callTool: (name, args, options) => bridge.callTool(name, args, options) }, { toolsets, readOnly });
+  const server = createMcpServer((name, args, options) => bridge.callTool(name, args, options), access);
   server.oninitialized = () => void bridge.start();
 
   const transport = new StdioServerTransport();
@@ -293,11 +294,8 @@ function runInstallPlugin(): void {
     if (result.status === "installed") {
       console.error(`Installed plugin: ${result.destination}`);
       console.error(`Restart Lightroom Classic to load it.`);
-    } else if (result.status === "already-present") {
-      console.error(`Plugin already present at ${result.destination}`);
     } else {
-      console.error(`Skipped: ${result.reason ?? "unknown reason"}`);
-      process.exit(1);
+      console.error(`Plugin already present at ${result.destination}`);
     }
   } catch (err) {
     console.error(`Install failed: ${(err as Error).message}`);

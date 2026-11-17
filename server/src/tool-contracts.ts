@@ -1,14 +1,14 @@
 import type { JSONObject, Tool } from "@modelcontextprotocol/server";
 import type { Toolset } from "./toolsets.js";
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
-import { findDuplicateGroups, type DuplicateGroupArgs } from "./duplicate-groups.js";
+import { findDuplicateGroups } from "./duplicate-groups.js";
 import { getPhotoStats } from "./photo-stats.js";
-import { DEFAULT_DETAIL_EDGE, getPhotoDetail, MAX_DETAIL_EDGE, type DetailArgs } from "./photo-detail.js";
+import { DEFAULT_DETAIL_EDGE, getPhotoDetail, MAX_DETAIL_EDGE } from "./photo-detail.js";
 import { DEVELOP_KEYS, DEVELOP_RULES, developKeyNamesSchema, developSettingsSchema, isPointCurve, keysRefusedFor, localAdjustmentsSchema, pointCurveRuleText, pointCurveSchema, writtenElsewhereText } from "./develop-keys.js";
-import { setCrop, type CropArgs } from "./crop.js";
-import { describeDevelopKeys, type DescribeArgs } from "./describe-develop-keys.js";
-import { setDevelopSettings, type DevelopWriteArgs } from "./develop-write.js";
-import { getPhotoPreviews, renderPreview, type PreviewArgs, type PreviewBatchArgs } from "./photo-preview.js";
+import { setCrop } from "./crop.js";
+import { describeDevelopKeys } from "./describe-develop-keys.js";
+import { setDevelopSettings } from "./develop-write.js";
+import { getPhotoPreviews, renderPreview } from "./photo-preview.js";
 import { previewStartLimitMs } from "./preview-item.js";
 import { previewSizeSchema } from "./preview-sizes.js";
 import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
@@ -56,6 +56,10 @@ export type ServerTool = (
   budgetMs: number,
   options?: CallOptions,
 ) => Promise<PluginReply>;
+
+const serverTool = <A>(
+  run: (args: A, dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions) => Promise<PluginReply>,
+): ServerTool => (args, dispatcher, budgetMs, options) => run(args as A, dispatcher, budgetMs, options);
 
 const anyGiven = (...keys: string[]) => (args: ToolArgs) => keys.some((key) => args[key] !== undefined);
 
@@ -608,7 +612,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     alwaysLoad: true,
     title: "Get photo preview",
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: { server: (args, dispatcher, budgetMs, options) => renderPreview(args as PreviewArgs, dispatcher, budgetMs, options) },
+    run: { server: serverTool(renderPreview) },
     description:
       `Lightroom-rendered JPEG with Develop edits (raw supported). region crops the rendered frame after develop crop/rotation: normalized x/y/width/height, origin top-left, x right, y down. width/height/bytes are actual; requested_size is the edge asked of Lightroom; scaled_by_server is true when the server scaled Lightroom's larger image down. Lightroom sometimes answers that it has no preview pixels for a photo, typically right after a change; the call asks again for about ${previewStartLimitMs(TIMEOUT_MS_BY_DURATION.quick) / 1000} s and, if it still has none, fails with that reason: ask again later, or check whether the photo is the active photo in Develop. See size for cost/edge rules.`,
     rules: [{
@@ -641,7 +645,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Get photo detail",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     duration: "long",
-    run: { server: (args, dispatcher, budgetMs, options) => getPhotoDetail(args as DetailArgs, dispatcher, budgetMs, options) },
+    run: { server: serverTool(getPhotoDetail) },
     description:
       "Cut 1-4 regions from a full-resolution render of a photo with its current Develop settings, one rendered pixel per returned pixel, to judge sharpness of a detail such as the nearest eye. The render is a temporary export (JPEG quality 100, sRGB, output sharpening off, no catalog add), deleted before the call returns (one left by a timed-out or cancelled call, by a later detail call); it takes seconds, and a second export or detail call is refused, not queued. Each call adds one Export history step to the photo and marks it exported, so summarize_develop_settings' exported_only counts it; Develop settings and pixels stay unchanged, and no cached preview, selection or module changes. Returns photo_id, crop_jpeg_quality (95), per region its pixel box in the render and the image (JPEG 95), plus render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}: source says how the render was made, a string (\"export\" today); left_on_photo says what the render left on the photo, a list of phrases (\"one Export history step\", \"the exported mark\"). A region larger than max_edge, measured against the cropped frame get_crop reports, is refused before the render with the largest normalized size this photo allows; nothing is scaled. A call refused before the render (unknown photo, the cropped frame not read, region over max_edge, export running) is failed with nothing left; an error once the render started is unknown and names the export and what it leaves on the photo.",
     rules: [{
@@ -675,7 +679,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "core",
     title: "Get batch photo previews",
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: { server: (args, dispatcher, budgetMs, options) => getPhotoPreviews(args as PreviewBatchArgs, dispatcher, budgetMs, options) },
+    run: { server: serverTool(getPhotoPreviews) },
     description:
       `Get JPEG thumbnails for 1–20 photos in input order for culling. Each preview names its photo_id and 1-based image_index, with width, height, bytes and scaled_by_server as in get_photo_preview; a photo that cannot be rendered is failed, the others still arrive; a photo Lightroom answers it has no preview pixels for is asked again within the time, which can leave the photos after it remaining. Total budget 8 MiB. Photos not reached by ${PREVIEW_START_LIMIT} or beyond the budget are remaining; resend them. Catalog unchanged.`,
     inputSchema: {
@@ -696,7 +700,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "core",
     title: "Find duplicate groups",
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: { server: (args, dispatcher, budgetMs, options) => findDuplicateGroups(dispatcher, args as DuplicateGroupArgs, budgetMs, options) },
+    run: { server: serverTool(findDuplicateGroups) },
     description:
       `Group near-duplicates/bursts from up to 100 IDs/paths using 64-bit dHash of current JPEG previews (minimum edge 64) and raw capture time. Every pair must meet inclusive time_window_seconds (default 5) and max_hamming_distance (default 10). Input-order groups omit singletons and repeated photos. Similarity does not rank frames. photos gives raw capture_time in Lightroom seconds (second precision, no timezone normalization). No hash cache or catalog changes. At ${PREVIEW_START_LIMIT} returns the groups so far and the unreached inputs as remaining; preview and missing-time failures are failed with reasons. Resend remaining together with the originals to grow groups.`,
     inputSchema: {
@@ -715,7 +719,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "core",
     title: "Get photo statistics",
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: { server: (args, dispatcher, budgetMs, options) => getPhotoStats(dispatcher, (args as { photo_ids: (string | number)[] }).photo_ids, budgetMs, options) },
+    run: { server: serverTool(getPhotoStats) },
     description:
       `Measure current rendered JPEG previews for up to 20 photos; results by photo_id, failures as failed, photos not started within ${PREVIEW_START_LIMIT} as remaining. histogram: 64 normalized Rec.709 luma bins (0-255, four levels/bin); mean_luminance same scale; shadow_fraction <=1, highlight_fraction >=254. sharpness: four-neighbor Laplacian variance after area resampling to 512px long edge (enlarges small previews); higher=sharper. These measure JPEG previews, not raw clipping/full-resolution focus. Catalog unchanged.`,
     inputSchema: {
@@ -1546,10 +1550,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Set develop settings",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     develop: "settings",
-    run: {
-      server: (args, dispatcher, budgetMs, options) =>
-        setDevelopSettings(args as DevelopWriteArgs, dispatcher, budgetMs, options),
-    },
+    run: { server: serverTool(setDevelopSettings) },
     description:
       `Set Develop settings directly on a photo by Lightroom SDK name; each key's kind and range are in the settings schema. The Crop* keys are in the frame Lightroom stores, not as the photo is displayed: read the frame with get_crop and set it with set_crop. A value outside its range is refused before anything is written (Lightroom would otherwise clamp it or reset the setting to its default). A number finer than Lightroom keeps is rounded to that precision before the write and a warning names it. Returns photo_id and the stored settings. ${DEVELOP_READ_BACK} Temperature and Tint ranges depend on the photo. Point curves via ToneCurvePV2012, ToneCurvePV2012Red, ToneCurvePV2012Green and ToneCurvePV2012Blue, at most 16 points; a written curve replaces any extended (HDR) curve of that channel, and the read-back compares the curve Lightroom renders, its extended one first. Color Grading: the shadow and highlight wheels' hue and saturation are stored under the SplitToning names, balance as SplitToningBalance. Checked against the values being written and those already stored, refused before writing: ${DEVELOP_RULES.map((rule) => rule.text).join("; ")}.`,
     inputSchema: {
@@ -1573,10 +1574,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Describe develop keys",
     annotations: { readOnlyHint: true, openWorldHint: false },
     develop: "drives",
-    run: {
-      server: (args, dispatcher, budgetMs, options) =>
-        describeDevelopKeys(args as DescribeArgs, dispatcher, budgetMs, options),
-    },
+    run: { server: serverTool(describeDevelopKeys) },
     description:
       "Describe every develop key the tools know for one photo on the running Lightroom: its kind and enum values, the range set_develop_settings and the mask tools enforce, and for number keys the range Lightroom reports for this photo (live, null when it reports none), marked differs where the two disagree. Local sliders get their live range only with mask_id, a mask on the photo, because Lightroom reports them only for a selected mask. Also returns Lightroom's version and build and the photo's process version.",
     inputSchema: {
@@ -1595,9 +1593,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Set crop",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     develop: "settings",
-    run: {
-      server: (args, dispatcher, budgetMs, options) => setCrop(args as CropArgs, dispatcher, budgetMs, options),
-    },
+    run: { server: serverTool(setCrop) },
     rules: cropRules,
     description:
       "Crop one photo to a frame: either a rectangle, or an aspect ratio with the largest frame that fits around a centre (optionally scaled down), each with an optional straighten angle. The frame is stated in the photo as displayed before any crop, or with relative_to \"crop\" inside the current crop as a preview shows it (its angle then adds to the current one). The tool converts the frame to Lightroom's crop keys for every orientation, refuses a frame whose corners would leave the photo after the angle (naming the largest frame that fits), a tall or wide frame at a large angle whose turned corners would cross in Lightroom's crop keys, and a total angle outside -45 to 45, all before writing; then it writes, reads the keys back and returns the frame as get_crop reads it (rectangle in the photo as displayed before any crop, total angle, size in pixels) and the stored keys. Upright, Transform and manual distortion are not undone: with one active the frame can sit up to about 0.05 of the photo away near the edges and a warning says so.",

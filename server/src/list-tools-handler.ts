@@ -22,7 +22,7 @@ export const TOOL_DEFINITIONS: Tool[] = TOOL_CONTRACTS.map((contract) => ({
   ...(contract.alwaysLoad ? { _meta: { "anthropic/alwaysLoad": true } } : {}),
 }));
 
-export function listToolsHandler(toolsets: ReadonlySet<Toolset> = new Set(["core"]), readOnly = false): { tools: Tool[] } {
+export function listToolsHandler(toolsets: ReadonlySet<Toolset>, readOnly: boolean): { tools: Tool[] } {
   return { tools: TOOL_DEFINITIONS.filter((_tool, index) => {
     const contract = TOOL_CONTRACTS[index];
     return toolsets.has(contract.toolset) && (!readOnly || contract.annotations.readOnlyHint === true);

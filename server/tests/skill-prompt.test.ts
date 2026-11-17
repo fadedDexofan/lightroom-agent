@@ -3,6 +3,8 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createMcpServer } from '../src/create-server.js';
+import { createToolAccess } from '../src/tool-access.js';
+import { createCallToolHandler } from '../src/tool-handler.js';
 
 interface ManifestPrompt {
   name: string;
@@ -18,10 +20,10 @@ function readManifestPrompts(): ManifestPrompt[] {
 }
 
 async function connect(): Promise<Client> {
-  const server = createMcpServer({
+  const server = createMcpServer(createCallToolHandler({
     isReady: () => false,
-    dispatcher: { call: async () => ({ id: 'x', result: null }) },
-  });
+    dispatcher: { call: async () => ({ id: 'x', result: {} }) },
+  }), createToolAccess({ toolsets: ['core'], readOnly: false }));
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);

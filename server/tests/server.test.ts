@@ -3,6 +3,8 @@ import { dataOf } from './helpers/envelope.js';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import jpeg from 'jpeg-js';
 import { createMcpServer } from '../src/create-server.js';
+import { createToolAccess } from '../src/tool-access.js';
+import { createCallToolHandler } from '../src/tool-handler.js';
 import { parseToolsets } from '../src/toolsets.js';
 import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
 import { publishedDescription } from '../src/list-tools-handler.js';
@@ -149,7 +151,7 @@ describe('read-only mode', () => {
   it('enforces before the broker follower call and fixes the list at startup', async () => {
     const callTool = jest.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
     const options = { readOnly: true, toolsets: parseToolsets('all') };
-    const server = createMcpServer({ callTool }, options);
+    const server = createMcpServer(callTool, createToolAccess(options));
     const client = new Client({ name: 'follower-test', version: '1.0.0' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     pair = { server, client };
@@ -166,12 +168,12 @@ describe('read-only mode', () => {
   });
 
   it.each([undefined, 'all'])('preserves listing bytes and write dispatch when off for %p', async (toolsets) => {
-    const call = jest.fn<CallFn>().mockResolvedValue({ id: 'x', result: { success: true } });
+    const call = jest.fn<CallFn>().mockResolvedValue({ id: 'x', result: { data: { success: true } } });
     pair = await connect({ toolsets, readOnly: false, call });
     const listed = await pair.client.listTools();
     const enabled = new Set(parseToolsets(toolsets));
     const { listToolsHandler } = await import('../src/list-tools-handler.js');
-    expect(listed).toEqual(listToolsHandler(enabled));
+    expect(listed).toEqual(listToolsHandler(enabled, false));
     await pair.client.callTool({ name: 'set_rating_and_flag', arguments: { photo_ids: [914], rating: 3 } });
     expect(call).toHaveBeenCalledTimes(1);
     await pair.client.close();
@@ -182,12 +184,12 @@ describe('read-only mode', () => {
 });
 
 async function connect(opts: { ready?: boolean; call?: CallFn; toolsets?: string; readOnly?: boolean } = {}): Promise<Pair> {
-  const server = createMcpServer({
+  const server = createMcpServer(createCallToolHandler({
     isReady: () => opts.ready ?? true,
     dispatcher: {
-      call: opts.call ?? (async () => ({ id: 'x', result: null })),
+      call: opts.call ?? (async () => ({ id: 'x', result: {} })),
     },
-  }, { toolsets: parseToolsets(opts.toolsets), readOnly: opts.readOnly ?? false });
+  }), createToolAccess({ toolsets: parseToolsets(opts.toolsets), readOnly: opts.readOnly ?? false }));
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -202,7 +204,7 @@ describe('createMcpServer', () => {
     'refuses unpublished tool %s before forwarding to a broker',
     async (name) => {
       const callTool = jest.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
-      const server = createMcpServer({ callTool }, { toolsets: parseToolsets('all'), readOnly: false });
+      const server = createMcpServer(callTool, createToolAccess({ toolsets: parseToolsets('all'), readOnly: false }));
       const client = new Client({ name: 'unpublished-tool-test', version: '1.0.0' });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       pair = { server, client };
@@ -320,7 +322,7 @@ describe('createMcpServer', () => {
       ['summarize_develop_settings', 'develop'], ['list_masks', 'masks'],
     ])('toolset default refuses hidden %s before dispatcher', async (name, group) => {
       let called = false;
-      pair = await connect({ call: async () => { called = true; return { id: '1', result: null }; } });
+      pair = await connect({ call: async () => { called = true; return { id: '1', result: {} }; } });
       const result = asToolResult(await pair.client.callTool({ name, arguments: {} }));
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('LIGHTROOM_MCP_TOOLSETS');
@@ -330,7 +332,7 @@ describe('createMcpServer', () => {
 
     it('toolset selection copies options at startup and ignores later env changes', async () => {
       const toolsets: Array<'core' | 'develop' | 'masks'> = ['core'];
-      const server = createMcpServer({ callTool: async () => ({ content: [{ type: 'text', text: '{}' }] }) }, { toolsets });
+      const server = createMcpServer(async () => ({ content: [{ type: 'text', text: '{}' }] }), createToolAccess({ toolsets, readOnly: false }));
       const client = new Client({ name: 'fixed-toolsets', version: '1.0.0' });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -351,7 +353,8 @@ describe('createMcpServer', () => {
 
     it('toolset gate refuses hidden tools before a forwarding caller', async () => {
       let called = false;
-      const server = createMcpServer({ callTool: async () => { called = true; return { content: [{ type: 'text', text: '{}' }] }; } });
+      const server = createMcpServer(async () => { called = true; return { content: [{ type: 'text', text: '{}' }] }; },
+        createToolAccess({ toolsets: ['core'], readOnly: false }));
       const client = new Client({ name: 'forwarding-toolsets', version: '1.0.0' });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -433,7 +436,7 @@ describe('createMcpServer', () => {
       await new Promise<void>((resolve) => options?.signal?.addEventListener('abort', () => {
         cancelled(); resolve();
       }, { once: true }));
-      return { id: '1', result: { complete: false } };
+      return { id: '1', result: { data: { complete: false } } };
     } });
     const controller = new AbortController();
     const pending = pair.client.callTool({ name: 'export_photos', arguments: {
@@ -541,7 +544,7 @@ describe('createMcpServer', () => {
         toolsets: 'all',
         call: async (_action, params) => {
           capturedParams = params;
-          return { id: '1', result: null };
+          return { id: '1', result: {} };
         },
       });
       await pair.client.callTool({ name: 'list_develop_presets' });

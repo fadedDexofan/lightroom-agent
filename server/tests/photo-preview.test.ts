@@ -201,7 +201,6 @@ describe('get_photo_preview region', () => {
   });
 
   it.each([
-    { id: 'preview', result: null },
     { id: 'preview', result: { data: { photo_id: 914, image: { mime_type: 'image/png', data: 'broken' } } } },
     { id: 'preview', result: { data: { photo_id: 914, image: { mime_type: 'image/jpeg', data: 'broken' } } } },
     { id: 'preview', error: 'Photo not found: 914' },

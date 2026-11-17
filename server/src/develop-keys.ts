@@ -282,7 +282,7 @@ export function rulesTouchedBy(settings: Readonly<Record<string, unknown>>): Dev
   return DEVELOP_RULES.filter((rule) => rule.triggers.some((key) => key in settings));
 }
 
-export function mayWrite(tool: string, key: DevelopKey): boolean {
+function mayWrite(tool: string, key: DevelopKey): boolean {
   return key.writtenBy === undefined || key.writtenBy === tool;
 }
 

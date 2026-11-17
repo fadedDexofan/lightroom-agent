@@ -283,7 +283,7 @@ export async function diagnoseUnresponsive(
   return classifyUnresponsive(ownership);
 }
 
-export const DIAGNOSIS_REFRESH_MS = 60_000;
+const DIAGNOSIS_REFRESH_MS = 60_000;
 
 /**
  * Owns the "why is the plugin not answering" verdict for one outage. The

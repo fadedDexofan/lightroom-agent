@@ -1,6 +1,6 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { PREVIEW_SIZES, previewEdge, type PreviewSize } from "./preview-sizes.js";
-import { jpegOf, previewBatch, previewItem, reasonOf, type PreviewItem, type RenderedPreview } from "./preview-item.js";
+import { batchReply, jpegOf, previewBatch, previewItem, reasonOf, type PreviewItem, type RenderedPreview } from "./preview-item.js";
 import { cutPixels, decodeJpeg, encodeWithin, pixelBox, scaleToEdge, type NormalizedRegion } from "./rendered-image.js";
 import type { Input, PluginReply } from "./tool-result.js";
 
@@ -113,11 +113,5 @@ export async function getPhotoPreviews(
       bytes += preview.bytes;
       previews.push(preview);
     });
-  return {
-    result: {
-      ...(previews.length ? { data: { previews } } : {}),
-      failed: batch.failed, not_found: batch.notFound, remaining: batch.remaining,
-      ...(batch.warnings.length ? { warnings: batch.warnings } : {}),
-    },
-  };
+  return batchReply(batch, previews.length ? { previews } : undefined);
 }

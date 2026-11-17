@@ -73,7 +73,7 @@ describe('published schema', () => {
 
 describe('listToolsHandler', () => {
   it('returns { tools: TOOL_DEFINITIONS }', () => {
-    const result = listToolsHandler(new Set(['core', 'develop', 'masks']));
+    const result = listToolsHandler(new Set(['core', 'develop', 'masks']), false);
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
   });
 

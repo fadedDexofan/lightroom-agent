@@ -39,7 +39,7 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     const budgetMs = TIMEOUT_MS_BY_DURATION[contract.duration ?? "quick"];
     const invoke = async (left: number): Promise<PluginReply> => "server" in run
       ? await run.server(values, deps.dispatcher, left, options)
-      : await deps.dispatcher.call(name, values, left, options) as PluginReply;
+      : await deps.dispatcher.call(name, values, left, options);
     try {
       if (!contract.develop) return toolResponse(finishReply(readOnly, await invoke(budgetMs)));
       const turn = await queue.run(name, budgetMs, options?.signal, invoke);

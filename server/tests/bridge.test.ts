@@ -7,7 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Bridge, NO_OWNER_MESSAGE, unreachableOwnerMessage, type Leader } from '../src/bridge.js';
-import { BrokerClient, BrokerServer, MAX_FRAME_BYTES, OWNER_LOST_MESSAGE, brokerPath, signNonce, type ToolCaller } from '../src/broker.js';
+import { BrokerClient, BrokerServer, MAX_FRAME_BYTES, NOT_CONNECTED_TO_OWNER_MESSAGE, OWNER_LOST_MESSAGE, brokerPath, signNonce, type ToolCaller } from '../src/broker.js';
 import { acquireInstanceLock, LockHeldError, type InstanceLock } from '../src/instance-lock.js';
 import type { ToolResponse } from '../src/tool-result.js';
 
@@ -216,8 +216,7 @@ describe('broker', () => {
     expect(resp.isError).toBe(true);
     expect(errorText(resp)).toBe(OWNER_LOST_MESSAGE);
     expect(closed).toBe(true);
-    expect(client.isConnected()).toBe(false);
-    expect(errorText(await client.callTool('ping', {}))).toBe(OWNER_LOST_MESSAGE);
+    expect(errorText(await client.callTool('ping', {}))).toBe(NOT_CONNECTED_TO_OWNER_MESSAGE);
     release?.();
   });
 
@@ -320,7 +319,7 @@ describe('broker', () => {
     const client = new BrokerClient({ path: p, readToken: () => 'secret-token' });
 
     await expect(client.connect()).rejects.toThrow(/could not prove/);
-    expect(client.isConnected()).toBe(false);
+    expect(errorText(await client.callTool('ping', {}))).toBe(NOT_CONNECTED_TO_OWNER_MESSAGE);
     expect(received.join('')).not.toContain('secret-token');
   });
 
@@ -332,7 +331,7 @@ describe('broker', () => {
     const client = new BrokerClient({ path: p, readToken: () => null, helloTimeoutMs: 50 });
 
     await expect(client.connect()).rejects.toThrow(/did not greet/);
-    expect(client.isConnected()).toBe(false);
+    expect(errorText(await client.callTool('ping', {}))).toBe(NOT_CONNECTED_TO_OWNER_MESSAGE);
   });
 
   it('gives up on an owner that hangs up before greeting', async () => {
@@ -373,6 +372,8 @@ describe('Bridge', () => {
       retryMs: 20,
       readyWaitMs: 2000,
       log: () => {},
+      holderUnresponsive: () => false,
+      lockHolder: () => null,
     });
     bridges.push(bridge);
     return bridge;
@@ -402,7 +403,6 @@ describe('Bridge', () => {
     expect(text(await pending)).toBe('stopped after first photo');
     expect(cancelled).toBe(true);
     expect(progress).toEqual([{ progress: 1, total: 2, message: 'a.jpg' }]);
-    expect(b.role()).toBe('follower');
   });
 
   it('lets a second bridge start and forwards its calls to the owner', async () => {
@@ -414,8 +414,6 @@ describe('Bridge', () => {
     await a.start();
     await b.start();
 
-    expect(a.role()).toBe('leader');
-    expect(b.role()).toBe('follower');
     expect(started).toEqual(['a']);
     expect(text(await b.callTool('get_selection', {}))).toBe('a:get_selection');
     expect(text(await a.callTool('get_selection', {}))).toBe('a:get_selection');
@@ -432,7 +430,7 @@ describe('Bridge', () => {
 
     a.stop();
 
-    await waitFor(() => b.role() === 'leader');
+    await waitFor(() => started.includes('b'));
     expect(stopped).toEqual(['a']);
     expect(started).toEqual(['a', 'b']);
     expect(text(await b.callTool('ping', {}))).toBe('b:ping');
@@ -455,13 +453,12 @@ describe('Bridge', () => {
     const done = a.shutdown(2000);
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(a.role()).toBe('leader');
     expect(stopped).toEqual([]);
     release?.();
     await done;
     expect(text(await pending)).toBe('a:apply_denoise');
     expect(stopped).toEqual(['a']);
-    await waitFor(() => b.role() === 'leader');
+    await waitFor(() => started.includes('b'));
   });
 
   it('gives up on calls from other bridges after the grace period', async () => {
@@ -510,7 +507,7 @@ describe('Bridge', () => {
     await b.start();
     a.stop();
 
-    await waitFor(() => b.role() !== 'follower');
+    await waitFor(() => started.includes('b'));
     expect(text(await b.callTool('ping', {}))).toBe('b:ping');
   });
 
@@ -529,12 +526,14 @@ describe('Bridge', () => {
       readToken: () => null,
       retryMs: 20,
       log: (m) => logs.push(m),
+      holderUnresponsive: () => false,
+      lockHolder: () => null,
     });
     bridges.push(bridge);
 
     await bridge.start();
 
-    await waitFor(() => bridge.role() === 'leader');
+    await waitFor(() => attempts === 2);
     expect(logs[0]).toMatch(/failed to start as owner: boom/);
     expect(text(await bridge.callTool('ping', {}))).toBe('second');
   });
@@ -556,12 +555,13 @@ describe('Bridge', () => {
       readToken: () => null,
       retryMs: 1000,
       log: (m) => logs.push(m),
+      holderUnresponsive: () => false,
+      lockHolder: () => null,
     });
     bridges.push(bridge);
 
     await bridge.start();
 
-    expect(bridge.role()).toBe('none');
     expect(started).toEqual([]);
     expect(logs[0]).toMatch(/failed to serve other bridges/);
     expect(() => acquireInstanceLock(58763, 58764, dir).release()).not.toThrow();
@@ -591,23 +591,23 @@ describe('Bridge', () => {
       readToken: () => 'tok',
       retryMs: 20,
       log: () => {},
+      holderUnresponsive: () => false,
+      lockHolder: () => null,
     });
     bridges.push(a);
     await a.start();
     const b = makeBridge(dir, 'b', started, stopped);
     await b.start();
-    expect(a.role()).toBe('leader');
-    expect(b.role()).toBe('leader');
+    expect(started).toEqual(['a', 'b']);
 
     stale.lose();
 
-    await waitFor(() => a.role() === 'follower');
+    await waitFor(() => stopped.includes('a'));
     expect(stopped).toEqual(['a']);
     expect(text(await a.callTool('ping', {}))).toBe('b:ping');
     expect(fs.existsSync(ipcPath(dir))).toBe(true);
     const c = makeBridge(dir, 'c', started);
     await c.start();
-    expect(c.role()).toBe('follower');
     expect(text(await c.callTool('ping', {}))).toBe('b:ping');
   });
 
@@ -622,10 +622,13 @@ describe('Bridge', () => {
       startLeader: () => ({ callTool: () => new Promise<ToolResponse>(() => {}), stop: () => {} }),
       readToken: () => 'tok',
       log: () => {},
+      holderUnresponsive: () => false,
+      lockHolder: () => null,
     });
     bridges.push(a);
     await a.start();
     let elections = 0;
+    let leading = false;
     const logs: string[] = [];
     const b = new Bridge({
       ipcPath: ipcPath(dir),
@@ -633,18 +636,21 @@ describe('Bridge', () => {
         if (elections++ === 0) throw new LockHeldError(watch.hungPid ?? process.pid, 58763, 58764);
         return acquireInstanceLock(58763, 58764, dir);
       },
-      startLeader: () => ({ callTool: async (name) => ok(`b:${name}`), stop: () => {} }),
+      startLeader: () => {
+        leading = true;
+        return { callTool: async (name) => ok(`b:${name}`), stop: () => {} };
+      },
       readToken: () => 'tok',
-      holderUnresponsive: watch.holderUnresponsive,
-      lockHolder: watch.lockHolder,
+      holderUnresponsive: watch.holderUnresponsive ?? (() => false),
+      lockHolder: watch.lockHolder ?? (() => null),
       holderCheckMs: 10,
       retryMs: 20,
       log: (m) => logs.push(m),
     });
     bridges.push(b);
     await b.start();
-    expect(b.role()).toBe('follower');
-    return { b, logs, elections: () => elections };
+    expect(leading).toBe(false);
+    return { b, logs, elections: () => elections, leading: () => leading };
   }
 
   it('drops a hung owner once its heartbeat goes stale', async () => {
@@ -679,11 +685,11 @@ describe('Bridge', () => {
   // A hung owner on Windows keeps its named pipe, so only Unix can take over its listener.
   unixOnly('takes over from a hung owner that still holds its listener', async () => {
     let unresponsive = false;
-    const { b } = await followHungOwner(tmpDir(), { holderUnresponsive: () => unresponsive });
+    const { b, leading } = await followHungOwner(tmpDir(), { holderUnresponsive: () => unresponsive });
 
     unresponsive = true;
 
-    await waitFor(() => b.role() === 'leader');
+    await waitFor(leading);
     expect(text(await b.callTool('ping', {}))).toBe('b:ping');
   });
 
@@ -701,13 +707,13 @@ describe('Bridge', () => {
       holderUnresponsive: () => checks++ % 2 === 0,
       holderCheckMs: 10,
       log: () => {},
+      lockHolder: () => null,
     });
     bridges.push(b);
     await b.start();
 
     await waitFor(() => checks >= 10);
 
-    expect(b.role()).toBe('follower');
     expect(text(await b.callTool('ping', {}))).toBe('a:ping');
   });
 
@@ -716,7 +722,6 @@ describe('Bridge', () => {
     const started: string[] = [];
     const a = makeBridge(dir, 'a', started);
 
-    expect(a.role()).toBe('none');
     expect(text(await a.callTool('ping', {}))).toBe('a:ping');
     expect(started).toEqual(['a']);
   });
@@ -732,6 +737,8 @@ describe('Bridge', () => {
       retryMs: 20,
       readyWaitMs: 50,
       log: () => {},
+      holderUnresponsive: () => false,
+      lockHolder: () => null,
     });
     bridges.push(bridge);
     try {
@@ -755,6 +762,8 @@ describe('Bridge', () => {
       retryMs: 10,
       readyWaitMs: 100,
       log: (m) => logs.push(m),
+      holderUnresponsive: () => false,
+      lockHolder: () => null,
     });
     bridges.push(bridge);
 
@@ -762,25 +771,5 @@ describe('Bridge', () => {
 
     expect(errorText(resp)).toBe(`${NO_OWNER_MESSAGE} Last error: EACCES: permission denied`);
     expect(logs.filter((m) => m.includes('cannot take the bridge lock'))).toHaveLength(1);
-  });
-
-  it('forgets callers that timed out waiting for an owner', async () => {
-    const bridge = new Bridge({
-      ipcPath: ipcPath(tmpDir()),
-      acquireLock: () => {
-        throw new Error('EACCES');
-      },
-      startLeader: () => ({ callTool: async () => ok('x'), stop: () => {} }),
-      readToken: () => null,
-      retryMs: 10,
-      readyWaitMs: 20,
-      log: () => {},
-    });
-    bridges.push(bridge);
-
-    await bridge.callTool('ping', {});
-    await bridge.callTool('ping', {});
-
-    expect(bridge.pendingWaiters()).toBe(0);
   });
 });

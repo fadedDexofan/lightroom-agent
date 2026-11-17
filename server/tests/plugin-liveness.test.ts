@@ -45,7 +45,6 @@ describe('PluginLiveness', () => {
   it('treats a connection with no settled ping as usable', () => {
     const { liveness } = setup();
 
-    expect(liveness.current()).toBe('unknown');
     expect(liveness.isUsable()).toBe(true);
   });
 
@@ -98,7 +97,7 @@ describe('PluginLiveness', () => {
     pings[0].answer();
     await flush();
 
-    expect(liveness.current()).toBe('responsive');
+    expect(liveness.isUsable()).toBe(true);
     liveness.stop();
   });
 
@@ -129,7 +128,7 @@ describe('PluginLiveness', () => {
     pings[0].fail();
     await flush();
 
-    expect(liveness.current()).toBe('unknown');
+    expect(liveness.isUsable()).toBe(true);
     expect(reporter.report).not.toHaveBeenCalled();
   });
 
@@ -143,7 +142,7 @@ describe('PluginLiveness', () => {
     pings[0].fail();
     await flush();
 
-    expect(liveness.current()).toBe('unknown');
+    expect(liveness.isUsable()).toBe(true);
     expect(reporter.report).not.toHaveBeenCalled();
     liveness.stop();
   });
@@ -163,7 +162,6 @@ describe('PluginLiveness', () => {
     liveness.reset();
     jest.advanceTimersByTime(60_000);
 
-    expect(liveness.current()).toBe('unknown');
     expect(liveness.isUsable()).toBe(true);
     expect(pings).toHaveLength(1);
   });

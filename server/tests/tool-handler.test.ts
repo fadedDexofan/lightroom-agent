@@ -14,7 +14,7 @@ function makeHandler(opts: {
   return createCallToolHandler({
     isReady: () => opts.ready ?? true,
     dispatcher: {
-      call: opts.call ?? (async () => ({ id: 'x', result: null })),
+      call: opts.call ?? (async () => ({ id: 'x', result: {} })),
     },
   });
 }
@@ -77,7 +77,7 @@ describe('createCallToolHandler', () => {
     const handler = makeHandler({
       call: async (action, params) => {
         captured = { action, params };
-        return { id: '1', result: { ok: true } };
+        return { id: '1', result: { data: { ok: true } } };
       },
     });
     await handler('search_photos', { rating: 5 });

@@ -48,7 +48,7 @@ export async function getPhotoDetail(
     return { error: `${predicted} (cropped frame ${frame.width}x${frame.height}); nothing was rendered`, effect: "none" };
   }
   const reply = await dispatcher.call("render_detail_source", { photo_id: args.photo_id },
-    deadline - performance.now(), options) as PluginReply;
+    deadline - performance.now(), options);
   const source = reply.result?.data as RenderSource | undefined;
   if (reply.error !== undefined || !source) return reply;
   const left = `; the render left ${source.left_on_photo.join(" and ")} on the photo`;

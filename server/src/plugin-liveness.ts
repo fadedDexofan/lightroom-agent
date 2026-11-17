@@ -74,10 +74,6 @@ export class PluginLiveness {
     await this.pending;
   }
 
-  current(): PluginLivenessState {
-    return this.state;
-  }
-
   isUsable(): boolean {
     return this.state !== "unresponsive";
   }

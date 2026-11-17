@@ -196,36 +196,6 @@ describe('installPlugin', () => {
       fs.rmSync(sourceParent, { recursive: true, force: true });
     }
   });
-
-  it('overwrites with force=true', () => {
-    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-src-'));
-    try {
-      const source = makeFakePlugin(sourceParent);
-      installPlugin({ source, destDir: tmp });
-      fs.writeFileSync(path.join(tmp, 'LightroomMCP.lrplugin', 'Info.lua'), '-- stale');
-      const result = installPlugin({ source, destDir: tmp, force: true });
-      expect(result.status).toBe('installed');
-      expect(fs.readFileSync(path.join(tmp, 'LightroomMCP.lrplugin', 'Info.lua'), 'utf8')).toBe(
-        '-- fake',
-      );
-    } finally {
-      fs.rmSync(sourceParent, { recursive: true, force: true });
-    }
-  });
-
-  it('skips when source missing', () => {
-    const result = installPlugin({ source: path.join(tmp, 'nope'), destDir: tmp });
-    expect(result.status).toBe('skipped');
-    expect(result.reason).toMatch(/not found/);
-  });
-
-  it('skips when source is not a real .lrplugin (no Info.lua)', () => {
-    const fake = path.join(tmp, 'Bogus.lrplugin');
-    fs.mkdirSync(fake);
-    const result = installPlugin({ source: fake, destDir: tmp });
-    expect(result.status).toBe('skipped');
-    expect(result.reason).toMatch(/Info\.lua/);
-  });
 });
 
 describe('findBundledPlugin', () => {

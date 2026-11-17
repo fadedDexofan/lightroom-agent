@@ -166,7 +166,7 @@ describe('CLI process', () => {
     const result = await run(['tools']);
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
-    expect(JSON.parse(result.stdout)).toEqual(listToolsHandler());
+    expect(JSON.parse(result.stdout)).toEqual(listToolsHandler(new Set(['core']), false));
     expect(fs.readdirSync(result.testHome)).toEqual([]);
   }, CLI_TEST_MS);
 
@@ -174,7 +174,7 @@ describe('CLI process', () => {
     const result = await run(['tools', 'set_develop_settings'], { LIGHTROOM_MCP_TOOLSETS: 'all' });
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(
-      listToolsHandler(new Set(['core', 'develop', 'masks'])).tools.find((tool) => tool.name === 'set_develop_settings'),
+      listToolsHandler(new Set(['core', 'develop', 'masks']), false).tools.find((tool) => tool.name === 'set_develop_settings'),
     );
   }, CLI_TEST_MS);
 

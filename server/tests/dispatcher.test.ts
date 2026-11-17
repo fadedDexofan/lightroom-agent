@@ -57,7 +57,8 @@ describe('Dispatcher', () => {
 
     await expect(first).rejects.toThrow('connection lost');
     await expect(second).rejects.toThrow('connection lost');
-    expect(dispatcher.pendingCount()).toBe(0);
+    dispatcher.handleResponseLine(JSON.stringify({ id: parseSent(sent[0]).id, result: {} }));
+    expect(logs.at(-1)).toContain('unknown id');
   });
 
   it('progress does not resolve a pending request or consume its final response', async () => {
@@ -67,7 +68,6 @@ describe('Dispatcher', () => {
 
     dispatcher.handleResponseLine(JSON.stringify({ progressFor: id, progress: { progress: 1, total: 2, message: 'a.jpg' } }));
 
-    expect(dispatcher.pendingCount()).toBe(1);
     expect(progress).toEqual([{ progress: 1, total: 2, message: 'a.jpg' }]);
     dispatcher.handleResponseLine(JSON.stringify({ id, result: { exported: 2 } }));
     expect((await pending).result).toEqual({ exported: 2 });
@@ -139,7 +139,8 @@ describe('Dispatcher', () => {
   it('rejects with timeout if no response arrives within timeoutMs', async () => {
     const promise = dispatcher.call('slow', {}, 1000);
     await expect(promise).rejects.toThrow(/timeout/i);
-    expect(dispatcher.pendingCount()).toBe(0);
+    dispatcher.handleResponseLine(JSON.stringify({ id: parseSent(sent[0]).id, result: {} }));
+    expect(logs.at(-1)).toContain('Late response for timed-out id');
   });
 
   it('asks the plug-in to stop a request that timed out and settles when its late reply arrives', async () => {
@@ -201,7 +202,6 @@ describe('Dispatcher', () => {
   it('throws synchronously if send returns false', async () => {
     canSend = false;
     await expect(dispatcher.call('x', {}, 1000)).rejects.toThrow(/socket dropped/);
-    expect(dispatcher.pendingCount()).toBe(0);
   });
 
   it('drops responses with unknown id without crashing', () => {
@@ -214,20 +214,13 @@ describe('Dispatcher', () => {
     expect(logs.some((l) => l.includes('Bad JSON'))).toBe(true);
   });
 
-  it('cleans up pending map after timeout fires', async () => {
-    const p = dispatcher.call('x', {}, 1000);
-    expect(dispatcher.pendingCount()).toBe(1);
-    await p.catch(() => {});
-    expect(dispatcher.pendingCount()).toBe(0);
-  });
-
   it('cleans up pending map after response received', async () => {
     const p = dispatcher.call('x', {}, 1000);
     const id = parseSent(sent[0]).id;
-    expect(dispatcher.pendingCount()).toBe(1);
     dispatcher.handleResponseLine(JSON.stringify({ id, result: 'ok' }));
     await p;
-    expect(dispatcher.pendingCount()).toBe(0);
+    dispatcher.handleResponseLine(JSON.stringify({ id, result: 'ok' }));
+    expect(logs.at(-1)).toContain('unknown id');
   });
 
   it('waits for the timeout the call names', async () => {
@@ -241,7 +234,6 @@ describe('Dispatcher', () => {
       expect(settled).toBe(false);
       jest.advanceTimersByTime(1);
       await expect(pending).rejects.toThrow(/timeout \(60s\)/);
-      expect(dispatcher.pendingCount()).toBe(0);
     } finally {
       jest.useRealTimers();
     }
