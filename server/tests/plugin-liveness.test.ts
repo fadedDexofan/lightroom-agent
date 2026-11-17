@@ -5,7 +5,9 @@ import type { Dispatcher } from '../src/dispatcher.js';
 import { SHADOW_BRIDGE } from '../src/port-owner.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
-type Ping = { timeoutMs: number; answer: () => void; fail: () => void };
+type Ping = { timeoutMs: number; answer: (version?: string | null) => void; fail: () => void };
+
+const SERVER_VERSION = '1.2.3';
 
 function setup(opts: { connected?: () => boolean } = {}) {
   const pings: Ping[] = [];
@@ -13,7 +15,12 @@ function setup(opts: { connected?: () => boolean } = {}) {
     call: (action, params, timeoutMs) => {
       expect([action, params]).toEqual(['ping', {}]);
       return new Promise((resolve, reject) => {
-        pings.push({ timeoutMs, answer: () => resolve({ id: 'ping', result: { data: { pong: true } } }), fail: () => reject(new Error('timeout')) });
+        pings.push({
+          timeoutMs,
+          answer: (version = SERVER_VERSION) =>
+            resolve({ id: 'ping', result: { data: version === null ? { pong: true } : { pong: true, version } } }),
+          fail: () => reject(new Error('timeout')),
+        });
       });
     },
   };
@@ -26,6 +33,7 @@ function setup(opts: { connected?: () => boolean } = {}) {
     heartbeatTimeoutMs: 10_000,
     probeTimeoutMs: 5_000,
     recoveryIntervalMs: 5_000,
+    expectedVersion: SERVER_VERSION,
   });
   return { liveness, pings, reporter };
 }
@@ -162,6 +170,48 @@ describe('PluginLiveness', () => {
 
     expect(liveness.isUsable()).toBe(true);
     expect(reporter.report).not.toHaveBeenCalled();
+    liveness.stop();
+  });
+
+  it('accepts a plug-in that answers with the server version', async () => {
+    const { liveness, pings } = setup();
+    liveness.check();
+    pings[0].answer();
+    await flush();
+
+    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.incompatibility()).toBeNull();
+  });
+
+  it.each([
+    ['1.2.2', 'The installed Lightroom plug-in is version 1.2.2'],
+    [null, 'The installed Lightroom plug-in is an older build that reports no version'],
+  ])('refuses a plug-in that answers with version %p, naming both versions and the fix', async (version, start) => {
+    const { liveness, pings, reporter } = setup();
+    liveness.check();
+    pings[0].answer(version);
+    await flush();
+
+    expect(liveness.isUsable()).toBe(false);
+    expect(liveness.incompatibility()).toBe(
+      `${start}, and this server is version 1.2.3. Install the plug-in that comes with this server `
+        + '(lightroom-agent install-plugin; the server also does it when it starts), then restart Lightroom.',
+    );
+    expect(reporter.report).not.toHaveBeenCalled();
+  });
+
+  it('becomes usable once a later ping answers with the server version', async () => {
+    const { liveness, pings } = setup();
+    liveness.start();
+    liveness.check();
+    pings[0].answer('1.2.2');
+    await flush();
+
+    jest.advanceTimersByTime(30_000);
+    pings[1].answer();
+    await flush();
+
+    expect(liveness.isUsable()).toBe(true);
     liveness.stop();
   });
 

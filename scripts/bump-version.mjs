@@ -32,6 +32,7 @@ function versionTs(v) {
 }
 
 const INFO_LUA = /VERSION = \{ major=(\d+), minor=(\d+), revision=(\d+), build=\d+ \}/;
+const CONTRACT_LUA = /\n    VERSION = "([^"]+)",\n/;
 
 const jsonVersion = (name, extra = () => {}) => ({
   name,
@@ -104,6 +105,18 @@ const targets = [
       const src = fs.readFileSync(p(this.name), "utf8");
       if (!INFO_LUA.test(src)) throw new Error("Info.lua: VERSION line not found");
       fs.writeFileSync(p(this.name), src.replace(INFO_LUA, `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`));
+    },
+  },
+  {
+    name: "plugin/LightroomAgent.lrplugin/Contract.lua",
+    expected: (v) => v,
+    read() {
+      return fs.readFileSync(p(this.name), "utf8").match(CONTRACT_LUA)?.[1] ?? null;
+    },
+    write(v) {
+      const src = fs.readFileSync(p(this.name), "utf8");
+      if (!CONTRACT_LUA.test(src)) throw new Error("Contract.lua: VERSION line not found");
+      fs.writeFileSync(p(this.name), src.replace(CONTRACT_LUA, `\n    VERSION = ${JSON.stringify(v)},\n`));
     },
   },
 ];

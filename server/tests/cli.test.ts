@@ -10,6 +10,7 @@ import { listToolsHandler } from '../src/list-tools-handler.js';
 import { FakePlugin } from './helpers/fake-plugin.js';
 import { parseCli } from '../src/cli.js';
 import { brokerPath } from '../src/broker.js';
+import { VERSION } from '../src/version.js';
 
 describe('parseCli', () => {
   function p(...args: string[]) {
@@ -206,7 +207,7 @@ describe('CLI process', () => {
     const called: string[] = [];
     const env = await startPlugin((action, params) => {
       called.push(action);
-      if (action === 'ping') return { pong: true };
+      if (action === 'ping') return { pong: true, version: VERSION };
       expect(params).toEqual({ photo_ids: ['914'], size: 864 });
       return { photo_id: 914, image: { data: image, mime_type: 'image/jpeg' } };
     });
@@ -223,9 +224,21 @@ describe('CLI process', () => {
     expect(fs.existsSync(brokerPath(Number(env.LIGHTROOM_AGENT_REQUEST_PORT), Number(env.LIGHTROOM_AGENT_RESPONSE_PORT), configDir))).toBe(false);
   }, CLI_TEST_MS);
 
+  it('refuses a call, sending nothing, while the plug-in is of another version', async () => {
+    const called: string[] = [];
+    const env = await startPlugin((action) => {
+      called.push(action);
+      return { pong: true, version: '0.0.1' };
+    });
+    const result = await run(['call', 'list_collections'], env);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain(`The installed Lightroom plug-in is version 0.0.1, and this server is version ${VERSION}.`);
+    expect(called).not.toContain('list_collections');
+  }, CLI_TEST_MS);
+
   it('returns the backend error as JSON with a failing exit status', async () => {
     const env = await startPlugin((action) => {
-      if (action === 'ping') return { pong: true };
+      if (action === 'ping') return { pong: true, version: VERSION };
       throw new Error('Missing catalog fixture');
     });
     const result = await run(['call', 'list_collections'], env);
@@ -270,7 +283,7 @@ describe('CLI process', () => {
       let finish: () => void = () => {};
       const pending = new Promise<void>((resolve) => { finish = resolve; });
       const env = await startPlugin(async (action) => {
-        if (action === 'ping') return { pong: true };
+        if (action === 'ping') return { pong: true, version: VERSION };
         entered();
         await pending;
         return { success: true };
@@ -288,7 +301,7 @@ describe('CLI process', () => {
 
   it('validates arguments through the common backend without dispatching the operation', async () => {
     const called: string[] = [];
-    const env = await startPlugin((action) => { called.push(action); return { pong: true }; });
+    const env = await startPlugin((action) => { called.push(action); return { pong: true, version: VERSION }; });
     const result = await run(['call', 'search_photos', '{"unexpected":true}'], env);
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ isError: true });

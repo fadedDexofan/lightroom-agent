@@ -15,8 +15,10 @@ import type { Dispatcher } from "./dispatcher.js";
  *   responsive   a ping came back.
  *   unresponsive a ping timed out. Tool calls fail immediately with an
  *                explanation instead of burning the full request timeout each.
+ *   incompatible a ping came back from a plug-in of another version. Tool
+ *                calls fail immediately, naming both versions.
  */
-export type PluginLivenessState = "unknown" | "responsive" | "unresponsive";
+export type PluginLivenessState = "unknown" | "responsive" | "unresponsive" | "incompatible";
 
 export const HEARTBEAT_INTERVAL_SECONDS = 30;
 
@@ -28,10 +30,21 @@ export interface LivenessOptions {
   heartbeatTimeoutMs: number;
   probeTimeoutMs: number;
   recoveryIntervalMs: number;
+  expectedVersion: string;
+}
+
+type PingAnswer = { answered: false } | { answered: true; version: string | null };
+
+export function pluginVersionMismatch(pluginVersion: string | null, serverVersion: string): string {
+  const plugin = pluginVersion === null ? "an older build that reports no version" : `version ${pluginVersion}`;
+  return `The installed Lightroom plug-in is ${plugin}, and this server is version ${serverVersion}. `
+    + "Install the plug-in that comes with this server (lightroom-agent install-plugin; the server also does it "
+    + "when it starts), then restart Lightroom.";
 }
 
 export class PluginLiveness {
   private state: PluginLivenessState = "unknown";
+  private pluginVersion: string | null = null;
   private pending: Promise<void> | null = null;
   private resolvePending: (() => void) | null = null;
   private generation = 0;
@@ -58,7 +71,7 @@ export class PluginLiveness {
       this.resolvePending = resolve;
     });
     const token = this.generation;
-    void this.ping(timeoutMs).then((answered) => this.settle(token, answered));
+    void this.ping(timeoutMs).then((answer) => this.settle(token, answer));
   }
 
   reset(): void {
@@ -75,28 +88,39 @@ export class PluginLiveness {
   }
 
   isUsable(): boolean {
-    return this.state !== "unresponsive";
+    return this.state !== "unresponsive" && this.state !== "incompatible";
   }
 
-  private settle(token: number, answered: boolean): void {
+  incompatibility(): string | null {
+    if (this.state !== "incompatible") return null;
+    return pluginVersionMismatch(this.pluginVersion, this.opts.expectedVersion);
+  }
+
+  private settle(token: number, answer: PingAnswer): void {
     if (token !== this.generation) return;
-    if (!answered && !this.opts.connected()) {
+    if (!answer.answered && !this.opts.connected()) {
       this.reset();
       return;
     }
-    this.state = answered ? "responsive" : "unresponsive";
     this.release();
-    if (answered) {
+    if (answer.answered) {
+      this.pluginVersion = answer.version;
+      this.state = answer.version === this.opts.expectedVersion ? "responsive" : "incompatible";
       this.opts.reporter.clear();
       this.stopRecovery();
       return;
     }
+    this.state = "unresponsive";
     this.opts.reporter.report();
     this.recovery ??= setInterval(() => this.check(), this.opts.recoveryIntervalMs);
   }
 
-  private ping(timeoutMs: number): Promise<boolean> {
-    return this.opts.dispatcher.call("ping", {}, timeoutMs).then(() => true, () => false);
+  private ping(timeoutMs: number): Promise<PingAnswer> {
+    return this.opts.dispatcher.call("ping", {}, timeoutMs).then((reply) => {
+      const data = reply.result?.data;
+      const version = typeof data === "object" && data !== null ? (data as { version?: unknown }).version : undefined;
+      return { answered: true, version: typeof version === "string" ? version : null };
+    }, () => ({ answered: false }));
   }
 
   private stopRecovery(): void {

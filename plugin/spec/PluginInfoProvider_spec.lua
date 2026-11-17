@@ -827,9 +827,10 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
         installStubs()
     end)
 
-    it("ping handler is a pure liveness no-op returning pong=true", function()
+    it("ping handler answers pong with the plug-in's full version", function()
         local mod = loadInfoProvider()
-        assert.are.same({ pong = true }, mod.handlePing({}))
+        assert.are.same({ pong = true, version = require('Contract').VERSION }, mod.handlePing({}))
+        assert.is_string(require('Contract').VERSION)
     end)
 
     describe("logBindFailure", function()

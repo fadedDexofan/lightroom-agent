@@ -200,6 +200,7 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
     heartbeatTimeoutMs: PING_TIMEOUT_MS,
     probeTimeoutMs: PROBE_TIMEOUT_MS,
     recoveryIntervalMs: PROBE_RECOVERY_INTERVAL_MS,
+    expectedVersion: VERSION,
   });
   const startResponseSocket = () => {
     if (responseSocket || !requestSocket.isConnected()) return;
@@ -253,11 +254,18 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
     requestSocket.isConnected() && (responseSocket?.isConnected() ?? false);
 
   liveness.start();
+  let loggedIncompatibility: string | null = null;
 
   const callTool = createCallToolHandler({
     dispatcher,
     isReady: () => socketsConnected() && liveness.isUsable(),
     notReadyMessage: () => {
+      const incompatibility = liveness.incompatibility();
+      if (incompatibility !== null) {
+        if (incompatibility !== loggedIncompatibility) console.error(`[plugin] ${incompatibility}`);
+        loggedIncompatibility = incompatibility;
+        return incompatibility;
+      }
       if (socketsConnected()) return unresponsive.current();
       console.error(`[plugin] ${NOT_CONNECTED_DETAILS}`);
       return NOT_CONNECTED_MESSAGE;

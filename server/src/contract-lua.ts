@@ -2,6 +2,7 @@ import { DEVELOP_KEYS, LOCAL_KEYS, transfersStyle } from "./develop-keys.js";
 import { DETAIL_RENDER_FOLDER } from "./photo-detail.js";
 import { HEARTBEAT_INTERVAL_SECONDS } from "./plugin-liveness.js";
 import { PREVIEW_REPLY_RESERVE_MS } from "./preview-item.js";
+import { VERSION } from "./version.js";
 import { AI_MASK_COMPUTE_WAIT_SECONDS, AUTO_CHANGE_WAIT_SECONDS, CATALOG_WRITE_WAIT_SECONDS, DEFAULT_PAGE_LIMIT, NEW_MASK_SAVE_WAIT_SECONDS, PLUGIN_ACTIONS, STYLE_SUMMARY_MIN_RATING, STYLE_SUMMARY_PHOTO_LIMIT, TOOL_CONTRACTS } from "./tool-contracts.js";
 import {
   COLOR_LABELS,
@@ -75,6 +76,7 @@ export function renderContractLua(): string {
     STYLE_SUMMARY_MIN_RATING,
     STYLE_SUMMARY_PHOTO_LIMIT,
     HEARTBEAT_INTERVAL_SECONDS,
+    VERSION,
   };
   return `return ${render(contract, "")}\n`;
 }

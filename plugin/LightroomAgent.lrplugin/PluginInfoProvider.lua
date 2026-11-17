@@ -153,7 +153,7 @@ end
 
 local SUPERSEDED_CHECK_TICKS = 5
 
-local function ping(_params) return { pong = true } end
+local function ping(_params) return { pong = true, version = Contract.VERSION } end
 
 local function handlerFor(action)
     if action == "ping" then return ping end

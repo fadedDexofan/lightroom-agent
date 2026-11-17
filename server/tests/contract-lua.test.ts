@@ -12,6 +12,11 @@ describe('generated Lua contract module', () => {
 });
 
 describe('constants shared with the plug-in', () => {
+  it('carries the server version for the plug-in to report', async () => {
+    const { VERSION } = await import('../src/version.js');
+    expect(renderContractLua()).toContain(`VERSION = "${VERSION}"`);
+  });
+
   it('names the detail render folder the server cleans up', async () => {
     const { DETAIL_RENDER_FOLDER } = await import('../src/photo-detail.js');
     expect(renderContractLua()).toContain(`DETAIL_RENDER_FOLDER = "${DETAIL_RENDER_FOLDER}"`);
