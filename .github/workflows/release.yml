@@ -1,0 +1,248 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+      - scripts/**
+      - server/package.json
+      - server/scripts/**
+      - plugin.json
+      - mcp.json
+      - .claude-plugin/**
+      - .agents/**
+      - gemini-extension.json
+      - mcpb/**
+      - server.json
+      - RELEASE_NOTES.md
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DRY_RUN: ${{ github.ref_type != 'tag' }}
+  NODE_VERSION: '26.13.1'
+  NPM_VERSION: '11.21.2'
+  MCP_PUBLISHER_VERSION: 'v1.8.9'
+  MCP_PUBLISHER_SHA256: '4d527ca8f1ced0394c962dc925c2a4a4addef441cbefd62501c875e9481823a8'
+
+jobs:
+  verify:
+    name: Version and notes
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.info.outputs.version }}
+      tag: ${{ steps.info.outputs.tag }}
+      prerelease: ${{ steps.info.outputs.prerelease }}
+      npm_tag: ${{ steps.info.outputs.npm_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Tag matches the package version
+        id: info
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            node scripts/release.mjs info >> "$GITHUB_OUTPUT"
+          else
+            node scripts/release.mjs info --tag "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Version sources agree
+        run: node scripts/bump-version.mjs --check
+
+      - name: Release notes section
+        env:
+          VERSION: ${{ steps.info.outputs.version }}
+        run: |
+          mkdir -p build
+          if [ "$DRY_RUN" = true ]; then
+            node scripts/release.mjs notes "$VERSION" --allow-unreleased > build/notes.md
+          else
+            node scripts/release.mjs notes "$VERSION" > build/notes.md
+          fi
+          cat build/notes.md
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notes
+          path: build/notes.md
+          retention-days: 30
+
+  build:
+    name: Build release assets
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      NPM_TAG: ${{ needs.verify.outputs.npm_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install npm
+        run: npm install -g "npm@$NPM_VERSION"
+
+      - name: Install, check, lint, build and test
+        working-directory: server
+        run: |
+          npm ci
+          npm run check
+          npm run lint
+          npm run build
+          npm run test:coverage -- --ci --reporters=default
+
+      - name: Generated files are up to date
+        run: git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts
+
+      - name: Live kit and release script tests
+        run: |
+          node --test "tests/e2e/live/unit/*.test.mjs"
+          node --test "scripts/*.test.mjs"
+
+      - name: npm package
+        run: |
+          mkdir -p build
+          (cd server && npm pack --pack-destination ../build)
+          tarball="build/lightroom-agent-$VERSION.tgz"
+          tar -tzf "$tarball" | sort > build/package-files.txt
+          for file in package/dist/index.js package/LightroomAgent.lrplugin/Info.lua package/skills/lightroom-agent/SKILL.md; do
+            grep -qx "$file" build/package-files.txt || { echo "$file is missing from $tarball"; exit 1; }
+          done
+          cat build/package-files.txt
+
+      - name: Staged publish, dry run
+        run: npm stage publish "./build/lightroom-agent-$VERSION.tgz" --tag "$NPM_TAG" --dry-run
+
+      - name: Lightroom plug-in zip
+        run: (cd plugin && zip -r -X "../build/LightroomAgent.lrplugin-$VERSION.zip" LightroomAgent.lrplugin)
+
+      - name: Claude Desktop bundle
+        run: |
+          node scripts/build-mcpb.mjs
+          mv build/lightroom-agent.mcpb "build/lightroom-agent-$VERSION.mcpb"
+
+      - name: MCP registry entry validates
+        run: |
+          curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz"
+          echo "$MCP_PUBLISHER_SHA256  mcp-publisher.tar.gz" | sha256sum -c -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher validate server.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: |
+            build/lightroom-agent-${{ env.VERSION }}.tgz
+            build/LightroomAgent.lrplugin-${{ env.VERSION }}.zip
+            build/lightroom-agent-${{ env.VERSION }}.mcpb
+            build/package-files.txt
+          retention-days: 30
+
+  npm:
+    name: Stage the npm publish
+    needs: [verify, build]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      NPM_TAG: ${{ needs.verify.outputs.npm_tag }}
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Install npm
+        run: npm install -g "npm@$NPM_VERSION"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+
+      - name: Stage through trusted publishing
+        run: npm stage publish "./lightroom-agent-$VERSION.tgz" --tag "$NPM_TAG"
+
+  github-release:
+    name: GitHub release
+    needs: [verify, build, npm]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      TAG: ${{ needs.verify.outputs.tag }}
+      PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notes
+
+      - name: Create the release
+        run: |
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file notes.md "${flags[@]}" \
+            "LightroomAgent.lrplugin-$VERSION.zip" "lightroom-agent-$VERSION.mcpb"
+
+  mcp-registry:
+    name: MCP registry entry
+    needs: [verify, npm]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz"
+          echo "$MCP_PUBLISHER_SHA256  mcp-publisher.tar.gz" | sha256sum -c -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+
+      - name: Wait for the approved npm version
+        run: |
+          for attempt in $(seq 120); do
+            if curl -fsS -o /dev/null "https://registry.npmjs.org/lightroom-agent/$VERSION"; then exit 0; fi
+            sleep 30
+          done
+          echo "lightroom-agent@$VERSION is not on npm after 60 minutes: approve the staged version on npmjs.com, then re-run this job."
+          exit 1
+
+      - name: Publish
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

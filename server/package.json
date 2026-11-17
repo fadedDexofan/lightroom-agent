@@ -7,7 +7,6 @@
   "bin": {
     "lightroom-agent": "dist/index.js"
   },
-  "private": true,
   "files": [
     "dist",
     "LightroomAgent.lrplugin",
