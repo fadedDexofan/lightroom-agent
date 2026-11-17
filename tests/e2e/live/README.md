@@ -179,6 +179,37 @@ Each script checks one area in the open throwaway catalog, prints a pass or FAIL
 - `raw-jpeg-pairs.mjs [sample.dng]`: a folder import adds a raw and keeps its same-named JPEG as a sidecar, whatever the extension's case; a stem that differs in case, and a DNG pair, import both files (observed on 15.6); importing the paired JPEG alone fails and names the raw, also from an NFD path; `separate_jpegs` adds the JPEG as its own photo; a repeated folder import counts existing files in `already_in_catalog`.
 - `import-case-folders.mjs <folder>` and `import-case-files.mjs <folder>`, on a case-sensitive volume (for example `hdiutil create -size 200m -fs "Case-sensitive APFS" -type SPARSE case.sparseimage`): files and folders whose names differ only in case are refused before Lightroom imports them, because Lightroom would file them as duplicates of the first spelling. Detach and delete the image afterwards.
 
+## MCP runner
+
+`tests/e2e/mcp-runner.mjs` starts the built server and calls tools over stdio, as an MCP client would. It exits non-zero when a scenario fails.
+
+```sh
+node tests/e2e/mcp-runner.mjs <mode>
+node tests/e2e/mcp-runner.mjs tool <name> '<json>'
+node tests/e2e/mcp-runner.mjs list-tools
+```
+
+| Mode | Checks |
+|---|---|
+| `read` (default) | Read tools return well-formed data. Runs on any catalog. |
+| `write` | Creates a collection `MCP_E2E_<timestamp>`, sets a rating and a keyword and restores them. The collection is left for inspection. |
+| `develop` | Writes and reads Exposure, applies a preset, copies Contrast with a `settings` list. |
+| `preset-roundtrip` | Captures a plug-in preset, reads it back and exports it; a second export to the same file is refused. Output goes to `LIGHTROOM_MCP_E2E_PRESET_DIR` (default `$TMPDIR`). |
+| `export` | Exports a five-star photo (or the first photo) as a JPEG to `$TMPDIR` and checks that its long edge is at most 1024 px. |
+| `pagination` | Consecutive `search_photos` pages do not overlap and report the same count. |
+| `failure` | Unknown tools, unknown ids and invalid values are refused. |
+| `wrong-token` | A server with a wrong token file is rejected by the plug-in. |
+| `port-mismatch` | A server on other ports reports that the plug-in is not connected. |
+| `all` | `read`, `write`, `develop`, `export`, `pagination` and `failure`. |
+
+`write`, `develop`, `export`, `preset-roundtrip` and `all` refuse to run unless the open catalog is a throwaway catalog.
+
+Checks by hand:
+
+- **Selection.** Pick three photo ids with `node tests/e2e/mcp-runner.mjs tool search_photos '{"limit":3}'` and select them with `node manual-test.mjs set_selection '{"photo_ids":[...]}'`. `set_selection` is a test-only plug-in action that no MCP client can reach. `get_selected_photos` must then return those three, matching Lightroom's filmstrip. Select photos by hand once as well. With nothing selected, `get_selected_photos` returns the whole filmstrip, not an empty list.
+- **Reload and restart.** After Reload Plug-in in Plug-in Manager, `mcp-runner.mjs read` must work again; if it reports `failed to open localhost:58763`, quit and reopen Lightroom. Stopping the runner mid-run and starting it again must reconnect within about a second, and Plug-in Manager → Show Status must show both sockets connected.
+- **Preset import.** Import a preset exported with `export_develop_preset` through Lightroom's Presets panel before relying on the exported file in Lightroom.
+
 ## Manual checks
 
 Positions are always in the frame of the rendered preview, after crop, straightening and orientation; Lightroom stores masks in the source frame (`ImageFrame.lua`).
