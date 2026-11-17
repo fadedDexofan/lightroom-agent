@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Single source of truth for the release version: server/package.json.
-// Propagates that version to every other file that carries it.
+// Single source of truth for the release version, description and author: server/package.json.
+// Propagates them to every other file that carries them.
 //
 //   node scripts/bump-version.mjs 0.4.0       set explicit version
 //   node scripts/bump-version.mjs --bump=minor bump from package.json
@@ -19,6 +19,7 @@ const p = (...s) => path.join(repoRoot, ...s);
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const writeJson = (file, json) => fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
 const core = (v) => v.match(SEMVER).slice(1, 4).join(".");
+const distinct = (values) => [...new Set(values)];
 
 const launch = (v) => ({ command: "npx", args: ["-y", `${PACKAGE}@${v}`], env: { LIGHTROOM_AGENT_TOOLSETS: "all" } });
 
@@ -34,89 +35,95 @@ function versionTs(v) {
 const INFO_LUA = /VERSION = \{ major=(\d+), minor=(\d+), revision=(\d+), build=\d+ \}/;
 const CONTRACT_LUA = /\n    VERSION = "([^"]+)",\n/;
 
-const jsonVersion = (name, extra = () => {}) => ({
-  name,
-  expected: (v) => v,
-  read() {
-    return readJson(p(name)).version;
-  },
-  write(v) {
-    const json = readJson(p(name));
-    json.version = v;
-    extra(json, v);
-    writeJson(p(name), json);
+function packageRelease() {
+  const { version, description, author } = readJson(p("server", "package.json"));
+  return { version, description, author };
+}
+
+const jsonField = (file, label, get, set, expected) => ({
+  name: label ? `${file} (${label})` : file,
+  expected,
+  read: () => get(readJson(p(file))),
+  write(release) {
+    const json = readJson(p(file));
+    set(json, expected(release));
+    writeJson(p(file), json);
   },
 });
 
-const launchLine = (name, shape = (spec) => spec) => ({
-  name: `${name} (launch)`,
-  expected: (v) => shape(launch(v)),
+const textField = (file, pattern, read, replacement, expected) => ({
+  name: file,
+  expected,
   read() {
-    return readJson(p(name)).mcpServers?.[SERVER_KEY] ?? null;
+    const match = fs.readFileSync(p(file), "utf8").match(pattern);
+    return match ? read(match) : null;
   },
-  write(v) {
-    const json = readJson(p(name));
-    json.mcpServers = { ...json.mcpServers, [SERVER_KEY]: shape(launch(v)) };
-    writeJson(p(name), json);
+  write(release) {
+    const src = fs.readFileSync(p(file), "utf8");
+    if (!pattern.test(src)) throw new Error(`${file}: VERSION line not found`);
+    fs.writeFileSync(p(file), src.replace(pattern, replacement(expected(release))));
   },
 });
 
-const unversionedMarketplace = (name) => ({
-  name: `${name} (no entry version)`,
-  expected: () => [],
-  read() {
-    return readJson(p(name)).plugins.filter((entry) => "version" in entry).map((entry) => entry.name);
-  },
-  write() {},
-});
+const version = (file) => jsonField(file, null, (json) => json.version, (json, v) => { json.version = v; }, (r) => r.version);
+
+const versionWithPackages = (file, packagesOf) => jsonField(file, null,
+  (json) => distinct([json.version, ...packagesOf(json).map((pkg) => pkg.version)]),
+  (json, [v]) => { json.version = v; for (const pkg of packagesOf(json)) pkg.version = v; },
+  (r) => [r.version]);
+
+const launchLine = (file, shape = (spec) => spec) => jsonField(file, "launch",
+  (json) => json.mcpServers?.[SERVER_KEY] ?? null,
+  (json, spec) => { json.mcpServers = { ...json.mcpServers, [SERVER_KEY]: spec }; },
+  (r) => shape(launch(r.version)));
+
+const unversionedMarketplace = (file) => jsonField(file, "no entry version",
+  (json) => json.plugins.filter((entry) => "version" in entry).map((entry) => entry.name),
+  (json) => { for (const entry of json.plugins) delete entry.version; },
+  () => []);
+
+const description = (file) => jsonField(file, "description", (json) => json.description ?? null, (json, d) => { json.description = d; }, (r) => r.description);
+
+const entryDescription = (file) => jsonField(file, "entry description",
+  (json) => json.plugins.find((entry) => entry.name === PACKAGE)?.description ?? null,
+  (json, d) => { json.plugins.find((entry) => entry.name === PACKAGE).description = d; },
+  (r) => r.description);
+
+const author = (file) => jsonField(file, "author", (json) => json.author ?? null, (json, a) => { json.author = a; }, (r) => ({ name: r.author }));
 
 const targets = [
-  jsonVersion("server/package.json"),
-  jsonVersion("server.json", (json, v) => { for (const pkg of json.packages) pkg.version = v; }),
-  jsonVersion("server/package-lock.json", (json, v) => { if (json.packages?.[""]) json.packages[""].version = v; }),
+  version("server/package.json"),
+  versionWithPackages("server.json", (json) => json.packages),
+  versionWithPackages("server/package-lock.json", (json) => [json.packages[""]]),
   {
     name: "server/src/version.ts",
-    expected: (v) => v,
+    expected: (r) => r.version,
     read() {
       return fs.readFileSync(p(this.name), "utf8").match(/export const VERSION = "([^"]+)"/)?.[1] ?? null;
     },
-    write(v) {
-      fs.writeFileSync(p(this.name), versionTs(v));
+    write(release) {
+      fs.writeFileSync(p(this.name), versionTs(release.version));
     },
   },
-  jsonVersion("mcpb/manifest.json"),
-  jsonVersion("plugin.json"),
+  version("mcpb/manifest.json"),
+  description("mcpb/manifest.json"),
+  author("mcpb/manifest.json"),
+  version("plugin.json"),
+  description("plugin.json"),
+  author("plugin.json"),
   launchLine("mcp.json", (spec) => ({ type: "stdio", ...spec })),
-  jsonVersion(".claude-plugin/plugin.json"),
+  version(".claude-plugin/plugin.json"),
+  description(".claude-plugin/plugin.json"),
+  author(".claude-plugin/plugin.json"),
   launchLine(".claude-plugin/plugin.json"),
+  description(".claude-plugin/marketplace.json"),
+  entryDescription(".claude-plugin/marketplace.json"),
   unversionedMarketplace(".claude-plugin/marketplace.json"),
   unversionedMarketplace(".agents/plugins/marketplace.json"),
-  {
-    name: "plugin/LightroomAgent.lrplugin/Info.lua",
-    expected: core,
-    read() {
-      const m = fs.readFileSync(p(this.name), "utf8").match(INFO_LUA);
-      return m ? `${m[1]}.${m[2]}.${m[3]}` : null;
-    },
-    write(v) {
-      const [maj, min, pat] = core(v).split(".");
-      const src = fs.readFileSync(p(this.name), "utf8");
-      if (!INFO_LUA.test(src)) throw new Error("Info.lua: VERSION line not found");
-      fs.writeFileSync(p(this.name), src.replace(INFO_LUA, `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`));
-    },
-  },
-  {
-    name: "plugin/LightroomAgent.lrplugin/Contract.lua",
-    expected: (v) => v,
-    read() {
-      return fs.readFileSync(p(this.name), "utf8").match(CONTRACT_LUA)?.[1] ?? null;
-    },
-    write(v) {
-      const src = fs.readFileSync(p(this.name), "utf8");
-      if (!CONTRACT_LUA.test(src)) throw new Error("Contract.lua: VERSION line not found");
-      fs.writeFileSync(p(this.name), src.replace(CONTRACT_LUA, `\n    VERSION = ${JSON.stringify(v)},\n`));
-    },
-  },
+  textField("plugin/LightroomAgent.lrplugin/Info.lua", INFO_LUA, (m) => `${m[1]}.${m[2]}.${m[3]}`,
+    (v) => { const [maj, min, pat] = v.split("."); return `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`; },
+    (r) => core(r.version)),
+  textField("plugin/LightroomAgent.lrplugin/Contract.lua", CONTRACT_LUA, (m) => m[1], (v) => `\n    VERSION = ${JSON.stringify(v)},\n`, (r) => r.version),
 ];
 
 function fail(msg) {
@@ -125,31 +132,26 @@ function fail(msg) {
 }
 
 function check() {
-  const canonical = targets[0].read();
-  if (!SEMVER.test(canonical ?? "")) {
-    fail(`canonical version in ${targets[0].name} is not semver: ${canonical}`);
+  const release = packageRelease();
+  if (!SEMVER.test(release.version ?? "")) {
+    fail(`canonical version in server/package.json is not semver: ${release.version}`);
   }
   const manifest = readJson(p("server", "package.json"));
   const registry = readJson(p("server.json"));
   if (!manifest.mcpName || registry.name !== manifest.mcpName) {
     fail("server.json name must match server/package.json mcpName");
   }
-  for (const pkg of registry.packages) {
-    if (pkg.version !== canonical) {
-      fail(`server.json package version drift vs ${canonical}: ${pkg.version}`);
-    }
-  }
   const mismatches = [];
   for (const t of targets) {
     const got = t.read();
-    const ok = isDeepStrictEqual(got, t.expected(canonical));
+    const ok = isDeepStrictEqual(got, t.expected(release));
     console.log(`  ${ok ? "ok  " : "DIFF"} ${t.name}: ${JSON.stringify(got)}`);
     if (!ok) mismatches.push(t.name);
   }
   if (mismatches.length > 0) {
-    fail(`drift vs ${canonical}: ${mismatches.join(", ")}`);
+    fail(`drift vs server/package.json at ${release.version}: ${mismatches.join(", ")}`);
   }
-  console.log(`[bump-version] all sources agree at ${canonical}`);
+  console.log(`[bump-version] all sources agree at ${release.version}`);
 }
 
 function bump(current, level) {
@@ -162,18 +164,18 @@ function bump(current, level) {
   return `${maj}.${min}.${pat}`;
 }
 
-function apply(version, dryRun) {
+function apply(release, dryRun) {
   for (const t of targets) {
     const before = JSON.stringify(t.read());
-    const after = JSON.stringify(t.expected(version));
+    const after = JSON.stringify(t.expected(release));
     if (dryRun) {
       console.log(`  ${t.name}: ${before} -> ${after}${before === after ? " (no change)" : ""}`);
       continue;
     }
-    t.write(version);
+    t.write(release);
     console.log(`  updated ${t.name}: ${before} -> ${after}`);
   }
-  console.log(`version=${version}`);
+  console.log(`version=${release.version}`);
 }
 
 const args = process.argv.slice(2);
@@ -185,11 +187,11 @@ if (args.includes("--check")) {
   check();
 } else if (positional) {
   if (!SEMVER.test(positional)) fail(`invalid version: ${positional}`);
-  apply(positional, dryRun);
+  apply({ ...packageRelease(), version: positional }, dryRun);
 } else if (bumpArg) {
-  const current = targets[0].read();
-  if (!SEMVER.test(current ?? "")) fail(`cannot bump non-semver version: ${current}`);
-  apply(bump(current, bumpArg.slice("--bump=".length)), dryRun);
+  const release = packageRelease();
+  if (!SEMVER.test(release.version ?? "")) fail(`cannot bump non-semver version: ${release.version}`);
+  apply({ ...release, version: bump(release.version, bumpArg.slice("--bump=".length)) }, dryRun);
 } else {
   fail("usage: bump-version.mjs <version> | --bump=<level> | --check [--dry-run]");
 }
