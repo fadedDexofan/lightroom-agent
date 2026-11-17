@@ -6,19 +6,6 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main]
-    paths:
-      - .github/workflows/release.yml
-      - scripts/**
-      - server/package.json
-      - server/scripts/**
-      - plugin.json
-      - mcp.json
-      - .claude-plugin/**
-      - .agents/**
-      - gemini-extension.json
-      - mcpb/**
-      - server.json
-      - RELEASE_NOTES.md
 
 concurrency:
   group: release-${{ github.ref }}
