@@ -12,7 +12,7 @@ export interface ToolAccessOptions {
 export type ToolAccess = ReturnType<typeof createToolAccess>;
 
 export function createToolAccess({ toolsets, readOnly }: ToolAccessOptions) {
-  const enabledToolsets = new Set<Toolset>(["core", ...toolsets]);
+  const enabledToolsets = new Set<Toolset>(toolsets);
   const tools = listToolsHandler(enabledToolsets, readOnly);
   const allowedTools = new Set(tools.tools.map((tool) => tool.name));
   const hiddenTools = new Map(TOOL_CONTRACTS.filter((tool) => !enabledToolsets.has(tool.toolset))
