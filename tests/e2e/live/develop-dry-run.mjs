@@ -8,6 +8,7 @@ const { session, marker, catalogPath } = await openLiveSession();
 const source_id = requireFixtureId(marker, "arw_14bit");
 const target_ids = ["wide_plain", "pano"].map((key) => requireFixtureId(marker, key));
 const keys = ["Exposure2012", "Contrast2012"];
+const targetStart = { Exposure2012: -0.3, Contrast2012: -7 };
 const tool = async (name, args) => (await session.toolOrThrow(name, args)).data;
 const settingsOf = (row) => parseLuaTable(row.text.slice(row.text.indexOf("{")));
 const holds = (values) => (row) => Object.entries(values).every(([key, value]) => isDeepStrictEqual(settingsOf(row)[key], value));
@@ -27,10 +28,14 @@ try {
   }
   await tool("set_develop_settings", { photo_id: source_id, settings: { Exposure2012: 0.5, Contrast2012: 10 } });
   for (const photo_id of target_ids) {
-    await tool("set_develop_settings", { photo_id, settings: { Exposure2012: 0, Contrast2012: 0 } });
+    await tool("set_develop_settings", { photo_id, settings: targetStart });
   }
   const before = new Map();
-  for (const id of target_ids) before.set(id, { ...await read(id, holds({ Exposure2012: 0, Contrast2012: 0 })), history: developHistory(catalogPath, id) });
+  for (const id of target_ids) {
+    const flushed = await read(id, holds(targetStart));
+    assert.ok(holds(targetStart)(flushed.row), `the stored row of ${id} never showed the write, so the flush proves nothing`);
+    before.set(id, { ...flushed, history: developHistory(catalogPath, id) });
+  }
   const args = { source_id, target_ids, settings: keys };
   const preview = await tool("copy_develop_settings", { ...args, dry_run: true });
   assert.equal(preview.dry_run, true);
