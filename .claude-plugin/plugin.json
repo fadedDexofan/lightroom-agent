@@ -1,11 +1,30 @@
 {
   "name": "lightroom-agent",
   "version": "0.27.0",
-  "description": "Lightroom Classic tools and the lightroom-agent skill for culling, developing and exporting photos with verified edits.",
+  "description": "Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render.",
   "author": {
-    "name": "Marcin Skalski"
+    "name": "fadedDexofan"
   },
   "homepage": "https://github.com/fadedDexofan/lightroom-agent#readme",
   "repository": "https://github.com/fadedDexofan/lightroom-agent",
-  "license": "MIT"
+  "license": "MIT",
+  "keywords": [
+    "lightroom",
+    "lightroom-classic",
+    "photography",
+    "mcp",
+    "skills"
+  ],
+  "mcpServers": {
+    "lightroom": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "lightroom-agent@0.27.0"
+      ],
+      "env": {
+        "LIGHTROOM_AGENT_TOOLSETS": "all"
+      }
+    }
+  }
 }

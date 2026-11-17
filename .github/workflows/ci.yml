@@ -86,3 +86,6 @@ jobs:
 
       - name: Assert all version sources agree
         run: node scripts/bump-version.mjs --check
+
+      - name: Release script tests
+        run: node --test "scripts/*.test.mjs"

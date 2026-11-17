@@ -8,12 +8,19 @@
 //   node scripts/bump-version.mjs --dry-run 0.4.0   print diff, write nothing
 import fs from "node:fs";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SEMVER = /^[0-9]+\.[0-9]+\.[0-9]+$/;
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const PACKAGE = "lightroom-agent";
+const SERVER_KEY = "lightroom";
 const p = (...s) => path.join(repoRoot, ...s);
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
+const writeJson = (file, json) => fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+const core = (v) => v.match(SEMVER).slice(1, 4).join(".");
+
+const launch = (v) => ({ command: "npx", args: ["-y", `${PACKAGE}@${v}`], env: { LIGHTROOM_AGENT_TOOLSETS: "all" } });
 
 function versionTs(v) {
   return [
@@ -24,101 +31,79 @@ function versionTs(v) {
   ].join("\n");
 }
 
-const INFO_LUA = /VERSION = \{ major=\d+, minor=\d+, revision=\d+, build=\d+ \}/;
+const INFO_LUA = /VERSION = \{ major=(\d+), minor=(\d+), revision=(\d+), build=\d+ \}/;
 
-// Each target reads its current version and rewrites it. server/package.json
-// is the canonical source — listed first so --check compares against it.
+const jsonVersion = (name, extra = () => {}) => ({
+  name,
+  expected: (v) => v,
+  read() {
+    return readJson(p(name)).version;
+  },
+  write(v) {
+    const json = readJson(p(name));
+    json.version = v;
+    extra(json, v);
+    writeJson(p(name), json);
+  },
+});
+
+const launchLine = (name, shape = (spec) => spec) => ({
+  name: `${name} (launch)`,
+  expected: (v) => shape(launch(v)),
+  read() {
+    return readJson(p(name)).mcpServers?.[SERVER_KEY] ?? null;
+  },
+  write(v) {
+    const json = readJson(p(name));
+    json.mcpServers = { ...json.mcpServers, [SERVER_KEY]: shape(launch(v)) };
+    writeJson(p(name), json);
+  },
+});
+
+const unversionedMarketplace = (name) => ({
+  name: `${name} (no entry version)`,
+  expected: () => [],
+  read() {
+    return readJson(p(name)).plugins.filter((entry) => "version" in entry).map((entry) => entry.name);
+  },
+  write() {},
+});
+
 const targets = [
-  {
-    name: "server/package.json",
-    file: p("server", "package.json"),
-    read() {
-      return readJson(this.file).version;
-    },
-    write(v) {
-      const j = readJson(this.file);
-      j.version = v;
-      fs.writeFileSync(this.file, JSON.stringify(j, null, 2) + "\n");
-    },
-  },
-  {
-    name: "server.json",
-    file: p("server.json"),
-    read() {
-      return readJson(this.file).version;
-    },
-    write(v) {
-      const j = readJson(this.file);
-      j.version = v;
-      for (const pkg of j.packages) pkg.version = v;
-      fs.writeFileSync(this.file, JSON.stringify(j, null, 2) + "\n");
-    },
-  },
-  {
-    name: "server/package-lock.json",
-    file: p("server", "package-lock.json"),
-    read() {
-      return readJson(this.file).version;
-    },
-    write(v) {
-      const j = readJson(this.file);
-      j.version = v;
-      if (j.packages?.[""]) j.packages[""].version = v;
-      fs.writeFileSync(this.file, JSON.stringify(j, null, 2) + "\n");
-    },
-  },
+  jsonVersion("server/package.json"),
+  jsonVersion("server.json", (json, v) => { for (const pkg of json.packages) pkg.version = v; }),
+  jsonVersion("server/package-lock.json", (json, v) => { if (json.packages?.[""]) json.packages[""].version = v; }),
   {
     name: "server/src/version.ts",
-    file: p("server", "src", "version.ts"),
+    expected: (v) => v,
     read() {
-      const m = fs.readFileSync(this.file, "utf8").match(/export const VERSION = "([^"]+)"/);
-      return m?.[1] ?? null;
+      return fs.readFileSync(p(this.name), "utf8").match(/export const VERSION = "([^"]+)"/)?.[1] ?? null;
     },
     write(v) {
-      fs.writeFileSync(this.file, versionTs(v));
+      fs.writeFileSync(p(this.name), versionTs(v));
     },
   },
-  {
-    name: "mcpb/manifest.json",
-    file: p("mcpb", "manifest.json"),
-    read() {
-      return readJson(this.file).version;
-    },
-    write(v) {
-      const j = readJson(this.file);
-      j.version = v;
-      fs.writeFileSync(this.file, JSON.stringify(j, null, 2) + "\n");
-    },
-  },
-  {
-    name: ".claude-plugin/plugin.json",
-    file: p(".claude-plugin", "plugin.json"),
-    read() {
-      return readJson(this.file).version;
-    },
-    write(v) {
-      const j = readJson(this.file);
-      j.version = v;
-      fs.writeFileSync(this.file, JSON.stringify(j, null, 2) + "\n");
-    },
-  },
+  jsonVersion("mcpb/manifest.json"),
+  jsonVersion("plugin.json"),
+  launchLine("mcp.json", (spec) => ({ type: "stdio", ...spec })),
+  jsonVersion(".claude-plugin/plugin.json"),
+  launchLine(".claude-plugin/plugin.json"),
+  unversionedMarketplace(".claude-plugin/marketplace.json"),
+  unversionedMarketplace(".agents/plugins/marketplace.json"),
+  jsonVersion("gemini-extension.json"),
+  launchLine("gemini-extension.json"),
   {
     name: "plugin/LightroomAgent.lrplugin/Info.lua",
-    file: p("plugin", "LightroomAgent.lrplugin", "Info.lua"),
+    expected: core,
     read() {
-      const m = fs
-        .readFileSync(this.file, "utf8")
-        .match(/VERSION = \{ major=(\d+), minor=(\d+), revision=(\d+), build=\d+ \}/);
+      const m = fs.readFileSync(p(this.name), "utf8").match(INFO_LUA);
       return m ? `${m[1]}.${m[2]}.${m[3]}` : null;
     },
     write(v) {
-      const [maj, min, pat] = v.split(".");
-      const src = fs.readFileSync(this.file, "utf8");
+      const [maj, min, pat] = core(v).split(".");
+      const src = fs.readFileSync(p(this.name), "utf8");
       if (!INFO_LUA.test(src)) throw new Error("Info.lua: VERSION line not found");
-      fs.writeFileSync(
-        this.file,
-        src.replace(INFO_LUA, `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`),
-      );
+      fs.writeFileSync(p(this.name), src.replace(INFO_LUA, `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`));
     },
   },
 ];
@@ -146,17 +131,18 @@ function check() {
   const mismatches = [];
   for (const t of targets) {
     const got = t.read();
-    const ok = got === canonical;
-    console.log(`  ${ok ? "ok  " : "DIFF"} ${t.name}: ${got}`);
+    const ok = isDeepStrictEqual(got, t.expected(canonical));
+    console.log(`  ${ok ? "ok  " : "DIFF"} ${t.name}: ${JSON.stringify(got)}`);
     if (!ok) mismatches.push(t.name);
   }
   if (mismatches.length > 0) {
-    fail(`version drift vs ${canonical}: ${mismatches.join(", ")}`);
+    fail(`drift vs ${canonical}: ${mismatches.join(", ")}`);
   }
   console.log(`[bump-version] all sources agree at ${canonical}`);
 }
 
 function bump(current, level) {
+  if (core(current) !== current) fail(`cannot bump the prerelease ${current} by level; give the version`);
   let [maj, min, pat] = current.split(".").map(Number);
   if (level === "major") [maj, min, pat] = [maj + 1, 0, 0];
   else if (level === "minor") [min, pat] = [min + 1, 0];
@@ -167,13 +153,14 @@ function bump(current, level) {
 
 function apply(version, dryRun) {
   for (const t of targets) {
-    const before = t.read();
+    const before = JSON.stringify(t.read());
+    const after = JSON.stringify(t.expected(version));
     if (dryRun) {
-      console.log(`  ${t.name}: ${before} -> ${version}${before === version ? " (no change)" : ""}`);
+      console.log(`  ${t.name}: ${before} -> ${after}${before === after ? " (no change)" : ""}`);
       continue;
     }
     t.write(version);
-    console.log(`  updated ${t.name}: ${before} -> ${version}`);
+    console.log(`  updated ${t.name}: ${before} -> ${after}`);
   }
   console.log(`version=${version}`);
 }
