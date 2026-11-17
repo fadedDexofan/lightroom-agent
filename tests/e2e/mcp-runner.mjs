@@ -7,15 +7,21 @@
 //   2. server built: `mise run build`
 //
 // Usage:
-//   node tests/e2e/mcp-runner.mjs                 # full read-only suite
+//   node tests/e2e/mcp-runner.mjs                 # read mode
 //   node tests/e2e/mcp-runner.mjs read            # read-only ops
 //   node tests/e2e/mcp-runner.mjs write           # mutating ops (creates collection, sets rating, etc.)
-//   node tests/e2e/mcp-runner.mjs develop         # develop module ops
+//   node tests/e2e/mcp-runner.mjs develop         # develop module ops, copy_develop_settings on two photos
+//   node tests/e2e/mcp-runner.mjs export          # exports one photo as a JPEG and checks its size
 //   node tests/e2e/mcp-runner.mjs preset-roundtrip # create/get/export/no-overwrite preset check
+//   node tests/e2e/mcp-runner.mjs pagination      # offset/limit slices and three parallel calls
 //   node tests/e2e/mcp-runner.mjs failure         # error/edge-case ops
-//   node tests/e2e/mcp-runner.mjs all             # everything except import/export
+//   node tests/e2e/mcp-runner.mjs wrong-token     # server reads a token that does not match
+//   node tests/e2e/mcp-runner.mjs port-mismatch   # server points at a port with no plug-in
+//   node tests/e2e/mcp-runner.mjs all             # read, write, develop, export, pagination and failure
 //   node tests/e2e/mcp-runner.mjs tool <name> '<json>'   # one-shot single tool call
 //   node tests/e2e/mcp-runner.mjs list-tools      # dump tool catalog from server
+//
+// Mutating modes refuse unless the open catalog is the live kit's throwaway catalog.
 //
 // Exit code is non-zero if any scenario fails.
 
@@ -212,7 +218,7 @@ async function run(label, fn) {
 
 async function main() {
   if (mode === "wrong-token") {
-    // Phase 9c — point the server at a token file that doesn't match
+    // Point the server at a token file that doesn't match
     // what the plugin has. Real token file stays untouched, so a crash
     // can't leave the system in a broken state (TOCTOU-safe).
     const fakePath = path.join(os.tmpdir(), `lr_mcp_bad_token_${Date.now()}`);
@@ -239,7 +245,7 @@ async function main() {
   }
 
   if (mode === "port-mismatch") {
-    // Phase 9d — server uses port 58773 (no plugin there), expect "not connected"
+    // Server uses port 58773 (no plugin there), expect "not connected"
     const c = new McpClient();
     process.env.LIGHTROOM_MCP_REQUEST_PORT = "58773";
     process.env.LIGHTROOM_MCP_RESPONSE_PORT = "58774";
@@ -599,7 +605,7 @@ async function main() {
   }
 
   if (mode === "develop" || mode === "all") {
-    // copy_develop_settings (Phase 6) — needs two photos
+    // copy_develop_settings needs two photos
     const twoPhotos = await c.callTool("search_photos", { limit: 2 });
     if (!twoPhotos.isError && twoPhotos.parsed.photos.length >= 2) {
       const src = twoPhotos.parsed.photos[0];
@@ -633,7 +639,7 @@ async function main() {
   }
 
   if (mode === "export" || mode === "all") {
-    // Phase 7b — export to /tmp, verify file + dimensions.
+    // Export to /tmp, verify file + dimensions.
     // Prefer a real photo (rating>=1 typically means actual catalog content,
     // skipping test fixtures like synthetic PNGs that LR refuses to render).
     let search = await c.callTool("search_photos", { rating: 5, limit: 1, include_path: true });
@@ -679,7 +685,7 @@ async function main() {
   }
 
   if (mode === "pagination" || mode === "all") {
-    // Phase 10a — offset/limit slices don't overlap, count is stable
+    // Offset/limit slices don't overlap, count is stable
     await run("search_photos pagination is consistent", async () => {
       const a = await c.callTool("search_photos", { limit: 5, offset: 0 });
       const b = await c.callTool("search_photos", { limit: 5, offset: 5 });
