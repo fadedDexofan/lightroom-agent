@@ -3,20 +3,8 @@ name: Lua Lint
 on:
   push:
     branches: [main]
-    paths:
-      - 'plugin/**'
-      - '.github/workflows/lua-lint.yml'
-      - 'selene.toml'
-      - 'lightroom.yml'
-      - '.mise.toml'
   pull_request:
     branches: [main]
-    paths:
-      - 'plugin/**'
-      - '.github/workflows/lua-lint.yml'
-      - 'selene.toml'
-      - 'lightroom.yml'
-      - '.mise.toml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

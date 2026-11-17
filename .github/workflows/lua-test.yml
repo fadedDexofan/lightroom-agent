@@ -3,16 +3,8 @@ name: Lua Tests
 on:
   push:
     branches: [main]
-    paths:
-      - 'plugin/**'
-      - '.busted'
-      - '.github/workflows/lua-test.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'plugin/**'
-      - '.busted'
-      - '.github/workflows/lua-test.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
