@@ -244,7 +244,9 @@ describe("HandlerMaskInvert.invertMask in place", function()
 
         local err = errorOf(function() Handler.invertMask(args()) end)
 
-        assert.truthy(err:find("may not have been saved", 1, true))
+        assert.truthy(err:find("whether it is inverted is unknown", 1, true))
+        assert.truthy(err:find("list_masks", 1, true))
+        assert.is_nil(err:find("may not have been saved", 1, true))
         assert.are.same({ "develop", "library" }, calls.modules)
     end)
 end)
@@ -259,6 +261,7 @@ describe("HandlerMaskInvert.invertMask as a copy", function()
         assert.are.equal("copy", r.mode)
         assert.are.equal("m-1", r.source_mask_id)
         assert.are.equal("copy-1", r.mask_id)
+        assert.are.same({ "curves", "point_colors", "color_grading", "glow", "LocalHue" }, r.not_copied)
         assert.are.same({
             id = "copy-1",
             name = "Subject Inverted",

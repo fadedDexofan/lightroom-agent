@@ -79,7 +79,7 @@ describe('broker', () => {
 
   async function serve(
     callTool: (name: string, args: unknown) => Promise<ToolResponse>,
-    token = 't',
+    token: string | null = 't',
     log: (msg: string) => void = () => {},
   ) {
     const p = ipcPath(tmpDir());
@@ -216,12 +216,22 @@ describe('broker', () => {
   unixOnly('replaces a stale socket file left by a dead owner', async () => {
     const p = ipcPath(tmpDir());
     fs.writeFileSync(p, '', { mode: 0o600, flag: 'wx' });
-    const server = new BrokerServer({ path: p, callTool: async () => ok('x'), readToken: () => null });
+    const server = new BrokerServer({ path: p, callTool: async () => ok('x'), readToken: () => 't' });
     await server.listen();
     closers.push(() => server.close());
 
-    const client = await connect(p, null);
+    const client = await connect(p, 't');
     expect(text(await client.callTool('ping', {}))).toBe('x');
+  });
+
+  it('refuses a follower when neither side has a token', async () => {
+    const calls: string[] = [];
+    const { p } = await serve(async (name) => { calls.push(name); return ok('x'); }, null);
+    const client = new BrokerClient({ path: p, readToken: () => null });
+    closers.push(() => client.close());
+
+    await expect(client.connect()).rejects.toThrow(/could not prove/);
+    expect(calls).toEqual([]);
   });
 
   it.each(['not json', 'null', '[]', '1', '"x"', '{"id":"1","name":"ping"}', '{"id":1,"name":"ping","auth":5}'])(

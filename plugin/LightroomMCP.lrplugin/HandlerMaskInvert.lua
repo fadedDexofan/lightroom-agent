@@ -25,6 +25,7 @@ local COPIED_SLIDERS = {
     "local_Tint", "local_Saturation", "local_Sharpness", "local_LuminanceNoise", "local_Moire",
     "local_Defringe",
 }
+local NOT_COPIED = { "curves", "point_colors", "color_grading", "glow", "LocalHue" }
 local MODE_IN_PLACE = "in_place"
 local MODE_COPY = "copy"
 
@@ -153,7 +154,8 @@ local function invertInPlace(photoId, maskId)
     end, INVERSION_VISIBLE_TIMEOUT_SECONDS)
     if not changed then
         error("Lightroom did not report mask " .. maskId .. " on photo " .. photoId
-            .. " as changed after invertMask; the inversion may not have been saved", 0)
+            .. " as changed after invertMask, so whether it is inverted is unknown; read it with list_masks"
+            .. " before calling invert_mask again, which would flip it back", 0)
     end
     return {
         mode = MODE_IN_PLACE,
@@ -287,6 +289,7 @@ local function invertAsCopy(photoId, maskId)
         source_mask_id = maskId,
         mask_id = copyId,
         adjustments_copied = copiedCount,
+        not_copied = NOT_COPIED,
         mask = describeMask(findMask(readAllMasks(photoId), copyId)),
     }
 end

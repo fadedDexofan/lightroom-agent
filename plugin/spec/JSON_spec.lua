@@ -106,4 +106,74 @@ describe("JSON", function()
 
         assert.are.equal(original, decoded.s)
     end)
+
+    describe("values JSON cannot carry", function()
+        local function encodeError(value)
+            local ok, err = pcall(function() return JSON:encode(value) end)
+            assert.is_false(ok)
+            return tostring(err)
+        end
+
+        it("refuses a non-finite number instead of writing nan or inf", function()
+            for _, number in ipairs({ 0 / 0, math.huge, -math.huge }) do
+                assert.truthy(encodeError({ value = number }):find("non-finite number", 1, true))
+            end
+        end)
+
+        it("refuses an array with a gap instead of dropping what follows it", function()
+            assert.truthy(encodeError({ list = { 1, nil, 3 } }):find("gap", 1, true))
+            assert.truthy(encodeError({ [2] = "b" }):find("gap", 1, true))
+        end)
+
+        it("refuses a table mixing array items and named fields instead of dropping the fields", function()
+            assert.truthy(encodeError({ 1, 2, count = 2 }):find("mixes", 1, true))
+        end)
+    end)
+
+    describe("numbers under a comma-decimal locale", function()
+        local realTonumber = tonumber
+        after_each(function()
+            os.setlocale("C", "numeric")
+            _G.tonumber = realTonumber
+        end)
+
+        it("writes a decimal point, whole numbers without a fraction and doubles that read back exactly", function()
+            assert.truthy(os.setlocale("ru_RU.UTF-8", "numeric"))
+
+            local text = JSON:encode({ 0.5, 3, 0.1 + 0.2, 1e21, -2.5e-7, 123456789012 })
+
+            assert.are.equal("[0.5,3,0.30000000000000004,1e+21,-2.5e-07,123456789012]", text)
+        end)
+
+        it("reads a decimal point even where tonumber, as in Lua 5.1, accepts only the locale's separator", function()
+            assert.truthy(os.setlocale("ru_RU.UTF-8", "numeric"))
+            _G.tonumber = function(value, base)
+                if base == nil and type(value) == "string" and value:find(".", 1, true) then return nil end
+                return realTonumber(value, base)
+            end
+
+            local decoded = JSON:decode('{"a":0.5,"b":-1.25e2,"c":7}')
+
+            assert.are.equal(0.5, decoded.a)
+            assert.are.equal(-125, decoded.b)
+            assert.are.equal(7, decoded.c)
+        end)
+    end)
+
+    describe("decoding", function()
+        it("keeps array positions after a null", function()
+            local decoded = JSON:decode('[1,null,3]')
+
+            assert.are.equal(1, decoded[1])
+            assert.is_nil(decoded[2])
+            assert.are.equal(3, decoded[3])
+        end)
+
+        it("rejects characters after the value", function()
+            for _, text in ipairs({ '{"a":1} junk', '1 2', '[1]]' }) do
+                assert.is_false(pcall(function() return JSON:decode(text) end))
+            end
+            assert.are.equal(1, JSON:decode(' {"a":1} \n').a)
+        end)
+    end)
 end)

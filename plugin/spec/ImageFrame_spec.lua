@@ -7,21 +7,22 @@ local function errorOf(fn)
 end
 
 describe("ImageFrame.fromOrientation", function()
-    local DISPLAYED_X, DISPLAYED_Y = 0.25, 0.75
+    local ORIENTATIONS = { "AB", "BA", "CD", "DC", "CB", "BC", "AD", "DA" }
+    local DISPLAYED_X, DISPLAYED_Y = 0.1, 0.3
 
     local STORED_BY_ORIENTATION = {
-        AB = { 0.25, 0.75 },
-        BA = { 0.75, 0.75 },
-        CD = { 0.75, 0.25 },
-        DC = { 0.25, 0.25 },
-        CB = { 0.75, 0.25 },
-        BC = { 0.75, 0.75 },
-        AD = { 0.25, 0.75 },
-        DA = { 0.25, 0.25 },
+        AB = { 0.1, 0.3 },
+        BA = { 0.9, 0.3 },
+        CD = { 0.9, 0.7 },
+        DC = { 0.1, 0.7 },
+        BC = { 0.3, 0.9 },
+        DA = { 0.7, 0.1 },
+        AD = { 0.7, 0.9 },
+        CB = { 0.3, 0.1 },
     }
 
     for orientation, expected in pairs(STORED_BY_ORIENTATION) do
-        it("maps a displayed point into the stored frame for " .. orientation, function()
+        it("maps a displayed point into the stored frame as Lightroom does for " .. orientation, function()
             local frame = ImageFrame.fromOrientation(orientation)
 
             local x, y = frame.toStored(DISPLAYED_X, DISPLAYED_Y)
@@ -31,8 +32,26 @@ describe("ImageFrame.fromOrientation", function()
         end)
     end
 
+    local LIGHTROOM_AUTHORED = {
+        CB = { start = { 0.3, 0.2 }, finish = { 0.45, 0.6 } },
+        AD = { start = { 0.7, 0.8 }, finish = { 0.55, 0.4 } },
+        BC = { start = { 0.3, 0.8 }, finish = { 0.45, 0.4 } },
+    }
+
+    for orientation, stored in pairs(LIGHTROOM_AUTHORED) do
+        it("stores a displayed drag as the gradient Lightroom 16.0 authored for " .. orientation, function()
+            local frame = ImageFrame.fromOrientation(orientation)
+
+            local startX, startY = frame.toStored(0.2, 0.3)
+            local finishX, finishY = frame.toStored(0.6, 0.45)
+
+            assert.is_true(math.abs(startX - stored.start[1]) < 1e-12 and math.abs(startY - stored.start[2]) < 1e-12)
+            assert.is_true(math.abs(finishX - stored.finish[1]) < 1e-12 and math.abs(finishY - stored.finish[2]) < 1e-12)
+        end)
+    end
+
     it("keeps every corner of the displayed image inside the unit square", function()
-        for orientation in pairs(STORED_BY_ORIENTATION) do
+        for _, orientation in ipairs(ORIENTATIONS) do
             local frame = ImageFrame.fromOrientation(orientation)
             for _, corner in ipairs({ { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } }) do
                 local x, y = frame.toStored(corner[1], corner[2])

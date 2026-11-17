@@ -3,6 +3,7 @@ local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 local LrStringUtils = import 'LrStringUtils'
 
+local DecimalText = require 'DecimalText'
 local PathForms = require 'PathForms'
 
 -- Lightroom Classic export presets (.lrtemplate files).
@@ -207,9 +208,9 @@ local function parsePreset(source)
             or source:match("^-?%d*%.?%d+[eE][-+]?%d+", pos)
             or source:match("^-?%d+%.?%d*", pos)
             or source:match("^-?%.%d+", pos)
-        if number and tonumber(number) then
+        if number and DecimalText.parse(number) then
             pos = pos + #number
-            return tonumber(number)
+            return DecimalText.parse(number)
         end
         fail("unexpected '" .. c .. "'")
     end

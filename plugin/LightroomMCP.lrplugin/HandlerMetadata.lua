@@ -1,6 +1,7 @@
 local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 
+local JsonValue = require 'JsonValue'
 local KeywordTree = require 'KeywordTree'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
@@ -228,7 +229,7 @@ local function readPhotoMetadata(photo, includeDevelopSettings)
             infoUrl = photo:getFormattedMetadata('copyrightInfoUrl'),
             creatorUrl = photo:getFormattedMetadata('creatorUrl'),
         }),
-        developSettings = developSettings and addSdkDevelopGroups({
+        developSettings = developSettings and JsonValue.of(addSdkDevelopGroups({
             whiteBalance = developSettings.WhiteBalance,
             temperature = developSettings.Temperature,
             tint = developSettings.Tint,
@@ -254,7 +255,7 @@ local function readPhotoMetadata(photo, includeDevelopSettings)
             parametricDarks = developSettings.ParametricDarks,
             parametricLights = developSettings.ParametricLights,
             parametricHighlights = developSettings.ParametricHighlights,
-        }, developSettings)
+        }, developSettings))
     }
 end
 

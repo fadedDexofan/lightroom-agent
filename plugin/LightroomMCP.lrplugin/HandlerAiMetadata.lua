@@ -1,4 +1,5 @@
 local LrApplication = import 'LrApplication'
+local DecimalText = require 'DecimalText'
 local PhotoLookup = require 'PhotoLookup'
 
 local Handler = {}
@@ -39,7 +40,7 @@ function Handler.setAiMetadata(args)
             if entry.photo then
                 if score ~= nil then
                     local value
-                    if score ~= '' then value = tostring(score) end
+                    if score ~= '' then value = DecimalText.number(score) end
                     entry.photo:setPropertyForPlugin(_PLUGIN, 'aiScore', value)
                 end
                 if reason ~= nil then
@@ -79,7 +80,7 @@ function Handler.getAiMetadata(args)
             local fields = values[entry.photo] or {}
             results[#results + 1] = {
                 photo_id = tostring(entry.photo.localIdentifier),
-                score = tonumber(fields.aiScore),
+                score = DecimalText.parse(fields.aiScore),
                 reason = fields.aiReason,
             }
         end

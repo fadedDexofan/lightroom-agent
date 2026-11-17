@@ -1,4 +1,5 @@
 local BrushFeather = require 'BrushFeather'
+local DecimalText = require 'DecimalText'
 
 local BrushStrokes = {}
 
@@ -195,7 +196,7 @@ local function clampUnit(value)
 end
 
 local function dabText(x, y)
-    return string.format("d %.6f %.6f", clampUnit(x), clampUnit(y))
+    return "d " .. DecimalText.fixed(clampUnit(x), 6) .. " " .. DecimalText.fixed(clampUnit(y), 6)
 end
 
 local function dabsAlong(stroke)
@@ -211,9 +212,9 @@ local function dabsAlong(stroke)
         end
     end
     local tokens = {}
-    if stroke.flow < 1 then tokens[#tokens + 1] = string.format("f %.4f", stroke.flow) end
+    if stroke.flow < 1 then tokens[#tokens + 1] = "f " .. DecimalText.fixed(stroke.flow, 4) end
     if stroke.centerWeight > 0 and stroke.centerWeight < 1 then
-        tokens[#tokens + 1] = string.format("h %.4f", stroke.centerWeight)
+        tokens[#tokens + 1] = "h " .. DecimalText.fixed(stroke.centerWeight, 4)
     end
     for index = #tokens, 1, -1 do table.insert(dabs, 1, tokens[index]) end
     return dabs

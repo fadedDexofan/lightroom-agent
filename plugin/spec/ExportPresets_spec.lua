@@ -143,6 +143,7 @@ local function fakeFs(files)
             return "/appdata"
         end,
         child = function(dir, name) return dir .. "/" .. name end,
+        standardizePath = function(path) return path end,
         parent = parent,
         leafName = leaf,
         extension = function(path) return path:match("%.([^./]*)$") or "" end,
@@ -155,7 +156,7 @@ local function setup(opts)
     opts = opts or {}
     local files = opts.files or defaultFiles()
     local LrFileUtils, LrPathUtils = fakeFs(files)
-    local catalog = helper.fakeCatalog({ photos = opts.photos or {} })
+    local catalog = helper.fakeCatalog({ photos = opts.photos or {}, folders = opts.folders })
     catalog.getPath = function() return "/cat/Main.lrcat" end
     local exportSessionCalls = {}
     helper.installImport({
@@ -617,6 +618,74 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         r = Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "BlueSky" })
         assert.are.equal("desktop", calls[2].exportSettings.LR_export_destinationType)
         assert.are.equal("desktop", r.destination)
+    end)
+
+    describe("overwriting into an original's folder", function()
+        local function presetFile(destination)
+            local files = defaultFiles()
+            files[ROOT .. "/User Presets/Next To Original.lrtemplate"] = [[
+s = {
+	title = "Next To Original",
+	type = "Export",
+	value = {
+		exportServiceProvider = "com.adobe.ag.export.file",
+		format = "JPEG",
+		]] .. destination .. [[
+	},
+	version = 0,
+}
+]]
+            return files
+        end
+        local function inFolder() return helper.fakePhoto({ id = "1", path = "/prints/Batch/a.jpg" }) end
+
+        local function catalogFolders() return { helper.fakeFolder("/prints/Batch") } end
+
+        it("refuses a source-folder preset, and one whose specific folder is a catalog folder", function()
+            for _, case in ipairs({
+                { files = presetFile('export_destinationType = "sourceFolder",'), preset = "Next To Original" },
+                { files = defaultFiles(), preset = "To Prints" },
+            }) do
+                local _, Handler, calls = setup({ files = case.files, photos = { inFolder() }, folders = catalogFolders() })
+                local ok, err = pcall(Handler.exportPhotos,
+                    { photo_ids = { "1" }, export_preset = case.preset, on_existing = "overwrite" })
+                assert.is_false(ok)
+                assert.truthy(tostring(err):find("/prints/Batch, a folder of this catalog", 1, true), tostring(err))
+                assert.are.equal(0, #calls)
+            end
+        end)
+
+        it("allows a source-folder preset that writes into a subfolder outside the catalog", function()
+            local files = presetFile('export_destinationType = "sourceFolder", export_useSubfolder = true,'
+                .. ' export_destinationPathSuffix = "Exports",')
+            local _, Handler, calls = setup({ files = files, photos = { inFolder() }, folders = catalogFolders() })
+            Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "Next To Original", on_existing = "overwrite" })
+            assert.are.equal(1, #calls)
+        end)
+    end)
+
+    it("turns off a preset's Add to This Catalog so the export never imports its files", function()
+        local files = defaultFiles()
+        files[ROOT .. "/User Presets/Reimport.lrtemplate"] = [[
+s = {
+	title = "Reimport",
+	type = "Export",
+	value = {
+		exportServiceProvider = "com.adobe.ag.export.file",
+		export_destinationType = "specificFolder",
+		export_destinationPathPrefix = "/out",
+		format = "JPEG",
+		reimportExportedPhoto = true,
+		reimport_stackWithOriginal = true,
+	},
+	version = 0,
+}
+]]
+        local _, Handler, calls = setup({ files = files, photos = { photo() } })
+
+        Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "Reimport" })
+
+        assert.is_false(calls[1].exportSettings.LR_reimportExportedPhoto)
     end)
 
     it("requires a destination for a choose-later preset", function()

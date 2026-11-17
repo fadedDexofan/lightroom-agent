@@ -39,6 +39,11 @@ local function setup(opts)
         for _, p in ipairs(list) do
             if not alive[p] then raw[p].uuid = nil end
             if opts.virtualCopies and p == photos[1] then raw[p].virtualCopies = { photos[2] } end
+            if opts.stack and p.localIdentifier <= "3" then
+                raw[p].isInStackInFolder = true
+                raw[p].stackInFolderIsCollapsed = opts.stack == "collapsed"
+                raw[p].stackInFolderMembers = { photos[1], photos[2], photos[3] }
+            end
         end
         return raw
     end
@@ -233,5 +238,25 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
             "Include every virtual copy")
         assert.are.same({}, calls.selections)
         assert.are.equal(0, calls.removes)
+    end)
+
+    it("refuses a photo in a collapsed stack unless every member is requested", function()
+        local handler, calls = setup({ stack = "collapsed" })
+        failure(function() handler.removePhotos({ photo_ids = { "1" }, confirm = true }) end,
+            "collapsed stack")
+        failure(function() handler.removePhotos({ photo_ids = { "2", "3" }, confirm = true }) end,
+            "collapsed stack")
+        assert.are.same({}, calls.selections)
+        assert.are.equal(0, calls.removes)
+    end)
+
+    it("removes a whole collapsed stack, or one photo of an expanded stack", function()
+        local handler, calls = setup({ stack = "collapsed" })
+        handler.removePhotos({ photo_ids = { "1", "2", "3" }, confirm = true })
+        assert.are.equal(1, calls.removes)
+
+        handler, calls = setup({ stack = "expanded" })
+        handler.removePhotos({ photo_ids = { "2" }, confirm = true })
+        assert.are.equal(1, calls.removes)
     end)
 end)

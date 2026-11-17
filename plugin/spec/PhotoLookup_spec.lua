@@ -239,46 +239,27 @@ describe("PhotoLookup.resolveMany", function()
         assert.are.equal(0, catalogState.getAllPhotosCalls)
     end)
 
-    -- Paths are not unique: a virtual copy reports its master's source path.
-    -- Resolving one to the FIRST match instead of the last would silently hand
-    -- a path-addressed write tool a different photo than the catalog's own
-    -- ordering names.
-    it("resolves a duplicate path to the last matching photo", function()
+    it("resolves a path shared with virtual copies to the master", function()
         local master = fakePhoto(1, "/shared.nef")
         local virtualCopy = fakePhoto(2, "/shared.nef")
         linkCopies(master, { virtualCopy })
-        local catalog, _ = fakeCatalog({ master, virtualCopy })
+        local catalog, state = fakeCatalog({ master, virtualCopy })
 
         local r = PhotoLookup.resolveMany(catalog, { "/shared.nef" })
 
-        assert.are.equal(virtualCopy, r[1].photo)
+        assert.are.equal(master, r[1].photo)
+        assert.are.equal(0, state.getAllPhotosCalls)
     end)
 
-    it("takes the last in catalog order, whichever photo the path lookup returns", function()
+    it("resolves to the master even when the path lookup returns a virtual copy", function()
         local master = fakePhoto(1, "/shared.nef")
         local copyA = fakePhoto(2, "/shared.nef")
         local copyB = fakePhoto(3, "/shared.nef")
         linkCopies(master, { copyA, copyB })
-        -- findPhotoByPath returns copyB, the first here; copyA comes last.
-        local catalog = fakeCatalog({ copyB, master, copyA })
+        local catalog, state = fakeCatalog({ copyB, master, copyA })
 
-        assert.are.equal(copyA, PhotoLookup.resolveOne(catalog, "/shared.nef"))
-    end)
-
-    it("stops the scan once it has seen a master and all its virtual copies", function()
-        local state = { pathReads = 0, visits = 0 }
-        local photos = {}
-        for i = 1, 100 do
-            local path = (i == 2 or i == 3) and "/shared.nef" or ("/" .. i .. ".jpg")
-            photos[i] = countingPhoto(i, path, state)
-        end
-        linkCopies(photos[2], { photos[3] })
-        local catalog = fakeCatalog(photos)
-
-        local r = PhotoLookup.resolveMany(catalog, { "/shared.nef" })
-
-        assert.are.equal(photos[3], r[1].photo)
-        assert.are.equal(3, state.furthest)
+        assert.are.equal(master, PhotoLookup.resolveOne(catalog, "/shared.nef"))
+        assert.are.equal(0, state.getAllPhotosCalls)
     end)
 end)
 
@@ -362,7 +343,7 @@ describe("PhotoLookup.resolveMany with getPhotoByLocalId", function()
         end)
     end
 
-    it("keeps last-in-catalog-order for a shared path when its photos are also named by id", function()
+    it("resolves a shared path to the master while ids name the virtual copies", function()
         local master = fakePhoto(1, "/shared.nef")
         local copyA = fakePhoto(2, "/shared.nef")
         local copyB = fakePhoto(3, "/shared.nef")
@@ -374,9 +355,9 @@ describe("PhotoLookup.resolveMany with getPhotoByLocalId", function()
         local r = PhotoLookup.resolveMany(catalog, { "2", "/shared.nef", "3" })
 
         assert.are.equal(copyA, r[1].photo)
-        assert.are.equal(copyA, r[2].photo)
+        assert.are.equal(master, r[2].photo)
         assert.are.equal(copyB, r[3].photo)
-        assert.are.equal(1, state.getAllPhotosCalls)
+        assert.are.equal(0, state.getAllPhotosCalls)
     end)
 end)
 

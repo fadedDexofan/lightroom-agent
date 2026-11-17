@@ -37,10 +37,8 @@ end
 -- run inside withReadAccessDo or withWriteAccessDo; callers resolve first.
 --
 -- Paths are not unique: a virtual copy reports its master's source path, so a
--- path names a master and all its virtual copies. The LAST of them in catalog
--- order wins, as it did when paths were found by scanning every photo. Only
--- the getAllPhotos pass knows that order, so a path whose master has virtual
--- copies joins the pass, which stops once it has seen all of them.
+-- path names a master and all its virtual copies. A path always resolves to
+-- the master; a virtual copy is addressed by its local id.
 function PhotoLookup.resolveMany(catalog, photoIds)
     local results = {}
     local canLookUpDirectly = type(catalog.getPhotoByLocalId) == "function"
@@ -57,10 +55,8 @@ function PhotoLookup.resolveMany(catalog, photoIds)
         end
     end
 
-    -- Path -> photo, or false when no photo has that exact path.
+    -- Path -> master photo, or false when no photo has that exact path.
     local byPath = {}
-    -- Local id -> path, for the master and virtual copies sharing a path.
-    local sharers = {}
 
     for i, id in ipairs(photoIds) do
         results[i] = { id = id, photo = nil }
@@ -82,19 +78,7 @@ function PhotoLookup.resolveMany(catalog, photoIds)
             local photo = PhotoLookup.findByPath(catalog, id)
             -- Exact, as the scan compared: findPhotoByPath may ignore case.
             if photo and PathForms.same(photo:getRawMetadata('path'), id) then
-                local master = photo:getRawMetadata('masterPhoto') or photo
-                byPath[id] = master
-                local sharing = { master }
-                for _, copy in ipairs(master:getRawMetadata('virtualCopies') or {}) do
-                    sharing[#sharing + 1] = copy
-                end
-                if #sharing > 1 then
-                    for _, sharer in ipairs(sharing) do
-                        local key = tostring(sharer.localIdentifier)
-                        sharers[key] = id
-                        await(key)
-                    end
-                end
+                byPath[id] = photo:getRawMetadata('masterPhoto') or photo
             end
         end
     end
@@ -119,8 +103,6 @@ function PhotoLookup.resolveMany(catalog, photoIds)
                 if not seen[key] then
                     seen[key] = true
                     if byLocalId[key] == nil then byLocalId[key] = p end
-                    -- Overwritten by each later sharer: the last one wins.
-                    if sharers[key] then byPath[sharers[key]] = p end
                     if pending[key] then
                         pending[key] = nil
                         remaining = remaining - 1

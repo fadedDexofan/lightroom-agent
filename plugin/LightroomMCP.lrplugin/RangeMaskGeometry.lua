@@ -1,3 +1,5 @@
+local DecimalText = require 'DecimalText'
+
 local RangeMaskGeometry = {}
 
 local LUMINANCE = "luminance"
@@ -229,15 +231,19 @@ local function rangeSettingsFor(kind, range)
     if TRAPEZOID_FIELD_OF_KIND[kind] ~= nil then
         local trapezoid = RangeMaskGeometry.trapezoidOf(range)
         requireOrderedTrapezoid(trapezoid)
-        settings[TRAPEZOID_FIELD_OF_KIND[kind]] = string.format("%.6f %.6f %.6f %.6f",
-            trapezoid[1], trapezoid[2], trapezoid[3], trapezoid[4])
+        settings[TRAPEZOID_FIELD_OF_KIND[kind]] = table.concat({
+            DecimalText.fixed(trapezoid[1], 6), DecimalText.fixed(trapezoid[2], 6),
+            DecimalText.fixed(trapezoid[3], 6), DecimalText.fixed(trapezoid[4], 6),
+        }, " ")
         return settings
     end
     local sample = range.sample
     settings.ColorAmount = round(range.amount)
     settings.PointModels = {
-        string.format("%.6f %.6f %.6f %.6f %.6f %d",
-            sample.l, sample.a, sample.b, sample.x, sample.y, POINT_MODEL_TRAILER),
+        table.concat({
+            DecimalText.fixed(sample.l, 6), DecimalText.fixed(sample.a, 6), DecimalText.fixed(sample.b, 6),
+            DecimalText.fixed(sample.x, 6), DecimalText.fixed(sample.y, 6), string.format("%d", POINT_MODEL_TRAILER),
+        }, " "),
     }
     return settings
 end
@@ -268,7 +274,7 @@ end
 local function numbersIn(text)
     local numbers = {}
     for token in tostring(text):gmatch("%S+") do
-        local number = tonumber(token)
+        local number = DecimalText.parse(token)
         if number == nil then return nil end
         numbers[#numbers + 1] = number
     end

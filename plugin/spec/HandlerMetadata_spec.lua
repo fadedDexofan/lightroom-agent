@@ -230,6 +230,22 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.same({ "summer", "Places|beach" }, r.keywordPaths)
     end)
 
+    it("passes a tone curve of unexpected shape through in the marked form instead of failing to encode", function()
+        local photo = helper.fakePhoto({
+            id = "45",
+            path = "/p/odd.jpg",
+            fileName = "odd.jpg",
+            developSettings = { ToneCurvePV2012 = { 0, 0, nil, 48, 255, 255 } },
+        })
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "45", sections = { "developSettings" } })
+
+        assert.are.equal("table", r.developSettings.toneCurve["$lua"])
+        assert.are.same({ 1, 0 }, r.developSettings.toneCurve.entries[1])
+        assert.are.same({ 4, 48 }, r.developSettings.toneCurve.entries[3])
+    end)
+
     it("exposes HSL develop settings with SDK keys", function()
         local photo = helper.fakePhoto({
             id = "43",

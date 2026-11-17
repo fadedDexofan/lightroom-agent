@@ -154,6 +154,17 @@ describe('HandlerLensBlur', function()
         assert.are.equal('Ring', result.bokeh)
     end)
 
+    it('writes the focal range with a decimal point under a comma-decimal locale', function()
+        local ctx = setup()
+        assert.truthy(os.setlocale('ru_RU.UTF-8', 'numeric'))
+
+        local ok, result = pcall(ctx.Handler.set, { photo_id = '1', focal_range = { near = 12.5, far = 30.25 } })
+        os.setlocale('C', 'numeric')
+
+        assert.is_true(ok, tostring(result))
+        assert.are.equal('-67.5 12.5 30.25 110.25', result.focal_range_raw)
+    end)
+
     it('can save adjustments and leave Lens Blur disabled', function()
         local ctx = setup()
 

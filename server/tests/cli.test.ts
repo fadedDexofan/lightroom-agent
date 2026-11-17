@@ -6,7 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { listToolsHandler } from '../src/list-tools-handler.js';
-import { FakePlugin, freePort } from './helpers/fake-plugin.js';
+import { FakePlugin } from './helpers/fake-plugin.js';
 import { parseCli } from '../src/cli.js';
 
 describe('parseCli', () => {
@@ -143,17 +143,14 @@ describe('CLI process', () => {
   }
 
   async function startPlugin(handler: (action: string, params: unknown) => unknown) {
-    const requestPort = await freePort();
-    let responsePort = await freePort();
-    while (responsePort === requestPort) responsePort = await freePort();
     const tokenPath = path.join(directory, 'token');
     const token = 'cli-process-test-token';
     fs.writeFileSync(tokenPath, token);
-    plugin = new FakePlugin({ requestPort, responsePort, token, handler, sendWaitMs: 100 });
+    plugin = new FakePlugin({ token, handler, sendWaitMs: 100 });
     await plugin.start();
     return {
-      LIGHTROOM_MCP_REQUEST_PORT: String(requestPort),
-      LIGHTROOM_MCP_RESPONSE_PORT: String(responsePort),
+      LIGHTROOM_MCP_REQUEST_PORT: String(plugin.requestPort),
+      LIGHTROOM_MCP_RESPONSE_PORT: String(plugin.responsePort),
       LIGHTROOM_MCP_TOKEN_PATH: tokenPath,
     };
   }

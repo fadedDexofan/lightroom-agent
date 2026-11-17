@@ -135,6 +135,8 @@ local function setup(opts)
     catalog.getActiveSources = function() return sources end
     catalog.setActiveSources = function(_, newSources) sources = newSources end
 
+    helper.admitMaskWrites(opts.maskWrites)
+
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrApplicationView = {
@@ -648,6 +650,102 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
     end)
 end)
 
+
+describe("Local Color Grading and Glow sliders", function()
+    local GRADING_RANGES = {
+        local_colorgradeShadowHue = { 0, 360 },
+        local_colorgradeShadowSat = { 0, 100 },
+        local_colorgradeShadowLum = { -100, 100 },
+        local_colorgradeMidtoneHue = { 0, 360 },
+        local_colorgradeMidtoneSat = { 0, 100 },
+        local_colorgradeMidtoneLum = { -100, 100 },
+        local_colorgradeHighlightHue = { 0, 360 },
+        local_colorgradeHighlightSat = { 0, 100 },
+        local_colorgradeHighlightLum = { -100, 100 },
+        local_colorgradeGlobalHue = { 0, 360 },
+        local_colorgradeGlobalSat = { 0, 100 },
+        local_colorgradeGlobalLum = { -100, 100 },
+        local_colorgradeBlending = { 0, 100 },
+        local_colorgradeBalance = { -100, 100 },
+        local_glow = { -100, 100 },
+    }
+
+    local function gradedMask()
+        local values = {}
+        for name in pairs(GRADING_RANGES) do values[name] = 10 end
+        return { photos = { { id = "1", masks = { ["mask-a"] = values }, selectedMask = "mask-a" } } }
+    end
+
+    local function rangeEnds(index)
+        local wanted = {}
+        for name, range in pairs(GRADING_RANGES) do wanted[name] = range[index] end
+        return wanted
+    end
+
+    it("accepts each slider at both ends of its range", function()
+        for index = 1, 2 do
+            local Handler = setup(gradedMask())
+            local wanted = rangeEnds(index)
+
+            local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = wanted })
+
+            assert.are.same(wanted, r.adjustments)
+        end
+    end)
+
+    it("rejects values outside the ranges, naming each range, and writes nothing", function()
+        local Handler, calls = setup(gradedMask())
+
+        local err = errorOf(function()
+            Handler.setMaskAdjustments({
+                photo_id = "1",
+                mask_id = "mask-a",
+                adjustments = {
+                    local_colorgradeShadowHue = 361,
+                    local_colorgradeMidtoneSat = -1,
+                    local_colorgradeBlending = 101,
+                    local_colorgradeBalance = -101,
+                    local_glow = 100.5,
+                },
+            })
+        end)
+
+        assert.truthy(err:find("local_colorgradeShadowHue 361 is outside its range 0 to 360", 1, true))
+        assert.truthy(err:find("local_colorgradeMidtoneSat -1 is outside its range 0 to 100", 1, true))
+        assert.truthy(err:find("local_colorgradeBlending 101 is outside its range 0 to 100", 1, true))
+        assert.truthy(err:find("local_colorgradeBalance -101 is outside its range -100 to 100", 1, true))
+        assert.truthy(err:find("local_glow 100.5 is outside its range -100 to 100", 1, true))
+        assert.are.equal(0, #calls.setValue)
+    end)
+
+    it("refuses the names Lightroom does not resolve, whatever their case", function()
+        local Handler, calls = setup(gradedMask())
+
+        for _, name in ipairs({ "local_ColorGradeShadowHue", "local_colorGradeShadowHue", "local_Glow",
+            "local_GlowStyle" }) do
+            local err = errorOf(function()
+                Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { [name] = 1 } })
+            end)
+            assert.truthy(err:find("Unknown mask adjustment " .. name, 1, true))
+        end
+        assert.are.equal(0, #calls.setValue)
+    end)
+
+    it("reads the written values back with the other sliders of the selected mask", function()
+        local Handler = setup(gradedMask())
+        Handler.setMaskAdjustments({
+            photo_id = "1",
+            mask_id = "mask-a",
+            adjustments = { local_colorgradeMidtoneHue = 35, local_glow = 25 },
+        })
+
+        local r = Handler.readSelected()
+
+        assert.are.equal(35, r.adjustments.local_colorgradeMidtoneHue)
+        assert.are.equal(25, r.adjustments.local_glow)
+        assert.are.equal(10, r.adjustments.local_colorgradeShadowSat)
+    end)
+end)
 
 describe("LocalSliders", function()
     it("lists unique local_ names with an ordered fallback range", function()

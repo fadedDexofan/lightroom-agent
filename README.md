@@ -235,7 +235,7 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `rename_keyword` | Rename a keyword everywhere it is used. |
 | `undo_last_step` | Undo one step in Lightroom’s shared history with `confirm: true`; this includes user and other plug-in actions. |
 | `set_rating_and_flag` | Set a 0-5 star rating, a pick flag (`pick`, `reject`, `none`), or both in one write. |
-| `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Selects in the photos' folders (All Photographs if one is not found), retrying for up to 30 s on large catalogs. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |
+| `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Selects in the photos' folders (All Photographs if one is not found), retrying for up to 30 s on large catalogs. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master, and every photo of a collapsed stack. |
 | `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. A JPEG with a non-DNG raw file of exactly the same name stays the raw's sidecar unless `separate_jpegs` is set. Files already in the catalog are counted and left unchanged. |
 | `export_photos` | Export with format / quality / maximum width and height, or with a saved export preset. One export runs at a time. A photo with outdated AI settings can open Lightroom's AI Updates dialog, which blocks until dismissed. |
@@ -251,6 +251,7 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `match_photo_style` | Match global style after a confirmed snapshot per target; preserves framing, white balance, lens corrections and local masks. Returns snapshot IDs for restoration. |
 | `set_develop_settings` | Write SDK setting key/values directly. |
 | `get_lens_blur` | Read Lens Blur state, controls, focal range and bokeh (LrC 13.3+, Process Version 3+); restores the Develop view. |
+| `get_raw_develop_settings` | Read one photo's develop settings exactly as Lightroom stores them, from the catalog without opening Develop: without `keys` the top-level names, types and table sizes; with `keys` the raw values (for example `ProcessVersion` or the whole `MaskGroupBasedCorrections`) and the names that are missing. |
 | `set_lens_blur` | Set Lens Blur controls after enabling depth computation; validates runtime ranges and saved readback, then restores the view. |
 | `set_process_version` | Set photos to Version 1–6 with confirmation; refuses masked-photo downgrades and reports previous/actual versions. |
 | `list_develop_snapshots` | List a photo’s saved develop snapshots. |
@@ -265,17 +266,18 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `update_spot` | Change a Heal spot's uppercase `params.Opacity` from 0 to 1 |
 | `delete_spot` | Delete one Remove spot by index with `confirm: true` |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
-| `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `get_mask_write_admission` | Report whether guarded mask-geometry writes are admitted in the open catalog: the running Lightroom version and build, the certified build with its time and checks, whether this is the live kit's throwaway catalog, and the refusal reason; with `photo_id` also that photo's process version, mask count and format problems of its existing masks. Read-only, opens no Develop. |
+| `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
 | `update_gradient_mask` | Move or reshape an existing linear or radial gradient by tool id; same guarded write. |
-| `create_brush_mask` | Paint a brush mask from strokes (points in normalized image coordinates, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `create_brush_mask` | Paint a brush mask from strokes (points in normalized image coordinates, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
 | `add_brush_strokes` | Paint more strokes into an existing brush by tool id; same guarded write. |
-| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
 | `delete_masks` | With `photo_id`, delete masks or components by id, or all masks (LrC 11+); unknown ids delete nothing; briefly opens Develop. With only `photo_ids`, delete empty masks from up to 1000 photos without opening Develop or changing selection (LrC 14+). |
-| `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ...) by mask id; out-of-range values are rejected before anything is written (LrC 11+); briefly opens the photo in Develop. |
+| `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ..., Color Grading `local_colorgrade*` and `local_glow` where Lightroom has them) by mask id; out-of-range values are rejected before anything is written (LrC 11+); briefly opens the photo in Develop. |
 | `get_mask` | Read local adjustments, curves and Point Color in one Develop session; optional `kinds` selects `adjustments`, `curves` or `point_colors` (default all). Returns supported kinds and named errors for unsupported versions. |
 | `invert_mask` | Invert a mask by id, in place or as an inverted copy that keeps the original (LrC 11.4+); briefly opens the photo in Develop. |
-| `create_mask` | Create Subject/Sky/Background masks (LrC 11+) with optional adjustments, or People parts/Landscape categories (guarded LrC 15.6 / process 15.4) with `type: "people", parts: [...]` or `type: "landscape", categories: [...]`. Returns mask ids; missing AI parts leave no new masks. People/Landscape reject `adjustments`; use `set_mask_adjustments` afterwards. A single person cannot be chosen. |
-| `create_mask_batch` | Add the same Subject, Sky or Background mask with the same adjustments to up to 200 photos, each mask recomputed for its own photo; opens only the first photo in Develop; guarded write, LrC 15.6 only. |
+| `create_mask` | Create Subject/Sky/Background masks (LrC 11+) with optional adjustments, or People parts/Landscape categories (guarded write, certified Lightroom only) with `type: "people", parts: [...]` or `type: "landscape", categories: [...]`. Returns mask ids; missing AI parts leave no new masks. People/Landscape reject `adjustments`; use `set_mask_adjustments` afterwards. A single person cannot be chosen. |
+| `create_mask_batch` | Add the same Subject, Sky or Background mask with the same adjustments to up to 200 photos, each mask recomputed for its own photo; opens only the first photo in Develop; guarded write, certified Lightroom only. |
 | `set_mask_curves` | Set a mask's local tone curve per channel (main, red, green, blue) by mask id (LrC 12.3+); briefly opens the photo in Develop. |
 | `edit_mask_point_colors` | Add, update, delete or clear a mask's local Point Color swatches by mask id (LrC 13.2+); briefly opens the photo in Develop. |
 | `combine_mask` | Add, subtract or intersect a Subject, Sky or Background component on an existing mask by id and get the component's id (LrC 11+); briefly opens the photo in Develop. |
@@ -404,6 +406,8 @@ Plugin binds two `LrSocket` servers on localhost (`58763` request, `58764` respo
 
 ```
 lightroom-mcp [stdio]            Run MCP over stdio (default)
+lightroom-mcp tools [name]       Print available tool schemas as JSON without connecting
+lightroom-mcp call <tool> [json] Call a tool with JSON object arguments (default {})
 lightroom-mcp install-plugin     Copy bundled plugin into Lightroom Modules folder
 lightroom-mcp --help | --version
 ```
@@ -428,8 +432,8 @@ The plugin generates a 256-bit token in `~/.config/lightroom-mcp/token` on **Sta
 
 ```bash
 mise install                        # tools (node, bun, lua + luarocks, selene)
-mise run install                    # npm ci
-mise run build                      # tsc
+mise run install                    # npm install in server/
+mise run build                      # regenerate skill prompt files, then tsc
 mise run test                       # jest
 mise run mcpb                       # build .mcpb bundle
 mise run binary                     # build single-file binaries via Bun

@@ -13,7 +13,7 @@ local function setup(options)
         helper.fakePhoto({ id = '2', path = '/2.jpg' }) }
     local catalog = helper.fakeCatalog({ photos = photos })
     local active, module, tool, selected = photos[1], 'library', options.tool or 'loupe', 2
-    local spots = options.empty and {} or {
+    local spots = options.spots or options.empty and {} or {
         { SpotType = 'heal', Opacity = 1, opacity = 1, Masks = { { MaskID = 'first' } } },
         { SpotType = 'heal', Opacity = 0.7, opacity = 0.7, Masks = { { MaskID = 'second' } } },
     }
@@ -34,7 +34,9 @@ local function setup(options)
             calls.writes = calls.writes + 1
             assert.are.same(spots[selected].Masks, params.Masks)
             if options.throw then error('SDK failure') end
+            if options.ignoreAfterFirst and calls.writes > 1 then return end
             if not options.ignore then spots[selected] = clone(params) end
+            if options.changeOther and calls.writes == 1 then spots[2].Opacity = 0.1 end
         end,
         deleteSelectedSpot = function()
             calls.deletes = calls.deletes + 1
@@ -82,6 +84,15 @@ describe('Remove spots', function()
         assert.are.same({ index = 1, params = spots()[1] }, result.spots[1])
         assert.are.same({ active = '1', module = 'library', tool = 'loupe' }, state())
         assert.are.equal(0, calls.opens)
+    end)
+
+    it('passes spot parameters of unexpected shape through in the marked form', function()
+        local handler = setup({ spots = { { SpotType = 'heal', Opacity = 1, Masks = { { MaskID = 'a' }, nil, { MaskID = 'c' } } } } })
+
+        local result = handler.list({ photo_id = '2' })
+
+        assert.are.equal('table', result.spots[1].params.Masks['$lua'])
+        assert.are.same({ 3, { MaskID = 'c' } }, result.spots[1].params.Masks.entries[2])
     end)
 
     it('lists a photo without spots as an empty array', function()
@@ -138,6 +149,24 @@ describe('Remove spots', function()
         local handler, _, _, state = setup({ tool = 'dust' })
         handler.update({ photo_id = '1', index = 1, params = { Opacity = 0.3 } })
         assert.are.equal('dust', state().tool)
+    end)
+
+    it('says the rollback is unconfirmed when Lightroom ignores it', function()
+        local handler = setup({ changeOther = true, ignoreAfterFirst = true })
+        local message = failure(function()
+            handler.update({ photo_id = '2', index = 1, params = { Opacity = 0.3 } })
+        end)
+        assert.truthy(message:find('changed another spot', 1, true))
+        assert.is_nil(message:find('restored', 1, true))
+        assert.truthy(message:find('list_spots', 1, true))
+    end)
+
+    it('reports a rollback as restored only after reading the original back', function()
+        local handler = setup({ changeOther = true })
+        local message = failure(function()
+            handler.update({ photo_id = '2', index = 1, params = { Opacity = 0.3 } })
+        end)
+        assert.truthy(message:find('original parameters restored', 1, true))
     end)
 
     it('fails when an update is ignored and restores tool and module', function()

@@ -130,12 +130,15 @@ local function setup(opts)
     end
 
     local values = {}
+    local selectedMask
     local controller = {
         getAllMasks = function()
             if module ~= "develop" then error("Develop module is not active") end
             return Store.maskListOf(storeOf[active].entries)
         end,
-        selectMask = function() end,
+        selectMask = function(id) selectedMask = id end,
+        getSelectedMask = function() return selectedMask end,
+        goToMasking = function() end,
         selectMaskTool = function() end,
         selectTool = function() end,
         getSelectedTool = function() return "loupe" end,
@@ -179,6 +182,8 @@ local function setup(opts)
         end
     end
 
+    helper.admitMaskWrites(opts.maskWrites)
+
     helper.installImport({
         LrApplication = {
             activeCatalog = function() return catalog end,
@@ -198,7 +203,7 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     for _, name in ipairs({
-        "HandlerMaskBatch", "HandlerMaskCreate", "GuardedMaskWrite", "DevelopSession", "AIMaskData", "Log",
+        "HandlerMaskBatch", "HandlerMaskCreate", "GuardedMaskWrite", "DevelopSession", "AIMaskData", "Log", "MaskSelection",
     }) do
         package.loaded[name] = nil
     end
@@ -521,19 +526,19 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         assert.are.same({}, world.stores["2"].writes)
     end)
 
-    it("fails photos on an untested Lightroom version without touching Develop", function()
-        local Handler, world = setup({ version = { major = 15, minor = 5 } })
+    it("fails photos on an uncertified Lightroom without touching Develop", function()
+        local Handler, world = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "sky" })
 
         assert.are.equal(0, r.created)
         assert.are.equal(2, r.failed)
-        assert.truthy(resultFor(r, "1").reason:find("not a version this tool has been tested on", 1, true))
+        assert.truthy(resultFor(r, "1").reason:find("is not certified", 1, true))
         assert.are.same({}, world.calls.modules)
         assert.are.same({}, world.calls.created)
     end)
 
-    it("fails a photo whose existing masks do not match the tested format and continues", function()
+    it("fails a photo whose existing masks do not match the pinned format and continues", function()
         local odd = Store.correction("Odd", { { What = "Mask/Mystery", MaskActive = true } }, { CorrectionID = "C1" })
         local Handler, world = setup({
             photos = { { id = "1" }, { id = "2", entries = { odd } }, { id = "3" } },
@@ -542,7 +547,7 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" })
 
         assert.are.equal("failed", resultFor(r, "2").status)
-        assert.truthy(resultFor(r, "2").reason:find("do not match the format", 1, true))
+        assert.truthy(resultFor(r, "2").reason:find("do not match the pinned mask format", 1, true))
         assert.are.same({}, world.stores["2"].writes)
         assert.are.equal("created", resultFor(r, "1").status)
         assert.are.equal("created", resultFor(r, "3").status)

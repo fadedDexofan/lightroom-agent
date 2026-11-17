@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local DecimalText = require 'DecimalText'
 local DevelopSession = require 'DevelopSession'
 local PhotoLookup = require 'PhotoLookup'
 
@@ -52,7 +53,7 @@ local function target(args)
     local settings
     catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
     local legacy = { [5.0] = 'Version 1', [5.7] = 'Version 2' }
-    local version = legacy[tonumber(settings and settings.ProcessVersion)]
+    local version = legacy[DecimalText.parse(settings and settings.ProcessVersion)]
     -- Opening legacy photos in Develop can materialize defaults before rejection.
     if version then
         error('Lens Blur needs Process Version 3 or later; this photo uses ' .. version)
@@ -76,7 +77,7 @@ local function focalRange(value)
     if type(value) ~= 'string' then return nil end
     local points = {}
     for token in value:gmatch('%S+') do
-        local number = tonumber(token)
+        local number = DecimalText.parse(token)
         if not finite(number) then return nil end
         points[#points + 1] = number
     end
@@ -208,7 +209,8 @@ function Handler.set(args)
         end
         if args.focal_range then
             local near, far = args.focal_range.near, args.focal_range.far
-            local encoded = string.format('%.10g %.10g %.10g %.10g', near - 80, near, far, far + 80)
+            local encoded = table.concat({ DecimalText.significant(near - 80, 10), DecimalText.significant(near, 10),
+                DecimalText.significant(far, 10), DecimalText.significant(far + 80, 10) }, ' ')
             write(catalog, photo, 'LensBlurFocalRange', encoded, function(value, settings)
                 local current, saved = focalRange(value), focalRange(settings.FocalRange)
                 return current and saved and close(current.near, near) and close(current.far, far)

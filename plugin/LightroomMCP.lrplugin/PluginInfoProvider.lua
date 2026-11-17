@@ -6,10 +6,10 @@ local LrSocket = import 'LrSocket'
 local LrPrefs = import 'LrPrefs'
 local LrView = import 'LrView'
 local LrUUID = import 'LrUUID'
-local LrPathUtils = import 'LrPathUtils'
 local LrFileUtils = import 'LrFileUtils'
 
 local JSON = require 'JSON'
+local PluginFiles = require 'PluginFiles'
 local HandlerSearch = require 'HandlerSearch'
 local HandlerCollections = require 'HandlerCollections'
 local HandlerFolders = require 'HandlerFolders'
@@ -17,6 +17,8 @@ local HandlerKeywords = require 'HandlerKeywords'
 local HandlerMetadata = require 'HandlerMetadata'
 local HandlerStyleSummary = require 'HandlerStyleSummary'
 local HandlerLensBlur = require 'HandlerLensBlur'
+local HandlerRawDevelopSettings = require 'HandlerRawDevelopSettings'
+local HandlerMaskAdmission = require 'HandlerMaskAdmission'
 local HandlerAiMetadata = require 'HandlerAiMetadata'
 local HandlerOrganization = require 'HandlerOrganization'
 local HandlerUndo = require 'HandlerUndo'
@@ -104,14 +106,6 @@ local function shutdownRequested()
     return pluginState.shuttingDown == true
 end
 
-local function tokenDir()
-    return LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), ".config")
-end
-
-local function tokenFilePath()
-    return LrPathUtils.child(LrPathUtils.child(tokenDir(), "lightroom-mcp"), "token")
-end
-
 -- "failed to open" is also what LrSocket reports when something else already
 -- listens on the port: another process, or a pre-reload instance of this
 -- plugin that Reload Plug-in left running. Recovery stays the same
@@ -154,9 +148,8 @@ local function generateToken()
 end
 
 local function writeTokenFile(token)
-    local dir = LrPathUtils.child(tokenDir(), "lightroom-mcp")
-    LrFileUtils.createAllDirectories(dir)
-    local path = tokenFilePath()
+    LrFileUtils.createAllDirectories(PluginFiles.directory())
+    local path = PluginFiles.token()
     local fh, openErr = io.open(path, "w")
     if not fh then
         addLog("Token write failed: " .. tostring(openErr))
@@ -173,7 +166,7 @@ local function writeTokenFile(token)
 end
 
 local function readTokenFile()
-    local fh = io.open(tokenFilePath(), "r")
+    local fh = io.open(PluginFiles.token(), "r")
     if not fh then return nil end
     local content = fh:read("*a")
     fh:close()
@@ -212,6 +205,8 @@ local DISPATCH = {
     remove_from_collection = HandlerCollections.removeFromCollection,
     delete_collection = HandlerCollections.deleteCollection,
     get_lens_blur = HandlerLensBlur.get,
+    get_raw_develop_settings = HandlerRawDevelopSettings.get,
+    get_mask_write_admission = HandlerMaskAdmission.get,
     set_lens_blur = HandlerLensBlur.set,
     get_photo_metadata = HandlerMetadata.getPhotoMetadata,
     summarize_develop_settings = HandlerStyleSummary.summarize,
@@ -351,8 +346,12 @@ local function sendResponse(response)
     end
     local ok, payload = pcall(function() return JSON:encode(response) end)
     if not ok then
-        addLog("JSON encode failed: " .. tostring(payload))
-        return
+        addLog("JSON encode failed id=" .. tostring(response.id) .. ": " .. tostring(payload))
+        payload = JSON:encode({
+            id = response.id,
+            error = "The plug-in's reply could not be encoded as JSON (" .. tostring(payload)
+                .. "); the operation may have run, so check Lightroom before retrying.",
+        })
     end
     pluginState.responseSocket:send(payload .. "\n")
     pluginState.requestsProcessed = pluginState.requestsProcessed + 1
@@ -507,7 +506,7 @@ local function startServer()
     pluginState.token = generateToken()
     local tokenWritten = writeTokenFile(pluginState.token)
     if tokenWritten then
-        addLog("Token written to " .. tokenFilePath())
+        addLog("Token written to " .. PluginFiles.token())
     end
 
     local requestPort, responsePort = readPortPrefs()

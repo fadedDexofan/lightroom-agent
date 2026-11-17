@@ -12,27 +12,57 @@ local function errorOf(fn)
     return tostring(err)
 end
 
+local HOME = "/Users/tester"
+local CERTIFICATION_FILE = HOME .. "/.config/lightroom-mcp/mask-certification.json"
+local THROWAWAY_CATALOG = HOME .. "/Pictures/lrmcp-live-1/lrmcp-live-1.lrcat"
+local THROWAWAY_MARKER = HOME .. "/Pictures/lrmcp-live-1/lrmcp-live-catalog.json"
+local PERSONAL_CATALOG = HOME .. "/Pictures/Lightroom/Lightroom Catalog.lrcat"
+local RUNNING_BUILD = "16.0.0 build 1234567"
+
+local function certification(build, processVersions)
+    return string.format(
+        '{"lightroom":{"version":"16.0","build":"%s"},"process_versions":["%s"],"certified_at":"2026-11-12T10:00:00Z","checks":["linear create"]}',
+        build, table.concat(processVersions or { "15.4" }, '","'))
+end
+
 local function setup(opts)
     opts = opts or {}
     local photo = {}
     local state = Store.attach(photo, opts)
     state.sleeps = 0
-    local version = opts.version or { major = 15, minor = 6, revision = 0 }
+    local files = opts.files or { [THROWAWAY_MARKER] = "{}" }
     local catalog = {
+        getPath = function() return opts.catalogPath or THROWAWAY_CATALOG end,
         withReadAccessDo = function(_, fn) fn() end,
         withWriteAccessDo = function(_, _, fn) fn() end,
     }
     Store.trackGates(state, catalog)
     helper.installImport({
-        LrApplication = { versionTable = function() return version end },
+        LrApplication = {
+            versionTable = function() return { major = 16, minor = 0, revision = 0, build = 1234567 } end,
+            versionString = function() return "16.0" end,
+        },
+        LrFileUtils = {
+            exists = function(path) return files[path] ~= nil and "file" or false end,
+            readFile = function(path) return files[path] end,
+        },
+        LrPathUtils = {
+            child = function(parent, name) return parent .. "/" .. name end,
+            parent = function(path) return path:match("^(.*)/[^/]*$") end,
+            getStandardFilePath = function(name)
+                assert.are.equal("home", name)
+                return HOME
+            end,
+        },
         LrTasks = {
             pcall = pcall,
             sleep = function() state.sleeps = state.sleeps + 1 end,
         },
         LrLogger = helper.defaultLrLogger(),
     })
-    package.loaded.GuardedMaskWrite = nil
-    package.loaded.Log = nil
+    for _, name in ipairs({ "GuardedMaskWrite", "MaskWriteAdmission", "PluginFiles", "Log" }) do
+        package.loaded[name] = nil
+    end
     local Guard = require 'GuardedMaskWrite'
     return Guard, catalog, photo, state
 end
@@ -45,7 +75,7 @@ local function appendGradient(component)
 end
 
 describe("GuardedMaskWrite.preflight", function()
-    it("returns the existing entries on a tested Lightroom and process version", function()
+    it("returns the existing entries of a photo admitted for mask writes", function()
         local Guard, catalog, photo = setup({ entries = { correction("A", { linearComponent() }) } })
 
         local entries = Guard.preflight(catalog, photo)
@@ -69,30 +99,68 @@ describe("GuardedMaskWrite.preflight", function()
         assert.are.equal(1, state.reads)
     end)
 
-    it("refuses an untested Lightroom version and names it", function()
-        local Guard, catalog, photo = setup({ version = { major = 15, minor = 7 } })
+    it("refuses a write on a catalog without the kit marker when no certification exists", function()
+        local Guard, catalog, photo = setup({ catalogPath = PERSONAL_CATALOG, files = {} })
 
         local message = errorOf(function() Guard.preflight(catalog, photo) end)
 
-        assert.is_truthy(message:find("15.7", 1, true))
-        assert.is_truthy(message:find("tested: 15.6", 1, true))
+        assert.is_truthy(message:find("Lightroom Classic 16.0 (" .. RUNNING_BUILD .. ") is not certified", 1, true))
+        assert.is_truthy(message:find("certified: none", 1, true))
+        assert.is_truthy(message:find("certify-mask-writes.mjs", 1, true))
         assert.is_truthy(message:find("Nothing was changed", 1, true))
     end)
 
-    it("refuses an untested process version", function()
-        local Guard, catalog, photo = setup({ processVersion = "11.0" })
+    it("admits a write when the certification names the running build and the photo's process version", function()
+        local Guard, catalog, photo = setup({
+            catalogPath = PERSONAL_CATALOG,
+            files = { [CERTIFICATION_FILE] = certification(RUNNING_BUILD) },
+            entries = { correction("A", { linearComponent() }) },
+        })
+
+        assert.are.equal(1, #Guard.preflight(catalog, photo))
+    end)
+
+    it("refuses a write when the certification is for another build", function()
+        local Guard, catalog, photo = setup({
+            catalogPath = PERSONAL_CATALOG,
+            files = { [CERTIFICATION_FILE] = certification("16.0 [ 202610010000-aaaaaaaa ]") },
+        })
+
+        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+
+        assert.is_truthy(message:find("is not certified", 1, true))
+        assert.is_truthy(message:find("certified: 16.0 [ 202610010000-aaaaaaaa ]", 1, true))
+    end)
+
+    it("refuses on a certification written before builds were recorded and asks for a new run", function()
+        local Guard, catalog, photo = setup({
+            catalogPath = PERSONAL_CATALOG,
+            files = { [CERTIFICATION_FILE] = certification("16.0") },
+        })
+
+        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+
+        assert.is_truthy(message:find("names no Lightroom build", 1, true))
+        assert.is_truthy(message:find("certify-mask-writes.mjs", 1, true))
+    end)
+
+    it("refuses a photo whose process version the certification did not exercise", function()
+        local Guard, catalog, photo = setup({
+            catalogPath = PERSONAL_CATALOG,
+            files = { [CERTIFICATION_FILE] = certification(RUNNING_BUILD) },
+            processVersion = "11.0",
+        })
 
         local message = errorOf(function() Guard.preflight(catalog, photo) end)
 
         assert.is_truthy(message:find("process version (11.0)", 1, true))
+        assert.is_truthy(message:find("certified: 15.4", 1, true))
     end)
 
-    it("refuses a photo that reports no process version", function()
-        local Guard, catalog, photo = setup({ noProcessVersion = true })
+    it("admits a write on the kit's throwaway catalog without a certification", function()
+        local Guard, catalog, photo = setup({ processVersion = "11.0" })
 
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
-
-        assert.is_truthy(message:find("process version (nil)", 1, true))
+        assert.are.same({}, Guard.preflight(catalog, photo))
     end)
 
     it("refuses when an existing component lost a pinned field to a rename", function()
@@ -103,7 +171,7 @@ describe("GuardedMaskWrite.preflight", function()
 
         local message = errorOf(function() Guard.preflight(catalog, photo) end)
 
-        assert.is_truthy(message:find("15.6", 1, true))
+        assert.is_truthy(message:find("pinned mask format", 1, true))
         assert.is_truthy(message:find("missing FullY", 1, true))
         assert.is_truthy(message:find("unexpected field FullYY", 1, true))
     end)
@@ -281,7 +349,7 @@ describe("GuardedMaskWrite.apply", function()
                 for _, entry in ipairs(stored) do
                     for _, component in ipairs(entry.CorrectionMasks) do
                         if component.FullY then component.FullY = math.floor(component.FullY * 1e6 + 0.5) / 1e6 end
-                        component.MaskValue = 0.5
+                        component.MaskSyncID = "filled-by-lightroom"
                     end
                 end
                 return stored
@@ -302,8 +370,8 @@ describe("GuardedMaskWrite.apply", function()
         assert.are.equal(1, #state.writes)
     end)
 
-    it("refuses an untested version before reading or writing masks", function()
-        local Guard, catalog, photo, state = setup({ version = { major = 16, minor = 0 } })
+    it("refuses an uncertified Lightroom before writing masks", function()
+        local Guard, catalog, photo, state = setup({ catalogPath = PERSONAL_CATALOG, files = {} })
 
         errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
@@ -624,9 +692,9 @@ describe("GuardedMaskWrite.compareEntries", function()
         assert.are_not.same({}, Guard.compareEntries(expected, oneEntry(linearComponent({ FullY = 0.2001 }))))
     end)
 
-    it("ignores derived fields", function()
-        local expected = oneEntry(radialComponent())
-        local actual = oneEntry(radialComponent({ Flipped = true, MaskID = "x", MaskValue = 0 }), {
+    it("does not compare derived fields, Flipped included", function()
+        local expected = oneEntry(radialComponent({ Flipped = false }))
+        local actual = oneEntry(radialComponent({ Flipped = true, MaskID = "x" }), {
             CorrectionID = "Z",
             CorrectionReferenceX = 0.9,
             LocalCurveRefineSaturation = 100,
@@ -785,7 +853,7 @@ describe("GuardedMaskWrite.compareEntries", function()
             oneEntry(brush({ "h 0.1621", "d 0.100000 0.200000" }))))
     end)
 
-    it("compares the value of a paint but ignores the derived value of other components", function()
+    it("compares the value of a paint and leaves it uncompared on other components", function()
         local brush = function(value)
             return {
                 What = "Mask/Aggregate",
@@ -801,7 +869,7 @@ describe("GuardedMaskWrite.compareEntries", function()
         assert.are_not.same({}, Guard.compareEntries(oneEntry(brush(0)), oneEntry(brush(1))))
 
         local gradient = linearComponent({ MaskValue = 1 })
-        local readBack = linearComponent({ MaskValue = 0.5 })
+        local readBack = linearComponent({ MaskValue = 0 })
         assert.are.same({}, Guard.compareEntries(oneEntry(gradient), oneEntry(readBack)))
     end)
 

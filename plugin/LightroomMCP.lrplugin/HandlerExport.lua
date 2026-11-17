@@ -7,6 +7,7 @@ local LrTasks = import 'LrTasks'
 
 local JSON = require 'JSON'
 local KeywordTree = require 'KeywordTree'
+local CatalogFolders = require 'CatalogFolders'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 local ExportPresets = require 'ExportPresets'
@@ -35,6 +36,22 @@ local EXPORT_FORMATS = {
     original = 'ORIGINAL',
 }
 
+local function canonicalPath(destination)
+    local separator = WIN_ENV and "\\" or "/"
+    local separatorPattern = WIN_ENV and "%\\" or "/"
+    local problem = "destination must be written canonically: " .. separator
+        .. " between names, no empty, '.' or '..' names"
+    if destination:find(WIN_ENV and "/" or "\\", 1, true) then error(problem, 0) end
+    local root = WIN_ENV and (destination:match("^%a:\\") or destination:match("^\\\\")) or "/"
+    local names = destination:sub(#root + 1)
+    if names:sub(-1) == separator then names = names:sub(1, -2) end
+    if names == "" then return root end
+    for name in (names .. separator):gmatch("(.-)" .. separatorPattern) do
+        if name == "" or name == "." or name == ".." then error(problem, 0) end
+    end
+    return root .. names
+end
+
 -- Expands a leading ~/ and refuses a relative path: one resolves against
 -- Lightroom's working directory ("/" on macOS), which fails with an unhelpful
 -- "Read-only file system".
@@ -51,7 +68,44 @@ local function absolutePath(destination)
     if not absolute then
         error("destination must be an absolute path")
     end
-    return destination
+    return canonicalPath(destination)
+end
+
+local STANDARD_FOLDER_DESTINATIONS = { desktop = true, home = true, documents = true, pictures = true }
+
+local function exportFolderOf(photo, exportSettings, fixedFolder)
+    if fixedFolder then return fixedFolder end
+    local destinationType = exportSettings.LR_export_destinationType
+    local base
+    if destinationType == 'sourceFolder' then
+        base = LrPathUtils.parent(photo:getRawMetadata('path'))
+    elseif STANDARD_FOLDER_DESTINATIONS[destinationType] then
+        base = LrPathUtils.getStandardFilePath(destinationType)
+    end
+    if not base then return nil end
+    local suffix = exportSettings.LR_export_destinationPathSuffix
+    if exportSettings.LR_export_useSubfolder and type(suffix) == "string" and suffix ~= "" then
+        return LrPathUtils.child(base, suffix)
+    end
+    return base
+end
+
+local function isCatalogFolder(known, folder)
+    return CatalogFolders.spellingsOf(known, folder) ~= nil
+        or CatalogFolders.spellingsOf(known, LrPathUtils.standardizePath(folder)) ~= nil
+end
+
+local function refuseOverwriteIntoCatalogFolders(catalog, photos, exportSettings, fixedFolder)
+    local known = CatalogFolders.of(catalog)
+    for _, photo in ipairs(photos) do
+        local folder = exportFolderOf(photo, exportSettings, fixedFolder)
+        if folder and isCatalogFolder(known, folder) then
+            error(string.format("on_existing overwrite would export into %s, a folder of this catalog, and could"
+                .. " replace a cataloged photo's file; choose a folder outside the catalog or on_existing rename"
+                .. " or skip", folder), 0)
+        end
+        if fixedFolder then return end
+    end
 end
 
 local function requireFormat(requestedFormat)
@@ -103,6 +157,7 @@ local function presetSettings(preset, args)
     end
     -- Opening another application would leave it waiting for a user.
     settings.LR_export_postProcessing = 'doNothing'
+    settings.LR_reimportExportedPhoto = false
     return settings
 end
 
@@ -240,6 +295,9 @@ local function runExport(args, context, run)
     end
 
     local exportFolder = destination or presetFolder
+    if collisionHandling == 'overwrite' then
+        refuseOverwriteIntoCatalogFolders(catalog, photosToExport, exportSettings, exportFolder)
+    end
     if exportFolder then
         -- Lightroom refuses a missing folder with its own error, in the UI
         -- language; create it as export_photo_metadata and export_develop_preset do.
@@ -266,7 +324,7 @@ local function runExport(args, context, run)
         destination = presetFolder or exportSettings.LR_export_destinationType
     end
 
-    local exportedCount = 0
+    local exportedFiles = {}
     local skippedCount = 0
     local failed = {}
     local remainingIds = {}
@@ -280,50 +338,56 @@ local function runExport(args, context, run)
         end
         run.lastPhotoAt = LrDate.currentTime()
         local name = photo:getFormattedMetadata("fileName") or tostring(photo.localIdentifier)
-        if context then context:report(exportedCount, #photosToExport, name) end
-        local photoSettings, settingsError = exportSettings, nil
-        if preset then
-            photoSettings, settingsError = settingsForPhoto(exportSettings, photo, index, #photosToExport)
-        end
-        if photoSettings then
-            local exportSession = LrExportSession {
-                photosToExport = { photo },
-                exportSettings = photoSettings,
-            }
-            exportSession:doExportOnCurrentTask()
-            local renditionCount = 0
-            for _, rendition in exportSession:renditions() do
-                renditionCount = renditionCount + 1
-                local rendered, pathOrMessage = rendition:waitForRender()
-                if rendered and LrFileUtils.exists(pathOrMessage) then
-                    exportedCount = exportedCount + 1
-                else
-                    failed[#failed + 1] = {
-                        id = tostring(photo.localIdentifier),
-                        reason = rendered and "Lightroom wrote no file" or tostring(pathOrMessage),
-                    }
-                end
+        if context then context:report(#exportedFiles, #photosToExport, name) end
+        local exported, exportError = LrTasks.pcall(function()
+            local photoSettings, settingsError = exportSettings, nil
+            if preset then
+                photoSettings, settingsError = settingsForPhoto(exportSettings, photo, index, #photosToExport)
             end
-            if renditionCount == 0 then
-                if collisionHandling == 'skip' then
-                    skippedCount = skippedCount + 1
-                else
-                    failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = "Lightroom rendered no file" }
+            if photoSettings then
+                local exportSession = LrExportSession {
+                    photosToExport = { photo },
+                    exportSettings = photoSettings,
+                }
+                exportSession:doExportOnCurrentTask()
+                local renditionCount = 0
+                for _, rendition in exportSession:renditions() do
+                    renditionCount = renditionCount + 1
+                    local rendered, pathOrMessage = rendition:waitForRender()
+                    if rendered and LrFileUtils.exists(pathOrMessage) then
+                        exportedFiles[#exportedFiles + 1] = { id = tostring(photo.localIdentifier), path = pathOrMessage }
+                    else
+                        failed[#failed + 1] = {
+                            id = tostring(photo.localIdentifier),
+                            reason = rendered and "Lightroom wrote no file" or tostring(pathOrMessage),
+                        }
+                    end
                 end
+                if renditionCount == 0 then
+                    if collisionHandling == 'skip' then
+                        skippedCount = skippedCount + 1
+                    else
+                        failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = "Lightroom rendered no file" }
+                    end
+                end
+            else
+                failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = settingsError }
             end
-        else
-            failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = settingsError }
+        end)
+        if not exported then
+            failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = tostring(exportError) }
         end
         lastName = name
     end
-    if context and lastName then context:report(exportedCount, #photosToExport, lastName) end
+    if context and lastName then context:report(#exportedFiles, #photosToExport, lastName) end
 
     Log.info(string.format("Exported %d photos to: %s (skipped %d, failed %d)",
-        exportedCount, destination, skippedCount, #failed))
+        #exportedFiles, destination, skippedCount, #failed))
 
     return {
         success = #failed == 0,
-        exported = exportedCount,
+        exported = #exportedFiles,
+        files = exportedFiles,
         skipped = skippedCount,
         failed = #failed > 0 and failed or nil,
         missing = missingIds,

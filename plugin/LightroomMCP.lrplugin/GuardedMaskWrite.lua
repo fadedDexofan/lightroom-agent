@@ -1,12 +1,10 @@
-local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 
 local Log = require 'Log'
+local DecimalText = require 'DecimalText'
+local MaskWriteAdmission = require 'MaskWriteAdmission'
 
 local GuardedMaskWrite = {}
-
-local TESTED_LIGHTROOM_VERSIONS = { ["15.6"] = true }
-local TESTED_PROCESS_VERSIONS = { ["15.4"] = true }
 
 local READ_BACK_TIMEOUT_SECONDS = 3
 local READ_BACK_POLL_SECONDS = 0.1
@@ -84,13 +82,6 @@ local RANGE_TYPE_FIELDS = {
     [-1] = { DepthRange = "string" },
 }
 local RANGE_TYPE_COLOR = 1
-
-local function sortedKeys(set)
-    local keys = {}
-    for key in pairs(set) do keys[#keys + 1] = key end
-    table.sort(keys)
-    return keys
-end
 
 local function deepClone(value, depth)
     if type(value) ~= "table" then
@@ -239,7 +230,7 @@ end
 
 local function numbersIn(text)
     local numbers = {}
-    for token in text:gmatch("%S+") do numbers[#numbers + 1] = tonumber(token) end
+    for token in text:gmatch("%S+") do numbers[#numbers + 1] = DecimalText.parse(token) end
     return numbers
 end
 
@@ -377,27 +368,6 @@ function GuardedMaskWrite.compareEntries(expected, actual)
     return problems
 end
 
-local function versionLabel()
-    local version = LrApplication.versionTable()
-    return tostring(version.major) .. "." .. tostring(version.minor)
-end
-
-local function requireTestedVersions(processVersion)
-    local lightroom = versionLabel()
-    if not TESTED_LIGHTROOM_VERSIONS[lightroom] then
-        error(string.format(
-            "Lightroom Classic %s is not a version this tool has been tested on for writing mask geometry"
-                .. " (tested: %s). Nothing was changed.",
-            lightroom, table.concat(sortedKeys(TESTED_LIGHTROOM_VERSIONS), ", ")), 0)
-    end
-    if processVersion == nil or not TESTED_PROCESS_VERSIONS[tostring(processVersion)] then
-        error(string.format(
-            "The photo's process version (%s) is not one this tool has been tested on for writing mask"
-                .. " geometry (tested: %s). Nothing was changed.",
-            tostring(processVersion), table.concat(sortedKeys(TESTED_PROCESS_VERSIONS), ", ")), 0)
-    end
-end
-
 local function readEntries(catalog, photo)
     local settings
     catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
@@ -413,15 +383,22 @@ function GuardedMaskWrite.readEntries(catalog, photo)
     return (readEntries(catalog, photo))
 end
 
+function GuardedMaskWrite.inspect(catalog, photo)
+    local entries, processVersion = readEntries(catalog, photo)
+    return {
+        process_version = processVersion,
+        mask_count = #entries,
+        schema_problems = GuardedMaskWrite.validateEntries(entries, "existing mask"),
+    }
+end
+
 function GuardedMaskWrite.preflight(catalog, photo)
     local entries, processVersion = readEntries(catalog, photo)
-    requireTestedVersions(processVersion)
+    MaskWriteAdmission.requireAdmitted(catalog, processVersion)
     local problems = GuardedMaskWrite.validateEntries(entries, "existing mask")
     if #problems > 0 then
-        error(string.format(
-            "The masks already on this photo do not match the format this tool was tested with on"
-                .. " Lightroom Classic %s, so nothing was written: %s",
-            versionLabel(), describeProblems(problems)), 0)
+        error("The masks already on this photo do not match the pinned mask format, so nothing was written: "
+            .. describeProblems(problems), 0)
     end
     return entries
 end
@@ -528,7 +505,5 @@ function GuardedMaskWrite.findComponent(entries, toolId)
     return nil
 end
 
-GuardedMaskWrite.TESTED_LIGHTROOM_VERSIONS = TESTED_LIGHTROOM_VERSIONS
-GuardedMaskWrite.TESTED_PROCESS_VERSIONS = TESTED_PROCESS_VERSIONS
 
 return GuardedMaskWrite

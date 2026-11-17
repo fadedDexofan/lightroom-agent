@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
-import type { PluginResponse } from '../src/dispatcher.js';
+import { PluginTimeoutError, type PluginResponse } from '../src/dispatcher.js';
 
 describe('develop setting schema', () => {
   const invalidCurves = [
@@ -378,12 +378,29 @@ describe('createCallToolHandler', () => {
   it('catches dispatcher rejections and returns isError', async () => {
     const handler = makeHandler({
       call: async () => {
-        throw new Error('Plugin response timeout (30s)');
+        throw new Error('Failed to send request to plugin (socket dropped)');
       },
     });
-    const result = await handler('x', {});
+    const result = await handler('search_photos', {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('Failed to send request to plugin (socket dropped)');
+  });
+
+  it('reports a plain timeout for a read-only tool', async () => {
+    const handler = makeHandler({ call: async () => { throw new PluginTimeoutError(30_000); } });
+    const result = await handler('search_photos', {});
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toBe('Plugin response timeout (30s)');
+  });
+
+  it('reports an unknown outcome when a writing tool times out', async () => {
+    const handler = makeHandler({ call: async () => { throw new PluginTimeoutError(30_000); } });
+    const result = await handler('set_rating_and_flag', { photo_ids: [1], rating: 3 });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe(
+      'Lightroom did not answer within 30s, so the result of set_rating_and_flag is unknown: it may have been applied'
+        + ' or may still be running. Read the current state before retrying.',
+    );
   });
 
   it('handles non-Error throws by stringifying', async () => {

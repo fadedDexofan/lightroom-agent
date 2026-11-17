@@ -77,7 +77,7 @@ function parseObject(line: string): Record<string, unknown> | null {
 }
 
 function authMatches(expected: string | null, actual: string | null): boolean {
-  if (expected === null || actual === null) return expected === actual;
+  if (expected === null || actual === null) return false;
   const a = Buffer.from(expected);
   const b = Buffer.from(actual);
   return a.length === b.length && crypto.timingSafeEqual(a, b);

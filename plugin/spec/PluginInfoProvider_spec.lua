@@ -7,7 +7,7 @@ local helper = require 'spec_helper'
 local HANDLER_MODULES = {
     'JSON', 'HandlerLensBlur', 'HandlerSearch', 'HandlerCollections', 'HandlerFolders', 'HandlerKeywords', 'HandlerMetadata', 'HandlerStyleSummary', 'HandlerAiMetadata',
     'HandlerOrganization', 'HandlerUndo', 'HandlerImport', 'HandlerRemoveFromCatalog', 'HandlerExport', 'HandlerVirtualCopies',
-    'HandlerSelection', 'HandlerDevelop', 'HandlerSnapshots', 'HandlerMasks', 'HandlerSpots', 'HandlerMaskDelete', 'HandlerMaskAdjustments', 'HandlerMaskRead', 'HandlerMaskCurves', 'HandlerMaskPointColors', 'HandlerMaskInvert', 'HandlerMaskCreate', 'HandlerMaskCombine', 'HandlerGradientMasks', 'HandlerBrushMasks', 'HandlerRangeMasks', 'HandlerAiMasks', 'HandlerMaskBatch', 'HandlerPreview',
+    'HandlerSelection', 'HandlerDevelop', 'HandlerSnapshots', 'HandlerMasks', 'HandlerSpots', 'HandlerMaskDelete', 'HandlerMaskAdjustments', 'HandlerMaskRead', 'HandlerMaskCurves', 'HandlerMaskPointColors', 'HandlerMaskInvert', 'HandlerMaskCreate', 'HandlerMaskCombine', 'HandlerGradientMasks', 'HandlerBrushMasks', 'HandlerRangeMasks', 'HandlerAiMasks', 'HandlerMaskBatch', 'HandlerPreview', 'HandlerRawDevelopSettings', 'HandlerMaskAdmission',
 }
 
 -- opts (all optional) let a test drive the otherwise-async server task:
@@ -316,6 +316,77 @@ describe("PluginInfoProvider server task", function()
             for _, message in ipairs({ "photo_ids is required", "Cannot read settings.lua:42: invalid file", "file.jpg:42: missing" }) do
                 assert.are.equal(message, dispatchError(message, 0))
             end
+        end)
+
+        it("dispatches get_raw_develop_settings to its handler", function()
+            local binds, sends = {}, {}
+            installStubs(nil, nil, {
+                runTask = true, stopLoopOnSleep = true, cleanups = {},
+                capturedBinds = binds, sends = sends,
+            })
+            package.loaded.JSON = nil
+            local received
+            package.loaded.HandlerRawDevelopSettings = {
+                get = function(params) received = params; return { photo_id = "7", count = 0, keys = {} } end,
+            }
+            local mod = loadInfoProvider()
+            mod.startServer()
+            local state = _G.LightroomMCP_State
+            state.sendConnected = true
+            binds[1].onMessage(nil, '{"hello":"' .. state.token
+                .. '","id":"r1","action":"get_raw_develop_settings","params":{"photo_id":"7"}}')
+
+            local reply = require('JSON'):decode(sends[1])
+            assert.is_nil(reply.error)
+            assert.are.equal("7", reply.result.photo_id)
+            assert.are.equal("7", received.photo_id)
+        end)
+
+        it("dispatches get_mask_write_admission to its handler", function()
+            local binds, sends = {}, {}
+            installStubs(nil, nil, {
+                runTask = true, stopLoopOnSleep = true, cleanups = {},
+                capturedBinds = binds, sends = sends,
+            })
+            package.loaded.JSON = nil
+            local received
+            package.loaded.HandlerMaskAdmission = {
+                get = function(params) received = params; return { admitted = false } end,
+            }
+            local mod = loadInfoProvider()
+            mod.startServer()
+            local state = _G.LightroomMCP_State
+            state.sendConnected = true
+            binds[1].onMessage(nil, '{"hello":"' .. state.token
+                .. '","id":"r1","action":"get_mask_write_admission","params":{"photo_id":"7"}}')
+
+            local reply = require('JSON'):decode(sends[1])
+            assert.is_nil(reply.error)
+            assert.is_false(reply.result.admitted)
+            assert.are.equal("7", received.photo_id)
+        end)
+
+        it("answers with an error for the request when its result cannot be encoded", function()
+            local binds, sends = {}, {}
+            installStubs(nil, nil, {
+                runTask = true, stopLoopOnSleep = true, cleanups = {},
+                capturedBinds = binds, sends = sends,
+            })
+            package.loaded.JSON = nil
+            package.loaded.HandlerSearch = {
+                searchPhotos = function() return { score = 0 / 0 } end,
+            }
+            local mod = loadInfoProvider()
+            mod.startServer()
+            local state = _G.LightroomMCP_State
+            state.sendConnected = true
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"e2","action":"search_photos"}')
+
+            assert.are.equal(1, #sends)
+            local reply = require('JSON'):decode(sends[1])
+            assert.are.equal("e2", reply.id)
+            assert.is_nil(reply.result)
+            assert.truthy(reply.error:find("could not be encoded", 1, true))
         end)
     end)
 
@@ -823,11 +894,11 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         assert.is_nil(package.loaded.PluginInfoProvider)
     end)
 
-    it("Info.lua registers PluginShutdown.lua as the LrShutdownApp script", function()
+    it("Info.lua runs PluginShutdown.lua at quit and when Lightroom unloads the plug-in for a reload", function()
         local info = dofile("plugin/LightroomMCP.lrplugin/Info.lua")
 
         assert.are.equal("PluginShutdown.lua", info.LrShutdownApp)
-        assert.is_nil(info.LrShutdownPlugin)
+        assert.are.equal("PluginShutdown.lua", info.LrShutdownPlugin)
     end)
 
     it("leaves the monitor loop on the first tick after quit begins", function()

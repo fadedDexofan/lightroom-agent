@@ -52,6 +52,8 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   match_photo_style: 'destructive',
   set_develop_settings: 'destructive',
   get_lens_blur: 'read-only',
+  get_raw_develop_settings: 'read-only',
+  get_mask_write_admission: 'read-only',
   set_lens_blur: 'destructive',
   set_process_version: 'destructive',
   list_develop_snapshots: 'read-only',
@@ -223,7 +225,7 @@ describe('createMcpServer', () => {
     const instructions = pair.client.getInstructions();
     for (const phrase of [
       'Develop-driving calls run one at a time', 'a second call is rejected',
-      'Lightroom Classic 15.6', 'process version 15.4', 'read back', 'roll back',
+      'certification run', 'process version', 'read back', 'roll back',
       'normalized 0 to 1', 'top-left', 'uncropped', 'y increasing down',
       'rotated or mirrored', 'crop does not move the origin',
     ]) expect(instructions).toContain(phrase);
@@ -305,10 +307,10 @@ describe('createMcpServer', () => {
     });
 
     it.each([
-      ['develop', 57, ['core', 'develop']],
-      ['masks', 48, ['core', 'masks']],
-      ['develop,masks', 72, ['core', 'develop', 'masks']],
-      ['all', 72, ['core', 'develop', 'masks']],
+      ['develop', 58, ['core', 'develop']],
+      ['masks', 49, ['core', 'masks']],
+      ['develop,masks', 74, ['core', 'develop', 'masks']],
+      ['all', 74, ['core', 'develop', 'masks']],
     ] as const)('toolset %s preserves contract order and definitions', async (toolsets, count, groups) => {
       const privateContracts = structuredClone(TOOL_CONTRACTS);
       pair = await connect({ toolsets });
@@ -481,10 +483,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 72 tools', async () => {
+    it('returns all 74 tools', async () => {
       pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(72);
+      expect(tools).toHaveLength(74);
     });
 
     it('includes search_photos and set_develop_settings', async () => {

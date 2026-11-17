@@ -349,3 +349,21 @@ describe("BrushStrokes.toStoredFrame", function()
         assert.are.same({ "d 0.500000 1.000000", "d 0.500000 0.950000", "d 0.500000 0.900000" }, aggregate.Masks[1].Dabs)
     end)
 end)
+
+describe("BrushStrokes number text", function()
+    after_each(function() os.setlocale("C", "numeric") end)
+
+    it("writes dabs, flow and hardness with a decimal point under a comma-decimal locale", function()
+        load()
+        assert.truthy(os.setlocale("ru_RU.UTF-8", "numeric"))
+        local paint = BrushStrokes.newPaint(BrushStrokes.parseStrokes({
+            stroke({ points = { point(0.25, 0.5) }, flow = 0.3, feather = 0.5 }),
+        })[1])
+
+        for _, token in ipairs(paint.Dabs) do
+            assert.is_nil(token:find(",", 1, true), token)
+            assert.is_nil(token:find("[eE]"), token)
+        end
+        assert.are.equal("d 0.250000 0.500000", paint.Dabs[#paint.Dabs])
+    end)
+end)

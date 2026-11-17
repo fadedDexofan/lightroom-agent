@@ -57,6 +57,7 @@ local function setup(opts)
     local behavior = opts.behavior or "append"
     local pollsBeforeAppear = opts.pollsBeforeAppear or 0
     local newMaskId = "new-mask"
+    local selectedMask = opts.selectedMask
 
     local function appendNew()
         masks[#masks + 1] = aiMask(newMaskId, calls.created[#calls.created].subtype)
@@ -80,7 +81,12 @@ local function setup(opts)
             for index = #masks, 1, -1 do reversed[#reversed + 1] = masks[index] end
             return reversed
         end,
-        selectMask = function(id) calls.selectMask[#calls.selectMask + 1] = id end,
+        selectMask = function(id)
+            calls.selectMask[#calls.selectMask + 1] = id
+            if not opts.ignoreSelect then selectedMask = id end
+        end,
+        getSelectedMask = function() return selectedMask end,
+        goToMasking = function() end,
         selectMaskTool = function() end,
         selectTool = function(name)
             tool = name
@@ -150,6 +156,7 @@ local function setup(opts)
     })
     package.loaded.HandlerMaskCreate = nil
     package.loaded.DevelopSession = nil
+    package.loaded.MaskSelection = nil
     local Handler = require 'HandlerMaskCreate'
     return Handler, calls, masks, catalog
 end
@@ -192,6 +199,17 @@ describe("HandlerMaskCreate.createMask", function()
         assert.are.same({ "a", "b", "new-mask" }, idsOf(masks))
         assert.are.same({}, calls.deleteMask)
         assert.are.same({ "new-mask" }, calls.selectMask)
+    end)
+
+    it("writes no slider when Lightroom does not select the new mask", function()
+        local Handler, calls, masks = setup({ existing = { existingMask("a") }, selectedMask = "a", ignoreSelect = true })
+
+        local ok, err = pcall(Handler.createMask, { photo_id = "10", type = "subject", adjustments = { exposure = 1 } })
+
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("Could not select mask new-mask", 1, true))
+        assert.are.same({}, calls.setValue)
+        assert.are.same({ "a" }, idsOf(masks))
     end)
 
     it("starts every local slider from zero when no adjustments are given", function()

@@ -10,7 +10,7 @@
 import { describe, it, expect, afterEach } from "@jest/globals";
 import { PluginSocket } from "../src/plugin-socket.js";
 import { Dispatcher } from "../src/dispatcher.js";
-import { FakePlugin, freePort } from "./helpers/fake-plugin.js";
+import { FakePlugin } from "./helpers/fake-plugin.js";
 
 interface Harness {
   plugin: FakePlugin;
@@ -41,10 +41,7 @@ async function startHarness(options?: {
   handler?: (action: string, params: unknown) => unknown | Promise<unknown>;
   dispatcherTimeoutMs?: number;
 }): Promise<Harness> {
-  const [requestPort, responsePort] = await Promise.all([freePort(), freePort()]);
   const plugin = new FakePlugin({
-    requestPort,
-    responsePort,
     token: TOKEN,
     rebindDelayMs: options?.rebindDelayMs ?? 0,
     exclusivePort: options?.exclusivePort ?? false,
@@ -55,13 +52,13 @@ async function startHarness(options?: {
   await plugin.start();
 
   const request = new PluginSocket({
-    port: requestPort,
+    port: plugin.requestPort,
     label: "request",
     reconnectDelayMs: 50,
     log: () => {},
   });
   const response = new PluginSocket({
-    port: responsePort,
+    port: plugin.responsePort,
     label: "response",
     reconnectDelayMs: 50,
     log: () => {},
@@ -199,11 +196,8 @@ describe("plugin rebind cycle (issue #110)", () => {
   it(
     "reproduces the unguarded split-client response interception from issue #164",
     async () => {
-      const [requestPort, responsePort] = await Promise.all([freePort(), freePort()]);
       const handledActions: string[] = [];
       const plugin = new FakePlugin({
-        requestPort,
-        responsePort,
         token: TOKEN,
         sendWaitMs: 500,
         handler: (action: string) => {
@@ -214,7 +208,7 @@ describe("plugin rebind cycle (issue #110)", () => {
       await plugin.start();
 
       const requestA = new PluginSocket({
-        port: requestPort,
+        port: plugin.requestPort,
         label: "request-a",
         reconnectDelayMs: 50,
         log: () => {},
@@ -234,7 +228,7 @@ describe("plugin rebind cycle (issue #110)", () => {
         log: () => {},
       });
       const responseB = new PluginSocket({
-        port: responsePort,
+        port: plugin.responsePort,
         label: "response-b",
         reconnectDelayMs: 50,
         log: () => {},

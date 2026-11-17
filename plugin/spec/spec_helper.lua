@@ -35,6 +35,14 @@ function M.installImport(modules)
     end
 end
 
+function M.admitMaskWrites(decision)
+    package.loaded.MaskWriteAdmission = {
+        requireAdmitted = function()
+            if decision and decision.refuse then error(decision.refuse .. " Nothing was changed.", 0) end
+        end,
+    }
+end
+
 -- Default LrLogger stub used by every handler.
 function M.defaultLrLogger()
     return setmetatable({}, {
@@ -420,6 +428,18 @@ function M.fakeCatalog(opts)
             return out
         end,
         getFolders = function() return opts.folders or {} end,
+        getFolderByPath = function(_, path)
+            markQuery()
+            local function find(list)
+                for _, folder in ipairs(list) do
+                    if folder:getPath() == path then return folder end
+                    local found = find(folder:getChildren() or {})
+                    if found then return found end
+                end
+                return nil
+            end
+            return find(opts.folders or {})
+        end,
         getChildCollections = function() return collections end,
         getChildCollectionSets = function() return collectionSets end,
         withReadAccessDo = function(_, fn)
@@ -438,7 +458,11 @@ function M.fakeCatalog(opts)
             selectionCall = { active = activePhoto, photos = selected }
         end,
         getSelectionCall = function() return selectionCall end,
-        withWriteAccessDo = function(_, _, fn)
+        withWriteAccessDo = function(_, actionName, fn, timeoutParams)
+            if timeoutParams and opts.writeAccessAborts and opts.writeAccessAborts(actionName) then
+                if timeoutParams.callback then timeoutParams.callback() end
+                return "aborted"
+            end
             writeAccessCount = writeAccessCount + 1
             insideWriteAccess = true
             pendingKeywords = {}
@@ -467,6 +491,7 @@ function M.fakeCatalog(opts)
                     table.insert(topKeywords, kw)
                 end
             end
+            return "executed"
         end,
         getQueriedInsideWriteAccess = function() return queriedInsideWriteAccess end,
         findPhotoByLocalIdentifier = function(_, id)
@@ -624,6 +649,63 @@ function M.fakeRenditions(session)
             waitForRender = function() return true, path end,
         }
     end
+end
+
+local function loadPrivateJson()
+    local file = assert(package.searchpath("JSON", package.path))
+    return assert(loadfile(file))()
+end
+
+local privateJson = loadPrivateJson()
+local plainRequire = require
+
+local function dispatchedHandlers()
+    local file = assert(io.open(assert(package.searchpath("PluginInfoProvider", package.path)), "r"))
+    local source = file:read("*a")
+    file:close()
+    local block = assert(source:match("local DISPATCH = (%b{})"))
+    local handlers = {}
+    for module, functionName in block:gmatch("=%s*(Handler%w+)%.([%w_]+)") do
+        handlers[module] = handlers[module] or {}
+        handlers[module][functionName] = true
+    end
+    return handlers
+end
+
+local DISPATCHED = dispatchedHandlers()
+
+local function encodingResults(module, name)
+    local wrapped = {}
+    for key, value in pairs(module) do
+        if type(value) == "function" and DISPATCHED[name][key] then
+            wrapped[key] = function(...)
+                local results = table.pack(value(...))
+                if type(results[1]) == "table" then
+                    local ok, err = pcall(function() return privateJson:encode(results[1]) end)
+                    if not ok then
+                        error(string.format("%s.%s returned a result JSON cannot encode: %s", name, tostring(key),
+                            tostring(err)), 0)
+                    end
+                end
+                return table.unpack(results, 1, results.n)
+            end
+        else
+            wrapped[key] = value
+        end
+    end
+    return setmetatable(wrapped, { __index = module, __newindex = module })
+end
+
+function require(name)
+    local fromDisk = package.loaded[name] == nil
+    local module = plainRequire(name)
+    if fromDisk and type(name) == "string" and DISPATCHED[name] and type(module) == "table"
+        and getmetatable(module) == nil then
+        local wrapped = encodingResults(module, name)
+        package.loaded[name] = wrapped
+        return wrapped
+    end
+    return module
 end
 
 return M

@@ -69,6 +69,8 @@ local function setup(opts)
     }
     if opts.withoutMaskApi then controller = {} end
 
+    helper.admitMaskWrites(opts.maskWrites)
+
     helper.installImport({
         LrApplication = {
             activeCatalog = function() return catalog end,
@@ -418,12 +420,12 @@ describe("HandlerBrushMasks.createBrushMask", function()
         assert.are.equal(0, #calls.modules)
     end)
 
-    it("refuses an untested Lightroom version, leaving the photo and the view alone", function()
-        local Handler, stores, calls = setup({ version = { major = 15, minor = 7 } })
+    it("refuses on an uncertified Lightroom, leaving the photo and the view alone", function()
+        local Handler, stores, calls = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
 
         local message = errorOf(function() Handler.createBrushMask(createRequest()) end)
 
-        assert.is_truthy(message:find("15.7", 1, true))
+        assert.is_truthy(message:find("is not certified", 1, true))
         assert.are.equal(0, #stores["1"].writes)
         assert.are.equal(0, #calls.modules)
     end)
@@ -611,14 +613,4 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
         assert.are.equal(2, #stores["1"].entries[1].CorrectionMasks[1].Masks)
     end)
 
-    it("refuses on an untested process version", function()
-        local Handler, stores = setup({
-            photos = { { id = "1", entries = existingBrush(), processVersion = "11.0" } },
-        })
-
-        local message = errorOf(function() Handler.addBrushStrokes(addRequest()) end)
-
-        assert.is_truthy(message:find("process version (11.0)", 1, true))
-        assert.are.equal(0, #stores["1"].writes)
-    end)
 end)

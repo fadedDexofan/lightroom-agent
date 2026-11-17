@@ -57,6 +57,7 @@ const EXPECTED_TOOL_NAMES = [
   'match_photo_style',
   'set_develop_settings',
   'get_lens_blur',
+  'get_raw_develop_settings',
   'set_lens_blur',
   'set_process_version',
   'list_develop_snapshots',
@@ -68,6 +69,7 @@ const EXPECTED_TOOL_NAMES = [
   'apply_denoise',
   'apply_auto_adjustments',
   'list_masks',
+  'get_mask_write_admission',
   'list_spots',
   'update_spot',
   'delete_spot',
@@ -106,8 +108,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 72 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(72);
+  it('contains exactly 74 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(74);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -292,6 +294,7 @@ describe('tool required fields', () => {
     ['match_photo_style', ['reference_id', 'target_ids']],
     ['set_develop_settings', ['photo_id', 'settings']],
     ['get_lens_blur', ['photo_id']],
+    ['get_raw_develop_settings', ['photo_id']],
     ['set_lens_blur', ['photo_id']],
     ['set_process_version', ['photo_ids', 'version', 'confirm']],
     ['list_develop_snapshots', ['photo_id']],

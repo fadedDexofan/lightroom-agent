@@ -14,8 +14,8 @@
 import net from "node:net";
 
 export interface FakePluginOptions {
-  requestPort: number;
-  responsePort: number;
+  requestPort?: number;
+  responsePort?: number;
   token: string;
   handler: (action: string, params: unknown) => unknown | Promise<unknown>;
   // Sleep between close and re-listen. The real plugin runs the close+bind
@@ -40,10 +40,12 @@ export interface FakePluginEvent {
 
 export class FakePlugin {
   private readonly host = "127.0.0.1";
-  private readonly opts: Required<Omit<FakePluginOptions, "log" | "exclusivePort">> & {
+  private readonly opts: Required<Omit<FakePluginOptions, "log" | "exclusivePort" | "requestPort" | "responsePort">> & {
     log: (msg: string) => void;
     exclusivePort: boolean;
   };
+  private boundRequestPort: number;
+  private boundResponsePort: number;
 
   private requestServer: net.Server | null = null;
   private responseServer: net.Server | null = null;
@@ -59,9 +61,9 @@ export class FakePlugin {
   public readonly events: FakePluginEvent[] = [];
 
   constructor(opts: FakePluginOptions) {
+    this.boundRequestPort = opts.requestPort ?? 0;
+    this.boundResponsePort = opts.responsePort ?? 0;
     this.opts = {
-      requestPort: opts.requestPort,
-      responsePort: opts.responsePort,
       token: opts.token,
       handler: opts.handler,
       rebindDelayMs: opts.rebindDelayMs ?? 0,
@@ -69,6 +71,14 @@ export class FakePlugin {
       exclusivePort: opts.exclusivePort ?? false,
       log: opts.log ?? (() => {}),
     };
+  }
+
+  get requestPort(): number {
+    return this.boundRequestPort;
+  }
+
+  get responsePort(): number {
+    return this.boundResponsePort;
   }
 
   private event(kind: string, detail?: string): void {
@@ -111,12 +121,13 @@ export class FakePlugin {
       srv.once("error", reject);
       srv.listen(
         {
-          port: this.opts.responsePort,
+          port: this.boundResponsePort,
           host: this.host,
           exclusive: this.opts.exclusivePort,
         },
         () => {
           srv.off("error", reject);
+          this.boundResponsePort = (srv.address() as net.AddressInfo).port;
           this.event("response_bound", `gen=${myGen}`);
           resolve(srv);
         },
@@ -189,12 +200,13 @@ export class FakePlugin {
       srv.once("error", reject);
       srv.listen(
         {
-          port: this.opts.requestPort,
+          port: this.boundRequestPort,
           host: this.host,
           exclusive: this.opts.exclusivePort,
         },
         () => {
           srv.off("error", reject);
+          this.boundRequestPort = (srv.address() as net.AddressInfo).port;
           this.event("request_bound");
           resolve(srv);
         },
@@ -260,15 +272,4 @@ export class FakePlugin {
     this.responseServer = null;
     this.requestServer = null;
   }
-}
-
-export function freePort(): Promise<number> {
-  return new Promise((resolve) => {
-    const srv = net.createServer();
-    srv.listen(0, () => {
-      const addr = srv.address();
-      const port = typeof addr === "object" && addr ? addr.port : 0;
-      srv.close(() => resolve(port));
-    });
-  });
 }

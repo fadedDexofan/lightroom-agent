@@ -127,7 +127,9 @@ function Handler.removePhotos(args)
     end
     if #photos == 0 then error("No photos matched photo_ids") end
     catalog:withReadAccessDo(function()
-        local raw = catalog:batchGetRawMetadata(photos, { 'virtualCopies', 'masterPhoto' }) or {}
+        local raw = catalog:batchGetRawMetadata(photos, {
+            'virtualCopies', 'masterPhoto', 'isInStackInFolder', 'stackInFolderIsCollapsed', 'stackInFolderMembers',
+        }) or {}
         for _, entry in ipairs(resolved) do
             local info = entry.photo and raw[entry.photo] or {}
             if tonumber(entry.id) == nil and (info.masterPhoto or #(info.virtualCopies or {}) > 0) then
@@ -136,9 +138,19 @@ function Handler.removePhotos(args)
             end
         end
         for _, photo in ipairs(photos) do
-            for _, copy in ipairs((raw[photo] or {}).virtualCopies or {}) do
+            local info = raw[photo] or {}
+            for _, copy in ipairs(info.virtualCopies or {}) do
                 if not seen[copy] then
                     error("Include every virtual copy when removing its master from the catalog")
+                end
+            end
+            if info.isInStackInFolder and info.stackInFolderIsCollapsed then
+                for _, member in ipairs(info.stackInFolderMembers or {}) do
+                    if not seen[member] then
+                        error("Photo " .. tostring(photo.localIdentifier) .. " is in a collapsed stack whose other"
+                            .. " members were not requested, and removing it could remove the whole stack;"
+                            .. " include every member's id or expand the stack in Lightroom")
+                    end
                 end
             end
         end

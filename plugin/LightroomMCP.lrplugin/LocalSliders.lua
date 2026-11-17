@@ -3,11 +3,11 @@ local LocalSliders = {}
 local WHOLE_NUMBER_ROUNDING_TOLERANCE = 0.5
 local TWO_DECIMAL_ROUNDING_TOLERANCE = 0.01
 
-local function wholeNumberSlider(name)
+local function wholeNumberSlider(name, fallbackMin, fallbackMax)
     return {
         name = name,
-        fallbackMin = -100,
-        fallbackMax = 100,
+        fallbackMin = fallbackMin or -100,
+        fallbackMax = fallbackMax or 100,
         tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE,
     }
 end
@@ -34,6 +34,21 @@ LocalSliders.list = {
     wholeNumberSlider("local_LuminanceNoise"),
     wholeNumberSlider("local_Moire"),
     wholeNumberSlider("local_Defringe"),
+    wholeNumberSlider("local_colorgradeShadowHue", 0, 360),
+    wholeNumberSlider("local_colorgradeShadowSat", 0, 100),
+    wholeNumberSlider("local_colorgradeShadowLum"),
+    wholeNumberSlider("local_colorgradeMidtoneHue", 0, 360),
+    wholeNumberSlider("local_colorgradeMidtoneSat", 0, 100),
+    wholeNumberSlider("local_colorgradeMidtoneLum"),
+    wholeNumberSlider("local_colorgradeHighlightHue", 0, 360),
+    wholeNumberSlider("local_colorgradeHighlightSat", 0, 100),
+    wholeNumberSlider("local_colorgradeHighlightLum"),
+    wholeNumberSlider("local_colorgradeGlobalHue", 0, 360),
+    wholeNumberSlider("local_colorgradeGlobalSat", 0, 100),
+    wholeNumberSlider("local_colorgradeGlobalLum"),
+    wholeNumberSlider("local_colorgradeBlending", 0, 100),
+    wholeNumberSlider("local_colorgradeBalance"),
+    wholeNumberSlider("local_glow"),
 }
 
 LocalSliders.byName = {}

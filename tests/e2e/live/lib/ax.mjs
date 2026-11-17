@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import path from "node:path";
 import { LIGHTROOM_PROCESS_NAME } from "./paths.mjs";
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -11,12 +12,24 @@ export function frontmostProcessName() {
   return osascript('tell application "System Events" to get name of first process whose frontmost is true');
 }
 
-export async function ensureLightroomFrontmost({ attempts = 5 } = {}) {
-  let front = frontmostProcessName();
+function frontmostOrNull() {
+  try {
+    return frontmostProcessName();
+  } catch {
+    return null;
+  }
+}
+
+export async function ensureLightroomFrontmost({ attempts = 10 } = {}) {
+  let front = frontmostOrNull();
   for (let attempt = 0; front !== LIGHTROOM_PROCESS_NAME && attempt < attempts; attempt++) {
-    osascript(`tell application "${LIGHTROOM_PROCESS_NAME}" to activate`);
+    try {
+      osascript(`tell application "${LIGHTROOM_PROCESS_NAME}" to activate`);
+    } catch {
+      front = null;
+    }
     await sleep(1000);
-    front = frontmostProcessName();
+    front = frontmostOrNull();
   }
   if (front !== LIGHTROOM_PROCESS_NAME) {
     throw new Error(`refusing to send input: frontmost process is "${front}", not ${LIGHTROOM_PROCESS_NAME}`);
@@ -213,20 +226,69 @@ export async function openNewCatalogDialog() {
   await waitForWindow(NEW_CATALOG_DIALOG);
 }
 
-export async function openRecentCatalog(catalogFileName, { timeoutMs = 30_000 } = {}) {
-  await ensureLightroomFrontmost();
-  osascript(`
+export function lightroomIsRunning() {
+  try {
+    execFileSync("pgrep", ["-x", LIGHTROOM_PROCESS_NAME]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function confirmQuitIfAsked() {
+  return osascript(`
 tell application "System Events" to tell process "${LIGHTROOM_PROCESS_NAME}"
-  click menu item ${quote(catalogFileName)} of menu 1 of menu item "Open Recent" of menu "File" of menu bar 1
+  repeat with w in windows
+    try
+      if exists button "Yes" of w then
+        set asksToQuit to false
+        repeat with e in (static texts of w)
+          if (value of e as text) contains "really want to quit" then set asksToQuit to true
+        end repeat
+        if asksToQuit then
+          click button "Yes" of w
+          return "confirmed"
+        end if
+      end if
+    end try
+  end repeat
+  return ""
 end tell`);
+}
+
+export async function quitLightroom({ timeoutMs = 120_000 } = {}) {
+  await ensureLightroomFrontmost();
+  spawn("osascript", ["-e", `tell application "${LIGHTROOM_PROCESS_NAME}" to quit`], { stdio: "ignore", detached: true }).unref();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await sleep(1000);
-    const relaunch = listModalWindows().find((window) => window.buttons.includes("Relaunch"));
-    if (relaunch) {
-      await clickWindowButton(relaunch.title, "Relaunch");
+    if (!lightroomIsRunning()) return;
+    try {
+      confirmQuitIfAsked();
+    } catch {
+      continue;
+    }
+  }
+  throw new Error(`Lightroom did not quit within ${timeoutMs / 1000}s`);
+}
+
+export async function reopenWithCatalog(catalogPath, { timeoutMs = 180_000 } = {}) {
+  if (lightroomIsRunning()) await quitLightroom();
+  execFileSync("open", ["-a", LIGHTROOM_PROCESS_NAME, catalogPath]);
+  const windowPrefix = `${path.basename(catalogPath)} - `;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await sleep(2000);
+    let names = "";
+    try {
+      names = osascript(`tell application "System Events" to tell process "${LIGHTROOM_PROCESS_NAME}" to get name of every window`);
+    } catch {
+      continue;
+    }
+    if (names.split(", ").some((name) => name.startsWith(windowPrefix))) {
+      await ensureLightroomFrontmost();
       return;
     }
   }
-  throw new Error(`no Relaunch prompt appeared after opening ${catalogFileName}`);
+  throw new Error(`Lightroom did not open ${catalogPath} within ${timeoutMs / 1000}s`);
 }

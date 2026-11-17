@@ -111,11 +111,12 @@ function Handler.create(args)
                 error('Could not restore the previous photo selection')
             end
         end)
-        if not restored then error(tostring(restoreFailure), 0) end
+        local warning = not restored and tostring(restoreFailure) or nil
         if not ok then
-            error(tostring(failure) .. '; virtual copies already created: ' .. #copies, 0)
+            error(tostring(failure) .. '; virtual copies already created: ' .. #copies
+                .. (warning and ('; ' .. warning) or ''), 0)
         end
-        return { created = #copies, copies = copies, missing = missing }
+        return { created = #copies, copies = copies, missing = missing, warning = warning }
     end)
 end
 

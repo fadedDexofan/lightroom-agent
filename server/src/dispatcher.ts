@@ -15,6 +15,13 @@ export interface PluginResponse {
   error?: string;
 }
 
+export class PluginTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`Plugin response timeout (${timeoutMs / 1000}s)`);
+    this.name = "PluginTimeoutError";
+  }
+}
+
 interface PendingResponse {
   resolve: (resp: PluginResponse) => void;
   reject: (err: Error) => void;
@@ -102,7 +109,7 @@ export class Dispatcher {
       const timer = setTimeout(() => {
         options?.signal?.removeEventListener("abort", cancel);
         this.pending.delete(id);
-        reject(new Error(`Plugin response timeout (${timeoutMs / 1000}s)`));
+        reject(new PluginTimeoutError(timeoutMs));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, onProgress: options?.onProgress,
         cleanup: () => options?.signal?.removeEventListener("abort", cancel) });

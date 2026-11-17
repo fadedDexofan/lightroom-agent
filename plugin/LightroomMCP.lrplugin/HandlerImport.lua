@@ -2,8 +2,8 @@ local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
-local LrStringUtils = import 'LrStringUtils'
 
+local CatalogFolders = require 'CatalogFolders'
 local CollectionsHandler = require 'HandlerCollections'
 local Log = require 'Log'
 local PathForms = require 'PathForms'
@@ -29,6 +29,8 @@ end
 local JPEG_EXTENSIONS = { jpe = true, jpeg = true, jpg = true }
 local PACKAGE_EXTENSIONS = { lrdata = true, lrlibrary = true, photoslibrary = true }
 local IMPORT_WRITE_TIMEOUT = { timeout = 30 }
+local CATALOG_BUSY_MESSAGE = "the catalog stayed busy with another write for "
+    .. IMPORT_WRITE_TIMEOUT.timeout .. " s, so Lightroom did not run this write"
 
 local function lowerExtension(path)
     return LrPathUtils.extension(path):lower()
@@ -175,34 +177,6 @@ local function rawFileBeside(path)
     return nil
 end
 
-local function foldedPath(path)
-    return LrStringUtils.lower(PathForms.toNfc(path))
-end
-
-local function withoutTrailingSeparator(path)
-    return (path:gsub("[/\\]+$", ""))
-end
-
-local function rememberFolder(known, path)
-    path = withoutTrailingSeparator(path)
-    if path == "" then return end
-    local key = foldedPath(path)
-    known[key] = known[key] or {}
-    for _, spelling in ipairs(known[key]) do
-        if PathForms.same(spelling, path) then return end
-    end
-    table.insert(known[key], path)
-end
-
-local function catalogFolders(catalog)
-    local known = {}
-    local function visit(folder)
-        rememberFolder(known, folder:getPath())
-        for _, child in ipairs(folder:getChildren() or {}) do visit(child) end
-    end
-    for _, folder in ipairs(catalog:getFolders() or {}) do visit(folder) end
-    return known
-end
 
 local function distinctOnDisk(existing, folder)
     if not LrFileUtils.exists(folder) then
@@ -240,7 +214,7 @@ end
 local function caseVariantFolder(known, directory)
     local fresh = {}
     for folder in eachAncestor(directory) do
-        local spellings = known[foldedPath(folder)]
+        local spellings = CatalogFolders.spellingsOf(known, folder)
         if spellings then
             local own = false
             for _, spelling in ipairs(spellings) do
@@ -414,7 +388,7 @@ function ImportHandler.importPhotos(args, context)
     local processed = 0
     local knownFolders = nil
     local function refuseCaseVariantFolder(path)
-        knownFolders = knownFolders or catalogFolders(catalog)
+        knownFolders = knownFolders or CatalogFolders.of(catalog)
         local directory = LrPathUtils.parent(path)
         local other, fresh = caseVariantFolder(knownFolders, directory)
         if other then
@@ -424,7 +398,7 @@ function ImportHandler.importPhotos(args, context)
                 path, directory, other, other), 0)
         end
         return function()
-            for _, folder in ipairs(fresh) do rememberFolder(knownFolders, folder) end
+            for _, folder in ipairs(fresh) do CatalogFolders.remember(knownFolders, folder) end
         end
     end
     for index, filePath in ipairs(photosToImport) do
@@ -457,12 +431,13 @@ function ImportHandler.importPhotos(args, context)
                 rememberFolders()
                 return
             end
-            catalog:withWriteAccessDo("Import Photo", function()
+            local outcome = catalog:withWriteAccessDo("Import Photo", function()
                 local photo = catalog:addPhoto(photoPath)
                 if not photo then error("Lightroom did not add the photo") end
                 table.insert(collectionPhotos, photo)
                 importedCount = importedCount + 1
             end, IMPORT_WRITE_TIMEOUT)
+            if outcome == "aborted" then error(CATALOG_BUSY_MESSAGE, 0) end
             rememberFolders()
         end)
         if not imported then
@@ -474,11 +449,17 @@ function ImportHandler.importPhotos(args, context)
     if context and processed > 0 then context:report(processed, #photosToImport, photosToImport[processed]) end
 
     -- Add to collection if specified, in its own short write transaction.
+    local addedToCollection = 0
     if args.collection_name and #collectionPhotos > 0 then
-        catalog:withWriteAccessDo("Add Imported Photos to Collection", function()
+        local outcome = catalog:withWriteAccessDo("Add Imported Photos to Collection", function()
             requireTargetCollection():addPhotos(collectionPhotos)
         end, IMPORT_WRITE_TIMEOUT)
-        Log.info(string.format("Added %d photos to collection: %s", #collectionPhotos, args.collection_name))
+        if outcome == "aborted" then
+            failed[#failed + 1] = { collection = args.collection_name, error = CATALOG_BUSY_MESSAGE }
+        else
+            addedToCollection = #collectionPhotos
+            Log.info(string.format("Added %d photos to collection: %s", addedToCollection, args.collection_name))
+        end
     end
 
     Log.info(string.format("Imported %d photos from: %s (skipped %d, sidecar JPEGs %d, already in catalog %d)",
@@ -493,7 +474,7 @@ function ImportHandler.importPhotos(args, context)
         success = #failed == 0,
         imported = importedCount,
         failed = #failed > 0 and failed or nil,
-        added_to_collection = args.collection_name and #collectionPhotos or nil,
+        added_to_collection = args.collection_name and addedToCollection or nil,
         skipped_package_files = packageFileCount > 0 and packageFileCount or nil,
         complete = #remainingPaths == 0,
         remaining_paths = #remainingPaths > 0 and remainingPaths or nil,

@@ -494,3 +494,22 @@ describe("RangeMaskGeometry", function()
         end)
     end)
 end)
+
+describe("RangeMaskGeometry number text", function()
+    after_each(function() os.setlocale("C", "numeric") end)
+
+    it("writes range strings and color samples with a decimal point under a comma-decimal locale", function()
+        helper.installImport({})
+        package.loaded.RangeMaskGeometry = nil
+        local Geometry = require 'RangeMaskGeometry'
+        assert.truthy(os.setlocale("ru_RU.UTF-8", "numeric"))
+
+        local luminance = Geometry.newComponent(Geometry.parseCreate(luminanceArgs())).CorrectionRangeMask
+        local color = Geometry.newComponent(Geometry.parseCreate(colorArgs({
+            color = { sample = sample({ l = 0.000001, a = 0.5 }), amount = 0.4 },
+        }))).CorrectionRangeMask
+
+        assert.is_nil(luminance.LumRange:find("[,eE]"), luminance.LumRange)
+        assert.are.equal("0.000001 0.500000 0.100000 0.200000 0.800000 0", color.PointModels[1])
+    end)
+end)

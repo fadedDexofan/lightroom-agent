@@ -47,6 +47,8 @@ local function setup(opts)
     local catalog = helper.fakeCatalog({ photos = { photo } })
     Store.trackGates(store, catalog)
 
+    helper.admitMaskWrites(opts.maskWrites)
+
     helper.installImport({
         LrApplication = {
             activeCatalog = function() calls.catalogs = calls.catalogs + 1; return catalog end,
@@ -158,10 +160,10 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(0, store.attempts)
     end)
 
-    it("refuses on an untested Lightroom version without writing", function()
-        local Handler, store = setup({ version = { major = 14, minor = 5 } })
+    it("refuses on an uncertified Lightroom without writing", function()
+        local Handler, store = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
 
-        assert.matches("not a version this tool has been tested on",
+        assert.matches("is not certified",
             errorOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end), 1, true)
         assert.are.equal(0, store.attempts)
     end)
@@ -293,23 +295,12 @@ describe("HandlerMaskCreate.createMask AI selectors", function()
         assert.are.equal(0, store.attempts)
     end)
 
-    it("keeps both guarded types off untested process versions without writing", function()
+    it("keeps both guarded types off an uncertified Lightroom without writing", function()
         for _, typeName in ipairs({ "people", "landscape" }) do
-            local Handler, store, calls = setup({ processVersion = "11.0" })
+            local Handler, store, calls = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
             local args = { photo_id = "1", type = typeName }
             if typeName == "people" then args.parts = { "hair" } else args.categories = { "sky" } end
-            assert.matches("process version", errorOf(function() Handler.createMask(args) end), 1, true)
-            assert.are.equal(0, store.attempts)
-            assert.are.equal(0, calls.updateAI)
-        end
-    end)
-
-    it("keeps both guarded types off untested Lightroom versions without writing", function()
-        for _, typeName in ipairs({ "people", "landscape" }) do
-            local Handler, store, calls = setup({ version = { major = 14, minor = 5 } })
-            local args = { photo_id = "1", type = typeName }
-            if typeName == "people" then args.parts = { "hair" } else args.categories = { "sky" } end
-            assert.matches("not a version this tool has been tested on",
+            assert.matches("is not certified",
                 errorOf(function() Handler.createMask(args) end), 1, true)
             assert.are.equal(0, store.attempts)
             assert.are.equal(0, calls.updateAI)

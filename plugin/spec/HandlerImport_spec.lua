@@ -83,7 +83,7 @@ local function fakePathUtils()
 end
 
 local function setup(opts)
-    local catalog = helper.fakeCatalog({ collectionSets = opts.collectionSets, collections = opts.collections or {}, photos = opts.photos, folders = opts.folders })
+    local catalog = helper.fakeCatalog({ collectionSets = opts.collectionSets, collections = opts.collections or {}, photos = opts.photos, folders = opts.folders, writeAccessAborts = opts.writeAccessAborts })
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrLogger = helper.defaultLrLogger(),
@@ -163,6 +163,48 @@ describe("HandlerImport.importPhotos", function()
             assert.are.equal("/dir/bad.jpg", r.failed[1].path)
             assert.truthy(r.failed[1].error:find("dng_error_bad_format", 1, true))
             assert.are.equal(2, #collection.getAddedPhotos())
+        end)
+
+        it("reports a photo whose write was abandoned because the catalog stayed busy", function()
+            local collection = helper.fakeCollection("Shoot", {})
+            local imports = 0
+            local catalog, Handler = setup({
+                collections = { collection },
+                fs = { directories = { ["/dir"] = true }, dirContents = { "/dir/a.jpg", "/dir/b.jpg" } },
+                writeAccessAborts = function(name)
+                    if name ~= "Import Photo" then return false end
+                    imports = imports + 1
+                    return imports == 2
+                end,
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Shoot" })
+
+            assert.is_false(r.success)
+            assert.are.equal(1, r.imported)
+            assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
+            assert.are.equal("/dir/b.jpg", r.failed[1].path)
+            assert.truthy(r.failed[1].error:find("busy", 1, true))
+            assert.are.equal(1, r.added_to_collection)
+        end)
+
+        it("reports photos that could not be added to the collection", function()
+            local collection = helper.fakeCollection("Shoot", {})
+            local catalog, Handler = setup({
+                collections = { collection },
+                fs = { directories = { ["/dir"] = true }, dirContents = { "/dir/a.jpg" } },
+                writeAccessAborts = function(name) return name == "Add Imported Photos to Collection" end,
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Shoot" })
+
+            assert.is_false(r.success)
+            assert.are.equal(1, r.imported)
+            assert.are.equal(0, r.added_to_collection)
+            assert.are.equal(0, #collection.getAddedPhotos())
+            assert.are.equal("Shoot", r.failed[1].collection)
+            assert.truthy(r.failed[1].error:find("busy", 1, true))
+            assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
         end)
 
         it("names the file when a single import fails", function()

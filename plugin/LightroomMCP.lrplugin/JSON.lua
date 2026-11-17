@@ -1,4 +1,6 @@
 -- Simple JSON encoder/decoder for Lightroom
+local DecimalText = require 'DecimalText'
+
 local JSON = {}
 
 local SHORT_ESCAPES = {
@@ -75,18 +77,36 @@ function JSON:encode(obj)
         local t = type(v)
         if t == "string" then
             return '"' .. escapeString(v) .. '"'
-        elseif t == "number" or t == "boolean" then
+        elseif t == "number" then
+            if v ~= v or v == math.huge or v == -math.huge then
+                error("JSON cannot encode the non-finite number " .. tostring(v), 0)
+            end
+            return DecimalText.number(v)
+        elseif t == "boolean" then
             return tostring(v)
         elseif t == "table" then
             -- An empty Lua table is ambiguous. Encoding it as {} broke every
             -- client iterating an empty result list (changes.map is not a
             -- function); an empty object rendered as [] is harmless by
             -- comparison, so empty means array here.
-            local is_array = next(v) == nil or #v > 0
-            if is_array then
+            local count, highest, positional = 0, 0, 0
+            for k in pairs(v) do
+                count = count + 1
+                if type(k) == "number" and k >= 1 and k == math.floor(k) then
+                    positional = positional + 1
+                    if k > highest then highest = k end
+                end
+            end
+            if positional > 0 and positional < count then
+                error("JSON cannot encode a table that mixes array items and named fields", 0)
+            end
+            if positional > 0 and highest ~= positional then
+                error("JSON cannot encode an array with a gap", 0)
+            end
+            if count == 0 or positional == count then
                 local values = {}
-                for i, item in ipairs(v) do
-                    table.insert(values, encode_value(item))
+                for i = 1, highest do
+                    values[i] = encode_value(v[i])
                 end
                 return "[" .. table.concat(values, ",") .. "]"
             else
@@ -192,14 +212,15 @@ function JSON:decode(str)
             -- Array
             pos = pos + 1
             local arr = {}
+            local length = 0
             skip_whitespace()
             if str:sub(pos, pos) == ']' then
                 pos = pos + 1
                 return arr
             end
             while true do
-                local value = decode_value()
-                table.insert(arr, value)
+                length = length + 1
+                arr[length] = decode_value()
                 skip_whitespace()
                 char = str:sub(pos, pos)
                 if char == ']' then
@@ -254,7 +275,7 @@ function JSON:decode(str)
             -- or a lone "-". Returning that nil would drop the field silently
             -- and read as null; a malformed number is a parse error.
             local numberText = str:sub(start, pos - 1)
-            local value = tonumber(numberText)
+            local value = DecimalText.parse(numberText)
             if value == nil then
                 error("Invalid number: " .. numberText)
             end
@@ -264,7 +285,12 @@ function JSON:decode(str)
         end
     end
 
-    return decode_value()
+    local value = decode_value()
+    skip_whitespace()
+    if pos <= #str then
+        error("Unexpected characters after the JSON value at position " .. pos)
+    end
+    return value
 end
 
 return JSON

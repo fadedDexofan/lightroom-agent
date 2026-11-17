@@ -3,7 +3,7 @@ local helper = require 'spec_helper'
 local function setup(opts)
     opts = opts or {}
     local exportSessionCalls = {}
-    local catalog = helper.fakeCatalog({ photos = opts.photos or {} })
+    local catalog = helper.fakeCatalog({ photos = opts.photos or {}, folders = opts.folders })
     -- path -> false | "file" | "directory", as LrFileUtils.exists answers; unlisted paths are directories
     local paths = opts.paths or {}
     local createdDirs = {}
@@ -22,6 +22,8 @@ local function setup(opts)
         },
         LrPathUtils = {
             child = function(dir, name) return dir .. "/" .. name end,
+            parent = function(path) return (path:match("^(.*)/[^/]*$")) end,
+            standardizePath = function(path) return (opts.links or {})[path] or path end,
             getStandardFilePath = function() return "/home/u" end,
         },
         LrExportSession = function(args)
@@ -115,13 +117,20 @@ describe("HandlerExport.exportPhotos", function()
     end)
 
     describe("rendition results", function()
-        local function exportWith(renditions, args)
-            local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local function exportWith(renditions, args, writtenFiles)
+            local p = helper.fakePhoto({ localIdentifier = 1, path = "/a.jpg" })
             local catalog = helper.fakeCatalog({ photos = { p } })
+            local written = {}
+            for _, path in ipairs(writtenFiles or {}) do written[path] = "file" end
             helper.installImport({
                 LrApplication = { activeCatalog = function() return catalog end },
                 LrLogger = helper.defaultLrLogger(),
-                LrFileUtils = { exists = function(path) return path == "/out" and "directory" or false end },
+                LrFileUtils = {
+                    exists = function(path)
+                        if path == "/out" then return "directory" end
+                        return written[path] or false
+                    end,
+                },
                 LrPathUtils = { child = function(dir, name) return dir .. "/" .. name end },
                 LrExportSession = function()
                     return {
@@ -142,11 +151,22 @@ describe("HandlerExport.exportPhotos", function()
             return require('HandlerExport').exportPhotos(request)
         end
 
+        it("lists the file Lightroom wrote, after renaming it to avoid a collision", function()
+            local r = exportWith({ {
+                destinationPath = "/out/a.jpg",
+                waitForRender = function() return true, "/out/a-2.jpg" end,
+            } }, nil, { "/out/a-2.jpg" })
+            assert.is_true(r.success)
+            assert.are.equal(1, r.exported)
+            assert.are.same({ { id = "1", path = "/out/a-2.jpg" } }, r.files)
+        end)
+
         it("counts a skipped existing file as skipped, not exported", function()
             local r = exportWith({}, { on_existing = "skip" })
             assert.is_true(r.success)
             assert.are.equal(0, r.exported)
             assert.are.equal(1, r.skipped)
+            assert.are.same({}, r.files)
         end)
 
         it("reports a render Lightroom refused", function()
@@ -154,18 +174,61 @@ describe("HandlerExport.exportPhotos", function()
             assert.is_false(r.success)
             assert.are.equal(0, r.exported)
             assert.are.same({ { id = "1", reason = "could not be written" } }, r.failed)
+            assert.are.same({}, r.files)
         end)
 
         it("reports a render that left no file", function()
             local r = exportWith({ { waitForRender = function() return true, "/out/a.jpg" end } })
             assert.is_false(r.success)
             assert.are.equal("Lightroom wrote no file", r.failed[1].reason)
+            assert.are.same({}, r.files)
         end)
 
         it("reports no rendition when not skipping", function()
             local r = exportWith({})
             assert.is_false(r.success)
             assert.are.equal(0, r.skipped)
+        end)
+
+        it("records an error on one photo as its failure and keeps the files already written", function()
+            local photos = {
+                helper.fakePhoto({ id = "1", path = "/a.jpg" }),
+                helper.fakePhoto({ id = "2", path = "/b.jpg" }),
+                helper.fakePhoto({ id = "3", path = "/c.jpg" }),
+            }
+            local catalog = helper.fakeCatalog({ photos = photos })
+            helper.installImport({
+                LrApplication = { activeCatalog = function() return catalog end },
+                LrLogger = helper.defaultLrLogger(),
+                LrFileUtils = { exists = function(path) return path == "/out" and "directory" or "file" end },
+                LrPathUtils = { child = function(dir, name) return dir .. "/" .. name end },
+                LrExportSession = function(args)
+                    local photo = args.photosToExport[1]
+                    return {
+                        doExportOnCurrentTask = function()
+                            if photo.localIdentifier == "2" then error("render engine failed", 0) end
+                        end,
+                        renditions = function()
+                            local done = false
+                            return function()
+                                if done then return nil end
+                                done = true
+                                return 1, { waitForRender = function() return true, "/out/" .. photo.localIdentifier .. ".jpg" end }
+                            end
+                        end,
+                    }
+                end,
+            })
+            package.loaded.HandlerExport = nil
+
+            local r = require('HandlerExport').exportPhotos({ photo_ids = { "1", "2", "3" }, destination = "/out" })
+
+            assert.is_false(r.success)
+            assert.are.equal(2, r.exported)
+            assert.are.same({ { id = "1", path = "/out/1.jpg" }, { id = "3", path = "/out/3.jpg" } }, r.files)
+            assert.are.equal(1, #r.failed)
+            assert.are.equal("2", r.failed[1].id)
+            assert.truthy(r.failed[1].reason:find("render engine failed", 1, true))
         end)
     end)
 
@@ -209,6 +272,7 @@ describe("HandlerExport.exportPhotos", function()
         assert.is_nil(r.message)
         assert.is_false(r.complete)
         assert.are.same({ "3", "4", "5" }, r.remaining_ids)
+        assert.are.same({ { id = "1", path = "/out/1" }, { id = "2", path = "/out/1" } }, r.files)
         assert.are.equal(2, #calls)
     end)
 
@@ -307,6 +371,29 @@ describe("HandlerExport.exportPhotos", function()
         end
     end)
 
+    it("rejects a destination not written canonically, before creating anything", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        for _, destination in ipairs({ "/out/.", "/out//x", "/out/x/../y", "/out/./x", "/out/..", "/out\\x" }) do
+            local _, Handler, calls, createdDirs = setup({ photos = { p }, paths = { [destination] = false } })
+
+            local ok, err = pcall(Handler.exportPhotos, { photo_ids = { "1" }, destination = destination })
+
+            assert.is_false(ok, destination)
+            assert.truthy(tostring(err):find("written canonically", 1, true), tostring(err))
+            assert.are.same({}, createdDirs)
+            assert.are.equal(0, #calls)
+        end
+    end)
+
+    it("accepts one trailing separator on a destination", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler, calls = setup({ photos = { p } })
+
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out/" })
+
+        assert.are.equal("/out", calls[1].exportSettings.LR_export_destinationPathPrefix)
+    end)
+
     it("expands a leading ~/ to the home folder", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler, calls, createdDirs = setup({ photos = { p }, paths = { ["/home/u/out"] = false } })
@@ -330,7 +417,7 @@ describe("HandlerExport.exportPhotos", function()
 
         assert.are.same({
             ["C:\\out"] = true,
-            ["C:/out"] = true,
+            ["C:/out"] = false,
             ["\\\\srv\\s"] = true,
             ["C:out"] = false,
             ["/out"] = false,
@@ -358,6 +445,43 @@ describe("HandlerExport.exportPhotos", function()
         assert.has_error(function()
             Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", on_existing = "ask" })
         end, "on_existing must be one of: rename, overwrite, skip")
+    end)
+
+    describe("overwriting into a catalog folder", function()
+        local function catalogSetup(extra)
+            local opts = {
+                photos = { helper.fakePhoto({ id = "2", path = "/archive/2025/IMG_1234.CR2" }) },
+                folders = {
+                    helper.fakeFolder("/archive/2025"),
+                    helper.fakeFolder("/archive/2026"),
+                    helper.fakeFolder("/f" .. "o\204\136" .. "to"),
+                },
+                links = { ["/link"] = "/archive/2026" },
+            }
+            for key, value in pairs(extra or {}) do opts[key] = value end
+            return setup(opts)
+        end
+
+        it("refuses any catalog folder before rendering or creating anything, naming it and the ways out", function()
+            for _, destination in ipairs({ "/archive/2026", "/archive/2025", "/ARCHIVE/2026", "/f\195\182to", "/link" }) do
+                local _, Handler, calls, createdDirs = catalogSetup({ paths = { [destination] = false } })
+                local ok, err = pcall(Handler.exportPhotos,
+                    { photo_ids = { "2" }, destination = destination, on_existing = "overwrite" })
+                assert.is_false(ok, destination)
+                assert.truthy(tostring(err):find("a folder of this catalog", 1, true), tostring(err))
+                assert.truthy(tostring(err):find(destination, 1, true), tostring(err))
+                assert.truthy(tostring(err):find("outside the catalog or on_existing rename or skip", 1, true))
+                assert.are.equal(0, #calls)
+                assert.are.same({}, createdDirs)
+            end
+        end)
+
+        it("still overwrites outside the catalog, and renames into a catalog folder", function()
+            local _, Handler, calls = catalogSetup()
+            Handler.exportPhotos({ photo_ids = { "2" }, destination = "/elsewhere", on_existing = "overwrite" })
+            Handler.exportPhotos({ photo_ids = { "2" }, destination = "/archive/2026", on_existing = "rename" })
+            assert.are.equal(2, #calls)
+        end)
     end)
 
     it("rejects an unsupported format instead of silently exporting another", function()

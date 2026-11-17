@@ -41,7 +41,10 @@ Add to MCP config:
 
 ```
 lightroom-mcp [stdio]            Run MCP over stdio (default)
+lightroom-mcp tools [name]       Print available tool schemas as JSON without connecting
+lightroom-mcp call <tool> [json] Call a tool with JSON object arguments (default {})
 lightroom-mcp install-plugin     Copy plugin into Lightroom Modules folder
+lightroom-mcp --help | --version
 ```
 
 ## Docs and source

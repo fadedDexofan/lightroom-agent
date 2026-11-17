@@ -296,6 +296,21 @@ export const LOCAL_ADJUSTMENT_KEYS = [
   "local_LuminanceNoise",
   "local_Moire",
   "local_Defringe",
+  "local_colorgradeShadowHue",
+  "local_colorgradeShadowSat",
+  "local_colorgradeShadowLum",
+  "local_colorgradeMidtoneHue",
+  "local_colorgradeMidtoneSat",
+  "local_colorgradeMidtoneLum",
+  "local_colorgradeHighlightHue",
+  "local_colorgradeHighlightSat",
+  "local_colorgradeHighlightLum",
+  "local_colorgradeGlobalHue",
+  "local_colorgradeGlobalSat",
+  "local_colorgradeGlobalLum",
+  "local_colorgradeBlending",
+  "local_colorgradeBalance",
+  "local_glow",
 ] as const;
 
 const localAdjustmentProperties = Object.fromEntries(
@@ -548,7 +563,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
+      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings needs sections: [\"developSettings\"]. Empty sections omits it; duplicates are accepted. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -631,7 +646,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.findDuplicateGroups",
     description:
-      "Group near-duplicates/bursts from up to 100 IDs/paths using 64-bit dHash of current JPEG previews (minimum edge 64) and raw capture time. Every pair must meet inclusive time_window_seconds (default 5) and max_hamming_distance (default 10). Input-order groups omit singletons and repeated photos; IDs are resolved. Approximate similarity does not rank frames. photos gives raw capture_time in Lightroom seconds (second precision, no timezone normalization). No hash cache or catalog changes. At 25 s returns partial groups, complete=false, remaining_ids; preview/missing-time failures are unprocessed with reasons. Retry remaining IDs with originals to grow groups.",
+      "Group near-duplicates/bursts from up to 100 IDs/paths using 64-bit dHash of current JPEG previews (minimum edge 64) and raw capture time. Every pair must meet inclusive time_window_seconds (default 5) and max_hamming_distance (default 10). Input-order groups omit singletons and repeated photos. Similarity does not rank frames. photos gives raw capture_time in Lightroom seconds (second precision, no timezone normalization). No hash cache or catalog changes. At 25 s returns partial groups, complete=false, remaining_ids; preview/missing-time failures are unprocessed with reasons. Retry remaining IDs with originals to grow groups.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1166,7 +1181,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerRemoveFromCatalog.removePhotos",
     description:
-      "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (LrC 14.3+, confirm:true). Include every virtual copy with its master; a path shared by a master and copies is refused, so use numeric IDs. Deduplicates; reports missing IDs. Opens Library grid on the photos' folders (All Photographs if one is not found), restores module/sources/surviving selection; Library stays in grid view.",
+      "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (LrC 14.3+, confirm:true). Include every virtual copy with its master and all of a collapsed stack; a path shared with copies is refused; use numeric IDs. Deduplicates; reports missing IDs. Opens Library grid on the photos' folders (else All Photographs), restores module/sources/surviving selection; Library stays in grid view.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1184,7 +1199,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerImport.importPhotos",
     description:
-      "Import a photo or a folder recursively. A JPEG with a non-DNG raw file of exactly the same name (only the extension's case may differ) stays the raw's sidecar: folders leave it out and report skipped_sidecar_jpegs; importing that JPEG alone fails and names the raw. Lightroom makes no sidecar for other JPEGs, so they import as their own photos. Files already in the catalog are left unchanged and counted in already_in_catalog. A file whose folder differs only in case from another catalog folder (possible on a case-sensitive volume) fails, because Lightroom would file it under that other folder. A file whose name differs only in case from a catalog photo in the same folder fails too, because Lightroom keeps file names case-insensitively and cannot hold both; on a case-insensitive volume it is the same file and counts in already_in_catalog. Lightroom and Photos library packages are skipped. Returns success, imported/skipped counts, failed per file, added_to_collection, skipped_by_extension, skipped_sidecar_jpegs, skipped_package_files, already_in_catalog, complete and remaining_paths. Only unsupported-extension notes remain in message.",
+      "Import a photo or a folder recursively. A JPEG with a non-DNG raw file of exactly the same name (only the extension's case may differ) stays the raw's sidecar: folders leave it out and report skipped_sidecar_jpegs; importing that JPEG alone fails and names the raw. Other JPEGs import as their own photos. Files already in the catalog are left unchanged and counted in already_in_catalog. A file whose folder, or whose name within its folder, differs only in case from one in the catalog fails, because Lightroom matches both case-insensitively; on a case-insensitive volume such a name is the same file and counts in already_in_catalog. Lightroom and Photos library packages are skipped. Returns success, imported/skipped counts, failed files/collection, added_to_collection, skipped_by_extension, skipped_sidecar_jpegs, skipped_package_files, already_in_catalog, complete and remaining_paths. Only unsupported-extension notes remain in message.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1213,7 +1228,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotos",
     description:
-      "Export photos, optionally with a saved export preset; format/quality/width/height override only those preset settings. Skips the preset's collision prompt and after-export action. A photo with outdated AI settings can open Lightroom's AI Updates dialog, which blocks until dismissed. Returns success, exported and skipped counts, failed, missing IDs, destination, preset, complete and remaining_ids to retry.",
+      "Export photos, optionally with a saved export preset; format/quality/width/height override only those preset settings. Skips the preset's collision prompt and after-export action. A photo with outdated AI settings can open Lightroom's AI Updates dialog, which blocks until dismissed. Returns success, exported and skipped counts, written files {id, path}, failed, missing IDs, destination, preset, complete and remaining_ids to retry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1222,7 +1237,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         destination: {
           type: "string",
           description:
-            "Absolute path of the export folder, created if missing; ~/ is expanded. Optional if export_preset has a fixed destination",
+            "Absolute path of the export folder, created if missing; ~/ is expanded; no ., .. or empty names. Optional if export_preset has a fixed destination",
         },
         export_preset: {
           type: "string",
@@ -1250,7 +1265,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         on_existing: {
           type: "string",
           description:
-            "What to do when the destination already holds a file with that name (default rename). Lightroom never prompts.",
+            "What to do when the destination already holds a file with that name (default rename). Lightroom never prompts. overwrite is refused into any catalog folder.",
           enum: ["rename", "overwrite", "skip"],
         },
       },
@@ -1532,6 +1547,32 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_raw_develop_settings",
+    toolset: "develop",
+    title: "Get raw develop settings",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerRawDevelopSettings.get",
+    description:
+      "Read one photo's develop settings as stored, from the catalog (no Develop or selection change). No keys: top-level names, types, table sizes. keys: those values unrenamed (MaskGroupBasedCorrections whole) and missing names. Over 1 MB fails.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path (a path names the master)"),
+        keys: {
+          type: "array",
+          description:
+            "Exact top-level setting names. Values JSON cannot hold come as {\"$lua\": type, value}: non-finite numbers, functions, userdata; tables with gaps or mixed keys as {\"$lua\": \"table\", entries: [[key, value], ...]}. An empty table is [].",
+          items: { type: "string", minLength: 1 },
+          minItems: 1,
+          maxItems: 200,
+          uniqueItems: true,
+        },
+      },
+      required: ["photo_id"],
+    },
+  },
+  {
     name: "set_lens_blur",
     toolset: "develop",
     title: "Set Lens Blur",
@@ -1588,7 +1629,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Create virtual copies",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerVirtualCopies.create",
-    description: "Create one virtual copy per distinct photo (max 25); copy_name optionally names each. Returns copies with photo_id/master_id/copy_id and missing IDs; edit via copy_id. Restores selection/source. Repeats create more; failures can leave earlier copies.",
+    description: "Create one virtual copy per distinct photo (max 25), named copy_name if given. Returns copies (photo_id/master_id/copy_id), missing IDs and warning if selection/source was not restored; edit via copy_id. Repeats add more; failures can leave earlier copies.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1802,13 +1843,29 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_mask_write_admission",
+    toolset: "masks",
+    title: "Get mask write admission",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerMaskAdmission.get",
+    description:
+      "Whether guarded mask writes are admitted here: running Lightroom version/build, certified build/time/checks, throwaway-catalog flag, refusal reason. photo_id adds process version, mask count, existing-mask format problems. No Develop.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+      },
+    },
+  },
+  {
     name: "create_gradient_mask",
     toolset: "masks",
     title: "Create gradient mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerGradientMasks.createGradientMask",
     description:
-      "Place a linear or radial gradient (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
+      "Place a linear or radial gradient (certified Lightroom only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1849,7 +1906,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerGradientMasks.updateGradientMask",
     description:
-      "Reshape a gradient by tool_id from list_masks or create_gradient_mask (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Supply only changed fields: start/end for linear, center/width/height/rotation/feather/area for radial; fields of the other shape are rejected. Preserves tool id, mask id and adjustments.",
+      "Reshape a gradient by tool_id from list_masks or create_gradient_mask (certified Lightroom only; shared guarded-write and coordinate rules apply). Supply only changed fields: start/end for linear, center/width/height/rotation/feather/area for radial; fields of the other shape are rejected. Preserves tool id, mask id and adjustments.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1868,7 +1925,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerBrushMasks.createBrushMask",
     description:
-      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
+      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (certified Lightroom only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1903,7 +1960,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerBrushMasks.addBrushStrokes",
     description:
-      "Append strokes to a brush by tool_id from list_masks or create_brush_mask (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Uses create_brush_mask stroke settings and path filling; existing strokes, ids and adjustments stay unchanged. Empty strokes are rejected. Append erase strokes to remove paint, or delete the brush with delete_masks tool_ids and repaint. Returns mask_id, tool_id, strokes_added and stroke_count.",
+      "Append strokes to a brush by tool_id from list_masks or create_brush_mask (certified Lightroom only; shared guarded-write and coordinate rules apply). Uses create_brush_mask stroke settings and path filling; existing strokes, ids and adjustments stay unchanged. Empty strokes are rejected. Append erase strokes to remove paint, or delete the brush with delete_masks tool_ids and repaint. Returns mask_id, tool_id, strokes_added and stroke_count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1922,7 +1979,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerRangeMasks.createRangeMask",
     description:
-      "Create a luminance, color or depth range (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC and refuses the full 0..1 scene. Luminance/depth bands must be at least 0.01 wide; falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). Instead of color.sample, copy_sample_from takes mask_id, tool_id and optional photo_id: copies one color sample verbatim, preserving its displayed pin and amount unless color.amount overrides it. Other range types, unknown ids, a tool outside that mask or multiple samples fail unchanged. Cross-photo copies select similarly ranked pixels, which match colors only for identical pixel content; different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. New masks start neutral. Returns mask_id, tool_id, type and stored range; verifies a rangeMask with the requested subtype.",
+      "Create a luminance, color or depth range (certified Lightroom only; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC and refuses the full 0..1 scene. Luminance/depth bands must be at least 0.01 wide; falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). copy_sample_from {mask_id, tool_id, optional photo_id} replaces color.sample: copies that sample verbatim, keeping its displayed pin and amount unless color.amount overrides it. Any other source fails unchanged. Cross-photo copies match rankings, so different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. New masks start neutral. Returns mask_id, tool_id, type and stored range.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2068,7 +2125,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskAdjustments.setMaskAdjustments",
     description:
-      "Change any subset of local SDK sliders on a mask_id from list_masks (Lightroom Classic 11+); other sliders stay unchanged. Schema lists slider names/ranges; Lightroom actual ranges win. Unknown mask or invalid value fails before writing. Shared slider read-back, save wait and Develop restoration rules apply. Returns values read back, changed sliders (from/to) and unchanged sliders.",
+      "Change any subset of local SDK sliders on a mask_id from list_masks (LrC 11+); others stay unchanged. Ranges: Exposure -4..4, colorgrade Hue 0..360, Sat and Blending 0..100, others -100..100; Lightroom's ranges win. Bad mask or value fails before writing. Shared slider read-back, save wait and Develop restoration rules apply. Returns read-back values, changed (from/to) and unchanged.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2120,7 +2177,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskInvert.invertMask",
     description:
-      "Invert by mask_id from list_masks (Lightroom Classic 11.4+). in_place flips only one component of a multi-component mask; result lists every tool/inverted flag. copy keeps the source and copies its local sliders onto an inverted duplicate; read-back mismatch removes the copy and fails. Returns mask_id and source_mask_id, with adjustments_copied counting slider writes in the Duplicate and Invert history step. Use returned mask_id: develop writes can regenerate ids. Unknown ids fail unchanged. Shared Develop restoration rules apply.",
+      "Invert by mask_id from list_masks (Lightroom Classic 11.4+). in_place flips only one component of a multi-component mask; result lists every tool/inverted flag. copy keeps the source and copies its local sliders onto an inverted duplicate; read-back mismatch removes the copy and fails. Returns mask_id, source_mask_id, adjustments_copied (slider writes in the Duplicate and Invert step) and not_copied groups. Use returned mask_id: develop writes can regenerate ids. Unknown ids fail unchanged. Shared Develop restoration rules apply.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2147,7 +2204,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerMaskCreate.createMask",
     description:
-      "Create Subject, Sky or Background (Lightroom Classic 11+), or People/Landscape masks (15.6; shared guarded-write rules). Returns mask_id and mask or masks per part/category. Existing masks stay unchanged; missing parts remove all new masks. Shared restoration/history rules apply. Detection can leave a \"No sky detected\" modal alert blocking Develop until OK is clicked. People/Landscape computation takes up to 120 s without opening Develop; an \"AI process is running\" alert can need OK. See type, parts, categories and adjustments for limits.",
+      "Create Subject, Sky or Background (Lightroom Classic 11+), or People/Landscape masks (certified Lightroom; shared guarded-write rules). Returns mask_id and mask or masks per part/category. Existing masks stay unchanged; missing parts remove all new masks. Shared restoration/history rules apply. Detection can leave a \"No sky detected\" modal alert blocking Develop until OK is clicked. People/Landscape computation takes up to 120 s without opening Develop; an \"AI process is running\" alert can need OK. See type, parts, categories and adjustments for limits.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2191,7 +2248,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerMaskBatch.createMaskBatch",
     description:
-      "Create Subject, Sky or Background masks with the same adjustments on up to 200 photos (Lightroom Classic 15.6 only; shared guarded-write rules apply). Opens the first photo in Develop; recomputes each later photo without opening Develop. Existing masks stay unchanged. Returns results with status created/failed/not_attempted, created boolean, mask_id or reason; counts, missing ids and complete. Nothing found removes the added mask and continues, except on the first photo: a \"No sky detected\" alert blocks Develop until OK is clicked, stops the batch and leaves the rest not_attempted; dismiss it and drop that photo before retrying. A later photo's \"Update AI Settings Errors\" alert holds the call until OK. Stops near 230 s with complete false and remaining_ids to retry. Rejected mask formats fail untouched. Exposure is -4 to 4.",
+      "Create Subject, Sky or Background masks with the same adjustments on up to 200 photos (certified Lightroom only; shared guarded-write rules apply). Opens only the first photo in Develop; later photos are recomputed in place. Existing masks stay unchanged. Returns results with status created/failed/not_attempted, created boolean, mask_id or reason; counts, missing ids and complete. Nothing found removes the added mask and continues, except on the first photo: a \"No sky detected\" alert blocks Develop until OK is clicked, stops the batch and leaves the rest not_attempted; dismiss it and drop that photo before retrying. A later photo's \"Update AI Settings Errors\" alert holds the call until OK. Stops near 230 s with complete false and remaining_ids to retry. Rejected mask formats fail untouched. Exposure is -4 to 4.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

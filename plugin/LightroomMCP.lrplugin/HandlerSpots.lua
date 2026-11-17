@@ -3,6 +3,7 @@ local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
 local DevelopSession = require 'DevelopSession'
+local JsonValue = require 'JsonValue'
 local PhotoLookup = require 'PhotoLookup'
 
 local HandlerSpots = {}
@@ -47,7 +48,7 @@ end
 
 local function indexed(spots)
     local result = {}
-    for index, params in ipairs(spots) do result[index] = { index = index, params = params } end
+    for index, params in ipairs(spots) do result[index] = { index = index, params = JsonValue.of(params) } end
     return result
 end
 
@@ -154,16 +155,20 @@ function HandlerSpots.update(args)
                 end
             end)
             if not ok then
-                local rolledBack = LrTasks.pcall(function()
+                local rolledBack, confirmed = LrTasks.pcall(function()
                     if LrDevelopController.setSelectedSpotIndex(args.index) ~= true then
                         error('Original spot is no longer selectable')
                     end
                     LrDevelopController.setSelectedSpotParams(original)
+                    return DevelopSession.waitFor(function()
+                        return same(LrDevelopController.getSelectedSpotParams(), original)
+                    end, 5)
                 end)
-                error(tostring(err) .. (rolledBack and '; original parameters restored' or '; rollback failed; list_spots to inspect'))
+                error(tostring(err) .. ((rolledBack and confirmed) and '; original parameters restored'
+                    or '; rollback not confirmed; list_spots to inspect'))
             end
             return { index = args.index, changed = true,
-                params = copy(LrDevelopController.getSelectedSpotParams()) }
+                params = JsonValue.of(LrDevelopController.getSelectedSpotParams()) }
         end)
     end)
 end

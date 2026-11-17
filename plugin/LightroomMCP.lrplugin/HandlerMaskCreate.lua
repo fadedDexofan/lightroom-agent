@@ -4,6 +4,7 @@ local LrTasks = import 'LrTasks'
 
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
+local MaskSelection = require 'MaskSelection'
 local MaskTypes = require 'MaskTypes'
 local PhotoLookup = require 'PhotoLookup'
 
@@ -208,8 +209,7 @@ local function setHistoryGrouping(seconds, trackingSeconds)
     LrTasks.pcall(LrDevelopController.setMultipleAdjustmentThreshold, seconds)
 end
 
-local function writeNeutralAdjustments(maskId, values)
-    LrDevelopController.selectMask(maskId)
+local function writeNeutralAdjustments(values)
     setHistoryGrouping(HISTORY_GROUPING_SECONDS, HISTORY_GROUPING_SECONDS)
     local ok, err = LrTasks.pcall(function()
         for _, adjustment in ipairs(ADJUSTMENTS) do
@@ -287,8 +287,10 @@ local function createInDevelop(catalog, photo, photoId, typeName, spec, values)
         LrDevelopController.createNewMask(spec.toolType, spec.subtype)
         created = awaitNewMask(knownIds)
         if not created then error(describeFailure(typeName, photoId, knownIds), 0) end
-        writeNeutralAdjustments(created.ID, values)
-        confirmAdjustments(values)
+        MaskSelection.withMaskSelected(photoId, created.ID, function()
+            writeNeutralAdjustments(values)
+            confirmAdjustments(values)
+        end)
     end)
 
     if not ok then

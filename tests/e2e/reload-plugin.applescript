@@ -25,9 +25,18 @@ on run
 
                 click targetRow
                 click button "Reload Plug-in" of scroll area 2
-                delay 1
-                click button "Done"
             end tell
+
+            set closed to false
+            repeat 20 times
+                delay 0.5
+                try
+                    click button "Done" of window "Lightroom Plug-in Manager"
+                    set closed to true
+                    exit repeat
+                end try
+            end repeat
+            if not closed then error "Reload requested, but Plug-in Manager could not be closed"
         end tell
     end tell
 

@@ -1,4 +1,5 @@
-import type { CallOptions, Dispatcher } from "./dispatcher.js";
+import { PluginTimeoutError, type CallOptions, type Dispatcher } from "./dispatcher.js";
+import { TOOL_CONTRACTS } from "./tool-contracts.js";
 import { validateToolArgs } from "./validate-args.js";
 import { findDuplicateGroups, type DuplicateGroupArgs } from "./duplicate-groups.js";
 import { getPhotoStats } from "./photo-stats.js";
@@ -125,9 +126,19 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
       return { content: successContent(region ? cropPreview(resp.result, region) : resp.result) };
     } catch (e) {
       return {
-        content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
+        content: [{ type: "text", text: failureText(name, e) }],
         isError: true,
       };
     }
   };
+}
+
+const READ_ONLY_TOOLS = new Set(TOOL_CONTRACTS.filter((tool) => tool.annotations.readOnlyHint).map((tool) => tool.name));
+
+function failureText(name: string, error: unknown): string {
+  if (error instanceof PluginTimeoutError && !READ_ONLY_TOOLS.has(name)) {
+    return `Lightroom did not answer within ${error.timeoutMs / 1000}s, so the result of ${name} is unknown:`
+      + " it may have been applied or may still be running. Read the current state before retrying.";
+  }
+  return error instanceof Error ? error.message : String(error);
 }

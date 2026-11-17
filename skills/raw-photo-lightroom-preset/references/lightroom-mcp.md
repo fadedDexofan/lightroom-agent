@@ -30,8 +30,8 @@ This improves setting selection. It does not by itself create a canonical preset
 
 ## Current gaps
 
-- Export returns a destination and count, not exact output filenames. Export one representative per unique folder and inspect the new file.
-- No virtual-copy, undo, or reset tool.
+- Export returns the written file path for each exported photo in `files`; inspect those files, not the folder.
+- `create_virtual_copies` and `reset_develop_adjustments` need the develop toolset. `reset_develop_adjustments` removes all Develop edits, including crop and masks. `undo_last_step` undoes one shared history step that may belong to the user or another plug-in.
 - Adobe's SDK creates plugin-managed presets that are hidden from the Develop panel. Use versioned names and export/import the accepted file, or create a visible canonical preset through Lightroom's UI.
 - A preset can be exported only when Lightroom exposes a backing file. Built-in presets can lack one, and the backing format is determined by Lightroom.
 - Global develop-setting allowlists do not expose Profile, Color Grading, Calibration, or global Point Color. Local Point Color is available through the mask tools above.

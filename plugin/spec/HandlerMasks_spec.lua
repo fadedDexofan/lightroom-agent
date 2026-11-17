@@ -84,6 +84,8 @@ local function setup(opts)
         autoSelectPending = opts.autoSelectAfterSourceSwitch or false
     end
 
+    helper.admitMaskWrites(opts.maskWrites)
+
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrApplicationView = view,

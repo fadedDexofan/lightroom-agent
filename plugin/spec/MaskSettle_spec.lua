@@ -6,6 +6,7 @@ local function setup(entriesNow)
         getDevelopSettings = function() return { MaskGroupBasedCorrections = state.entries } end,
     }
     local catalog = { withReadAccessDo = function(_, fn) fn() end }
+    helper.admitMaskWrites()
     helper.installImport({
         LrApplication = { versionTable = function() return { major = 15, minor = 6, revision = 0 } end },
         LrApplicationView = {},

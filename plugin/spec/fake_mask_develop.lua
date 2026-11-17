@@ -122,6 +122,8 @@ function M.build(opts)
         lrApplication.versionTable = function() return opts.version or { major = 15, minor = 6 } end
     end
 
+    helper.admitMaskWrites(opts.maskWrites)
+
     helper.installImport({
         LrApplication = lrApplication,
         LrApplicationView = {
