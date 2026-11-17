@@ -460,6 +460,15 @@ describe('createMcpServer', () => {
   });
 
   describe('ListTools', () => {
+    it.each(['get_photo_preview', 'get_photo_previews'])('warns in %s that a preview can be an enlargement', async (name) => {
+      pair = await connect({});
+      const tool = (await pair.client.listTools()).tools.find((candidate) => candidate.name === name);
+      expect(tool?.description).toContain(
+        "Lightroom's preview cache can answer with an enlargement of a smaller cached preview, most often on a cropped photo, "
+          + 'without saying so; judge fine sharpness with get_photo_detail.',
+      );
+    });
+
     it('exposes tool annotations and titles for every classified tool', async () => {
       pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();
