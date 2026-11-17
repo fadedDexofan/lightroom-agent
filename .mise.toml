@@ -32,6 +32,7 @@ run = "osascript tests/e2e/reload-plugin.applescript"
 
 [tasks.mcpb]
 description = "Build the .mcpb bundle for Claude Desktop / Claude Code"
+depends = ["build"]
 run = "node scripts/build-mcpb.mjs"
 
 [tasks."lua:deps"]

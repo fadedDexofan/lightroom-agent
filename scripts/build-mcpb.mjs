@@ -50,10 +50,6 @@ rm(stage);
 fs.mkdirSync(stage, { recursive: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-log("building TypeScript");
-run("npm ci", path.join(repoRoot, "server"));
-run("npm run build", path.join(repoRoot, "server"));
-
 log("staging server runtime");
 const srcServer = path.join(repoRoot, "server");
 const dstServer = path.join(stage, "server");
