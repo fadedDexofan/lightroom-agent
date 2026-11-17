@@ -1,0 +1,14 @@
+{
+  "name": "lightroom-agent",
+  "owner": {
+    "name": "fadedDexofan",
+    "url": "https://github.com/fadedDexofan"
+  },
+  "plugins": [
+    {
+      "name": "lightroom-agent",
+      "source": "./",
+      "description": "Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render."
+    }
+  ]
+}

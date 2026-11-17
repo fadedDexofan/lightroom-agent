@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "lightroom-agent",
+  "version": "0.27.0",
+  "description": "Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render.",
+  "author": {
+    "name": "fadedDexofan"
+  },
+  "homepage": "https://github.com/fadedDexofan/lightroom-agent#readme",
+  "repository": "https://github.com/fadedDexofan/lightroom-agent",
+  "license": "MIT",
+  "keywords": [
+    "lightroom",
+    "lightroom-classic",
+    "photography",
+    "mcp",
+    "skills"
+  ]
+}
