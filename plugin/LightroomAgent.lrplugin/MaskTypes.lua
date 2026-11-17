@@ -1,8 +1,8 @@
+local AIMaskData = require 'AIMaskData'
 local Contract = require 'Contract'
 
 local MaskTypes = {}
 
-local AI_KIND = "Mask/Image"
 local AI_MASK_VERSION = 1
 local FORMS = {
     add = { MaskBlendMode = 0, MaskValue = 1, MaskInverted = false },
@@ -16,7 +16,7 @@ for _, maskType in ipairs(Contract.MASK_TYPES) do
 end
 
 function MaskTypes.nameOf(component)
-    if component.What ~= AI_KIND then return nil end
+    if component.What ~= AIMaskData.KIND then return nil end
     for _, maskType in ipairs(Contract.MASK_TYPES) do
         local matches = true
         for key, value in pairs(maskType.stored) do
@@ -29,7 +29,7 @@ end
 
 function MaskTypes.component(name, operation)
     local spec = MaskTypes.SPECS[name]
-    local component = { What = AI_KIND, MaskVersion = AI_MASK_VERSION, MaskName = spec.label .. " 1", MaskActive = true }
+    local component = { What = AIMaskData.KIND, MaskVersion = AI_MASK_VERSION, MaskName = spec.label .. " 1", MaskActive = true }
     for key, value in pairs(spec.stored) do component[key] = value end
     for key, value in pairs(FORMS[operation]) do component[key] = value end
     return component

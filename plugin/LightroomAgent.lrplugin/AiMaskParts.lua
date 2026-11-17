@@ -1,8 +1,8 @@
+local AIMaskData = require 'AIMaskData'
 local Contract = require 'Contract'
 
 local AiMaskParts = {}
 
-local AI_KIND = "Mask/Image"
 local ALL_PEOPLE_SUBTYPE = 3
 local LANDSCAPE_SUBTYPE = 0
 local MASK_VERSION = 1
@@ -51,7 +51,7 @@ local function newComponent(spec, request)
         name = "People - " .. spec.label
     end
     local component = {
-        What = AI_KIND,
+        What = AIMaskData.KIND,
         MaskActive = true,
         MaskInverted = false,
         MaskBlendMode = 0,
@@ -74,7 +74,7 @@ local function categoryNamed(list, category)
 end
 
 function AiMaskParts.partOf(component)
-    if component.What ~= AI_KIND then return nil end
+    if component.What ~= AIMaskData.KIND then return nil end
     local kind, list = nil, nil
     if component.MaskSubType == ALL_PEOPLE_SUBTYPE then kind, list = "people", PEOPLE_PARTS end
     if component.MaskSubType == LANDSCAPE_SUBTYPE then kind, list = "landscape", LANDSCAPE_CATEGORIES end

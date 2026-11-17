@@ -17,7 +17,6 @@ local READ_BACK_POLL_SECONDS = 0.1
 local TOLERANCE = 1e-5
 local MAX_REPORTED_PROBLEMS = 6
 
-local OPAQUE_WHAT = "Mask/Image"
 local PAINT_WHAT = "Mask/Paint"
 local LOCAL_ADJUSTMENT_PREFIX = "Local"
 
@@ -171,7 +170,7 @@ local function validateComponent(component, where, problems)
         addProblem(problems, where .. ": not a table")
         return
     end
-    if component.What == OPAQUE_WHAT then return end
+    if component.What == AIMaskData.KIND then return end
     local schema = COMPONENT_SCHEMAS[component.What]
     if schema == nil then
         addProblem(problems, where .. ": unknown mask type " .. tostring(component.What))
@@ -373,9 +372,9 @@ local function compareValue(name, expected, actual, parent, problems, valueIsWri
             return
         end
         for key, value in pairs(expected) do
-            if not (expected.What == OPAQUE_WHAT and AIMaskData.isComputed(key)) then
+            if not (expected.What == AIMaskData.KIND and AIMaskData.isComputed(key)) then
                 compareValue(key, value, actual[key], where, problems,
-                    expected.What == PAINT_WHAT or expected.What == OPAQUE_WHAT)
+                    expected.What == PAINT_WHAT or expected.What == AIMaskData.KIND)
             end
         end
         return

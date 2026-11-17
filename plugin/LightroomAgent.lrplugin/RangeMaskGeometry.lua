@@ -172,7 +172,7 @@ function RangeMaskGeometry.copiableColorRange(component, frame)
         return nil, "is not a range mask"
     end
     local stored = component.CorrectionRangeMask
-    local kind = KIND_OF_RANGE_TYPE[stored.Type]
+    local kind = RangeMaskGeometry.kindOf(component)
     if kind ~= COLOR then
         local description = kind ~= nil and (kind .. " range") or "range of an unsupported type"
         return nil, "is a " .. description .. ", not a color range"
