@@ -23,12 +23,11 @@ import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
 import { acquireInstanceLock, lockHolder, lockHolderUnresponsive } from "./instance-lock.js";
 import {
-  conflictMessage,
+  describeInstall,
   ensurePluginInstalled,
   findBundledPlugin,
   findPluginInCwd,
   installPlugin,
-  lightroomModulesDir,
 } from "./install-plugin.js";
 
 const PING_TIMEOUT_MS = 10_000;
@@ -295,19 +294,10 @@ function runInstallPlugin(): void {
     console.error("Extract LightroomAgent.lrplugin-<version>.zip from the release into this folder, then retry.");
     process.exit(1);
   }
-  const dest = lightroomModulesDir();
   try {
-    const result = installPlugin({ source, destDir: dest });
-    if (result.status === "conflict") {
-      console.error(conflictMessage(result.conflicting));
-      process.exit(1);
-    }
-    if (result.status === "installed") {
-      console.error(`Installed plugin: ${result.destination}`);
-      console.error(`Restart Lightroom Classic to load it.`);
-    } else {
-      console.error(`Plugin already present at ${result.destination}`);
-    }
+    const result = installPlugin({ source });
+    console.error(describeInstall(result));
+    if (result.status === "conflict" || result.status === "foreign") process.exit(1);
   } catch (err) {
     console.error(`Install failed: ${(err as Error).message}`);
     process.exit(1);

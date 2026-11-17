@@ -6,8 +6,13 @@ const PLUGIN_FOLDER = "LightroomAgent.lrplugin";
 const UPSTREAM_PLUGIN_FOLDER = "LightroomMCP.lrplugin";
 
 export type InstallResult =
-  | { status: "installed" | "already-present"; destination: string }
+  | { status: "installed" | "current"; destination: string }
+  | { status: "replaced"; destination: string; from: string | null; to: string | null }
+  | { status: "foreign"; destination: string; toolkitId: string | null }
   | { status: "conflict"; conflicting: string };
+
+const TOOLKIT_ID = /LrToolkitIdentifier\s*=\s*['"]([^'"]+)['"]/;
+const CONTRACT_VERSION = /\n    VERSION = "([^"]+)",\n/;
 
 export function lightroomModulesDir(): string {
   if (process.platform === "darwin") {
@@ -56,13 +61,36 @@ function installedBundle(folder: string): string | null {
   }) ?? null;
 }
 
-export function isPluginInstalledAnywhere(): boolean {
-  return installedBundle(PLUGIN_FOLDER) !== null;
+function readMatch(file: string, pattern: RegExp): string | null {
+  try {
+    return pattern.exec(fs.readFileSync(file, "utf8"))?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }
 
-export function conflictMessage(conflicting: string): string {
-  return `${conflicting} is installed: upstream's lightroom-mcp plug-in `
-    + "binds the same ports. Quit Lightroom, remove that folder, then install again.";
+function identityOf(bundle: string): { toolkitId: string | null; version: string | null } {
+  return {
+    toolkitId: readMatch(path.join(bundle, "Info.lua"), TOOLKIT_ID),
+    version: readMatch(path.join(bundle, "Contract.lua"), CONTRACT_VERSION),
+  };
+}
+
+export function describeInstall(result: InstallResult): string {
+  switch (result.status) {
+    case "installed":
+      return `installed ${result.destination}; restart Lightroom to load it`;
+    case "replaced":
+      return `replaced ${result.destination} (version ${result.from ?? "unknown"} → ${result.to ?? "unknown"}); `
+        + "restart Lightroom to load it";
+    case "current":
+      return `${result.destination} is already this version`;
+    case "foreign":
+      return `${result.destination} holds another plug-in (${result.toolkitId ?? "no toolkit id"}) and was left alone. `
+        + "Remove it, then install again.";
+    case "conflict":
+      return `The installed ${result.conflicting} binds the same ports. Quit Lightroom, remove that folder, then install again.`;
+  }
 }
 
 export function findBundledPlugin(startDir: string): string | null {
@@ -99,27 +127,31 @@ function firstValidPlugin(candidates: string[]): string | null {
 }
 
 export function installPlugin(opts: { source: string; destDir?: string }): InstallResult {
-  const destDir = opts.destDir ?? lightroomModulesDir();
   const conflicting = installedBundle(UPSTREAM_PLUGIN_FOLDER);
   if (conflicting) return { status: "conflict", conflicting };
-  const destination = path.join(destDir, PLUGIN_FOLDER);
-  if (fs.existsSync(destination)) return { status: "already-present", destination };
-  fs.mkdirSync(destDir, { recursive: true });
+  const destination = opts.destDir !== undefined
+    ? path.join(opts.destDir, PLUGIN_FOLDER)
+    : installedBundle(PLUGIN_FOLDER) ?? path.join(lightroomModulesDir(), PLUGIN_FOLDER);
+  if (!fs.existsSync(destination)) {
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    copyDirRecursive(opts.source, destination);
+    return { status: "installed", destination };
+  }
+  const installed = identityOf(destination);
+  const bundled = identityOf(opts.source);
+  if (installed.toolkitId !== bundled.toolkitId) return { status: "foreign", destination, toolkitId: installed.toolkitId };
+  if (installed.version === bundled.version) return { status: "current", destination };
+  fs.rmSync(destination, { recursive: true, force: true });
   copyDirRecursive(opts.source, destination);
-  return { status: "installed", destination };
+  return { status: "replaced", destination, from: installed.version, to: bundled.version };
 }
 
 export function ensurePluginInstalled(startDir: string, log: (msg: string) => void): void {
-  if (isPluginInstalledAnywhere()) return;
   const source = findBundledPlugin(startDir);
   if (!source) return;
   try {
     const result = installPlugin({ source });
-    if (result.status === "conflict") log(`[install-plugin] ${conflictMessage(result.conflicting)}`);
-    if (result.status === "installed") {
-      log(`[install-plugin] copied ${source} → ${result.destination}`);
-      log(`[install-plugin] restart Lightroom to load the plugin`);
-    }
+    if (result.status !== "current") log(`[install-plugin] ${describeInstall(result)}`);
   } catch (err) {
     log(`[install-plugin] failed: ${(err as Error).message}`);
   }

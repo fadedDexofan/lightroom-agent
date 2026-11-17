@@ -61,6 +61,7 @@ Read before changing it.
 - Hosts start several servers at once. `Bridge` (`bridge.ts`) elects one leader per port pair through the instance lock; it owns the plug-in sockets and serves the others over local IPC (`broker.ts`: a Unix socket under `~/.config/lightroom-agent/`, a named pipe on Windows, token checked). Followers forward and re-elect when the leader exits. Never `process.exit` on lock contention.
 - A receive bind fires `onError` after 10 s without a client. Set a flag in the callback and call `:reconnect()` from the monitor loop; never reconnect synchronously from `onError`, or reconnects storm.
 - `onMessage` runs in a non-yielding context, so dispatch runs inside `LrTasks.startAsyncTask`; otherwise catalog gates cannot yield.
+- The plug-in answers `ping` with `Contract.VERSION`; the server refuses every tool call, naming both versions, while it differs from its own (`PluginLiveness` state `incompatible`).
 
 ## Catalog reads
 
@@ -143,7 +144,7 @@ Decisions: [ADR 0002](docs/adr/0002-mask-write-admission-by-certification.md) (a
 - Lightroom runs `LrInitPlugin` only when its window is first activated: a background launch starts no server until Lightroom comes to the front.
 - Reload Plug-in does not reliably stop the old task. `PluginShutdown.lua` stops the old loop; when Lightroom skips it, the old loop exits on a foreign token (`isSuperseded`). Until then the new binds fail with `failed to open`.
 - Reload Plug-in does not see a `.lua` file added after Lightroom started; the plug-in is disabled. Restart Lightroom after adding a file.
-- `install-plugin`, and the stdio server at start when neither Modules nor Plugins holds the bundle, copy the plug-in into Modules. Neither replaces an installed bundle, and both refuse while a `LightroomMCP.lrplugin` is installed, because upstream's plug-in binds the same ports. Plug-in log: `~/Documents/LrClassicLogs/LightroomAgent.log`.
+- `install-plugin`, and the stdio server at start, install the bundled plug-in where this plug-in is installed (Modules or Plugins, else Modules): they copy it when absent, replace an installed bundle with the same toolkit id whose `Contract.lua` `VERSION` differs, leave a bundle with another toolkit id alone, and refuse while a `LightroomMCP.lrplugin` is installed, because it binds the same ports. Plug-in log: `~/Documents/LrClassicLogs/LightroomAgent.log`.
 
 ## Adding a tool
 
