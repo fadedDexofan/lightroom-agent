@@ -19,7 +19,6 @@ const VERSIONED_FILES = [
   ".claude-plugin/plugin.json",
   ".claude-plugin/marketplace.json",
   ".agents/plugins/marketplace.json",
-  "gemini-extension.json",
   "plugin/LightroomAgent.lrplugin/Info.lua",
   "plugin/LightroomAgent.lrplugin/Contract.lua",
 ];
@@ -50,7 +49,7 @@ const drifts = [
   ["a manifest version", ".claude-plugin/plugin.json", (json) => { json.version = "9.9.9"; }],
   ["the Agent Plugins manifest version", "plugin.json", (json) => { json.version = "9.9.9"; }],
   ["the pinned package in mcp.json", "mcp.json", (json) => { json.mcpServers.lightroom.args = ["-y", "lightroom-agent@9.9.9"]; }],
-  ["the launch environment in gemini-extension.json", "gemini-extension.json", (json) => { json.mcpServers.lightroom.env = {}; }],
+  ["the launch environment in the Claude Code manifest", ".claude-plugin/plugin.json", (json) => { json.mcpServers.lightroom.env = {}; }],
   ["the launch command in the Claude Code manifest", ".claude-plugin/plugin.json", (json) => { json.mcpServers.lightroom.command = "node"; }],
   ["a version on a marketplace entry", ".agents/plugins/marketplace.json", (json) => { json.plugins[0].version = "9.9.9"; }],
 ];
@@ -69,7 +68,7 @@ test("a prerelease version is written to every source and the plug-in gets its n
   const bumped = run(root, "0.1.0-rc.0");
   assert.equal(bumped.status, 0, bumped.stderr);
   assert.equal(run(root, "--check").status, 0);
-  for (const file of ["server/package.json", "plugin.json", ".claude-plugin/plugin.json", "gemini-extension.json", "mcpb/manifest.json"]) {
+  for (const file of ["server/package.json", "plugin.json", ".claude-plugin/plugin.json", "mcpb/manifest.json"]) {
     assert.equal(readJson(root, file).version, "0.1.0-rc.0", file);
   }
   assert.deepEqual(readJson(root, "mcp.json").mcpServers.lightroom.args, ["-y", "lightroom-agent@0.1.0-rc.0"]);

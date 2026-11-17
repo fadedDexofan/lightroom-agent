@@ -91,8 +91,6 @@ const targets = [
   launchLine(".claude-plugin/plugin.json"),
   unversionedMarketplace(".claude-plugin/marketplace.json"),
   unversionedMarketplace(".agents/plugins/marketplace.json"),
-  jsonVersion("gemini-extension.json"),
-  launchLine("gemini-extension.json"),
   {
     name: "plugin/LightroomAgent.lrplugin/Info.lua",
     expected: core,
