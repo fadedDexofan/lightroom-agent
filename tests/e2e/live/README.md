@@ -38,7 +38,8 @@ mise run live:setup
 node tests/e2e/live/smoke.mjs
 ```
 
-- `live:fixtures` generates the synthetic images, downloads the CC0 raw samples and checks every hash. Set `LRMCP_LIVE_FIXTURES_DIR` to share one fixture folder between worktrees.
+- Before `live:setup`, download the original file of the pinned portrait from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Bearded_man_with_long_hair-3052641.jpg) and set `LRMCP_LIVE_PEOPLE_PHOTO` to its path. Certification needs it; the kit does not download it. Set the other variables under [Fixtures](#fixtures) the same way for the checks that use them.
+- `live:fixtures` generates the synthetic images, downloads the CC0 raw samples and checks every hash, including those of the files you supplied. Set `LRMCP_LIVE_FIXTURES_DIR` to share one fixture folder between worktrees.
 - `install-bundle.mjs install [candidate-dir]` backs up the installed plug-in, installs the candidate (by default this checkout's plug-in) and compares the two with `diff -rq`. It lists Lua files the candidate adds: Reload Plug-in does not load new files, so restart Lightroom (the New Catalog relaunch in the next step does).
 - `live:setup` (`setup-catalog.mjs`) needs Lightroom running. It creates the catalog, waits for the relaunch, dismisses start-up dialogs, waits for the plug-in, imports each fixture into `<catalog folder>/images/` and writes the photo ids by fixture name into `lrmcp-live-catalog.json`. Options: `--name`, and `--parent-dir`, which must match the folder the New Catalog dialog proposes (normally Documents).
 - `smoke.mjs` checks that the kit works: the EXIF orientation of all eight orientation fixtures, `list_masks`, a linear gradient on `orient_6` (preview difference by region), a radial gradient on `wide_plain` (overlap with the expected ellipse) and the stored develop row. It removes its masks.
@@ -246,6 +247,6 @@ Positions are always in the frame of the rendered preview, after crop, straighte
 - Develop zoom changes between photos; use View → Toggle Zoom View for Fit before pixel work.
 - Reload Plug-in does not load an added `.lua` file; restart Lightroom. When `mise run plugin:reload` cannot close Plug-in Manager, its window blocks clicks: `closePluginManager()`.
 - After switching catalogs the plug-in can drop its sockets after the 10 s no-client timeout: Plug-in Manager → Stop Server → Start Server.
-- `import_photos` skips RAF and CR3 files; ARW, CR2, NEF and JPEG import, at about 1.2 s per small JPEG.
+- Imports take about 1.2 s per small JPEG; give import calls a long `timeoutMs`.
 - A colour range with two sample points crashes Lightroom and crash-loops the catalog. Quit Lightroom normally and restore a snapshot (`catalog-snapshot.mjs snapshot <label>` before any test that writes masks you cannot delete).
 - A hung import can leave Lightroom waiting on `withWriteAccessDo ... blocked by another write access call` until a normal quit.
