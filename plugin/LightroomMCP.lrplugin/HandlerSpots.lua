@@ -10,23 +10,12 @@ local PhotoLookup = require 'PhotoLookup'
 local Reply = require 'Reply'
 
 local HandlerSpots = {}
-local REQUIRED = { 'getAllSpots', 'getSelectedTool', 'selectTool', 'goToRemove',
-    'setSelectedSpotIndex', 'getSelectedSpotIndex', 'getSelectedSpotParams',
-    'setSelectedSpotParams', 'deleteSelectedSpot' }
 
 local function copy(value)
     if type(value) ~= 'table' then return value end
     local result = {}
     for key, child in pairs(value) do result[key] = copy(child) end
     return result
-end
-
-local function requireApi(name)
-    local version = LrApplication.versionTable()
-    if version.major < 14 or (version.major == 14 and version.minor < 1) then
-        Reply.refuse(name .. ' needs Lightroom Classic 14.1 or later')
-    end
-    DevelopSession.requireControllerFunctions(name, REQUIRED, 'Lightroom Classic 14.1')
 end
 
 local function readSpots()
@@ -49,7 +38,6 @@ local function requireIndex(index, count)
 end
 
 local function withPhoto(context, args, body)
-    requireApi(context.title)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local result = DevelopSession.withPhoto(context, catalog, photo, body)

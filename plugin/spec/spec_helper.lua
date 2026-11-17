@@ -258,7 +258,7 @@ function M.fakePhoto(meta)
             meta.__appliedFlattenAutoNow = flattenAutoNow
         end,
     }
-    -- Opt in with aiUpdate = "ok" | "error" | "nothing" | "fail" | "mixed"; absent models LrC before 13.3.
+    -- Opt in with aiUpdate = "ok" | "error" | "nothing" | "fail" | "mixed".
     if meta.aiUpdate then
         photo.updateAISettings = function()
             meta.__aiUpdateCalls = (meta.__aiUpdateCalls or 0) + 1

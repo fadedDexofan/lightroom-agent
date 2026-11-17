@@ -34,7 +34,6 @@ local function rangesByToolId(context, catalog, photo)
 end
 
 function MaskHandler.listMasks(args, context)
-    DevelopSession.requireMaskApi("list_masks")
 
     local catalog = LrApplication.activeCatalog()
 

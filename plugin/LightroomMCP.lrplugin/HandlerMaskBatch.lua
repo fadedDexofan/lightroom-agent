@@ -1,6 +1,5 @@
 local LrApplication = import 'LrApplication'
 
-local AIMaskCompute = require 'AIMaskCompute'
 local CatalogWrite = require 'CatalogWrite'
 local Contract = require 'Contract'
 local DevelopBatch = require 'DevelopBatch'
@@ -17,7 +16,6 @@ function MaskBatchHandler.createMaskBatch(args, context)
         inputs = args.photo_ids,
         restoreView = false,
         reserveSeconds = GATES_PER_PHOTO * CatalogWrite.WAIT_SECONDS + Contract.AI_MASK_COMPUTE_WAIT_SECONDS,
-        prepare = function(photo) AIMaskCompute.requireSupported(context.title, photo) end,
         each = function(photo)
             local created = MaskCreate.createAIMask(context, catalog, photo, args.type, values)
             return { status = "created", mask_id = created.mask_id, adjustments = created.adjustments }

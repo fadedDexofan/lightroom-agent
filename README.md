@@ -1,6 +1,6 @@
 # lightroom-agent
 
-lightroom-agent lets an AI agent edit photos in Adobe Lightroom Classic: search and organize the catalog, change develop settings, build and adjust masks, and render previews and full-resolution crops to check the result. It is a fork of [Automaat/lightroom-mcp](https://github.com/Automaat/lightroom-mcp), released under the same MIT license, and keeps its architecture: a TypeScript MCP server talking over local sockets to a Lua plug-in inside Lightroom. The fork is developed and tested against Lightroom Classic 16.0 on macOS; older Lightroom versions and Windows are untested. It is not affiliated with or endorsed by Adobe.
+lightroom-agent lets an AI agent edit photos in Adobe Lightroom Classic: search and organize the catalog, change develop settings, build and adjust masks, and render previews and full-resolution crops to check the result. It is a fork of [Automaat/lightroom-mcp](https://github.com/Automaat/lightroom-mcp), released under the same MIT license, and keeps its architecture: a TypeScript MCP server talking over local sockets to a Lua plug-in inside Lightroom. The fork is developed and tested on macOS; Windows is untested. It is not affiliated with or endorsed by Adobe.
 
 Some names stay as upstream had them: the plug-in is called Lightroom MCP, the command `lightroom-mcp`, the settings `LIGHTROOM_MCP_*` and the configuration folder `~/.config/lightroom-mcp`.
 
@@ -30,7 +30,7 @@ node server/dist/index.js install-plugin
 
 Then quit and reopen Lightroom Classic, open **File → Plug-in Manager**, select **Lightroom MCP** and click **Start Server**.
 
-Some tools need a newer Lightroom than others and refuse on an older one: masks need 11, AI masks and Lens Blur 13.3, Remove spots 14.1 and Denoise 15.
+The plug-in needs Lightroom Classic 15.0 or later; it was checked live on 15.6 and 16.0, and earlier versions are untested.
 
 **Updating, or replacing upstream's plug-in.** Pull and rebuild the server, quit Lightroom, delete the installed `LightroomMCP.lrplugin` folder (Plug-in Manager shows where it is, Modules or Plugins), run `node server/dist/index.js install-plugin`, then restart Lightroom and your MCP client. The server and the plug-in must come from the same revision. To uninstall, delete that folder, `~/.config/lightroom-mcp` and the client's server entry.
 

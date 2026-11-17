@@ -211,19 +211,6 @@ describe('Remove spots', function()
         assert.are.same({ active = '1', module = 'library', tool = 'loupe' }, state())
     end)
 
-    it('names the minimum SDK version before opening Develop', function()
-        local handler, calls = setup({ old = true })
-        assert.truthy(helper.failedOf(function() handler.list({ photo_id = '1' }) end):find('14.1', 1, true))
-        assert.are.equal(0, calls.opens)
-    end)
-
-    it('names the missing function and the minimum version before opening Develop', function()
-        local handler, calls = setup({ without = { 'getSelectedSpotParams' } })
-        assert.are.equal('list_spots needs LrDevelopController.getSelectedSpotParams, which this Lightroom does not offer'
-            .. ' (Lightroom Classic 14.1 or later has it)', helper.failedOf(function() handler.list({ photo_id = '1' }) end))
-        assert.are.equal(0, calls.opens)
-    end)
-
     it('keeps a finished delete when the tool cannot be restored', function()
         local handler, calls, spots = setup({ ignoreRestore = true })
         local context = helper.requestContext(nil, { title = 'delete_spot' })

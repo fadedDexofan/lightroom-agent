@@ -14,8 +14,6 @@ local Reply = require 'Reply'
 local MaskInvertHandler = {}
 
 local INVERSION_VISIBLE_TIMEOUT_SECONDS = 5
-local INVERT_API_FUNCTIONS = { "goToMasking", "invertMask", "duplicateAndInvertMask" }
-local INVERT_API_MINIMUM_VERSION = "Lightroom Classic 11.4"
 local MODE_IN_PLACE = "in_place"
 local MODE_COPY = "copy"
 
@@ -145,8 +143,6 @@ end
 function MaskInvertHandler.invertMask(args, context)
     local maskId = args.mask_id
     local mode = args.mode
-    DevelopSession.requireMaskApi("invert_mask")
-    DevelopSession.requireControllerFunctions("invert_mask", INVERT_API_FUNCTIONS, INVERT_API_MINIMUM_VERSION)
 
     local catalog = LrApplication.activeCatalog()
 

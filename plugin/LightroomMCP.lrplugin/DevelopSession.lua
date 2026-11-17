@@ -13,8 +13,6 @@ local RESELECT_SECONDS = 1
 local POLL_SECONDS = 0.1
 local PHOTO_SETTLE_SECONDS = 0.5
 
-local MASK_API_FUNCTIONS = { "getAllMasks", "selectMask", "selectMaskTool" }
-local MASK_API_MINIMUM_VERSION = "Lightroom Classic 11"
 
 local runningTool = nil
 
@@ -144,9 +142,7 @@ function DevelopSession.openDevelop(isReady)
 end
 
 function DevelopSession.flushPendingEdits()
-    if type(LrDevelopController.stopTracking) == "function" then
-        LrTasks.pcall(LrDevelopController.stopTracking, true)
-    end
+    LrTasks.pcall(LrDevelopController.stopTracking, true)
 end
 
 function DevelopSession.flushIfShowing(catalog, photo)
@@ -216,10 +212,6 @@ function DevelopSession.requireControllerFunctions(toolName, names, minimumVersi
                 toolName, name, minimumVersion and " (" .. minimumVersion .. " or later has it)" or ""))
         end
     end
-end
-
-function DevelopSession.requireMaskApi(toolName)
-    DevelopSession.requireControllerFunctions(toolName, MASK_API_FUNCTIONS, MASK_API_MINIMUM_VERSION)
 end
 
 return DevelopSession

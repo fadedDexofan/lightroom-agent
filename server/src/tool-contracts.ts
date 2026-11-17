@@ -112,8 +112,8 @@ const metadataProperties = {
   rights_usage_terms: { type: "string", description: "Rights usage terms" },
   copyright_info_url: { type: "string", description: "Copyright info URL, e.g. a licensing page" },
   creator_url: { type: "string", description: "Creator's website (IPTC creator contact info)" },
-  alt_text: { type: "string", description: "Short accessibility description (Lightroom Classic 13.2+)" },
-  extended_description: { type: "string", description: "Extended accessibility description (Lightroom Classic 13.2+)" },
+  alt_text: { type: "string", description: "Short accessibility description" },
+  extended_description: { type: "string", description: "Extended accessibility description" },
 };
 
 const atLeastOneOf = (properties: Readonly<Record<string, unknown>>): ArgumentRule => {
@@ -575,7 +575,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { plugin: "HandlerMetadata.getPhotoMetadata" },
     description:
-      "Read 1-100 photos, field names in snake_case: rating (0 = unrated), flag and color_label in the set_rating_and_flag/set_color_label values, keywords/nested keyword_paths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/state_province/country/iso_country_code, copyright and accessibility alt_text/extended_description (LrC 13.2+, omitted when empty); develop settings are read with get_develop_settings. photo_id and related ids are catalog-local strings. is_virtual_copy marks copies; optional virtual_copy holds master_photo_id and copy_name, or a master's copy_photo_ids. Optional folder stack holds position (top=1), is_collapsed, top_photo_id and ordered member_photo_ids.",
+      "Read 1-100 photos, field names in snake_case: rating (0 = unrated), flag and color_label in the set_rating_and_flag/set_color_label values, keywords/nested keyword_paths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/state_province/country/iso_country_code, copyright and accessibility alt_text/extended_description (omitted when empty); develop settings are read with get_develop_settings. photo_id and related ids are catalog-local strings. is_virtual_copy marks copies; optional virtual_copy holds master_photo_id and copy_name, or a master's copy_photo_ids. Optional folder stack holds position (top=1), is_collapsed, top_photo_id and ordered member_photo_ids.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -789,7 +789,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     run: { plugin: "HandlerMetadata.setMetadata" },
     rules: [atLeastOneOf(metadataProperties)],
     description:
-      "Set IPTC text from get_photo_metadata. Accessibility needs LrC 13.2+. Omitted fields stay, empty strings clear. Copyright status is unwritable. Returns updated (photos written) and fields; unknown IDs are not_found.",
+      "Set IPTC text from get_photo_metadata. Omitted fields stay, empty strings clear. Copyright status is unwritable. Returns updated (photos written) and fields; unknown IDs are not_found.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1194,7 +1194,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerRemoveFromCatalog.removePhotos" },
     description:
-      "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (LrC 14.3+, confirm:true). Include every virtual copy with its master; a photo in a collapsed stack is refused until the stack is expanded in Lightroom; a path shared with copies is refused; use numeric IDs. Deduplicates; returns removed; unknown IDs are not_found. Opens Library grid on the photos' folders (else All Photographs), restores module/sources/surviving selection; Library stays in grid view.",
+      "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (confirm:true). Include every virtual copy with its master; a photo in a collapsed stack is refused until the stack is expanded in Lightroom; a path shared with copies is refused; use numeric IDs. Deduplicates; returns removed; unknown IDs are not_found. Opens Library grid on the photos' folders (else All Photographs), restores module/sources/surviving selection; Library stays in grid view.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1455,7 +1455,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerDevelop.applyDevelopPreset" },
     description:
-      `Apply an exact Develop preset; provide preset_uuid or preset_name. Returns applied (the photos finished), resolved preset identity and ai_updated (the photos whose AI masks from the preset Lightroom computed); unknown photos are not_found. With AI masks (LrC 13.3+), each photo's AI masks are computed right after the preset is applied to it, and a photo starts only while the time budget still covers its apply, an AI compute wait of up to ${AI_MASK_COMPUTE_WAIT_SECONDS} s and the read-back; the preset's own masks are the entries that were not on the photo before the apply (a reapplied preset replaces its mask with a new one, so it is judged too): a photo where anything is still computing ${AI_MASK_COMPUTE_WAIT_SECONDS} s after the compute, or whose preset AI masks Lightroom could not compute, keeps the preset, has nothing rolled back and is unknown with the reason: check its masks in Develop before writing to it. An existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the preset, is named in a warning and does not decide. Earlier versions refuse an AI preset before writing; non-AI presets apply normally. A photo whose apply stopped is failed when nothing was written to it (a busy catalog) and unknown otherwise, naming what was written; either one stops the batch and the photos after it are listed in remaining. Photos not reached within the time budget are listed in remaining; resend exactly those. ${DEVELOP_READ_BACK}`,
+      `Apply an exact Develop preset; provide preset_uuid or preset_name. Returns applied (the photos finished), resolved preset identity and ai_updated (the photos whose AI masks from the preset Lightroom computed); unknown photos are not_found. With AI masks, each photo's AI masks are computed right after the preset is applied to it, and a photo starts only while the time budget still covers its apply, an AI compute wait of up to ${AI_MASK_COMPUTE_WAIT_SECONDS} s and the read-back; the preset's own masks are the entries that were not on the photo before the apply (a reapplied preset replaces its mask with a new one, so it is judged too): a photo where anything is still computing ${AI_MASK_COMPUTE_WAIT_SECONDS} s after the compute, or whose preset AI masks Lightroom could not compute, keeps the preset, has nothing rolled back and is unknown with the reason: check its masks in Develop before writing to it. An existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the preset, is named in a warning and does not decide. Earlier versions refuse an AI preset before writing; non-AI presets apply normally. A photo whose apply stopped is failed when nothing was written to it (a busy catalog) and unknown otherwise, naming what was written; either one stops the batch and the photos after it are listed in remaining. Photos not reached within the time budget are listed in remaining; resend exactly those. ${DEVELOP_READ_BACK}`,
     rules: [presetSelectorRule],
     inputSchema: {
       type: "object",
@@ -1482,7 +1482,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     run: { plugin: "HandlerDevelop.copyDevelopSettings" },
     rules: [copyListRule],
     description:
-      `Copy Develop settings; omitted settings includes the masks, which replace each target's masks through the guarded mask write (admission, the format check of the masks it writes, read-back, rollback). A source without masks removes the target's masks, and masks_removed lists {photo_id, count}; when neither has masks the masks are left alone. A raw's white balance does not travel to a non-raw target, which stores no Temperature or Tint: not_stored and a warning name them. A full copy leaves out FilterList, Lightroom's per-image Enhance results (Denoise, Raw Details, Super Resolution and any other filter it stores there), so each target keeps its own; when the source has filters a warning names them. In a full copy, a target on another process version first gets the source's in a history step of its own, "Set Process Version N" (a dry run lists ProcessVersion for it), and its masks are admitted under that version: a target whose resulting process version is not certified is failed with nothing written, and a failure after the process version was written is unknown and names it. A target whose guarded mask write refuses is failed and gets none of the settings, so each target is copied whole or not at all. Copying AI masks needs LrC 13.3+. They travel without what Lightroom computed for the source photo (digests, model version, frame size, origin, reference point, image area, sync id, failure); Lightroom computes them in place for each target's own frame before its other settings are written, and a target whose copied AI mask Lightroom could not compute is failed with its previous masks restored and none of the settings; a target still computing at the limit is unknown, and nothing more is written to it. Returns copied and, when AI masks were copied, computed: the targets whose AI masks Lightroom computed. A copied AI mask Lightroom reports finding nothing for ends failed (ErrorReason) and the target is failed with its previous masks restored, ${AI_COMPUTE_CHANGED_MORE}; a computed mask's digest does not prove it covers anything useful, so verify one by setting an adjustment on it and comparing previews. Unknown targets are not_found. A target whose copy stopped is failed when nothing was written to it; otherwise it is unknown, naming what was written, and a read-back that shows a named key changed makes it unknown. Photos not reached within the time budget are listed in remaining; resend exactly those. ${DEVELOP_READ_BACK}`,
+      `Copy Develop settings; omitted settings includes the masks, which replace each target's masks through the guarded mask write (admission, the format check of the masks it writes, read-back, rollback). A source without masks removes the target's masks, and masks_removed lists {photo_id, count}; when neither has masks the masks are left alone. A raw's white balance does not travel to a non-raw target, which stores no Temperature or Tint: not_stored and a warning name them. A full copy leaves out FilterList, Lightroom's per-image Enhance results (Denoise, Raw Details, Super Resolution and any other filter it stores there), so each target keeps its own; when the source has filters a warning names them. In a full copy, a target on another process version first gets the source's in a history step of its own, "Set Process Version N" (a dry run lists ProcessVersion for it), and its masks are admitted under that version: a target whose resulting process version is not certified is failed with nothing written, and a failure after the process version was written is unknown and names it. A target whose guarded mask write refuses is failed and gets none of the settings, so each target is copied whole or not at all. They travel without what Lightroom computed for the source photo (digests, model version, frame size, origin, reference point, image area, sync id, failure); Lightroom computes them in place for each target's own frame before its other settings are written, and a target whose copied AI mask Lightroom could not compute is failed with its previous masks restored and none of the settings; a target still computing at the limit is unknown, and nothing more is written to it. Returns copied and, when AI masks were copied, computed: the targets whose AI masks Lightroom computed. A copied AI mask Lightroom reports finding nothing for ends failed (ErrorReason) and the target is failed with its previous masks restored, ${AI_COMPUTE_CHANGED_MORE}; a computed mask's digest does not prove it covers anything useful, so verify one by setting an adjustment on it and comparing previews. Unknown targets are not_found. A target whose copy stopped is failed when nothing was written to it; otherwise it is unknown, naming what was written, and a read-back that shows a named key changed makes it unknown. Photos not reached within the time budget are listed in remaining; resend exactly those. ${DEVELOP_READ_BACK}`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1668,7 +1668,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     develop: "drives",
     run: { plugin: "HandlerLensBlur.get" },
-    description: "Read Lens Blur active/amount/cat_eye/highlights_boost/focal_range near/far/focal_range_raw (four SDK values)/bokeh (LrC 13.3+, Process Version 3+). No computed blur returns active:false and unavailable controls. Opens Develop; shared restoration rules apply.",
+    description: "Read Lens Blur active/amount/cat_eye/highlights_boost/focal_range near/far/focal_range_raw (four SDK values)/bokeh (Process Version 3+). No computed blur returns active:false and unavailable controls. Opens Develop; shared restoration rules apply.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1718,7 +1718,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       text: "focal_range needs near <= far",
       holds: (args) => { const focal = args.focal_range as { near: number; far: number } | undefined; return !focal || focal.near <= focal.far; },
     }],
-    description: "Set any subset of Lens Blur active/amount/cat_eye/highlights_boost/focal_range/bokeh (LrC 13.3+, Process Version 3+). Enables first to compute depth; active:false disables after adjustments. Values outside the schema ranges fail before writing. focal_range near/far: 0..100; Lightroom supplies outer falloff. Returns readback; unsaved values stop with earlier changes retained. Shared Develop restoration rules apply.",
+    description: "Set any subset of Lens Blur active/amount/cat_eye/highlights_boost/focal_range/bokeh (Process Version 3+). Enables first to compute depth; active:false disables after adjustments. Values outside the schema ranges fail before writing. focal_range near/far: 0..100; Lightroom supplies outer falloff. Returns readback; unsaved values stop with earlier changes retained. Shared Develop restoration rules apply.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1925,7 +1925,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerDevelop.applyDenoise" },
     description:
-      "Enable/change AI Denoise through Develop (LrC 15+), not a develop key. Activates each photo; shared restoration rules apply. Activity Center computes in background. Same amount leaves the photo unchanged; other settings stay. Max 100 photos; stops near 240 s; resend remaining. Returns results per photo, status applied, amount_changed with previous_amount, or unchanged. A change Lightroom shows but does not save in time makes the photo unknown, naming the amount writes, even when the amount is set back and the panel shows it: read its Denoise state before retrying.",
+      "Enable/change AI Denoise through Develop, not a develop key. Activates each photo; shared restoration rules apply. Activity Center computes in background. Same amount leaves the photo unchanged; other settings stay. Max 100 photos; stops near 240 s; resend remaining. Returns results per photo, status applied, amount_changed with previous_amount, or unchanged. A change Lightroom shows but does not save in time makes the photo unknown, naming the amount writes, even when the amount is set back and the panel shows it: read its Denoise state before retrying.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1956,7 +1956,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     develop: "drives",
     run: { plugin: "HandlerSpots.list" },
-    description: "List Remove spots (LrC 14.1+): count, 1-based index and complete SDK params including nested fields. Indices shift after deletion. Opens Develop, preserves active tool; shared restoration rules apply.",
+    description: "List Remove spots: count, 1-based index and complete SDK params including nested fields. Indices shift after deletion. Opens Develop, preserves active tool; shared restoration rules apply.",
     inputSchema: {
       type: "object", additionalProperties: false,
       properties: { photo_id: photoIdSchema("Photo ID or file path") },
@@ -1970,7 +1970,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     develop: "drives",
     run: { plugin: "HandlerSpots.update" },
-    description: "Set one Heal spot params.Opacity (uppercase, 0..1) by 1-based list_spots index (LrC 14.1+). Preserves other fields/spots; sends complete selected-spot table and reads back: an Opacity Lightroom does not keep is rolled back and the call is unknown, naming the spot writes; other spots or the spot count changing during the write is unknown, with nothing written back. Returns index/changed/SDK params. Opens Remove if needed; restores previous tool and shared Develop state.",
+    description: "Set one Heal spot params.Opacity (uppercase, 0..1) by 1-based list_spots index. Preserves other fields/spots; sends complete selected-spot table and reads back: an Opacity Lightroom does not keep is rolled back and the call is unknown, naming the spot writes; other spots or the spot count changing during the write is unknown, with nothing written back. Returns index/changed/SDK params. Opens Remove if needed; restores previous tool and shared Develop state.",
     inputSchema: {
       type: "object", additionalProperties: false,
       properties: {
@@ -1989,7 +1989,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     develop: "drives",
     run: { plugin: "HandlerSpots.delete" },
-    description: "Delete Remove spot by 1-based list_spots index (LrC 14.1+, confirm:true). Returns deleted_index, remaining count/spots; later indices shift. Invalid index fails unchanged. Opens Remove if needed; restores previous tool and shared Develop state.",
+    description: "Delete Remove spot by 1-based list_spots index (confirm:true). Returns deleted_index, remaining count/spots; later indices shift. Invalid index fails unchanged. Opens Remove if needed; restores previous tool and shared Develop state.",
     inputSchema: {
       type: "object", additionalProperties: false,
       properties: { photo_id: photoIdSchema("Photo ID or file path"),
@@ -2005,7 +2005,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerMasks.listMasks" },
     description:
-      "List masks (Lightroom Classic 11+): id/name/hidden and tools with id/type/subtype/inverted. Range tools include stored luminance/depth min/max/falloffs or color x/y/l/a/b/amount; use these color rankings with create_range_mask. UI-created ranges appear only after Lightroom saves them to the catalog. An empty list means the photo's saved settings hold no masks; masks Develop has not loaded yet fail the call as the shared mask rules say. Ids remain valid on that photo while masks stay unchanged. Shared Develop restoration rules apply.",
+      "List masks: id/name/hidden and tools with id/type/subtype/inverted. Range tools include stored luminance/depth min/max/falloffs or color x/y/l/a/b/amount; use these color rankings with create_range_mask. UI-created ranges appear only after Lightroom saves them to the catalog. An empty list means the photo's saved settings hold no masks; masks Develop has not loaded yet fail the call as the shared mask rules say. Ids remain valid on that photo while masks stay unchanged. Shared Develop restoration rules apply.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2305,7 +2305,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerMaskDelete.deleteEmptyMasks" },
     description:
-      "Delete masks that have no tools on up to 1000 photos (LrC 14+), without opening Develop; module and selection stay. Masks with a component are kept whether adjusted or not (observed on 16.0); what else Lightroom counts as empty was not observed. Returns photos_checked and changed[{photo_id, masks_removed}]; unknown IDs are not_found.",
+      "Delete masks that have no tools on up to 1000 photos, without opening Develop; module and selection stay. Masks with a component are kept whether adjusted or not (observed on 16.0); what else Lightroom counts as empty was not observed. Returns photos_checked and changed[{photo_id, masks_removed}]; unknown IDs are not_found.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2373,7 +2373,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerMaskInvert.invertMask" },
     description:
-      "Invert by mask_id from list_masks (Lightroom Classic 11.4+). in_place flips only one component of a multi-component mask; result lists every tool/inverted flag. copy keeps the source, makes Lightroom's inverted duplicate and, once the copy is in the photo's saved settings, writes every value of the source onto it by id (sliders, curves, Point Color, amount) with the shared mask slider rules; if that fails the copy is removed through Develop and the call is unknown, naming the duplicate and the removal, and the copy or the source change when a fresh mask list does not confirm the copy gone and the source unchanged; a warning says when Lightroom changed or re-identified the source during the copy. The masking tool and the selected mask are restored. Returns mask_id and source_mask_id. Use returned mask_id: develop writes can regenerate ids. Unknown ids fail unchanged. Shared Develop restoration rules apply.",
+      "Invert by mask_id from list_masks. in_place flips only one component of a multi-component mask; result lists every tool/inverted flag. copy keeps the source, makes Lightroom's inverted duplicate and, once the copy is in the photo's saved settings, writes every value of the source onto it by id (sliders, curves, Point Color, amount) with the shared mask slider rules; if that fails the copy is removed through Develop and the call is unknown, naming the duplicate and the removal, and the copy or the source change when a fresh mask list does not confirm the copy gone and the source unchanged; a warning says when Lightroom changed or re-identified the source during the copy. The masking tool and the selected mask are restored. Returns mask_id and source_mask_id. Use returned mask_id: develop writes can regenerate ids. Unknown ids fail unchanged. Shared Develop restoration rules apply.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2402,7 +2402,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerMaskCreate.createMask" },
     description:
-      `Create a Subject, Sky or Background mask, or People parts/Landscape categories, by writing the new mask into the photo's saved settings and letting Lightroom compute it, without opening Develop (certified Lightroom only, Lightroom Classic 13.3+; shared guarded-write rules). Returns mask_id (People/Landscape: masks per part/category). Existing masks are not written. The call answers from the photo's AI state after one Update AI Settings: when Lightroom reports finding nothing (a Subject, Sky or Background with nothing to select, a missing person, part or region) it ends the new mask failed (ErrorReason), the new masks are removed and the call fails naming it, with no alert to dismiss, ${AI_COMPUTE_CHANGED_MORE}; if anything on the photo is still computing ${AI_MASK_COMPUTE_WAIT_SECONDS} s after the compute, the call is unknown and writes nothing more; an existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the call, is named in a warning. A computed mask's digest does not prove it covers anything useful; compare previews. One history step for the new mask and one for the compute. An \"AI process is running\" alert can need OK. See type, parts, categories and adjustments for limits.`,
+      `Create a Subject, Sky or Background mask, or People parts/Landscape categories, by writing the new mask into the photo's saved settings and letting Lightroom compute it, without opening Develop (certified Lightroom only; shared guarded-write rules). Returns mask_id (People/Landscape: masks per part/category). Existing masks are not written. The call answers from the photo's AI state after one Update AI Settings: when Lightroom reports finding nothing (a Subject, Sky or Background with nothing to select, a missing person, part or region) it ends the new mask failed (ErrorReason), the new masks are removed and the call fails naming it, with no alert to dismiss, ${AI_COMPUTE_CHANGED_MORE}; if anything on the photo is still computing ${AI_MASK_COMPUTE_WAIT_SECONDS} s after the compute, the call is unknown and writes nothing more; an existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the call, is named in a warning. A computed mask's digest does not prove it covers anything useful; compare previews. One history step for the new mask and one for the compute. An \"AI process is running\" alert can need OK. See type, parts, categories and adjustments for limits.`,
     rules: [
       { text: "parts requires type people", holds: (args) => args.parts === undefined || args.type === "people" },
       { text: "categories requires type landscape", holds: (args) => args.categories === undefined || args.type === "landscape" },
@@ -2456,7 +2456,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerMaskBatch.createMaskBatch" },
     description:
-      `Create the same Subject, Sky or Background mask with the same adjustments on up to 200 photos by writing it into each photo's saved settings and letting Lightroom compute it for that photo, without opening Develop (certified Lightroom only, Lightroom Classic 13.3+; shared guarded-write rules apply). Existing masks are not written; an existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the call, is named in a warning. Returns results with photo_id, mask_id, status created and, when adjustments were given, the values Lightroom stored (colour grade in whole numbers, other sliders to six decimals). A photo where Lightroom reports finding nothing (ErrorReason) is failed with its mask removed, ${AI_COMPUTE_CHANGED_MORE}, and the batch goes on; a photo still computing at the limit is unknown, and nothing more is written to it. A computed mask's digest does not prove it covers anything useful; compare previews. Stops near 230 s; resend remaining. Rejected mask formats fail untouched. Exposure is -4 to 4.`,
+      `Create the same Subject, Sky or Background mask with the same adjustments on up to 200 photos by writing it into each photo's saved settings and letting Lightroom compute it for that photo, without opening Develop (certified Lightroom only; shared guarded-write rules apply). Existing masks are not written; an existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the call, is named in a warning. Returns results with photo_id, mask_id, status created and, when adjustments were given, the values Lightroom stored (colour grade in whole numbers, other sliders to six decimals). A photo where Lightroom reports finding nothing (ErrorReason) is failed with its mask removed, ${AI_COMPUTE_CHANGED_MORE}, and the batch goes on; a photo still computing at the limit is unknown, and nothing more is written to it. A computed mask's digest does not prove it covers anything useful; compare previews. Stops near 230 s; resend remaining. Rejected mask formats fail untouched. Exposure is -4 to 4.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,

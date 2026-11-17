@@ -206,14 +206,6 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(0, store.attempts)
     end)
 
-    it("refuses on a Lightroom without the AI update call", function()
-        local Handler, store = setup({ withoutUpdateAi = true })
-
-        assert.are.equal("create_mask needs Lightroom Classic 13.3 or later",
-            helper.failedOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end))
-        assert.are.equal(0, store.attempts)
-    end)
-
     it("answers unknown and writes nothing more when the AI update raises and leaves the new masks uncomputed", function()
         local Handler, store, calls = setup({ updateFails = true })
 

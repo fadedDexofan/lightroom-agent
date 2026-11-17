@@ -324,14 +324,6 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
         assert.are.equal(0, #calls.deleteAllEmpty)
     end)
 
-    it("names the minimum Lightroom version when the catalog call is missing", function()
-        local Handler, calls = setup({ photos = photosWithEmptyMasks(), withoutDeleteAllEmptyMasks = true })
-
-        assert.matches("delete_empty_masks needs Lightroom Classic 14 or later",
-            helper.failedOf(function() Handler.deleteEmptyMasks({ photo_ids = { "1" } }) end), 1, true)
-        assert.are.equal(0, #calls.deleteAllEmpty)
-    end)
-
     it("does not open Develop or change the selection", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks() })
         local session = require 'DevelopSession'

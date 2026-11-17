@@ -67,11 +67,8 @@ local function allDevelopPresetEntries()
         end
     end
 
-    if type(LrApplication.getDevelopPresetsForPlugin) == "function" then
-        local pluginPresets = LrApplication.getDevelopPresetsForPlugin(_PLUGIN) or {}
-        for _, preset in ipairs(pluginPresets) do
-            table.insert(entries, presetEntry(preset, "Plugin Develop Presets", "plugin"))
-        end
+    for _, preset in ipairs(LrApplication.getDevelopPresetsForPlugin(_PLUGIN) or {}) do
+        table.insert(entries, presetEntry(preset, "Plugin Develop Presets", "plugin"))
     end
 
     return entries
@@ -265,9 +262,6 @@ function DevelopHandler.compareDevelopPresets(args)
 end
 
 function DevelopHandler.createDevelopPreset(args, context)
-    if type(LrApplication.addDevelopPresetForPlugin) ~= "function" then
-        Reply.refuse("Plugin preset creation is unavailable")
-    end
     for _, entry in ipairs(allDevelopPresetEntries()) do
         if entry.scope == "plugin" and entry.name == args.preset_name then
             Reply.refuse("Plugin preset already exists; use a versioned preset_name")
@@ -488,10 +482,6 @@ local function previewDevelopSettings(catalog, resolved, settings, declaredPrese
     return result
 end
 
-local function requireAIMaskCompute(toolName, entries)
-    if entries[1] then AIMaskCompute.requireSupported(toolName, entries[1].photo) end
-end
-
 function DevelopHandler.applyDevelopPreset(args, context)
     local selectedPreset = findPreset(args)
 
@@ -508,7 +498,6 @@ function DevelopHandler.applyDevelopPreset(args, context)
     local written = {}
     local presetSettings = normalizedPresetSettings(selectedPreset.preset)
     local aiPreset = presetContainsAIMasks(selectedPreset.preset)
-    if aiPreset then requireAIMaskCompute(context.title, entries) end
     local reserveSeconds = batchReserve(aiPreset and 2 or 1, aiPreset)
 
     local remaining = {}
@@ -633,7 +622,6 @@ function DevelopHandler.copyDevelopSettings(args, context)
     end
 
     local aiMasks = masks ~= nil and containsAIMasks({ MaskGroupBasedCorrections = masks })
-    if aiMasks then requireAIMaskCompute(context.title, entries) end
     local reserveSeconds = batchReserve(masks == nil and 1 or aiMasks and 4 or 3, aiMasks)
 
     local remaining, computed, masksRemoved = {}, {}, {}
@@ -927,7 +915,6 @@ local function changeProcessVersion(context, catalog, photo, version, state)
 end
 
 function DevelopHandler.setProcessVersion(args, context)
-    DevelopSession.requireControllerFunctions("set_process_version", { "getProcessVersion", "setProcessVersion" })
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
@@ -1013,7 +1000,6 @@ end
 local RESET_PHOTO_AND_RESTORE_SECONDS = 60
 
 function DevelopHandler.resetDevelopAdjustments(args, context)
-    DevelopSession.requireControllerFunctions("reset_develop_adjustments", { "resetAllDevelopAdjustments" })
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,

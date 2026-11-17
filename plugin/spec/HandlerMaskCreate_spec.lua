@@ -179,15 +179,6 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
         assert.are.equal(0, store.attempts)
     end)
 
-    it("refuses on a Lightroom without the AI update call", function()
-        local Handler, store = setup({ withoutUpdateAi = true })
-
-        local err = helper.failedOf(function() Handler.createMask({ photo_id = "1", type = "subject" }) end)
-
-        assert.are.equal("create_mask needs Lightroom Classic 13.3 or later", err)
-        assert.are.equal(0, store.attempts)
-    end)
-
     it("accepts a file path and answers with the photo's own id", function()
         local Handler = setup()
 

@@ -9,14 +9,6 @@ local Reply = require 'Reply'
 
 local AIMaskCompute = {}
 
-local MINIMUM_VERSION = "Lightroom Classic 13.3"
-
-function AIMaskCompute.requireSupported(toolName, photo)
-    if type(photo.updateAISettings) ~= "function" then
-        Reply.refuse(toolName .. " needs " .. MINIMUM_VERSION .. " or later")
-    end
-end
-
 -- applyDevelopSettings has no AI flag and the applyDevelopPreset one reportedly
 -- reopens the modal-dialog lockup, so recompute in a second write transaction
 -- (same-transaction calls do not see the new settings).

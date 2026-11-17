@@ -58,7 +58,6 @@ local function createAiMasks(context, args, request)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local photoId = tostring(photo.localIdentifier)
-    AIMaskCompute.requireSupported(context.title, photo)
 
     local fresh = AIMaskCompute.run(context, catalog, photo, {
         description = "Create AI masks",

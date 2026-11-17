@@ -51,9 +51,6 @@ local function setup(opts)
         selectMask = function() end,
         selectMaskTool = function() end,
     }
-    if opts.withoutMaskApi then
-        controller.getAllMasks, controller.selectMask, controller.selectMaskTool = nil, nil, nil
-    end
 
     local view = {
         getCurrentModuleName = function() return module end,
@@ -265,15 +262,6 @@ describe("HandlerMasks.listMasks", function()
         local Handler, calls = setup({ photos = { { id = "1" } } })
 
         assert.are.equal("404", helper.notFoundOf(function() Handler.listMasks({ photo_id = "404" }) end))
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("names the minimum Lightroom version when the mask API is missing", function()
-        local Handler, calls = setup({ photos = { { id = "1" } }, withoutMaskApi = true })
-
-        local err = helper.failedOf(function() Handler.listMasks({ photo_id = "1" }) end)
-
-        assert.truthy(err:find("^list_masks needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
         assert.are.equal(0, #calls.modules)
     end)
 

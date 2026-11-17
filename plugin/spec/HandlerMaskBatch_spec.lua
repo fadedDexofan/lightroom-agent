@@ -120,17 +120,6 @@ describe("HandlerMaskBatch.createMaskBatch in the saved settings", function()
         for _, id in ipairs({ "1", "2", "3" }) do assert.are.equal(0, world.stores[id].attempts) end
     end)
 
-    it("refuses on a Lightroom without the AI update call before writing anything", function()
-        local Handler, world = setup({ withoutUpdateApi = true })
-
-        local err = helper.failedOf(function()
-            Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "sky" }, helper.requestContext(nil, { title = "create_mask_batch" }))
-        end)
-
-        assert.are.equal("create_mask_batch needs Lightroom Classic 13.3 or later", err)
-        assert.are.equal(0, world.stores["1"].attempts)
-    end)
-
     it("lists unknown ids as not found and writes to a photo named twice once", function()
         local Handler, world = setup({ photos = { { id = "1" } } })
 

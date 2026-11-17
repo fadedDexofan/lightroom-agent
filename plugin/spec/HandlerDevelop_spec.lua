@@ -879,20 +879,6 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.equal(1, catalog.getWriteAccessCount())
     end)
 
-    it("refuses an AI preset on a Lightroom without updateAISettings, writing nothing", function()
-        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
-        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
-        local catalog, Handler = setup({ photos = { p1 }, folders = { fakeFolder("User", { preset }) } })
-
-        local refusal = helper.failedOf(function()
-            Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" })
-        end)
-
-        assert.truthy(refusal:find("needs Lightroom Classic 13.3 or later", 1, true))
-        assert.are.equal(0, catalog.getWriteAccessCount())
-        assert.is_nil(p1:getRawMetadata("__appliedPreset"))
-    end)
-
     it("skips the AI update when no photo resolved", function()
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
         local catalog, Handler = setup({ photos = {}, folders = { fakeFolder("User", { preset }) } })
@@ -1326,19 +1312,6 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
         assert.is_nil(r.data.computed)
         assert.is_nil(t1.getRawMetadata(t1, "__aiUpdateCalls"))
-    end)
-
-    it("refuses to copy AI masks on a Lightroom without updateAISettings, writing nothing", function()
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
-        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
-        local catalog, Handler = setup({ photos = { source, t1 } })
-
-        local refusal = helper.failedOf(function()
-            Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
-        end)
-
-        assert.truthy(refusal:find("needs Lightroom Classic 13.3 or later", 1, true))
-        assert.are.equal(0, catalog.getWriteAccessCount())
     end)
 
     it("answers not_found when the source is missing", function()
@@ -2012,18 +1985,6 @@ describe("HandlerDevelop controller gates", function()
             run = function()
                 local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "getEnhancePanelState" } })
                 return function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end
-            end },
-        { tool = "reset_develop_adjustments", missing = "resetAllDevelopAdjustments",
-            run = function()
-                local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "resetAllDevelopAdjustments" } })
-                return function() Handler.resetDevelopAdjustments({ photo_ids = { "1" } }) end
-            end },
-        { tool = "set_process_version", missing = "getProcessVersion",
-            run = function()
-                local Handler = processVersionSetup({ withoutSetter = true })
-                return function()
-                    Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6" })
-                end
             end },
     }) do
         it("refuses " .. case.tool .. " through the one controller gate, naming the missing function", function()

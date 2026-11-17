@@ -9,7 +9,6 @@ local PhotoLookup = require 'PhotoLookup'
 
 local MaskDeleteHandler = {}
 
-local DELETE_EMPTY_MINIMUM_VERSION = "Lightroom Classic 14"
 
 local function uniqueIds(values)
     local ids, seen = {}, {}
@@ -135,9 +134,6 @@ end
 
 function MaskDeleteHandler.deleteEmptyMasks(args, context)
     local catalog = LrApplication.activeCatalog()
-    if type(catalog.deleteAllEmptyMasks) ~= "function" then
-        Reply.refuse("delete_empty_masks needs " .. DELETE_EMPTY_MINIMUM_VERSION .. " or later")
-    end
 
     local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
     if #entries == 0 then return Reply.parts({ not_found = notFound }) end

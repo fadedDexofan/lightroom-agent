@@ -82,7 +82,7 @@ Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defrin
 - `match_photo_style` transfers the global look (tone, colour, curves, detail, noise, grain, vignette) and leaves out what describes one photo: crop, perspective and Upright, white balance, lens corrections, local adjustments.
 - Saving, comparing and exporting presets: [looks](looks.md#make-a-preset-from-a-tuned-look).
 - `apply_auto_adjustments` gives no completion signal: a photo where no change is seen within 8 s is `unknown`; read its settings before writing to it.
-- `apply_denoise` (Lightroom 15+) computes in the background; "applied" does not mean every preview has caught up. An unsaved change answers `unknown`: read the Denoise state before retrying.
+- `apply_denoise` computes in the background; "applied" does not mean every preview has caught up. An unsaved change answers `unknown`: read the Denoise state before retrying.
 - `set_process_version` can change the look and refuses downgrades of photos with masks; `reset_develop_adjustments` removes every edit, crop and masks included. Both need the person's word.
 
 ## Previews and detail crops

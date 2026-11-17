@@ -78,9 +78,6 @@ local function restore(catalog, view)
 end
 
 function Handler.removePhotos(args, context)
-    if type(LrSelection.removeFromCatalog) ~= "function" then
-        Reply.refuse("remove_photos_from_catalog needs Lightroom Classic 14.3 or later")
-    end
     local catalog = LrApplication.activeCatalog()
     local entries, notFound, resolved = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
     if #entries == 0 then return Reply.parts({ not_found = notFound }) end

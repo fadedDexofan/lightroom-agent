@@ -158,17 +158,6 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
         assert.are.equal(0, store.attempts)
     end)
 
-    it("refuses on a Lightroom without the AI update call", function()
-        local Handler, store = setup({ withoutUpdateAi = true })
-
-        local err = helper.failedOf(function()
-            Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "subject" })
-        end)
-
-        assert.are.equal("combine_mask needs Lightroom Classic 13.3 or later", err)
-        assert.are.equal(0, store.attempts)
-    end)
-
     it("answers not_found for an unknown photo", function()
         local Handler = setup()
         assert.are.equal("404", helper.notFoundOf(function()

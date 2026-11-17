@@ -184,7 +184,6 @@ function MaskSelection.selectableTool(tool)
 end
 
 local function selectedTool()
-    if type(LrDevelopController.getSelectedTool) ~= "function" then return nil end
     local ok, tool = LrTasks.pcall(LrDevelopController.getSelectedTool)
     if ok and type(tool) == "string" then return MaskSelection.selectableTool(tool) end
     return nil
@@ -212,9 +211,7 @@ function MaskSelection.restoreTool(previousTool)
 end
 
 local function openMaskingPanel()
-    if type(LrDevelopController.goToMasking) == "function" then
-        LrTasks.pcall(LrDevelopController.goToMasking)
-    end
+    LrTasks.pcall(LrDevelopController.goToMasking)
 end
 
 local function selectMaskAndWait(maskId)

@@ -51,7 +51,6 @@ local function setup(opts)
         end,
         duplicateAndInvertMask = function(id) calls.duplicate[#calls.duplicate + 1] = id end,
     }
-    for _, name in ipairs(opts.withoutFunctions or {}) do controller[name] = nil end
 
     local view = {
         getCurrentModuleName = function() return module end,
@@ -514,32 +513,6 @@ describe("HandlerMaskInvert.invertMask arguments", function()
 
         assert.are.equal("404", helper.notFoundOf(function() Handler.invertMask(args({ photo_id = "404" })) end))
         assert.are.equal(0, #calls.modules)
-    end)
-
-    it("names the minimum Lightroom version when an invert function is missing", function()
-        for _, missing in ipairs({ "invertMask", "duplicateAndInvertMask", "goToMasking" }) do
-            local Handler, calls = setup({
-                photos = { { id = "1", masks = subjectMasks() } },
-                withoutFunctions = { missing },
-            })
-
-            local refusal = helper.failedOf(function() Handler.invertMask(args()) end)
-
-            assert.are.equal("invert_mask needs LrDevelopController." .. missing
-                .. ", which this Lightroom does not offer (Lightroom Classic 11.4 or later has it)", refusal)
-            assert.are.equal(0, #calls.modules)
-        end
-    end)
-
-    it("names the older mask API requirement when mask reading is missing", function()
-        local Handler = setup({
-            photos = { { id = "1" } },
-            withoutFunctions = { "getAllMasks" },
-        })
-
-        local err = helper.failedOf(function() Handler.invertMask(args()) end)
-
-        assert.truthy(err:find("^invert_mask needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
     end)
 
     it("never opens a catalog gate", function()

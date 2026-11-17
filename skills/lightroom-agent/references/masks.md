@@ -43,7 +43,7 @@ Range masks: luminance and depth bands at least 0.01 wide (depth needs a photo w
 
 ## AI masks judged on the photo
 
-Four calls write AI masks: `create_mask` (Subject, Sky, Background, People parts, Landscape categories; Lightroom 13.3+), `create_mask_batch` (one Subject, Sky or Background mask on up to 200 photos), `combine_mask` (add, subtract or intersect a Subject, Sky or Background component) and a full copy with AI masks. Each writes the new mask into the saved settings, lets Lightroom compute it with one Update AI Settings, and judges its own masks on the photo:
+Four calls write AI masks: `create_mask` (Subject, Sky, Background, People parts, Landscape categories), `create_mask_batch` (one Subject, Sky or Background mask on up to 200 photos), `combine_mask` (add, subtract or intersect a Subject, Sky or Background component) and a full copy with AI masks. Each writes the new mask into the saved settings, lets Lightroom compute it with one Update AI Settings, and judges its own masks on the photo:
 
 - computed: `done`;
 - Lightroom reports finding nothing, or could not compute: the new masks are removed, the photo's own masks are restored exactly, and the call fails naming the failed components; no alert needs dismissing;

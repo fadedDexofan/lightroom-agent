@@ -94,13 +94,6 @@ describe("remove_photos_from_catalog by path", function()
 end)
 
 describe("HandlerRemoveFromCatalog.removePhotos", function()
-    it("requires Lightroom Classic 14.3 before touching the view", function()
-        local handler, calls = setup({ withoutApi = true })
-        assert.matches("Lightroom Classic 14.3", helper.failedOf(function() handler.removePhotos({ photo_ids = { "1" } }) end), 1, true)
-        assert.are.same({}, calls.selections)
-        assert.are.same({}, calls.sources)
-    end)
-
     it("selects only resolved unique photos and restores surviving selection and module", function()
         local handler, calls, photos, alive, catalog = setup()
         local result = handler.removePhotos({ photo_ids = { "1", "/1.jpg", 2, "999", "999" } })

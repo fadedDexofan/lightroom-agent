@@ -1,6 +1,6 @@
 return {
-    LrSdkVersion = 8.0,
-    LrSdkMinimumVersion = 8.0,
+    LrSdkVersion = 15.0,
+    LrSdkMinimumVersion = 15.0,
 
     LrToolkitIdentifier = 'com.lightroom.mcp',
     LrPluginName = "Lightroom MCP",

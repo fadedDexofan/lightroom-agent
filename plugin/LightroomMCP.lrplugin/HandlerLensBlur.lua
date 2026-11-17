@@ -29,13 +29,7 @@ local function close(a, b)
     return finite(a) and finite(b) and math.abs(a - b) <= 0.001
 end
 
-local function requireApi()
-    DevelopSession.requireControllerFunctions('Lens Blur', { 'getValue', 'setValue',
-        'getSelectedLensBlurBokeh', 'setLensBlurBokeh', 'stopTracking' }, 'Lightroom Classic 13.3')
-end
-
 local function target(args)
-    requireApi()
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local settings

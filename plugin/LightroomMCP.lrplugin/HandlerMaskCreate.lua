@@ -35,7 +35,6 @@ function MaskCreateHandler.createMask(args, context)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local photoId = tostring(photo.localIdentifier)
-    AIMaskCompute.requireSupported("create_mask", photo)
 
     local created = MaskCreateHandler.createAIMask(context, catalog, photo, args.type, args.adjustments or {})
     Log.info(string.format("Created %s mask %s on photo %s", args.type, created.mask_id, photoId))
