@@ -658,7 +658,7 @@ describe("gradients on a cropped and straightened photo", function()
         local result = Handler.createGradientMask(linearRequest({ start = point(0.381, 0.5), ["end"] = point(0.612, 0.5) }))
 
         local component = stores["1"].writes[1][1].CorrectionMasks[1]
-        local degrees = math.deg(math.atan((component.ZeroY - component.FullY) * 1000,
+        local degrees = math.deg(math.atan2((component.ZeroY - component.FullY) * 1000,
             (component.ZeroX - component.FullX) * 1500))
         assert.is_true(math.abs(degrees - 8) < 0.01)
         assert.is_true(math.abs(result.geometry.start.y - 0.5) < 1e-5)

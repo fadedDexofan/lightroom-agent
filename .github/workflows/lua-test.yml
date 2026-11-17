@@ -20,16 +20,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Lua + luarocks
+      - name: Install the readline headers Lua builds against and the locales package
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4 liblua5.4-dev luarocks locales
+          sudo apt-get install -y libreadline-dev locales
 
       - name: Provision the comma-decimal locale the specs switch to
         run: sudo locale-gen ru_RU.UTF-8
 
-      - name: Install busted
-        run: sudo luarocks install busted
+      - name: Set up mise with the Lua Lightroom runs
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+        with:
+          install_args: lua
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run busted
-        run: busted
+        run: mise run lua:test

@@ -245,7 +245,7 @@ describe("Develop controller writes", function()
         local direct = {}
         for file in io.popen('ls "' .. directory .. '"'):lines() do
             if file:match("%.lua$") and file ~= "CatalogWrite.lua" then
-                local source = assert(io.open(directory .. file)):read("a"):gsub("%-%-[^\n]*", "")
+                local source = assert(io.open(directory .. file)):read("*a"):gsub("%-%-[^\n]*", "")
                 for name in source:gmatch("LrDevelopController%.([%w_]+)") do
                     if not isReadOrView(name) then direct[#direct + 1] = file .. ": " .. name end
                 end

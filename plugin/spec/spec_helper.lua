@@ -807,13 +807,17 @@ end
 
 local DISPATCHED = dispatchedHandlers()
 
+local function packed(...)
+    return { n = select("#", ...), ... }
+end
+
 local function encodingResults(module, name)
     local wrapped = {}
     for key, value in pairs(module) do
         if type(value) == "function" and DISPATCHED[name][key] then
             local action = DISPATCHED[name][key]
             wrapped[key] = function(args, context, ...)
-                local results = table.pack(value(args, context or M.requestContext(nil, { title = action }), ...))
+                local results = packed(value(args, context or M.requestContext(nil, { title = action }), ...))
                 if type(results[1]) == "table" then
                     local ok, err = pcall(function() return privateJson:encode(results[1]) end)
                     if not ok then
@@ -821,7 +825,7 @@ local function encodingResults(module, name)
                             tostring(err)), 0)
                     end
                 end
-                return table.unpack(results, 1, results.n)
+                return unpack(results, 1, results.n)
             end
         else
             wrapped[key] = value

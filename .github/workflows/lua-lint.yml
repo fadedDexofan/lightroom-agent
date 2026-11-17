@@ -23,6 +23,7 @@ jobs:
       - name: Set up mise
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
+          install_args: aqua:Kampfkarren/selene
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run selene

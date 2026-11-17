@@ -837,7 +837,7 @@ describe("HandlerExport.exportPhotoMetadata", function()
             end)
             io.open = realOpen
             local left = realOpen(out, "r")
-            local text = left and left:read("a")
+            local text = left and left:read("*a")
             if left then left:close() end
             os.remove(out)
 
@@ -1067,7 +1067,7 @@ describe("HandlerExport.renderDetailSource", function()
             assert.are.same({ { photo_id = "7", reason = "session refused" } }, r.failed)
             assert.are.same({}, files)
             assert.matches("^/tmp/lightroom%-mcp%-detail/[^/]+$", deleted[1])
-            assert.are.same(case.removed, { table.unpack(deleted, 2) })
+            assert.are.same(case.removed, { unpack(deleted, 2) })
         end)
     end
 
