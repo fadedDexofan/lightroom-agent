@@ -4,16 +4,14 @@ local LrTasks = import 'LrTasks'
 local CatalogWrite = require 'CatalogWrite'
 local Reply = require 'Reply'
 local DevelopSession = require 'DevelopSession'
+local GuardedMaskWrite = require 'GuardedMaskWrite'
 
 local MaskSelection = {}
 
-local POLL_SECONDS = 0.1
 local MASK_LIST_TIMEOUT_SECONDS = 5
 local MASK_SELECT_TIMEOUT_SECONDS = 8
-local MASK_RESELECT_SECONDS = 1
 local MASK_SELECT_SETTLE_SECONDS = 0.3
 
-local MASK_LISTED_TIMEOUT_SECONDS = 5
 local TOOL_SWITCH_TIMEOUT_SECONDS = 5
 local MASKING_TOOL = "masking"
 local MASKING_TOOL_NAMES = { masking = true, local_point_color = true }
@@ -26,11 +24,7 @@ function MaskSelection.findMask(masks, maskId)
 end
 
 local function savedMaskCount(catalog, photo)
-    local count = 0
-    catalog:withReadAccessDo(function()
-        count = #(photo:getDevelopSettings().MaskGroupBasedCorrections or {})
-    end)
-    return count
+    return #GuardedMaskWrite.readEntries(catalog, photo)
 end
 
 local function holdsSavedMasks(catalog, photo, masks)
@@ -102,7 +96,7 @@ function MaskSelection.problemUnlessAddedRemoved(context, catalog, photo, knownI
     local listed = DevelopSession.waitFor(function()
         masks = readMasksListingAll(knownIds)
         return masks ~= nil and holdsSavedMasks(catalog, photo, masks)
-    end, MASK_LISTED_TIMEOUT_SECONDS)
+    end, MASK_LIST_TIMEOUT_SECONDS)
     local leftovers
     if listed then
         for _, mask in ipairs(MaskSelection.masksNotIn(masks, knownIds)) do
@@ -112,7 +106,7 @@ function MaskSelection.problemUnlessAddedRemoved(context, catalog, photo, knownI
             local after = readMasksListingAll(knownIds)
             leftovers = after and idsOf(MaskSelection.masksNotIn(after, knownIds)) or nil
             return leftovers ~= nil and #leftovers == 0
-        end, MASK_LISTED_TIMEOUT_SECONDS)
+        end, MASK_LIST_TIMEOUT_SECONDS)
     end
     if leftovers == nil then
         return "Lightroom's mask list could not be read or did not list every mask on the photo, so " .. subject
@@ -181,16 +175,8 @@ local function openMaskingPanel()
 end
 
 local function selectMaskAndWait(maskId)
-    local sinceSelect = MASK_RESELECT_SECONDS
-    return DevelopSession.waitFor(function()
-        if isSelected(maskId) then return true end
-        if sinceSelect >= MASK_RESELECT_SECONDS then
-            LrTasks.pcall(LrDevelopController.selectMask, maskId)
-            sinceSelect = 0
-        end
-        sinceSelect = sinceSelect + POLL_SECONDS
-        return false
-    end, MASK_SELECT_TIMEOUT_SECONDS)
+    return DevelopSession.retryUntil(function() return isSelected(maskId) end,
+        function() LrTasks.pcall(LrDevelopController.selectMask, maskId) end, MASK_SELECT_TIMEOUT_SECONDS)
 end
 
 function MaskSelection.keepingSelection(body)

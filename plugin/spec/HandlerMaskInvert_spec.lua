@@ -11,13 +11,17 @@ end
 local function setup(opts)
     local photos, masksOf = {}, {}
     for _, spec in ipairs(opts.photos) do
-        local p = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".jpg" })
+        local saved = {}
+        for index = 1, spec.savedMasks or 0 do saved[index] = { What = "Correction", CorrectionID = "s-" .. index, CorrectionMasks = {} } end
+        local p = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".jpg",
+            developSettings = { MaskGroupBasedCorrections = saved } })
         photos[#photos + 1] = p
         masksOf[p] = spec.masks or {}
     end
     local active = photos[1]
     local module = "library"
-    local calls = { modules = {}, selections = {}, goToMasking = 0, invert = {}, duplicate = {} }
+    local calls = { modules = {}, selections = {}, goToMasking = 0, invert = {}, duplicate = {}, listed = 0 }
+    local unlistedReads = opts.unlistedReads or 0
     local listBroken = false
     local selected
 
@@ -32,6 +36,12 @@ local function setup(opts)
     local controller = {
         getAllMasks = function()
             if module ~= "develop" then error("Develop module is not active") end
+            calls.listed = calls.listed + 1
+            if opts.listError then error(opts.listError) end
+            if unlistedReads > 0 then
+                unlistedReads = unlistedReads - 1
+                error("photo is still loading")
+            end
             if listBroken then error("mask list unavailable") end
             return require('fake_mask_store').clone(currentMasks())
         end,
@@ -159,6 +169,33 @@ describe("HandlerMaskInvert.invertMask in place", function()
         assert.are.same({}, calls.invert)
         assert.are.same({}, calls.duplicate)
         assert.are.same({ "develop", "library" }, calls.modules)
+    end)
+
+    it("waits until Develop can list the photo's masks", function()
+        local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } }, unlistedReads = 3 })
+
+        Handler.invertMask(args())
+
+        assert.are.equal(4 + 1, calls.listed)
+        assert.are.same({ "m-1" }, calls.invert)
+    end)
+
+    it("refuses with Lightroom's reason when it never lists the masks", function()
+        local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } }, listError = "Develop is busy" })
+
+        assert.truthy(helper.failedOf(function() Handler.invertMask(args()) end)
+            :find("Lightroom could not read the masks of photo 1: Develop is busy", 1, true))
+        assert.are.same({}, calls.invert)
+    end)
+
+    it("refuses while Develop lists fewer masks than the saved settings hold", function()
+        local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks(), savedMasks = 3 } } })
+
+        local err = helper.failedOf(function() Handler.invertMask(args()) end)
+
+        assert.truthy(err:find("Develop lists 2 of the 3 masks in photo 1's saved settings", 1, true), err)
+        assert.truthy(err:find("click OK in Lightroom", 1, true), err)
+        assert.are.same({}, calls.invert)
     end)
 
     it("errors when the photo has no masks at all", function()
