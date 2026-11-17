@@ -219,7 +219,7 @@ Positions are always in the frame of the rendered preview, after crop, straighte
 |---|---|---|
 | `set_rating_and_flag` | a copy | Rating 3 and pick read back through `get_photo_metadata`; rating 0 and flag `none` clear; an omitted field stays. |
 | `get_photo_preview` with `region` | `chart80`, `orient_6` | A patch matches the same pixels of a full preview at `requested_size` within 0.03 per channel; a corner of `orient_6` matches `expectedDisplayedCorners(6)`; a malformed region fails before rendering. |
-| `list_masks` | any photo with masks | Ids work in later calls; module, view and selection are restored; a photo without masks gives an empty list. |
+| `list_masks` | any photo with masks | Read from the saved settings without opening Develop, newest mask first; AI components carry create_mask's subtype names (people and landscape add `part`); ids work in later calls; a photo without masks gives an empty list. |
 | `create_gradient_mask` linear | `orient_1`..`orient_8`, `wide_plain`, `pano` | The brightening lands on the side of the displayed start point on every orientation, and at the displayed point on a cropped and straightened copy. |
 | `create_gradient_mask` radial | `wide_plain`, `orient_1`..`orient_8`, `pano` | Overlap with `ellipseInside` at 0 feather is at least 0.8; rotations 60 and −60 differ; past 45° the width and height are reported swapped with the angle turned back by 90°; `pano` stays 10:1; `area: outside` is the complement. |
 | `update_gradient_mask` | as create | Only the given fields change; ids and adjustments stay. |
