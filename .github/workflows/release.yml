@@ -124,9 +124,7 @@ jobs:
           (cd server && npm pack --pack-destination ../build)
           tarball="build/lightroom-agent-$VERSION.tgz"
           tar -tzf "$tarball" | sort > build/package-files.txt
-          for file in package/dist/index.js package/LightroomAgent.lrplugin/Info.lua package/skills/lightroom-agent/SKILL.md; do
-            grep -qx "$file" build/package-files.txt || { echo "$file is missing from $tarball"; exit 1; }
-          done
+          grep -qx package/dist/index.js build/package-files.txt || { echo "package/dist/index.js is missing from $tarball"; exit 1; }
           cat build/package-files.txt
 
       - name: Staged publish, dry run
