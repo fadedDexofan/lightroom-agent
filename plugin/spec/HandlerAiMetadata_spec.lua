@@ -45,8 +45,8 @@ describe('HandlerAiMetadata', function()
     it('sets two photos in one gate without standard metadata writes', function()
         local handler, photos, stored, writes, catalog = setup()
         local result = handler.setAiMetadata({ photo_ids = { '1', '2', 'missing' }, score = 72, reason = 'eyes closed' })
-        assert.are.equal(2, result.updated)
-        assert.are.same({ 'missing' }, result.missing)
+        assert.are.equal(2, result.data.updated)
+        assert.are.same({ 'missing' }, result.not_found)
         assert.are.equal(1, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideWriteAccess())
         assert.are.equal(4, #writes)
@@ -66,20 +66,6 @@ describe('HandlerAiMetadata', function()
         assert.are.same({}, stored[photos[1]])
     end)
 
-    it('rejects invalid input before opening a write gate', function()
-        local handler, _, _, writes, catalog = setup()
-        for _, fields in ipairs({
-            {}, { score = -1 }, { score = 101 }, { score = 1.5 }, { score = '72' },
-            { score = false }, { score = 0 / 0 }, { reason = false },
-            { reason = string.rep('a', 1025) }, { reason = string.rep('é', 1025) },
-        }) do
-            fields.photo_ids = { '1' }
-            assert.has_error(function() handler.setAiMetadata(fields) end)
-        end
-        assert.are.equal(0, #writes)
-        assert.are.equal(0, catalog.getWriteAccessCount())
-    end)
-
     it('reads 200 photos in one property batch, preserving missing and unset results', function()
         local handler, photos, stored, _, _, batches = setup(200)
         local ids = {}
@@ -89,14 +75,9 @@ describe('HandlerAiMetadata', function()
         local result = handler.getAiMetadata({ photo_ids = ids })
         assert.are.equal(1, #batches)
         assert.are.equal(200, #batches[1])
-        assert.are.equal(200, #result.photos)
-        assert.are.same({ photo_id = '1', score = 72, reason = 'eyes closed' }, result.photos[1])
-        assert.are.same({ photo_id = '2' }, result.photos[2])
-        assert.are.same({ 'missing' }, result.missing)
-    end)
-
-    it('counts multibyte reason characters consistently', function()
-        local handler = setup(1)
-        handler.setAiMetadata({ photo_ids = { '1' }, reason = string.rep('é', 1024) })
+        assert.are.equal(200, #result.data.photos)
+        assert.are.same({ photo_id = '1', score = 72, reason = 'eyes closed' }, result.data.photos[1])
+        assert.are.same({ photo_id = '2' }, result.data.photos[2])
+        assert.are.same({ 'missing' }, result.not_found)
     end)
 end)

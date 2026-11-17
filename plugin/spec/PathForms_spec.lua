@@ -37,3 +37,26 @@ describe("PathForms", function()
         assert.are.equal("/\229\134\153\231\156\159.jpg", PathForms.toNfc("/\229\134\153\231\156\159.jpg"))
     end)
 end)
+
+describe("PathForms.relative", function()
+    local PathForms = require 'PathForms'
+
+    it("finds a file under a root spelled with or without macOS's /private prefix", function()
+        assert.are.equal("d/eb_fringe.png", PathForms.relative("/private/tmp/src", "/tmp/src/d/eb_fringe.png"))
+        assert.are.equal("a.png", PathForms.relative("/tmp/src", "/private/tmp/src/a.png"))
+        assert.are.equal("a.jpg", PathForms.relative("/private/var/folders/out/", "/var/folders/out/a.jpg"))
+    end)
+
+    it("finds a file under a root spelled the same way", function()
+        assert.are.equal("d/a.arw", PathForms.relative("/card", "/card/d/a.arw"))
+    end)
+
+    it("finds a file under a root in the other Unicode form", function()
+        assert.are.equal("a.jpg", PathForms.relative("/w\196\133", "/wa\204\168/a.jpg"))
+    end)
+
+    it("answers nil for a file outside the root", function()
+        assert.is_nil(PathForms.relative("/card", "/cardx/a.arw"))
+        assert.is_nil(PathForms.relative("/private/tmp/src", "/tmp/other/a.png"))
+    end)
+end)

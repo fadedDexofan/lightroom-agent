@@ -7,6 +7,7 @@ local LrTasks = import 'LrTasks'
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
 local PhotoLookup = require 'PhotoLookup'
+local Reply = require 'Reply'
 
 local Handler = {}
 
@@ -15,24 +16,8 @@ local Handler = {}
 local SELECT_TIMEOUT_SECONDS = 30
 local RESELECT_SECONDS = 2
 
-local function sameSelection(catalog, photos)
-    if catalog:getTargetPhoto() ~= photos[1] then return false end
-    local expected = {}
-    for _, photo in ipairs(photos) do expected[photo] = true end
-    local actual = catalog:getTargetPhotos() or {}
-    if #actual ~= #photos then return false end
-    for _, photo in ipairs(actual) do
-        if not expected[photo] then return false end
-        expected[photo] = nil
-    end
-    return next(expected) == nil
-end
-
 local function selectExactly(catalog, photos)
-    return DevelopSession.retryUntil(
-        function() return sameSelection(catalog, photos) end,
-        function() catalog:setSelectedPhotos(photos[1], photos) end,
-        SELECT_TIMEOUT_SECONDS, RESELECT_SECONDS)
+    return DevelopSession.selectExactly(catalog, photos[1], photos, SELECT_TIMEOUT_SECONDS, RESELECT_SECONDS)
 end
 
 -- The photos' own folders load far faster than All Photographs on a large catalog;
@@ -91,49 +76,27 @@ local function restore(catalog, view)
     if not ok then error(result, 0) end
 end
 
-function Handler.removePhotos(args)
-    args = args or {}
-    if args.confirm ~= true then error("confirm must be true to remove photos from the catalog") end
-    local ids = args.photo_ids
-    if type(ids) ~= "table" or #ids < 1 or #ids > 100 then
-        error("photo_ids must contain between 1 and 100 IDs or paths")
-    end
-    local count = 0
-    for key, id in pairs(ids) do
-        count = count + 1
-        if type(key) ~= "number" or key < 1 or key > #ids or key ~= math.floor(key)
-            or not ((type(id) == "string" and id:find("%S"))
-                or (type(id) == "number" and id == id and math.abs(id) < math.huge)) then
-            error("photo_ids must be an array of IDs or paths")
-        end
-    end
-    if count ~= #ids then error("photo_ids must be an array of IDs or paths") end
+function Handler.removePhotos(args, context)
     if type(LrSelection.removeFromCatalog) ~= "function" then
-        error("remove_photos_from_catalog needs Lightroom Classic 14.3 or later")
+        Reply.refuse("remove_photos_from_catalog needs Lightroom Classic 14.3 or later")
     end
     local catalog = LrApplication.activeCatalog()
-    local photos, missing, seen, missingSeen = {}, {}, {}, {}
-    local resolved = PhotoLookup.resolveMany(catalog, ids)
-    for _, entry in ipairs(resolved) do
-        if entry.photo then
-            if not seen[entry.photo] then
-                photos[#photos + 1] = entry.photo
-                seen[entry.photo] = true
-            end
-        elseif not missingSeen[tostring(entry.id)] then
-            missing[#missing + 1] = tostring(entry.id)
-            missingSeen[tostring(entry.id)] = true
-        end
+    local entries, notFound, resolved = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
+    if #entries == 0 then return Reply.parts({ not_found = notFound }) end
+    local photos, seen = {}, {}
+    for i, entry in ipairs(entries) do
+        photos[i] = entry.photo
+        seen[entry.photo] = true
     end
-    if #photos == 0 then error("No photos matched photo_ids") end
     catalog:withReadAccessDo(function()
         local raw = catalog:batchGetRawMetadata(photos, {
-            'virtualCopies', 'masterPhoto', 'isInStackInFolder', 'stackInFolderIsCollapsed', 'stackInFolderMembers',
+            'virtualCopies', 'masterPhoto', 'isInStackInFolder', 'stackInFolderIsCollapsed',
+            'topOfStackInFolderContainingPhoto',
         }) or {}
         for _, entry in ipairs(resolved) do
             local info = entry.photo and raw[entry.photo] or {}
             if tonumber(entry.id) == nil and (info.masterPhoto or #(info.virtualCopies or {}) > 0) then
-                error("The path " .. tostring(entry.id) .. " names a master and its virtual copies; "
+                Reply.refuse("The path " .. tostring(entry.id) .. " names a master and its virtual copies; "
                     .. "pass each photo's numeric id instead")
             end
         end
@@ -141,21 +104,19 @@ function Handler.removePhotos(args)
             local info = raw[photo] or {}
             for _, copy in ipairs(info.virtualCopies or {}) do
                 if not seen[copy] then
-                    error("Include every virtual copy when removing its master from the catalog")
+                    Reply.refuse("Include every virtual copy when removing its master from the catalog")
                 end
             end
             if info.isInStackInFolder and info.stackInFolderIsCollapsed then
-                for _, member in ipairs(info.stackInFolderMembers or {}) do
-                    if not seen[member] then
-                        error("Photo " .. tostring(photo.localIdentifier) .. " is in a collapsed stack whose other"
-                            .. " members were not requested, and removing it could remove the whole stack;"
-                            .. " include every member's id or expand the stack in Lightroom")
-                    end
-                end
+                local top = info.topOfStackInFolderContainingPhoto
+                Reply.refuse("Photo " .. tostring(photo.localIdentifier) .. " is in a collapsed stack whose top photo is "
+                    .. tostring(top and top.localIdentifier) .. "; expand the stack in Lightroom first, then call again"
+                    .. " (Lightroom cannot select a collapsed stack's hidden photos, and removing its top alone"
+                    .. " could remove the whole stack)")
             end
         end
     end)
-    return DevelopSession.run("remove_photos_from_catalog", catalog, false, function()
+    return DevelopSession.run(context, catalog, false, function()
         local active = catalog:getTargetPhoto()
         local view = {
             module = LrApplicationView.getCurrentModuleName(),
@@ -171,21 +132,24 @@ function Handler.removePhotos(args)
                 sources[1] == catalog.kAllPhotos and "All Photographs" or (#sources .. " folder(s)")))
             catalog:setActiveSources(sources)
             if not selectExactly(catalog, photos) then
-                error("Lightroom did not select exactly the requested photos; nothing was removed")
+                Reply.refuse("Lightroom did not select exactly the requested photos; nothing was removed")
             end
-            if LrApplicationView.getCurrentModuleName() ~= "library" or not sameSelection(catalog, photos) then
-                error("The selection changed; nothing was removed")
+            if LrApplicationView.getCurrentModuleName() ~= "library"
+                or not DevelopSession.selectionMatches(catalog, photos[1], photos) then
+                Reply.refuse("The selection changed; nothing was removed")
             end
             LrSelection.removeFromCatalog()
             if not DevelopSession.waitFor(function() return #surviving(catalog, photos) == 0 end, 10) then
                 error("Lightroom did not remove every requested photo; check the catalog before retrying")
             end
-            return { success = true, removed = #photos, missing = missing }
+            return Reply.parts({ data = { removed = #photos }, not_found = notFound })
         end)
         local restored, restoreError = LrTasks.pcall(restore, catalog, view)
         if not restored then
-            error((ok and "Photos removed" or tostring(result))
-                .. "; could not restore selection: " .. tostring(restoreError))
+            local message = (ok and "Photos removed" or Reply.messageOf(result))
+                .. "; could not restore selection: " .. Reply.messageOf(restoreError)
+            if not ok and Reply.refusalOf(result) then Reply.refuse(message) end
+            error(message, 0)
         end
         if not ok then error(result, 0) end
         return result

@@ -3,6 +3,7 @@ import { TOOL_CONTRACTS } from "./tool-contracts.js";
 import { listToolsHandler } from "./list-tools-handler.js";
 import { parseToolsets, type Toolset } from "./toolsets.js";
 import { parseReadOnly } from "./read-only.js";
+import { refusedResponse, unknownToolResponse } from "./tool-result.js";
 
 export interface ToolAccessOptions {
   toolsets?: readonly Toolset[];
@@ -22,15 +23,13 @@ export function createToolAccess(options: ToolAccessOptions = {}) {
     restrict(callTool: ToolCaller): ToolCaller {
       return async (name, args, options) => {
         if (readOnly && !allowedTools.has(name)) {
-          return { isError: true, content: [{ type: "text", text: `Tool "${name}" is unavailable with LIGHTROOM_MCP_READ_ONLY enabled and the selected LIGHTROOM_MCP_TOOLSETS. Only listed read tools can be called. Change the settings and restart the server to enable other tools.` }] };
+          return refusedResponse(`Tool "${name}" is unavailable with LIGHTROOM_MCP_READ_ONLY enabled and the selected LIGHTROOM_MCP_TOOLSETS. Only listed read tools can be called. Change the settings and restart the server to enable other tools.`);
         }
         const toolset = hiddenTools.get(name);
         if (toolset) {
-          return { isError: true, content: [{ type: "text", text: `Tool "${name}" is disabled. Enable "${toolset}" in LIGHTROOM_MCP_TOOLSETS and restart the server.` }] };
+          return refusedResponse(`Tool "${name}" is disabled. Enable "${toolset}" in LIGHTROOM_MCP_TOOLSETS and restart the server.`);
         }
-        if (!allowedTools.has(name)) {
-          return { isError: true, content: [{ type: "text", text: `Unknown tool "${name}". Only listed tools can be called.` }] };
-        }
+        if (!allowedTools.has(name)) return unknownToolResponse(name);
         return callTool(name, args, options);
       };
     },

@@ -1,5 +1,8 @@
 local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
+local LocalSliders = require 'LocalSliders'
+local Reply = require 'Reply'
 local Log = require 'Log'
 local DecimalText = require 'DecimalText'
 local MaskWriteAdmission = require 'MaskWriteAdmission'
@@ -85,7 +88,9 @@ local RANGE_TYPE_COLOR = 1
 
 local function deepClone(value, depth)
     if type(value) ~= "table" then
-        if type(value) == "function" or type(value) == "userdata" then return tostring(value) end
+        if type(value) == "function" or type(value) == "userdata" then
+            error("mask data holds a " .. type(value) .. " value, which cannot be copied", 0)
+        end
         return value
     end
     if depth > MAX_CLONE_DEPTH then error("mask data is nested too deeply to copy", 0) end
@@ -311,7 +316,8 @@ local function pathOf(parent, name)
 end
 
 local function isLocalAdjustmentOmittedAtDefault(name, expected, actual)
-    return actual == nil and isLocalAdjustment(name) and type(expected) == "number" and closeEnough(expected, 0)
+    return actual == nil and isLocalAdjustment(name) and type(expected) == "number"
+        and closeEnough(expected, LocalSliders.storedNeutralOf(name))
 end
 
 local function compareValue(name, expected, actual, parent, problems, inPaint)
@@ -392,19 +398,22 @@ function GuardedMaskWrite.inspect(catalog, photo)
     }
 end
 
-function GuardedMaskWrite.preflight(catalog, photo)
-    local entries, processVersion = readEntries(catalog, photo)
-    MaskWriteAdmission.requireAdmitted(catalog, processVersion)
+function GuardedMaskWrite.preflight(catalog, photo, plannedProcessVersion)
+    local read, entries, processVersion = LrTasks.pcall(readEntries, catalog, photo)
+    if not read then
+        Reply.refuse("The masks already on this photo could not be read, so nothing was written: " .. Reply.messageOf(entries))
+    end
+    MaskWriteAdmission.requireAdmitted(catalog, plannedProcessVersion or processVersion)
     local problems = GuardedMaskWrite.validateEntries(entries, "existing mask")
     if #problems > 0 then
-        error("The masks already on this photo do not match the pinned mask format, so nothing was written: "
-            .. describeProblems(problems), 0)
+        Reply.refuse("The masks already on this photo do not match the pinned mask format, so nothing was written: "
+            .. describeProblems(problems))
     end
     return entries
 end
 
 local function writeEntries(catalog, photo, description, entries)
-    catalog:withWriteAccessDo(description, function()
+    CatalogWrite.run(catalog, description, function()
         photo:applyDevelopSettings({ MaskGroupBasedCorrections = entries })
     end)
 end
@@ -434,8 +443,8 @@ local function failAfterRollback(catalog, photo, previous, problems)
     local summary = describeProblems(problems)
     Log.warn(string.format("Guarded mask write failed (restored=%s): %s", tostring(restored), summary))
     if restored then
-        error("Lightroom did not keep the mask data that was written, so the photo's previous masks were"
-            .. " restored: " .. summary, 0)
+        Reply.refuse("Lightroom did not keep the mask data that was written, so the photo's previous masks were"
+            .. " restored: " .. summary)
     end
     error("Lightroom did not keep the mask data that was written, and the previous masks could not be"
         .. " confirmed restored; check the photo's masks in Develop: " .. summary, 0)
@@ -448,11 +457,12 @@ function GuardedMaskWrite.apply(catalog, photo, spec)
 
     local problems = GuardedMaskWrite.validateEntries(proposed, "new mask")
     if #problems > 0 then
-        error("The requested mask change does not match the format this tool was tested with, so nothing was"
+        Reply.refuse("The requested mask change does not match the format this tool was tested with, so nothing was"
             .. " written: " .. describeProblems(problems), 0)
     end
 
     local wrote, writeError = LrTasks.pcall(writeEntries, catalog, photo, spec.description, deepClone(proposed, 0))
+    if not wrote and Reply.refusalOf(writeError) then error(writeError, 0) end
     if not wrote then
         failAfterRollback(catalog, photo, previous, { "Lightroom rejected the write: " .. tostring(writeError) })
     end

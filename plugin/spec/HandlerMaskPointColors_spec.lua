@@ -1,10 +1,5 @@
+local helper = require 'spec_helper'
 local fake = require 'fake_mask_develop'
-
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
 
 local function swatch(hue, extra)
     local value = {
@@ -39,7 +34,6 @@ local function setup(overrides)
     end
 
     local opts = {
-        onSleep = overrides.onSleep,
         photos = {
             {
                 id = "1",
@@ -78,6 +72,7 @@ local function setup(overrides)
                     if existing.SrcHue == wanted.SrcHue and existing.SrcSat == wanted.SrcSat
                         and existing.SrcLum == wanted.SrcLum then
                         selectedSwatch[ctx.selectedMaskOf[ctx.active]] = index
+                        if overrides.duplicateUpdates then list[index] = swatch(wanted.SrcHue, fake.deepCopy(wanted)) end
                         return true
                     end
                 end
@@ -134,7 +129,6 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
             swatch = { SrcHue = 4, SrcSat = 0.3, SrcLum = 0.7, HueShift = 0.25 },
         })
 
-        assert.is_true(r.success)
         assert.are.equal("add", r.action)
         assert.are.equal(3, r.index)
         assert.is_true(r.changed)
@@ -163,7 +157,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
     it("refuses a duplicate source color without adding", function()
         local ctx = setup()
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-a",
@@ -176,6 +170,32 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
         assert.are.equal(2, #listOf(ctx, 1, "mask-a"))
     end)
 
+    it("puts the selected swatch back after refusing a duplicate source color", function()
+        local ctx = setup()
+        ctx.selectedSwatch["mask-a"] = 2
+
+        helper.refusalOf(function()
+            ctx.Handler.editMaskPointColors({
+                photo_id = "1", mask_id = "mask-a", action = "add", swatch = { SrcHue = 1, SrcSat = 0.5, SrcLum = 0.5 },
+            })
+        end)
+
+        assert.are.equal(2, ctx.selectedSwatch["mask-a"])
+    end)
+
+    it("does not refuse a duplicate source color when Lightroom changed the existing swatch instead", function()
+        local ctx = setup({ duplicateUpdates = true })
+
+        local err = helper.unknownOf(function()
+            ctx.Handler.editMaskPointColors({
+                photo_id = "1", mask_id = "mask-a", action = "add",
+                swatch = { SrcHue = 1, SrcSat = 0.5, SrcLum = 0.5, HueShift = 0.4 },
+            })
+        end)
+
+        assert.truthy(err:find("changed the swatches", 1, true), err)
+    end)
+
     it("refuses a ninth swatch before calling Lightroom", function()
         local list = {}
         for index = 1, 8 do list[index] = swatch(index / 2) end
@@ -183,7 +203,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
             state.valuesOf[state.photos[1]]["mask-c"].local_PointColors = list
         end })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-c",
@@ -196,10 +216,10 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
         assert.are.equal(0, ctx.controllerCalls.add)
     end)
 
-    it("reports a refusal from Lightroom with its message", function()
+    it("answers unknown with Lightroom's message when it refuses the new swatch", function()
         local ctx = setup({ refuseAdd = "swatch not allowed" })
 
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-a",
@@ -214,7 +234,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
     it("reports a call Lightroom rejects", function()
         local ctx = setup({ rejectAdd = "boom" })
 
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-a",
@@ -227,10 +247,10 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
         assert.truthy(err:find("boom", 1, true))
     end)
 
-    it("fails when Lightroom says yes but adds nothing", function()
+    it("answers unknown when Lightroom says yes but adds nothing", function()
         local ctx = setup({ ignoreAdd = true })
 
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-a",
@@ -242,10 +262,12 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
         assert.truthy(err:find("Lightroom did not add the Point Color swatch to mask mask-a", 1, true))
     end)
 
-    it("removes the new swatch when Lightroom stores other values", function()
+    it("refuses after removing the new swatch when Lightroom stores other values, and selects the previous swatch", function()
         local ctx = setup({ alterAdd = -0.9 })
+        local before = fake.deepCopy(listOf(ctx, 1, "mask-a"))
+        ctx.selectedSwatch["mask-a"] = 1
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-a",
@@ -255,32 +277,114 @@ describe("HandlerMaskPointColors.editMaskPointColors add", function()
         end)
 
         assert.truthy(err:find("the new swatch was removed", 1, true))
-        assert.are.equal(2, #listOf(ctx, 1, "mask-a"))
+        assert.are.same(before, listOf(ctx, 1, "mask-a"))
+        assert.are.equal(1, ctx.selectedSwatch["mask-a"])
+    end)
+
+    it("removes nothing from a mask that became selected while the new swatch was checked", function()
+        local ctx = setup({
+            alterAdd = -0.9,
+            extend = function(controller, world)
+                local getValue = controller.getValue
+                local readsAfterAdd = 0
+                controller.getValue = function(name)
+                    local value = getValue(name)
+                    if name == "local_PointColors" and world.controllerCalls.add > 0 then
+                        readsAfterAdd = readsAfterAdd + 1
+                        if readsAfterAdd == 2 then
+                            world.valuesOf[world.active]["mask-c"].local_PointColors = { swatch(4), swatch(5), swatch(6) }
+                            world.selectedMaskOf[world.active] = "mask-c"
+                        end
+                    end
+                    return value
+                end
+            end,
+        })
+
+        local err = helper.unknownOf(function()
+            ctx.Handler.editMaskPointColors({
+                photo_id = "1", mask_id = "mask-a", action = "add",
+                swatch = { SrcHue = 4, SrcSat = 0.3, SrcLum = 0.7, HueShift = 0.25 },
+            })
+        end)
+
+        assert.are.same({ swatch(4), swatch(5), swatch(6) }, listOf(ctx, 1, "mask-c"))
+        assert.are.equal(0, ctx.controllerCalls.delete)
+        assert.are.equal("Lightroom did not keep the Point Color swatch values, and another mask became selected, so"
+            .. " the new swatch was not removed; read the mask before retrying", err)
+    end)
+
+    it("does not claim the new swatch was removed when the delete removed another swatch", function()
+        local ctx = setup({
+            alterAdd = -0.9,
+            extend = function(controller)
+                local delete = controller.deletePointColorSwatch
+                controller.deletePointColorSwatch = function(all, _, forMasking) return delete(all, 1, forMasking) end
+            end,
+        })
+
+        local err = helper.unknownOf(function()
+            ctx.Handler.editMaskPointColors({
+                photo_id = "1", mask_id = "mask-a", action = "add",
+                swatch = { SrcHue = 4, SrcSat = 0.3, SrcLum = 0.7, HueShift = 0.25 },
+            })
+        end)
+
+        assert.truthy(err:find("could not be confirmed removed", 1, true), err)
+    end)
+
+    it("does not claim the new swatch was removed when Lightroom kept it after the delete", function()
+        local ctx = setup({ alterAdd = -0.9, ignoreDelete = true })
+
+        local err = helper.unknownOf(function()
+            ctx.Handler.editMaskPointColors({
+                photo_id = "1", mask_id = "mask-a", action = "add",
+                swatch = { SrcHue = 4, SrcSat = 0.3, SrcLum = 0.7, HueShift = 0.25 },
+            })
+        end)
+
+        assert.is_nil(err:find("was removed", 1, true))
+        assert.truthy(err:find("could not be confirmed removed", 1, true), err)
     end)
 end)
 
 describe("HandlerMaskPointColors.editMaskPointColors update", function()
-    it("restores the original values when the swatch changes during the settle", function()
-        local changed = false
-        local ctx = setup({
-            onSleep = function(world)
-                if not changed and world.controllerCalls.update > 0 then
-                    changed = true
-                    world.valuesOf[world.active]["mask-a"].local_PointColors[2].SatScale = 0.9
-                end
-            end,
-        })
-        local original = fake.deepCopy(listOf(ctx, 1, "mask-a")[2])
-
-        local message = errorOf(function()
-            ctx.Handler.editMaskPointColors({
-                photo_id = "1", mask_id = "mask-a", action = "update", index = 2, swatch = { SatScale = 0.4 },
+    for _, case in ipairs({
+        { what = "restores the original values and the selected swatch when the swatch changes during the settle",
+          oracle = helper.refusalOf, text = "the original values were restored" },
+        { what = "answers unknown when another swatch also changed during the settle", otherChanged = true,
+          oracle = helper.unknownOf, text = "the original values could not be restored" },
+    }) do
+        it(case.what, function()
+            local changed = false
+            local ctx = setup({
+                onSleep = function(world)
+                    if not changed and world.controllerCalls.update > 0 then
+                        changed = true
+                        local list = world.valuesOf[world.active]["mask-a"].local_PointColors
+                        list[2].SatScale = 0.9
+                        if case.otherChanged then list[1].SatScale = 0.7 end
+                    end
+                end,
             })
-        end)
+            ctx.selectedSwatch["mask-a"] = 1
+            local original = fake.deepCopy(listOf(ctx, 1, "mask-a")[2])
 
-        assert.truthy(message:find("original values were restored", 1, true), message)
-        assert.are.same(original, listOf(ctx, 1, "mask-a")[2])
-    end)
+            local message = case.oracle(function()
+                ctx.Handler.editMaskPointColors({
+                    photo_id = "1", mask_id = "mask-a", action = "update", index = 2, swatch = { SatScale = 0.4 },
+                })
+            end)
+
+            assert.truthy(message:find(case.text, 1, true), message)
+            assert.are.same(original, listOf(ctx, 1, "mask-a")[2])
+            if case.otherChanged then
+                assert.are.equal(0.7, listOf(ctx, 1, "mask-a")[1].SatScale)
+            else
+                assert.are.equal(1, ctx.selectedSwatch["mask-a"])
+            end
+        end)
+    end
 
     it("does not overwrite another swatch selected during the settle", function()
         local changed = false
@@ -296,7 +400,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
         })
         local first = fake.deepCopy(listOf(ctx, 1, "mask-a")[1])
 
-        local message = errorOf(function()
+        local message = helper.unknownOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1", mask_id = "mask-a", action = "update", index = 2, swatch = { SatScale = 0.4 },
             })
@@ -366,7 +470,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
     it("rejects an index past the last swatch naming the count", function()
         local ctx = setup()
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-b",
@@ -382,7 +486,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
     it("restores the original swatch when Lightroom drops the update", function()
         local ctx = setup({ ignoreUpdate = true })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-b",
@@ -392,15 +496,16 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
             })
         end)
 
-        assert.truthy(err:find("Lightroom did not keep the update of swatch 1", 1, true))
+        assert.truthy(err:find("Lightroom did not keep the update of swatch 1; the original values were restored", 1,
+            true), err)
         assert.are.equal(2, ctx.controllerCalls.update - 1)
         assert.are.equal(0, listOf(ctx, 1, "mask-b")[1].HueShift)
     end)
 
-    it("reports a refusal from Lightroom", function()
+    it("answers unknown with Lightroom's message when it refuses the swatch update", function()
         local ctx = setup({ refuseUpdate = "nope" })
 
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-b",
@@ -413,6 +518,33 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
         assert.truthy(err:find("Lightroom refused the Point Color swatch update: nope", 1, true))
     end)
 
+    it("sends no retry and restores nothing into a mask that became selected while the update was dropped", function()
+        local ctx = setup({
+            extend = function(controller, world)
+                local update = controller.updateSelectedPointColorSwatch
+                controller.updateSelectedPointColorSwatch = function(updated, forMasking)
+                    if world.controllerCalls.update > 0 then return update(updated, forMasking) end
+                    world.controllerCalls.update = 1
+                    world.valuesOf[world.active]["mask-c"].local_PointColors = { swatch(4), swatch(5) }
+                    world.selectedSwatch["mask-c"] = 2
+                    world.selectedMaskOf[world.active] = "mask-c"
+                    return true
+                end
+            end,
+        })
+
+        local err = helper.unknownOf(function()
+            ctx.Handler.editMaskPointColors({
+                photo_id = "1", mask_id = "mask-a", action = "update", index = 2, swatch = { HueShift = 0.3 },
+            })
+        end)
+
+        assert.are.same({ swatch(4), swatch(5) }, listOf(ctx, 1, "mask-c"))
+        assert.are.equal(1, ctx.controllerCalls.update)
+        assert.truthy(err:find("Lightroom did not keep the update of swatch 2; another mask became selected, so the"
+            .. " swatch was not restored", 1, true), err)
+    end)
+
     it("fails when the update is dropped after the settle wait", function()
         local ctx = setup({ onSleep = function(state)
             if state.controllerCalls.update > 0 then
@@ -420,7 +552,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
             end
         end })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({
                 photo_id = "1",
                 mask_id = "mask-b",
@@ -430,8 +562,45 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
             })
         end)
 
-        assert.truthy(err:find("Lightroom did not keep the update of swatch 1", 1, true), err)
+        assert.truthy(err:find("Lightroom did not keep the update of swatch 1; the original values were restored", 1,
+            true), err)
     end)
+end)
+
+describe("HandlerMaskPointColors.editMaskPointColors when another mask is selected before the write", function()
+    for _, case in ipairs({
+        { action = "add", swatch = { SrcHue = 4, SrcSat = 0.3, SrcLum = 0.7 } },
+        { action = "update", index = 1, swatch = { HueShift = 0.3 } },
+        { action = "delete", index = 1 },
+        { action = "clear" },
+    }) do
+        it("refuses with nothing written (" .. case.action .. ")", function()
+            local ctx = setup({
+                extend = function(controller, world)
+                    local getValue = controller.getValue
+                    controller.getValue = function(name)
+                        local value = getValue(name)
+                        if name == "local_PointColors" and world.selectedMaskOf[world.active] == "mask-a" then
+                            world.valuesOf[world.active]["mask-c"].local_PointColors = { swatch(4), swatch(5) }
+                            world.selectedMaskOf[world.active] = "mask-c"
+                        end
+                        return value
+                    end
+                end,
+            })
+
+            local err = helper.refusalOf(function()
+                ctx.Handler.editMaskPointColors({
+                    photo_id = "1", mask_id = "mask-a", action = case.action, index = case.index, swatch = case.swatch,
+                })
+            end)
+
+            assert.are.same({ swatch(4), swatch(5) }, listOf(ctx, 1, "mask-c"))
+            assert.are.same({ swatch(1), swatch(2, { SrcSat = 0.9 }) }, listOf(ctx, 1, "mask-a"))
+            assert.are.same({ 0, 0, 0 }, { ctx.controllerCalls.add, ctx.controllerCalls.update, ctx.controllerCalls.delete })
+            assert.are.equal("Another mask became selected before mask mask-a was written; nothing was written", err)
+        end)
+    end
 end)
 
 describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function()
@@ -454,7 +623,7 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
     it("rejects an index past the last swatch without deleting", function()
         local ctx = setup()
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-b", action = "delete", index = 3 })
         end)
 
@@ -462,10 +631,10 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
         assert.are.equal(0, ctx.controllerCalls.delete)
     end)
 
-    it("fails when Lightroom says yes but deletes nothing", function()
+    it("answers unknown when Lightroom says yes but deletes nothing", function()
         local ctx = setup({ ignoreDelete = true })
 
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "delete", index = 1 })
         end)
 
@@ -491,10 +660,10 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
         assert.are.equal(0, ctx.controllerCalls.delete)
     end)
 
-    it("fails when Lightroom does not clear", function()
+    it("answers unknown when Lightroom does not clear", function()
         local ctx = setup({ ignoreDelete = true })
 
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "clear" })
         end)
 
@@ -502,43 +671,11 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
     end)
 end)
 
-describe("HandlerMaskPointColors.editMaskPointColors validation", function()
-    local invalid = {
-        { "a missing action", {}, "action is required" },
-        { "an unknown action", { action = "rename" }, "action is required" },
-        { "add without a swatch", { action = "add" }, "swatch is required" },
-        { "add without a source color", { action = "add", swatch = { SrcHue = 1, SrcSat = 0.5 } }, "swatch.SrcLum is required" },
-        { "add with an index", { action = "add", index = 1, swatch = { SrcHue = 1, SrcSat = 0.5, SrcLum = 0.5 } }, "index is not used by add" },
-        { "a hue over 6", { action = "add", swatch = { SrcHue = 6.5, SrcSat = 0.5, SrcLum = 0.5 } }, "swatch.SrcHue 6.5 is outside its range 0 to 6" },
-        { "a shift under -1", { action = "update", index = 1, swatch = { HueShift = -1.5 } }, "swatch.HueShift -1.5 is outside its range -1 to 1" },
-        { "a string number", { action = "update", index = 1, swatch = { SatScale = "x" } }, "swatch.SatScale must be a number" },
-        { "an unknown swatch field", { action = "update", index = 1, swatch = { Brightness = 1 } }, "Unknown swatch field Brightness" },
-        { "an incomplete range", { action = "update", index = 1, swatch = { HueRange = { LowerNone = 0 } } }, "swatch.HueRange.LowerFull must be a number" },
-        { "an unknown range field", { action = "update", index = 1, swatch = { HueRange = { Middle = 1 } } }, "Unknown field swatch.HueRange.Middle" },
-        { "update without an index", { action = "update", swatch = { HueShift = 0.1 } }, "index is required for update" },
-        { "an index of zero", { action = "delete", index = 0 }, "index is required for delete" },
-        { "an index over 8", { action = "delete", index = 9 }, "index is required for delete" },
-        { "a fractional index", { action = "delete", index = 1.5 }, "index is required for delete" },
-        { "delete with a swatch", { action = "delete", index = 1, swatch = { HueShift = 0 } }, "swatch is not used by delete" },
-        { "clear with an index", { action = "clear", index = 1 }, "clear takes no index or swatch" },
-    }
-    for _, case in ipairs(invalid) do
-        it("rejects " .. case[1] .. " before opening Develop", function()
-            local ctx = setup()
-            local args = { photo_id = "1", mask_id = "mask-a" }
-            for key, value in pairs(case[2]) do args[key] = value end
-
-            local err = errorOf(function() ctx.Handler.editMaskPointColors(args) end)
-
-            assert.truthy(err:find(case[3], 1, true), err)
-            assert.are.same({}, ctx.calls.modules)
-        end)
-    end
-
+describe("HandlerMaskPointColors.editMaskPointColors refusals", function()
     it("rejects an unknown mask without touching any swatch", function()
         local ctx = setup()
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({ photo_id = "1", mask_id = "nope", action = "clear" })
         end)
 
@@ -548,16 +685,12 @@ describe("HandlerMaskPointColors.editMaskPointColors validation", function()
 end)
 
 describe("HandlerMaskPointColors version gate", function()
-    it("names the minimum version when Lightroom is older, before any Develop work", function()
+    it("does not compare Lightroom's version number when the calls exist", function()
         local ctx = setup({ version = { major = 13, minor = 1 } })
 
-        local err = errorOf(function()
-            ctx.Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "clear" })
-        end)
+        local r = ctx.Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "clear" })
 
-        assert.truthy(err:find("edit_mask_point_colors needs Lightroom Classic 13.2 or later", 1, true))
-        assert.truthy(err:find("this is Lightroom Classic 13.1", 1, true))
-        assert.are.same({}, ctx.calls.modules)
+        assert.are.equal("clear", r.action)
     end)
 
     it("names the minimum version when the Point Color calls do not exist", function()
@@ -565,11 +698,11 @@ describe("HandlerMaskPointColors version gate", function()
             controller.addPointColorSwatch = nil
         end })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "clear" })
         end)
 
-        assert.truthy(err:find("edit_mask_point_colors needs Lightroom Classic 13.2 or later", 1, true))
+        assert.truthy(err:find("edit_mask_point_colors needs LrDevelopController.addPointColorSwatch", 1, true))
         assert.are.same({}, ctx.calls.modules)
     end)
 

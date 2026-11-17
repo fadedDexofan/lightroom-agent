@@ -1,3 +1,4 @@
+local helper = require 'spec_helper'
 local fake = require 'fake_mask_develop'
 
 local LINE = { 0, 0, 255, 255 }
@@ -37,17 +38,10 @@ local function setup(overrides)
     return ctx
 end
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 describe("HandlerMaskRead.getMask", function()
     it("reads all three kinds once in one session and restores mask and view", function()
         local ctx = setup()
         local r = ctx.Handler.getMask({ photo_id = 1, mask_id = "mask-a" })
-        assert.is_true(r.success)
         assert.are.equal("1", r.photo_id)
         assert.are.equal("mask-a", r.mask_id)
         assert.are.same({ local_Exposure = 0.5, local_Contrast = 10 }, r.adjustments)
@@ -81,30 +75,13 @@ describe("HandlerMaskRead.getMask", function()
         end)
     end
 
-    it("returns supported kinds and names unavailable version requirements", function()
+    it("reads every kind whose calls exist, whatever Lightroom's version number", function()
         local ctx = setup({ version = { major = 11, minor = 5 } })
         local r = ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-a" })
         assert.are.equal(0.5, r.adjustments.local_Exposure)
-        assert.is_nil(r.curves)
-        assert.is_nil(r.swatches)
-        assert.truthy(r.errors.curves:find("Lightroom Classic 12.3", 1, true))
-        assert.truthy(r.errors.point_colors:find("Lightroom Classic 13.2", 1, true))
-        assert.are.equal(1, ctx.sessions)
+        assert.are.same(LINE, r.curves.main)
+        assert.is_nil(r.errors)
     end)
-
-    for _, entry in ipairs({ { "adjustments", 10, 9, "11" }, { "curves", 12, 2, "12.3" },
-        { "point_colors", 13, 1, "13.2" } }) do
-        it("rejects only unsupported " .. entry[1] .. " before Develop", function()
-            local ctx = setup({ version = { major = entry[2], minor = entry[3] } })
-            local err = errorOf(function()
-                ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { entry[1] } })
-            end)
-            assert.truthy(err:find(entry[1], 1, true))
-            assert.truthy(err:find("Lightroom Classic " .. entry[4], 1, true))
-            assert.are.equal(0, ctx.sessions)
-            assert.are.same({}, ctx.reads)
-        end)
-    end
 
     it("reports missing Point Color API while still reading curves", function()
         local ctx = setup({ extend = function() end })
@@ -129,7 +106,7 @@ describe("HandlerMaskRead.getMask", function()
     it("fails when the only requested curve cannot be read", function()
         local ctx = setup()
         ctx.valuesOf[ctx.photos[1]]["mask-b"].local_Maincurve = { 0, 0, 255 }
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-b", kinds = { "curves" } })
         end)
         assert.truthy(err:find("curves", 1, true))
@@ -141,7 +118,7 @@ describe("HandlerMaskRead.getMask", function()
         local ctx = setup()
         local values = ctx.valuesOf[ctx.photos[1]]["mask-a"]
         values.local_Exposure, values.local_Contrast = nil, nil
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "adjustments" } })
         end)
         assert.truthy(err:find("adjustments", 1, true))
@@ -166,38 +143,37 @@ describe("HandlerMaskRead.getMask", function()
             if name == "local_PointColors" then error("unknown parameter") end
             return original(name)
         end
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "point_colors" } })
         end)
         assert.truthy(err:find("13.2", 1, true))
     end)
 
-    it("rejects missing photo or mask and unknown photo", function()
+    it("answers an unknown photo with not_found before any session", function()
         local ctx = setup()
-        for _, request in ipairs({ { mask_id = "mask-a" }, { photo_id = "1" },
-            { photo_id = "404", mask_id = "mask-a" } }) do
-            errorOf(function() ctx.Handler.getMask(request) end)
-        end
+        assert.are.equal("404", helper.notFoundOf(function() ctx.Handler.getMask({ photo_id = "404", mask_id = "mask-a" }) end))
         assert.are.equal(0, ctx.sessions)
         assert.are.same({}, ctx.reads)
     end)
 
     it("reads no values when the requested mask does not exist", function()
         local ctx = setup()
-        local err = errorOf(function() ctx.Handler.getMask({ photo_id = "1", mask_id = "missing" }) end)
+        local err = helper.refusalOf(function() ctx.Handler.getMask({ photo_id = "1", mask_id = "missing" }) end)
         assert.truthy(err:find("Mask not found", 1, true))
         assert.are.same({}, ctx.reads)
         assert.are.equal(0, #ctx.calls.setValue)
     end)
+end)
 
-    for _, kinds in ipairs({ {}, "curves", { "nope" }, { "curves", "curves" },
-        { [1] = "curves", [3] = "adjustments" }, { curves = true } }) do
-        it("rejects malformed kinds before any session", function()
+describe("a local slider added to the table", function()
+    it("is read by get_mask", function()
+        helper.withFixtureSlider(function()
             local ctx = setup()
-            assert.truthy(errorOf(function()
-                ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = kinds })
-            end):find("kinds", 1, true))
-            assert.are.equal(0, ctx.sessions)
+            ctx.valuesOf[ctx.photos[1]]["mask-a"].local_Fixture = 7
+
+            local r = ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "adjustments" } })
+
+            assert.are.equal(7, r.adjustments.local_Fixture)
         end)
-    end
+    end)
 end)

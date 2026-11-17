@@ -33,3 +33,20 @@ test("client cancel sends the request id and ignores a late result", async () =>
   assert.deepEqual(sent[1], { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1, reason: "Live test cancellation" } });
   assert.equal(session.pending.size, 0);
 });
+
+test("a tool answer keeps every image block in order beside the envelope", async () => {
+  const session = new McpSession();
+  session.send = () => {};
+  const pending = session.tool("get_photo_detail", { photo_id: "1", regions: [] });
+  const content = [
+    { type: "text", text: '{"outcome":"done","data":{"regions":[{"image_index":1},{"image_index":2}]}}' },
+    { type: "image", data: "AAA", mimeType: "image/jpeg" },
+    { type: "image", data: "BBB", mimeType: "image/jpeg" },
+  ];
+  session.onStdout(`${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { content } })}\n`);
+
+  const answer = await pending;
+  assert.deepEqual(answer.images.map((image) => image.data), ["AAA", "BBB"]);
+  assert.equal(answer.image.data, "AAA");
+  assert.equal(answer.data.regions.length, 2);
+});

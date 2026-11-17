@@ -114,8 +114,8 @@ Goal: `get_selected_photos` actually reflects the filmstrip selection.
    ```
    `set_selection` is a **test-only** plugin action — it has no MCP tool contract,
    so it is reachable from `manual-test.mjs` only, never from an MCP client. It
-   returns `{ selected, active, missing }`; `active` is the first id, which
-   becomes Lightroom's active photo.
+   answers `data: { selected, requested, active_photo_id }` and lists unknown ids in
+   `not_found`; `active_photo_id` is the first id, which becomes Lightroom's active photo.
 3. Run:
    ```sh
    node tests/e2e/mcp-runner.mjs tool get_selected_photos '{"limit":10}'
@@ -139,10 +139,11 @@ its own.
 
 Goal: collections, ratings, keywords roundtrip via the catalog.
 
-⚠️ This phase **mutates** your catalog. It creates a uniquely-named
+⚠️ This phase **mutates** the open catalog. It creates a uniquely-named
 collection (`MCP_E2E_<timestamp>`) and bumps rating/keywords on the first
-photo returned by `search_photos` (then restores). Use a non-production
-catalog if you'd rather not.
+photo returned by `search_photos`. The write, develop, export,
+preset-roundtrip and all modes refuse to start unless the one open catalog
+is a throwaway catalog of the live kit (`tests/e2e/live/README.md`).
 
 ```sh
 node tests/e2e/mcp-runner.mjs write
@@ -172,7 +173,7 @@ node tests/e2e/mcp-runner.mjs write
 
 Goal: develop settings can be read, written directly, and applied via preset.
 
-⚠️ Mutates the first photo's exposure (sets to +0.5 EV, then restores to 0).
+⚠️ Mutates the first photo's exposure (sets it to +0.5 EV, then to 0, not to its earlier value); throwaway catalog only.
 
 ```sh
 node tests/e2e/mcp-runner.mjs develop
@@ -180,7 +181,7 @@ node tests/e2e/mcp-runner.mjs develop
 
 **What it covers**
 
-- `set_develop_settings` with `Exposure2012: 0.5`, then read back via `get_photo_metadata` with `sections: ["developSettings"]`, checking `developSettings.exposure`, expect ~0.5
+- `set_develop_settings` with `Exposure2012: 0.5`, then read back via `get_develop_settings` with `keys: ["Exposure2012"]`, checking `photos[0].settings.Exposure2012`, expect ~0.5
 - Restore to 0
 - `apply_develop_preset` using the first preset returned by `list_develop_presets`
 
@@ -229,7 +230,7 @@ Not yet covered by the runner because it needs two distinct photo IDs.
    ```sh
    node tests/e2e/mcp-runner.mjs tool search_photos '{"limit":2}'
    ```
-   note `photos[0].id` and `photos[1].id`.
+   note `photos[0].photo_id` and `photos[1].photo_id`.
 2. Apply a tweak to photo 0:
    ```sh
    node tests/e2e/mcp-runner.mjs tool set_develop_settings \
@@ -242,9 +243,9 @@ Not yet covered by the runner because it needs two distinct photo IDs.
    ```
 4. Verify on photo 1:
    ```sh
-   node tests/e2e/mcp-runner.mjs tool get_photo_metadata '{"photo_id":"<id1>","sections":["developSettings"]}'
+   node tests/e2e/mcp-runner.mjs tool get_develop_settings '{"photo_ids":["<id1>"],"keys":["Contrast2012","Saturation"]}'
    ```
-   Expect `developSettings.contrast == 40`, `developSettings.saturation == 20`.
+   Expect `photos[0].settings.Contrast2012 == 40`, `photos[0].settings.Saturation == 20`.
 
 **Whitelist variant**
 
@@ -274,7 +275,7 @@ node tests/e2e/mcp-runner.mjs tool import_photos \
 
 **Pass criteria**
 
-- response `{ "success": true, "imported": <n> }` with n matching files in folder
+- response `{ "outcome": "done", "data": { "imported": <n> } }` with n matching files in folder
 - Library → Previous Import shows the new photos
 
 **Cleanup** — right-click in Library → Remove from Catalog.
@@ -294,7 +295,7 @@ node tests/e2e/mcp-runner.mjs tool export_photos \
 
 **Pass criteria**
 
-- response `{ "success": true, "exported": 1 }`
+- response `{ "outcome": "done", "data": { "files": [{ "photo_id": "<id>", "path": "/tmp/lr_export_e2e/<name>.jpg" }], "destination": "/tmp/lr_export_e2e" } }`
 - `ls /tmp/lr_export_e2e` shows the JPEG
 - `sips -g pixelWidth -g pixelHeight /tmp/lr_export_e2e/*.jpg` shows long edge ≤ 1024
 
@@ -313,7 +314,7 @@ node tests/e2e/mcp-runner.mjs failure
 **Covers**
 
 - unknown tool name → `isError: true`, "Unknown action: …"
-- `get_photo_metadata` with bogus id → `isError: true`, "Photo not found"
+- `get_photo_metadata` with a bogus id → listed in the envelope's `not_found`
 - `set_rating_and_flag` with rating=9 → `isError: true`, validation message
 - `create_collection` with no name → `isError: true`
 

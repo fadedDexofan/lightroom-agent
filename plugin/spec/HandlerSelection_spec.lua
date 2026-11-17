@@ -24,8 +24,8 @@ describe("HandlerSelection.getSelectedPhotos", function()
 
         local r = Handler.getSelectedPhotos({})
         assert.are.equal(2, r.count)
-        assert.are.equal("1", r.photos[1].id)
-        assert.are.equal("3", r.photos[2].id)
+        assert.are.equal("1", r.photos[1].photo_id)
+        assert.are.equal("3", r.photos[2].photo_id)
         assert.is_false(r.has_more)
     end)
 
@@ -44,17 +44,17 @@ describe("HandlerSelection.getSelectedPhotos", function()
     it("returns serialized photo fields", function()
         setup({
             photos = { helper.fakePhoto({
-                id = "42", path = "/x.jpg", fileName = "x.jpg",
+                localIdentifier = 42, path = "/x.jpg", fileName = "x.jpg",
                 rating = 4, dateTimeOriginal = "2026-05-06",
             }) },
         })
         local r = Handler.getSelectedPhotos({})
         local p = r.photos[1]
-        assert.are.equal("42", p.id)
+        assert.are.equal("42", p.photo_id)
         assert.is_nil(p.path)
         assert.are.equal("x.jpg", p.filename)
         assert.are.equal(4, p.rating)
-        assert.are.equal("2026-05-06", p.dateTimeOriginal)
+        assert.are.equal("2026-05-06", p.date_time_original)
         assert.are.same(r, Handler.getSelectedPhotos({ include_path = false }))
         local full = Handler.getSelectedPhotos({ include_path = true })
         assert.are.equal("/x.jpg", full.photos[1].path)
@@ -72,7 +72,7 @@ describe("HandlerSelection.getSelectedPhotos", function()
         local r = Handler.getSelectedPhotos({ limit = 50, offset = 100 })
         assert.are.equal(250, r.count)
         assert.are.equal(50, #r.photos)
-        assert.are.equal("101", r.photos[1].id)
+        assert.are.equal("101", r.photos[1].photo_id)
         assert.is_true(r.has_more)
     end)
 
@@ -116,12 +116,13 @@ describe("HandlerSelection.getSelectedPhotos", function()
             local p1, p2, p3 = threePhotos()
             setup({ photos = { p1, p2, p3 }, targetPhotos = { p3, p1 } })
 
-            local r = Handler.setSelection({ photo_ids = { "3", "1" } })
+            local context = helper.requestContext()
+            local r = Handler.setSelection({ photo_ids = { "3", "1" } }, context)
 
-            assert.are.equal(2, r.selected)
-            assert.is_nil(r.warning)
-            assert.are.equal("3", r.active)
-            assert.are.same({}, r.missing)
+            assert.are.equal(2, r.data.selected)
+            assert.are.same({}, context.warnings)
+            assert.are.equal("3", r.data.active_photo_id)
+            assert.is_nil(r.not_found)
             local call = lastCatalog.getSelectionCall()
             assert.are.equal(p3, call.active)
             assert.are.same({ p3, p1 }, call.photos)
@@ -133,7 +134,7 @@ describe("HandlerSelection.getSelectedPhotos", function()
 
             local r = Handler.setSelection({ photo_ids = { "/b.jpg" } })
 
-            assert.are.equal(1, r.selected)
+            assert.are.equal(1, r.data.selected)
             assert.are.equal(p2, lastCatalog.getSelectionCall().active)
         end)
 
@@ -141,36 +142,38 @@ describe("HandlerSelection.getSelectedPhotos", function()
             local p1, p2, p3 = threePhotos()
             setup({ photos = { p1, p2, p3 }, targetPhotos = { p2 } })
 
-            local r = Handler.setSelection({ photo_ids = { "1", "3" } })
+            local context = helper.requestContext()
+            local r = Handler.setSelection({ photo_ids = { "1", "3" } }, context)
 
-            assert.are.equal(0, r.selected)
-            assert.are.equal(2, r.requested)
-            assert.is_not_nil(r.warning)
-            assert.is_not_nil(r.warning:find("current view source", 1, true))
+            assert.are.equal(0, r.data.selected)
+            assert.are.equal(2, r.data.requested)
+            assert.is_not_nil(context.warnings[1]:find("current view source", 1, true))
         end)
 
-        it("reports ids that matched no photo", function()
+        it("lists inputs that matched no photo as not_found, as given", function()
             local p1 = threePhotos()
             setup({ photos = { p1 } })
 
-            local r = Handler.setSelection({ photo_ids = { "1", "999" } })
+            local r = Handler.setSelection({ photo_ids = { "1", "999", 404 } })
 
-            assert.are.equal(1, r.selected)
-            assert.are.same({ "999" }, r.missing)
+            assert.are.equal(1, r.data.selected)
+            assert.are.same({ "999", 404 }, r.not_found)
         end)
 
         it("errors when photo_ids is missing or empty", function()
             setup({ photos = { threePhotos() } })
-            assert.has_error(function() Handler.setSelection({}) end, "photo_ids is required")
-            assert.has_error(function() Handler.setSelection({ photo_ids = {} }) end,
-                "photo_ids is required")
+            assert.are.equal("photo_ids is required", helper.unknownOf(function() Handler.setSelection({}) end))
+            assert.are.equal("photo_ids is required",
+                helper.unknownOf(function() Handler.setSelection({ photo_ids = {} }) end))
         end)
 
-        it("errors when no id resolves, leaving the selection untouched", function()
+        it("selects nothing and answers only not_found when no input resolves", function()
             setup({ photos = { threePhotos() } })
 
-            assert.has_error(function() Handler.setSelection({ photo_ids = { "999" } }) end,
-                "No photos matched photo_ids")
+            local r = Handler.setSelection({ photo_ids = { "999" } })
+
+            assert.is_nil(r.data)
+            assert.are.same({ "999" }, r.not_found)
             assert.is_nil(lastCatalog.getSelectionCall())
         end)
 

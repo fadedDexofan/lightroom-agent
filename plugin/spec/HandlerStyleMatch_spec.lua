@@ -4,7 +4,7 @@ describe('reference style matching', function()
     local handler, catalog, reference, targets, applied, events, snapshotState
     local previous = {}
     before_each(function()
-        for _, name in ipairs({ 'HandlerDevelop', 'HandlerSnapshots', 'DevelopSession' }) do
+        for _, name in ipairs({ 'HandlerDevelop', 'HandlerSnapshots', 'DevelopSession', 'DevelopReadBack' }) do
             previous[name] = package.loaded[name]
             package.loaded[name] = nil
         end
@@ -33,6 +33,7 @@ describe('reference style matching', function()
             photo.applyDevelopSettings = function(_, settings)
                 events[#events + 1] = 'apply:' .. id
                 applied[id] = settings
+                for key, value in pairs(settings) do photo:getDevelopSettings()[key] = value end
             end
             targets[#targets + 1] = photo
         end
@@ -40,63 +41,178 @@ describe('reference style matching', function()
         helper.installImport({
             LrApplication = { activeCatalog = function() return catalog end },
             LrDate = { currentTime = function() return 123 end },
-            LrTasks = { pcall = pcall }, LrLogger = helper.defaultLrLogger(),
+            LrTasks = { pcall = pcall, sleep = function() end }, LrLogger = helper.defaultLrLogger(),
             LrDevelopController = {}, LrFileUtils = {}, LrPathUtils = {},
             LrApplicationView = {}, LrSelection = {},
         })
         handler = require 'HandlerDevelop'
     end)
     after_each(function()
-        for _, name in ipairs({ 'HandlerDevelop', 'HandlerSnapshots', 'DevelopSession' }) do
+        for _, name in ipairs({ 'HandlerDevelop', 'HandlerSnapshots', 'DevelopSession', 'DevelopReadBack' }) do
             package.loaded[name] = previous[name]
         end
+    end)
+
+    it('transfers exactly the keys the generated table marks as style, a newly added one included', function()
+        local contract = require 'Contract'
+        local patched = setmetatable({ DEVELOP_KEYS = {} }, { __index = contract })
+        for i, key in ipairs(contract.DEVELOP_KEYS) do patched.DEVELOP_KEYS[i] = key end
+        table.insert(patched.DEVELOP_KEYS, { name = 'FixtureLook', style = true })
+        table.insert(patched.DEVELOP_KEYS, { name = 'FixtureGeometry' })
+        reference:getDevelopSettings().FixtureLook = 3
+        reference:getDevelopSettings().FixtureGeometry = 7
+        package.loaded.Contract = patched
+        package.loaded.HandlerDevelop = nil
+        local ok, err = pcall(function()
+            require('HandlerDevelop').matchPhotoStyle({ reference_id = '1', target_ids = { '2' } })
+        end)
+        package.loaded.Contract = contract
+        assert.is_true(ok, tostring(err))
+        assert.same({ Exposure2012 = 0.5, Contrast2012 = 20, ToneCurvePV2012 = { 0, 0, 255, 255 }, FixtureLook = 3 },
+            applied['2'])
     end)
 
     it('snapshots before applying global style and counts changed values', function()
         local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3' } })
         assert.same({ 'snapshot:2', 'apply:2', 'snapshot:3', 'apply:3' }, events)
         assert.same({ Exposure2012 = 0.5, Contrast2012 = 20, ToneCurvePV2012 = { 0, 0, 255, 255 } }, applied['2'])
-        assert.equals(2, result.matched)
-        assert.equals(2, result.results[1].settings_changed)
-        assert.equals('2-snapshot', result.results[1].snapshot.id)
-        assert.matches('Style match from 1', result.results[1].snapshot.name)
-        assert.is_true(result.success)
+        assert.equals(2, result.data.matched)
+        assert.equals(2, result.data.results[1].settings_changed)
+        assert.equals('2-snapshot', result.data.results[1].snapshot.id)
+        assert.matches('Style match from 1', result.data.results[1].snapshot.name)
+        assert.is_nil(result.problem)
+        assert.is_nil(result.failed)
         assert.is_false(catalog:getQueriedInsideReadAccess())
     end)
 
-    it('continues after a snapshot failure without writing that target', function()
-        targets[2].createDevelopSnapshot = function() error('snapshot refused') end
+    it('answers unknown for a target whose snapshot step raised, writes nothing to it and continues', function()
+        targets[2].createDevelopSnapshot = function() error('snapshot interrupted') end
         local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3', '4', '999' } })
         assert.same({ 'snapshot:2', 'apply:2', 'snapshot:4', 'apply:4' }, events)
         assert.is_nil(applied['3'])
-        assert.same({ '999' }, result.missing)
-        assert.equals('3', result.failures[1].photo_id)
-        assert.matches('snapshot refused', result.failures[1].reason)
-        assert.is_false(result.success)
+        assert.same({ '999' }, result.not_found)
+        assert.is_nil(result.failed)
+        assert.equals('3', result.unknown[1].photo_id)
+        assert.matches('snapshot interrupted', result.unknown[1].reason)
+        assert.matches('a recovery snapshot may have been created', result.unknown[1].reason)
     end)
 
-    it('requires snapshot readback before writing', function()
+    it('answers unknown, without writing, when the snapshot it created cannot be read back', function()
         targets[1].getDevelopSnapshots = function() return {} end
         local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2' } })
-        assert.equals(0, result.matched)
+        assert.equals(0, result.data.matched)
         assert.is_nil(applied['2'])
-        assert.matches('could not be read back', result.failures[1].reason)
+        assert.is_nil(result.failed)
+        assert.matches('could not be read back', result.unknown[1].reason)
+        assert.matches('a recovery snapshot may have been created', result.unknown[1].reason)
+    end)
+
+    it('fails a target whose snapshot Lightroom refused, and writes nothing to it', function()
+        targets[1].createDevelopSnapshot = function() return false end
+        local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2' } })
+        assert.is_nil(applied['2'])
+        assert.is_nil(result.unknown)
+        assert.equals('2', result.failed[1].photo_id)
+        assert.matches('Snapshot name already exists', result.failed[1].reason)
     end)
 
     it('rejects reference aliases anywhere in the targets before snapshotting', function()
         for _, id in ipairs({ '1', '/reference.raw' }) do
-            assert.has_error(function()
+            assert.are.equal('Reference photo must not appear in target_ids', helper.refusalOf(function()
                 handler.matchPhotoStyle({ reference_id = 1, target_ids = { '2', id } })
-            end)
+            end))
         end
         assert.same({}, events)
     end)
 
-    it('retains a recovery snapshot when applying fails and continues', function()
-        targets[1].applyDevelopSettings = function() error('write refused') end
+    it('answers unknown for a target that throws after Lightroom stored part of the style', function()
+        targets[1].applyDevelopSettings = function(photo, settings)
+            photo:getDevelopSettings().Exposure2012 = settings.Exposure2012
+            error('write interrupted')
+        end
+        local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2' } })
+        assert.is_nil(result.failed)
+        assert.equals('2', result.unknown[1].photo_id)
+        assert.matches('write interrupted', result.unknown[1].reason)
+    end)
+
+    it('never transfers a key another tool writes', function()
+        reference:getDevelopSettings().ConvertToGrayscale = false
+        targets[1]:getDevelopSettings().ConvertToGrayscale = false
+        handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2' } })
+        assert.is_nil(applied['2'].ConvertToGrayscale)
+    end)
+
+    it('fails a target whose treatment differs from the reference and writes nothing to it', function()
+        reference:getDevelopSettings().ConvertToGrayscale = true
+        reference:getDevelopSettings().GrayMixerRed = -20
+        targets[1]:getDevelopSettings().ConvertToGrayscale = false
+        targets[2]:getDevelopSettings().ConvertToGrayscale = true
         local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3' } })
-        assert.equals('2-snapshot', result.failures[1].snapshot.id)
-        assert.equals(1, result.matched)
-        assert.is_not_nil(applied['3'])
+        assert.is_nil(applied['2'])
+        assert.equals('2', result.failed[1].photo_id)
+        assert.matches('treatment differs from the reference; convert it with set_treatment, then match', result.failed[1].reason)
+        assert.equals(-20, applied['3'].GrayMixerRed)
+    end)
+
+    for _, case in ipairs({
+        { what = 'applying raises', arrange = function()
+            targets[1].applyDevelopSettings = function() error('write refused') end
+            return 'write refused'
+        end },
+        { what = 'the catalog stays busy for the style write', arrange = function()
+            local aborted = false
+            catalog = helper.fakeCatalog({ photos = { reference, targets[1], targets[2], targets[3] },
+                writeAccessAborts = function(action)
+                    if action ~= 'Match Photo Style' or aborted then return false end
+                    aborted = true
+                    return true
+                end })
+            return helper.catalogBusy('Match Photo Style')
+        end },
+    }) do
+        it('answers unknown naming the recovery snapshot it kept when ' .. case.what .. ', and continues', function()
+            local problem = case.arrange()
+            local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3' } })
+            assert.is_nil(result.failed)
+            assert.equals('2', result.unknown[1].photo_id)
+            assert.matches(problem .. '; the style was not confirmed stored and recovery snapshot Style match from 1',
+                result.unknown[1].reason, 1, true)
+            assert.matches('was kept', result.unknown[1].reason, 1, true)
+            assert.equals(1, #snapshotState['2'])
+            assert.equals(1, result.data.matched)
+            assert.is_not_nil(applied['3'])
+        end)
+    end
+end)
+
+describe('reference style matching within the budget', function()
+    it('matches the targets that fit and lists the rest as remaining', function()
+        local helper = require 'spec_helper'
+        local reference = helper.fakePhoto({ id = '1', path = '/r.raw', developSettings = { Exposure2012 = 0.5 } })
+        local targets = {}
+        for index = 2, 3 do
+            local id = tostring(index)
+            local photo = helper.fakePhoto({ id = id, path = '/' .. id .. '.raw', developSettings = {} })
+            local snapshots = {}
+            photo.getDevelopSnapshots = function() return snapshots end
+            photo.createDevelopSnapshot = function(_, name) snapshots[#snapshots + 1] = { snapshotID = id, name = name }; return true end
+            targets[#targets + 1] = photo
+        end
+        local catalog = helper.fakeCatalog({ photos = { reference, targets[1], targets[2] } })
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return catalog end },
+            LrDate = { currentTime = function() return 123 end },
+            LrTasks = { pcall = pcall, sleep = function() end }, LrLogger = helper.defaultLrLogger(),
+            LrDevelopController = {}, LrFileUtils = {}, LrPathUtils = {}, LrApplicationView = {}, LrSelection = {},
+        })
+        for _, name in ipairs({ 'HandlerDevelop', 'HandlerSnapshots', 'DevelopSession', 'DevelopReadBack' }) do package.loaded[name] = nil end
+        local asked = 0
+        local context = helper.requestContext(nil, { stopping = function() asked = asked + 1; return asked > 1 end })
+
+        local result = require('HandlerDevelop').matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3' } }, context)
+
+        assert.equals(1, result.data.matched)
+        assert.same({ '3' }, result.remaining)
     end)
 end)

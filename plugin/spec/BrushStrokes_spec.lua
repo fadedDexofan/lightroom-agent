@@ -2,12 +2,6 @@ local helper = require 'spec_helper'
 
 local BrushStrokes
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 local function point(x, y) return { x = x, y = y } end
 
 local function stroke(overrides)
@@ -22,16 +16,6 @@ local function load()
     BrushStrokes = require 'BrushStrokes'
 end
 
-describe("BrushStrokes.parseStrokes radius", function()
-    it("refuses a radius that rounds to zero", function()
-        load()
-        local message = errorOf(function()
-            BrushStrokes.parseStrokes({ stroke({ points = { point(0.2, 0.3) }, radius = 1e-7 }) })
-        end)
-        assert.truthy(message:find("too small", 1, true))
-    end)
-end)
-
 describe("BrushStrokes.parseStrokes", function()
     before_each(load)
 
@@ -44,59 +28,8 @@ describe("BrushStrokes.parseStrokes", function()
         assert.are.same({ point(0.2, 0.3), point(0.3, 0.3) }, parsed[1].points)
     end)
 
-    it("rejects an empty or missing stroke list", function()
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({}) end):find("at least one stroke", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes(nil) end):find("at least one stroke", 1, true))
-    end)
-
-    it("rejects a stroke without points", function()
-        local message = errorOf(function() BrushStrokes.parseStrokes({ stroke({ points = {} }) }) end)
-
-        assert.is_truthy(message:find("strokes[1].points must list at least one point", 1, true))
-    end)
-
-    it("rejects points outside the image and says which one", function()
-        local message = errorOf(function()
-            BrushStrokes.parseStrokes({ stroke(), stroke({ points = { point(0.5, 0.5), point(1.01, 0.5) } }) })
-        end)
-
-        assert.is_truthy(message:find("strokes[2].points[2].x is outside the image", 1, true))
-    end)
-
-    it("rejects malformed points", function()
-        assert.is_truthy(errorOf(function()
-            BrushStrokes.parseStrokes({ stroke({ points = { { 0.1, 0.2 } } }) })
-        end):find("unknown property 1", 1, true))
-        assert.is_truthy(errorOf(function()
-            BrushStrokes.parseStrokes({ stroke({ points = { { x = 0.1, y = 0.2, z = 1 } } }) })
-        end):find("unknown property z", 1, true))
-        assert.is_truthy(errorOf(function()
-            BrushStrokes.parseStrokes({ stroke({ points = { point(0 / 0, 0.2) } }) })
-        end):find("must be a number", 1, true))
-    end)
-
-    it("bounds radius and flow", function()
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ radius = 0 }) }) end)
-            :find("radius must be greater than 0", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ radius = 1.5 }) }) end)
-            :find("radius", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ flow = 0 }) }) end)
-            :find("flow must be between", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ flow = 1.1 }) }) end)
-            :find("flow must be between", 1, true))
-    end)
-
     it("rounds flow to the four decimals of the stored flow token", function()
         assert.are.equal(0.3333, BrushStrokes.parseStrokes({ stroke({ flow = 1 / 3 }) })[1].flow)
-    end)
-
-    it("explains why size is not accepted and rejects unknown properties", function()
-        local size = errorOf(function() BrushStrokes.parseStrokes({ stroke({ size = 30 }) }) end)
-        local unknown = errorOf(function() BrushStrokes.parseStrokes({ stroke({ colour = "red" }) }) end)
-
-        assert.is_truthy(size:find("size is not supported", 1, true))
-        assert.is_truthy(size:find("use radius", 1, true))
-        assert.is_truthy(unknown:find("unknown property colour", 1, true))
     end)
 
     it("defaults to the soft, full density add brush Lightroom starts with", function()
@@ -105,36 +38,6 @@ describe("BrushStrokes.parseStrokes", function()
         assert.are.equal(0, parsed.centerWeight)
         assert.are.equal(1, parsed.density)
         assert.is_false(parsed.erase)
-    end)
-
-    it("bounds feather, density and erase and keeps density off erase strokes", function()
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ feather = -1 }) }) end)
-            :find("feather must be between 0 (hard) and 100 (soft)", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ feather = 101 }) }) end)
-            :find("feather must be between", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ density = 0 }) }) end)
-            :find("density must be between 0.01 and 1", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ density = 1.1 }) }) end)
-            :find("density must be between", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ erase = "yes" }) }) end)
-            :find("erase must be true or false", 1, true))
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes({ stroke({ erase = true, density = 0.5 }) }) end)
-            :find("density does not apply to an erase stroke", 1, true))
-    end)
-
-    it("limits strokes, points and the dabs a path needs", function()
-        local many = {}
-        for index = 1, 51 do many[index] = stroke() end
-        local longPath = {}
-        for index = 1, 1001 do longPath[index] = point(0.5, 0.5) end
-
-        assert.is_truthy(errorOf(function() BrushStrokes.parseStrokes(many) end):find("at most 50", 1, true))
-        assert.is_truthy(errorOf(function()
-            BrushStrokes.parseStrokes({ stroke({ points = longPath }) })
-        end):find("at most 1000", 1, true))
-        assert.is_truthy(errorOf(function()
-            BrushStrokes.parseStrokes({ stroke({ points = { point(0, 0), point(1, 1) }, radius = 0.0001 }) })
-        end):find("dabs along its path", 1, true))
     end)
 end)
 
@@ -302,27 +205,64 @@ describe("BrushStrokes feather, density and erase", function()
         assert.are.equal(0, aggregate.Masks[1].MaskBlendMode)
     end)
 
-    it("budgets dabs on the stored radius, so a hard brush on a long path is refused", function()
-        local points = { point(0, 0), point(1, 1) }
-
-        assert.is_true(pcall(BrushStrokes.parseStrokes, { stroke({ points = points, radius = 0.0016 }) }))
-        assert.is_false(pcall(BrushStrokes.parseStrokes, { stroke({ points = points, radius = 0.0016, feather = 0 }) }))
-    end)
 end)
 
 describe("BrushStrokes.toStoredFrame", function()
     before_each(load)
 
-    local function frameOf(orientation)
+    local function frameOf(orientation, settings)
         helper.installImport({})
         package.loaded.ImageFrame = nil
-        return require('ImageFrame').fromOrientation(orientation)
+        return require('ImageFrame').of({
+            orientation = orientation, dimensions = { width = 3000, height = 2000 }, settings = settings,
+        })
     end
 
-    it("returns the strokes untouched for a normal photo", function()
+    local function stored(strokes, frame)
+        return BrushStrokes.toStoredFrame(BrushStrokes.parseStrokes(strokes), frame or frameOf("AB"))
+    end
+
+    it("budgets dabs on the stored radius, so a hard brush on a long path is refused", function()
+        local points = { point(0, 0), point(1, 1) }
+
+        assert.is_true(pcall(stored, { stroke({ points = points, radius = 0.0016 }) }))
+        assert.is_truthy(helper.refusalOf(function()
+            stored({ stroke({ points = points, radius = 0.0016, feather = 0 }) })
+        end):find("strokes[1] would need", 1, true))
+    end)
+
+    it("budgets dabs on the stored path, so a stroke across a portrait crop counts the dabs it writes", function()
+        local portrait = frameOf("AB", { CropLeft = 1 / 3, CropRight = 2 / 3 })
+        local across = { stroke({ points = { point(0, 0.5), point(1, 0.5) }, radius = 0.0019, feather = 0 }) }
+
+        local mapped = stored(across, portrait)
+
+        assert.are.equal(1, #mapped)
+        assert.is_truthy(helper.refusalOf(function() stored(across) end))
+    end)
+
+    it("rounds the radius once, in the stored frame", function()
+        local BrushFeather = require 'BrushFeather'
+        local radius = 2.4e-6 / BrushFeather.radiusScale(BrushFeather.fromPercent(0))
+        local portrait = frameOf("AB", { CropLeft = 1 / 3, CropRight = 2 / 3 })
+
+        local mapped = stored({ stroke({ points = { point(0.5, 0.5) }, radius = radius, feather = 0 }) }, portrait)
+
+        assert.are.equal(0.000002, mapped[1].radius)
+    end)
+
+    it("refuses a radius that stores as zero", function()
+        local tiny = { stroke({ points = { point(0.5, 0.5) }, radius = 1e-7, feather = 0 }) }
+
+        assert.are.equal("strokes[1].radius is too small to paint", helper.refusalOf(function() stored(tiny) end))
+    end)
+
+    it("keeps the points and radius of an uncropped upright photo", function()
         local parsed = BrushStrokes.parseStrokes({ stroke() })
 
-        assert.are.equal(parsed, BrushStrokes.toStoredFrame(parsed, frameOf("AB")))
+        local mapped = BrushStrokes.toStoredFrame(parsed, frameOf("AB"))
+
+        assert.are.same(parsed, mapped)
     end)
 
     it("maps every point and keeps the brush for a rotated photo", function()
@@ -333,7 +273,7 @@ describe("BrushStrokes.toStoredFrame", function()
         local mapped = BrushStrokes.toStoredFrame(parsed, frameOf("BC"))
 
         assert.are.same({ point(0, 1), point(0, 0) }, mapped[1].points)
-        assert.are.equal(parsed[1].radius, mapped[1].radius)
+        assert.are.equal(0.078411, mapped[1].radius)
         assert.are.equal(0.5, mapped[1].flow)
         assert.are.equal(1, mapped[1].centerWeight)
         assert.are.equal(0.4, mapped[1].density)

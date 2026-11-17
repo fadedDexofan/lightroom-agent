@@ -1,11 +1,5 @@
 local helper = require 'spec_helper'
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 local function tool(id)
     return { ID = id, Name = "Tool " .. id, Type = "brush", Hidden = false, Inverted = false }
 end
@@ -109,7 +103,10 @@ local function setup(opts)
             currentTool = name
             calls.tools[#calls.tools + 1] = name
         end,
-        getSelectedTool = function() return currentTool end,
+        getSelectedTool = function()
+            if opts.pointColorSubtool and currentTool == "masking" then return "local_point_color" end
+            return currentTool
+        end,
         deleteMask = function(id)
             requireMaskingTool()
             calls.deletedMasks[#calls.deletedMasks + 1] = id
@@ -144,7 +141,7 @@ local function setup(opts)
             calls.modules[#calls.modules + 1] = name
         end,
     }
-    local catalog = helper.fakeCatalog({ photos = photos })
+    local catalog = helper.fakeCatalog({ photos = photos, writeAccessAborts = opts.writeAccessAborts })
     local recordSelection = catalog.setSelectedPhotos
     catalog.setSelectedPhotos = function(self, photo, selected)
         recordSelection(self, photo, selected)
@@ -158,13 +155,13 @@ local function setup(opts)
     if not opts.withoutDeleteAllEmptyMasks then
         local withWriteAccess = catalog.withWriteAccessDo
         local insideWrite = false
-        catalog.withWriteAccessDo = function(self, title, fn)
+        catalog.withWriteAccessDo = function(self, title, fn, ...)
             return withWriteAccess(self, title, function()
                 insideWrite = true
                 local ok, err = pcall(fn)
                 insideWrite = false
                 if not ok then error(err, 0) end
-            end)
+            end, ...)
         end
         catalog.deleteAllEmptyMasks = function(_, targets)
             if not insideWrite then error("deleteAllEmptyMasks outside withWriteAccessDo") end
@@ -189,6 +186,7 @@ local function setup(opts)
     })
     package.loaded.HandlerMaskDelete = nil
     package.loaded.DevelopSession = nil
+    package.loaded.MaskSelection = nil
     Handler = require 'HandlerMaskDelete'
     return Handler, calls, catalog, masksOf, photos
 end
@@ -213,7 +211,6 @@ describe("HandlerMaskDelete.deleteMasks", function()
 
         local r = Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1", "m-3" } })
 
-        assert.is_true(r.success)
         assert.are.equal("2", r.photo_id)
         assert.are.same({ "m-1", "m-3" }, r.deleted_mask_ids)
         assert.are.same({ "t-1", "t-2", "t-4" }, r.deleted_tool_ids)
@@ -273,7 +270,6 @@ describe("HandlerMaskDelete.deleteMasks", function()
 
         local r = Handler.deleteMasks({ photo_id = "1", all = true })
 
-        assert.is_true(r.success)
         assert.are.same({}, r.deleted_mask_ids)
         assert.are.same({}, r.deleted_tool_ids)
         assert.are.equal(0, r.remaining_mask_count)
@@ -292,7 +288,7 @@ describe("HandlerMaskDelete.deleteMasks", function()
     it("deletes nothing and names every unknown mask id", function()
         local Handler, calls, _, masksOf, photos = setup({ photos = twoPhotosWithMasks() })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1", "nope", "t-1", "also-nope" } })
         end)
 
@@ -306,7 +302,7 @@ describe("HandlerMaskDelete.deleteMasks", function()
     it("deletes nothing and names every unknown tool id", function()
         local Handler, calls, _, masksOf, photos = setup({ photos = twoPhotosWithMasks() })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             Handler.deleteMasks({ photo_id = "2", tool_ids = { "t-1", "m-2" } })
         end)
 
@@ -319,64 +315,26 @@ describe("HandlerMaskDelete.deleteMasks", function()
     it("accepts a call after a rejected one", function()
         local Handler = setup({ photos = twoPhotosWithMasks() })
 
-        errorOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "nope" } }) end)
+        helper.refusalOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "nope" } }) end)
         local r = Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } })
 
         assert.are.same({ "m-1" }, r.deleted_mask_ids)
     end)
 
-    it("requires exactly one of mask_ids, tool_ids and all", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks() })
-        local needsOne = "delete_masks needs exactly one of mask_ids, tool_ids or all"
-
-        for _, args in ipairs({
-            { photo_id = "2" },
-            { photo_id = "2", mask_ids = { "m-1" }, tool_ids = { "t-1" } },
-            { photo_id = "2", mask_ids = { "m-1" }, all = true },
-        }) do
-            assert.truthy(errorOf(function() Handler.deleteMasks(args) end):find(needsOne, 1, true))
-        end
-        assert.truthy(errorOf(function() Handler.deleteMasks({ photo_id = "2", all = false }) end)
-            :find("all must be true", 1, true))
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("rejects malformed id lists before touching Develop", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks() })
-        local tooMany = {}
-        for i = 1, 101 do tooMany[i] = "m-" .. i end
-
-        for _, bad in ipairs({ {}, { 7 }, { "" }, "m-1", tooMany }) do
-            assert.truthy(errorOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = bad }) end)
-                :find("mask_ids", 1, true))
-        end
-        assert.are.equal(0, #calls.modules)
-    end)
-
-    it("requires a photo id", function()
-        local Handler = setup({ photos = twoPhotosWithMasks() })
-
-        for _, bad in ipairs({ "", true }) do
-            assert.truthy(errorOf(function() Handler.deleteMasks({ photo_id = bad, all = true }) end)
-                :find("photo_id is required", 1, true))
-        end
-    end)
-
     it("names the photo id when the photo is unknown and never touches Develop", function()
         local Handler, calls = setup({ photos = twoPhotosWithMasks() })
 
-        local err = errorOf(function() Handler.deleteMasks({ photo_id = "404", all = true }) end)
-
-        assert.truthy(err:find("Photo not found: 404", 1, true))
+        assert.are.equal("404", helper.notFoundOf(function() Handler.deleteMasks({ photo_id = "404", all = true }) end))
         assert.are.equal(0, #calls.modules)
     end)
 
     it("names the minimum Lightroom version when the delete API is missing", function()
         local Handler, calls = setup({ photos = twoPhotosWithMasks(), withoutDeleteApi = true })
 
-        local err = errorOf(function() Handler.deleteMasks({ photo_id = "2", all = true }) end)
+        local refusal = helper.refusalOf(function() Handler.deleteMasks({ photo_id = "2", all = true }) end)
 
-        assert.truthy(err:find("delete_masks needs Lightroom Classic 11 or later", 1, true))
+        assert.are.equal("delete_masks needs LrDevelopController.deleteMask, which this Lightroom does not offer"
+            .. " (Lightroom Classic 11 or later has it)", refusal)
         assert.are.equal(0, #calls.modules)
     end)
 
@@ -388,13 +346,19 @@ describe("HandlerMaskDelete.deleteMasks", function()
         assert.are.same({ "masking", "crop" }, calls.tools)
     end)
 
-    it("leaves the tool alone when the masking tool is already open", function()
-        local Handler, calls = setup({ photos = twoPhotosWithMasks(), initialTool = "masking" })
+    for _, pointColorSubtool in ipairs({ false, true }) do
+        it("leaves the tool alone when the masking tool is already open (local Point Color subtool: "
+            .. tostring(pointColorSubtool) .. ")", function()
+            local Handler, calls = setup({
+                photos = twoPhotosWithMasks(), initialTool = "masking", pointColorSubtool = pointColorSubtool,
+            })
 
-        Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } })
+            Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } })
 
-        assert.are.same({}, calls.tools)
-    end)
+            assert.are.same({ "m-1" }, calls.deletedMasks)
+            assert.are.same({}, calls.tools)
+        end)
+    end
 
     it("puts back the module and the selection", function()
         local Handler, calls = setup({ photos = twoPhotosWithMasks() })
@@ -406,14 +370,13 @@ describe("HandlerMaskDelete.deleteMasks", function()
     end)
 
     it("waits until Lightroom reports the masks of a photo that is still loading", function()
-        local Handler, _, _, _, photos = setup({
+        local Handler = setup({
             photos = { { id = "1", masks = { mask("m-1", { "t-1" }) }, emptyReadsFirst = 3 } },
         })
 
         local r = Handler.deleteMasks({ photo_id = "1", all = true })
 
         assert.are.same({ "m-1" }, r.deleted_mask_ids)
-        assert.is_truthy(photos[1])
     end)
 
     it("errors instead of reporting success when Lightroom never lists masks the photo has saved", function()
@@ -421,9 +384,9 @@ describe("HandlerMaskDelete.deleteMasks", function()
             photos = { { id = "1", settingsOnlyMasks = { mask("m-1", { "t-1" }) } } },
         })
 
-        local err = errorOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
+        local err = helper.refusalOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
 
-        assert.truthy(err:find("reports no masks on photo 1", 1, true))
+        assert.truthy(err:find("Develop lists 0 of the 1 masks in photo 1's saved settings", 1, true))
         assert.are.same({}, calls.deletedMasks)
         assert.are.same({ "develop", "library" }, calls.modules)
     end)
@@ -431,7 +394,7 @@ describe("HandlerMaskDelete.deleteMasks", function()
     it("errors and restores the view when Lightroom ignores the deletion", function()
         local Handler, calls = setup({ photos = twoPhotosWithMasks(), ignoreDelete = true })
 
-        local err = errorOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
+        local err = helper.unknownOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
 
         assert.truthy(err:find("did not remove the requested masks from photo 2", 1, true))
         assert.are.same({ "develop", "library" }, calls.modules)
@@ -441,7 +404,7 @@ describe("HandlerMaskDelete.deleteMasks", function()
     it("errors when Lightroom shows the deletion but never saves it", function()
         local Handler = setup({ photos = twoPhotosWithMasks(), neverSaves = true })
 
-        local err = errorOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
+        local err = helper.unknownOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
 
         assert.truthy(err:find("did not save it for photo 2", 1, true))
     end)
@@ -449,7 +412,7 @@ describe("HandlerMaskDelete.deleteMasks", function()
     it("reports the failing call when Lightroom raises while deleting", function()
         local Handler, calls = setup({ photos = twoPhotosWithMasks(), deleteFails = "mask is locked" })
 
-        local err = errorOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
+        local err = helper.unknownOf(function() Handler.deleteMasks({ photo_id = "2", mask_ids = { "m-1" } }) end)
 
         assert.truthy(err:find("could not delete mask m-1: ", 1, true))
         assert.truthy(err:find("mask is locked", 1, true))
@@ -462,7 +425,7 @@ describe("HandlerMaskDelete.deleteMasks", function()
             photos = twoPhotosWithMasks(),
             onGetAllMasks = function(handler)
                 if nested == nil then
-                    nested = errorOf(function() handler.deleteMasks({ photo_id = "2", all = true }) end)
+                    nested = helper.refusalOf(function() handler.deleteMasks({ photo_id = "2", all = true }) end)
                 end
             end,
         })
@@ -472,15 +435,22 @@ describe("HandlerMaskDelete.deleteMasks", function()
         assert.truthy(nested:find("delete_masks is already running", 1, true))
     end)
 
-    it("errors with a clear message when a mask has no id", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = { { Name = "x", Tools = {} } } } },
-        })
+    for _, case in ipairs({
+        { name = "a mask", masks = { { Name = "x", Tools = {} } }, names = "mask without an id for photo 1" },
+        { name = "a mask tool", masks = { { ID = "m-1", Name = "x", Tools = { { Type = "brush" } } } },
+            names = "mask tool without an id for photo 1" },
+    }) do
+        it("refuses with nothing deleted when " .. case.name .. " has no id", function()
+            local Handler, calls = setup({ photos = { { id = "1", masks = case.masks } } })
 
-        local err = errorOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
+            local err = helper.refusalOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
 
-        assert.truthy(err:find("mask without an id for photo 1", 1, true))
-    end)
+            assert.truthy(err:find(case.names, 1, true), err)
+            assert.truthy(err:find("nothing was changed", 1, true), err)
+            assert.are.same({}, calls.deletedMasks)
+            assert.are.same({}, calls.deletedTools)
+        end)
+    end
 
     it("never opens a write gate and keeps catalog queries out of the read gate", function()
         local Handler, _, catalog = setup({ photos = twoPhotosWithMasks() })
@@ -492,7 +462,7 @@ describe("HandlerMaskDelete.deleteMasks", function()
     end)
 end)
 
-describe("HandlerMaskDelete.deleteMasks with photo_ids", function()
+describe("HandlerMaskDelete.deleteEmptyMasks", function()
     local function photosWithEmptyMasks()
         return {
             { id = "1", masks = { mask("a", { "t-1" }), mask("empty-a", {}) } },
@@ -502,27 +472,12 @@ describe("HandlerMaskDelete.deleteMasks with photo_ids", function()
         }
     end
 
-    it("rejects mixing photo_ids with any single-photo deletion argument before access", function()
-        for _, field in ipairs({ "photo_id", "mask_ids", "tool_ids", "all" }) do
-            local Handler, calls, catalog, masksOf, photos = setup({ photos = photosWithEmptyMasks() })
-            local before = copyMasks(masksOf[photos[1]])
-            local args = { photo_ids = { "1" } }
-            args[field] = field == "photo_id" and "1" or field == "all" and false or { "a" }
-
-            assert.truthy(errorOf(function() Handler.deleteMasks(args) end):find("photo_ids must be given alone", 1, true))
-            assert.are.equal(0, catalog.getWriteAccessCount())
-            assert.are.equal(0, #calls.deleteAllEmpty)
-            assert.are.equal(0, #calls.modules)
-            assert.are.same(before, masksOf[photos[1]])
-        end
-    end)
-
     it("does not require the Develop deletion API for empty-mask deletion", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks(), withoutDeleteApi = true })
 
-        local result = Handler.deleteMasks({ photo_ids = { "1" } })
+        local result = Handler.deleteEmptyMasks({ photo_ids = { "1" } })
 
-        assert.are.equal(1, result.photos_changed)
+        assert.are.equal(1, #result.data.changed)
         assert.are.equal(0, #calls.modules)
         assert.are.equal(0, #calls.selections)
     end)
@@ -530,30 +485,41 @@ describe("HandlerMaskDelete.deleteMasks with photo_ids", function()
     it("deletes empty masks and counts the photos that changed", function()
         local Handler, _, _, masksOf, photos = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteMasks({ photo_ids = { "1", "2", "3", "4" } })
+        local r = Handler.deleteEmptyMasks({ photo_ids = { "1", "2", "3", "4" } })
 
-        assert.is_true(r.success)
-        assert.are.equal(2, r.photos_changed)
-        assert.are.equal(4, r.photos_checked)
-        assert.are.same({}, r.missing)
+        assert.are.same({ photos_checked = 4, changed = {
+            { photo_id = "1", masks_removed = 1 }, { photo_id = "3", masks_removed = 2 },
+        } }, r.data)
+        assert.is_nil(r.not_found)
         assert.are.same({ "a" }, idsOf(masksOf[photos[1]]))
         assert.are.same({ "b" }, idsOf(masksOf[photos[2]]))
         assert.are.same({}, masksOf[photos[3]])
     end)
 
+    it("refuses without deleting when the catalog stays busy", function()
+        local Handler, calls, _, masksOf, photos = setup({
+            photos = photosWithEmptyMasks(), writeAccessAborts = function() return true end,
+        })
+
+        local refusal = helper.refusalOf(function() Handler.deleteEmptyMasks({ photo_ids = { "1" } }) end)
+
+        assert.matches("stayed busy with another write", refusal, 1, true)
+        assert.are.same({}, calls.deleteAllEmpty)
+        assert.are.same({ "a", "empty-a" }, idsOf(masksOf[photos[1]]))
+    end)
+
     it("counts zero when no photo has an empty mask", function()
         local Handler = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteMasks({ photo_ids = { "2", "4" } })
+        local r = Handler.deleteEmptyMasks({ photo_ids = { "2", "4" } })
 
-        assert.are.equal(0, r.photos_changed)
-        assert.are.equal(2, r.photos_checked)
+        assert.are.same({ photos_checked = 2, changed = {} }, r.data)
     end)
 
     it("only touches the photos it was given", function()
         local Handler, _, _, masksOf, photos = setup({ photos = photosWithEmptyMasks() })
 
-        Handler.deleteMasks({ photo_ids = { "1" } })
+        Handler.deleteEmptyMasks({ photo_ids = { "1" } })
 
         assert.are.same({ "empty-b", "empty-c" }, idsOf(masksOf[photos[3]]))
     end)
@@ -561,9 +527,9 @@ describe("HandlerMaskDelete.deleteMasks with photo_ids", function()
     it("accepts numeric ids and file paths and passes each photo once", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteMasks({ photo_ids = { 1, "/1.jpg", "3" } })
+        local r = Handler.deleteEmptyMasks({ photo_ids = { 1, "/1.jpg", "3" } })
 
-        assert.are.equal(2, r.photos_changed)
+        assert.are.equal(2, #r.data.changed)
         assert.are.equal(1, #calls.deleteAllEmpty)
         assert.are.equal(2, #calls.deleteAllEmpty[1])
     end)
@@ -571,40 +537,27 @@ describe("HandlerMaskDelete.deleteMasks with photo_ids", function()
     it("reports unknown ids and still processes the known photos", function()
         local Handler = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteMasks({ photo_ids = { "1", "404" } })
+        local r = Handler.deleteEmptyMasks({ photo_ids = { "1", "404" } })
 
-        assert.are.equal(1, r.photos_changed)
-        assert.are.equal(1, r.photos_checked)
-        assert.are.same({ "404" }, r.missing)
+        assert.are.same({ photos_checked = 1, changed = { { photo_id = "1", masks_removed = 1 } } }, r.data)
+        assert.are.same({ "404" }, r.not_found)
     end)
 
     it("never calls Lightroom with an empty photo list because that targets the whole selection", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteMasks({ photo_ids = { "404", "405" } })
+        local r = Handler.deleteEmptyMasks({ photo_ids = { "404", "405" } })
 
-        assert.are.equal(0, r.photos_changed)
-        assert.are.equal(0, r.photos_checked)
-        assert.are.same({ "404", "405" }, r.missing)
+        assert.is_nil(r.data)
+        assert.are.same({ "404", "405" }, r.not_found)
         assert.are.equal(0, #calls.deleteAllEmpty)
-    end)
-
-    it("requires a non-empty photo list", function()
-        local Handler = setup({ photos = photosWithEmptyMasks() })
-
-        for _, bad in ipairs({ {}, "1", { true }, { "" } }) do
-            assert.truthy(errorOf(function() Handler.deleteMasks({ photo_ids = bad }) end)
-                :find("photo_ids", 1, true))
-        end
-        assert.truthy(errorOf(function() Handler.deleteMasks({}) end):find("photo_id is required", 1, true))
     end)
 
     it("names the minimum Lightroom version when the catalog call is missing", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks(), withoutDeleteAllEmptyMasks = true })
 
-        local err = errorOf(function() Handler.deleteMasks({ photo_ids = { "1" } }) end)
-
-        assert.truthy(err:find("delete_masks with photo_ids needs Lightroom Classic 14 or later", 1, true))
+        assert.matches("delete_empty_masks needs Lightroom Classic 14 or later",
+            helper.refusalOf(function() Handler.deleteEmptyMasks({ photo_ids = { "1" } }) end), 1, true)
         assert.are.equal(0, #calls.deleteAllEmpty)
     end)
 
@@ -613,7 +566,7 @@ describe("HandlerMaskDelete.deleteMasks with photo_ids", function()
         local session = require 'DevelopSession'
         session.withPhoto = function() error("empty-mask deletion must not open a Develop session") end
 
-        Handler.deleteMasks({ photo_ids = { "1", "3" } })
+        Handler.deleteEmptyMasks({ photo_ids = { "1", "3" } })
 
         assert.are.equal(0, #calls.modules)
         assert.are.equal(0, #calls.selections)
@@ -622,7 +575,7 @@ describe("HandlerMaskDelete.deleteMasks with photo_ids", function()
     it("resolves photos before the write gate and reads inside read gates only", function()
         local Handler, _, catalog = setup({ photos = photosWithEmptyMasks() })
 
-        Handler.deleteMasks({ photo_ids = { "1", "/3.jpg" } })
+        Handler.deleteEmptyMasks({ photo_ids = { "1", "/3.jpg" } })
 
         assert.are.equal(1, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideWriteAccess())

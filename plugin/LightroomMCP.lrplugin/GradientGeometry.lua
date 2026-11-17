@@ -1,3 +1,5 @@
+local Contract = require 'Contract'
+local Reply = require 'Reply'
 local GradientGeometry = {}
 
 local LINEAR = "linear"
@@ -20,117 +22,23 @@ local AREA_OUTSIDE = "outside"
 
 local DEFAULT_ROTATION_DEGREES = 0
 local DEFAULT_FEATHER = 50
-local MAX_FEATHER = 100
-local MAX_ROTATION_DEGREES = 360
 local MAX_STORED_TURN_DEGREES = 45
 local QUARTER_TURN_DEGREES = 90
 local HALF_TURN_DEGREES = 180
-local MAX_RADIAL_SIZE = 2
 local RADIAL_VERSION = 2
 local RADIAL_MIDPOINT = 50
 local RADIAL_ROUNDNESS = 0
 local MIN_LINEAR_LENGTH = 1e-6
-local STORED_DECIMALS = 1e6
+local STORED_SCALE = 10 ^ Contract.STORED_MASK_DECIMAL_PLACES
 
 local function fail(message)
-    error(message, 0)
+    Reply.refuse(message)
 end
 
-local function requireNumber(value, field)
-    if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
-        fail(field .. " must be a number")
-    end
-    return value
-end
-
-local function parseCoordinate(value, field)
-    requireNumber(value, field)
-    if value < 0 or value > 1 then
-        fail(field .. " is outside the image: it must be between 0 and 1 (normalized image coordinates)")
-    end
-    return value
-end
-
-local function parsePoint(value, field)
-    if type(value) ~= "table" then fail(field .. " must be an object with x and y") end
-    for key in pairs(value) do
-        if key ~= "x" and key ~= "y" then fail(field .. " has an unknown property " .. tostring(key)) end
-    end
-    return { x = parseCoordinate(value.x, field .. ".x"), y = parseCoordinate(value.y, field .. ".y") }
-end
-
-local function parseSize(value, field)
-    requireNumber(value, field)
-    if value <= 0 or value > MAX_RADIAL_SIZE then
-        fail(string.format("%s must be greater than 0 and at most %d (a fraction of the image %s)",
-            field, MAX_RADIAL_SIZE, field == "width" and "width" or "height"))
-    end
-    return value
-end
-
-local function parseRotation(value, field)
-    requireNumber(value, field)
-    if value < -MAX_ROTATION_DEGREES or value > MAX_ROTATION_DEGREES then
-        fail(string.format("%s must be between -%d and %d degrees", field, MAX_ROTATION_DEGREES, MAX_ROTATION_DEGREES))
-    end
-    return value
-end
-
-local function parseFeather(value, field)
-    requireNumber(value, field)
-    if value < 0 or value > MAX_FEATHER then
-        fail(string.format("%s must be between 0 and %d", field, MAX_FEATHER))
-    end
-    return value
-end
-
-local function parseArea(value, field)
-    if value ~= AREA_INSIDE and value ~= AREA_OUTSIDE then
-        fail(field .. ' must be "inside" or "outside"')
-    end
-    return value
-end
-
-local FIELD_PARSERS = {
-    start = parsePoint,
-    ["end"] = parsePoint,
-    center = parsePoint,
-    width = parseSize,
-    height = parseSize,
-    rotation = parseRotation,
-    feather = parseFeather,
-    area = parseArea,
-}
-
-local function readFields(args, fields)
+local function givenFields(args, fields)
     local changes = {}
-    for _, field in ipairs(fields) do
-        if args[field] ~= nil then
-            changes[field] = FIELD_PARSERS[field](args[field], field)
-        end
-    end
+    for _, field in ipairs(fields) do changes[field] = args[field] end
     return changes
-end
-
-local function requireField(changes, field, shape)
-    if changes[field] == nil then
-        fail(field .. " is required for a " .. shape .. " gradient")
-    end
-    return changes[field]
-end
-
-local function optionalText(value, field)
-    if value == nil then return nil end
-    if type(value) ~= "string" or value == "" then fail(field .. " must be a non-empty string") end
-    return value
-end
-
-local function rejectOtherShapeFields(args, shape)
-    for _, field in ipairs(SHAPE_FIELDS[OTHER_SHAPE[shape]]) do
-        if args[field] ~= nil then
-            fail(field .. " only applies to " .. OTHER_SHAPE[shape] .. " gradients, not " .. shape .. " ones")
-        end
-    end
 end
 
 local function copyGeometry(geometry)
@@ -149,7 +57,7 @@ local function samePoint(left, right)
     return math.abs(left.x - right.x) < MIN_LINEAR_LENGTH and math.abs(left.y - right.y) < MIN_LINEAR_LENGTH
 end
 
-function GradientGeometry.validateGeometry(shape, geometry)
+local function validateGeometry(shape, geometry)
     if shape == LINEAR and samePoint(geometry.start, geometry["end"]) then
         fail("start and end are the same point; a linear gradient needs two different points")
     end
@@ -157,97 +65,77 @@ end
 
 function GradientGeometry.parseCreate(args)
     local shape = args.shape
-    if shape ~= LINEAR and shape ~= RADIAL then fail('shape must be "linear" or "radial"') end
-    rejectOtherShapeFields(args, shape)
-    local changes = readFields(args, SHAPE_FIELDS[shape])
-
     local geometry
     if shape == LINEAR then
-        geometry = {
-            start = requireField(changes, "start", shape),
-            ["end"] = requireField(changes, "end", shape),
-        }
+        geometry = { start = args.start, ["end"] = args["end"] }
     else
         geometry = {
-            center = requireField(changes, "center", shape),
-            width = requireField(changes, "width", shape),
-            height = requireField(changes, "height", shape),
-            rotation = changes.rotation or DEFAULT_ROTATION_DEGREES,
-            feather = changes.feather or DEFAULT_FEATHER,
-            area = changes.area or AREA_INSIDE,
+            center = args.center,
+            width = args.width,
+            height = args.height,
+            rotation = args.rotation or DEFAULT_ROTATION_DEGREES,
+            feather = args.feather or DEFAULT_FEATHER,
+            area = args.area or AREA_INSIDE,
         }
     end
-    GradientGeometry.validateGeometry(shape, geometry)
+    validateGeometry(shape, geometry)
+    return { shape = shape, geometry = geometry, maskId = args.mask_id, mode = args.mode or "add", name = args.name }
+end
 
-    local maskId = optionalText(args.mask_id, "mask_id")
-    local mode = args.mode == nil and "add" or args.mode
-    if BLEND_MODE_OF_MODE[mode] == nil then fail('mode must be "add" or "subtract"') end
-    if maskId == nil and mode == "subtract" then
-        fail('mode "subtract" needs mask_id: a new mask has nothing to subtract from')
-    end
-    local name = optionalText(args.name, "name")
-    if name ~= nil and maskId ~= nil then
-        fail("name applies to a new mask; omit it when mask_id adds a component to an existing mask")
-    end
-    return { shape = shape, geometry = geometry, maskId = maskId, mode = mode, name = name }
+local ALL_FIELDS = {}
+for _, shape in ipairs({ LINEAR, RADIAL }) do
+    for _, field in ipairs(SHAPE_FIELDS[shape]) do ALL_FIELDS[#ALL_FIELDS + 1] = field end
 end
 
 function GradientGeometry.parseUpdate(args)
-    local toolId = optionalText(args.tool_id, "tool_id")
-    if toolId == nil then fail("tool_id is required") end
-    local allFields = {}
-    for _, shape in ipairs({ LINEAR, RADIAL }) do
-        for _, field in ipairs(SHAPE_FIELDS[shape]) do allFields[#allFields + 1] = field end
-    end
-    local changes = readFields(args, allFields)
-    if next(changes) == nil then
-        fail("give at least one geometry field to change: " .. table.concat(allFields, ", "))
-    end
-    return { toolId = toolId, changes = changes }
+    return { toolId = args.tool_id, changes = givenFields(args, ALL_FIELDS) }
 end
 
 local function round(value)
-    return math.floor(value * STORED_DECIMALS + 0.5) / STORED_DECIMALS
+    return math.floor(value * STORED_SCALE + 0.5) / STORED_SCALE
 end
 
-local function carriedAcrossFrame(shape, geometry, frame, mapPoint)
-    if frame.isNormal then return geometry end
+local function mappedPoints(shape, geometry, mapPoint)
     local carried = copyGeometry(geometry)
     for _, field in ipairs(POINT_FIELDS[shape]) do
         local x, y = mapPoint(geometry[field].x, geometry[field].y)
         carried[field] = { x = round(x), y = round(y) }
     end
-    if shape == RADIAL then
-        if frame.swapsAxes then carried.width, carried.height = geometry.height, geometry.width end
-        if frame.reversesTurnDirection then carried.rotation = 0 - geometry.rotation end
-    end
     return carried
 end
 
+local function turnWithin45(rotation)
+    if math.abs(rotation) <= MAX_STORED_TURN_DEGREES then return rotation, false end
+    local turn = rotation % HALF_TURN_DEGREES
+    if turn > QUARTER_TURN_DEGREES then turn = turn - HALF_TURN_DEGREES end
+    if math.abs(turn) <= MAX_STORED_TURN_DEGREES then return turn, false end
+    return turn > 0 and turn - QUARTER_TURN_DEGREES or turn + QUARTER_TURN_DEGREES, true
+end
+
 function GradientGeometry.toStoredFrame(shape, geometry, frame)
-    return carriedAcrossFrame(shape, geometry, frame, frame.toStored)
+    local stored = mappedPoints(shape, geometry, frame.toStored)
+    if shape == RADIAL then
+        stored.width = geometry.width * frame.displayedSize.width / frame.storedSize.width
+        stored.height = geometry.height * frame.displayedSize.height / frame.storedSize.height
+        stored.rotation = round(frame.turnToStored(geometry.rotation))
+    end
+    return stored
 end
 
 function GradientGeometry.toDisplayedFrame(shape, geometry, frame)
-    return carriedAcrossFrame(shape, geometry, frame, frame.toDisplayed)
+    local displayed = mappedPoints(shape, geometry, frame.toDisplayed)
+    if shape == RADIAL then
+        local width, height = geometry.width * frame.storedSize.width, geometry.height * frame.storedSize.height
+        local turn, swapped = turnWithin45(round(frame.turnToDisplayed(geometry.rotation)))
+        if swapped then width, height = height, width end
+        displayed.width = round(width / frame.displayedSize.width)
+        displayed.height = round(height / frame.displayedSize.height)
+        displayed.rotation = round(turn)
+    end
+    return displayed
 end
 
-function GradientGeometry.storedAspectOf(frame, displayedAspect)
-    if displayedAspect == nil or not frame.swapsAxes then return displayedAspect end
-    return 1 / displayedAspect
-end
-
-function GradientGeometry.shapeOf(component)
-    return SHAPE_OF_WHAT[component.What]
-end
-
-local function requireAspect(aspect, rotation)
-    if aspect ~= nil then return aspect end
-    if rotation == 0 then return 1 end
-    fail("the photo's size is needed to place a rotated radial gradient, and Lightroom did not report it")
-end
-
-function GradientGeometry.geometryOf(component, aspect)
+function GradientGeometry.geometryOf(component, ratio)
     local shape = SHAPE_OF_WHAT[component.What]
     if shape == nil then return nil end
     if shape == LINEAR then
@@ -256,7 +144,6 @@ function GradientGeometry.geometryOf(component, aspect)
             ["end"] = { x = round(component.ZeroX), y = round(component.ZeroY) },
         }
     end
-    local ratio = requireAspect(aspect, component.Angle)
     local radians = math.rad(component.Angle)
     local cosine, sine = math.cos(radians), math.sin(radians)
     local boxHalfWidth = (component.Right - component.Left) / 2 * ratio
@@ -285,19 +172,11 @@ function GradientGeometry.mergeChanges(shape, geometry, changes)
     end
     local merged = copyGeometry(geometry)
     for field, value in pairs(changes) do merged[field] = value end
-    GradientGeometry.validateGeometry(shape, merged)
+    validateGeometry(shape, merged)
     return merged
 end
 
-local function storedTurnOf(rotation)
-    if math.abs(rotation) <= MAX_STORED_TURN_DEGREES then return rotation, false end
-    local turn = rotation % HALF_TURN_DEGREES
-    if turn > QUARTER_TURN_DEGREES then turn = turn - HALF_TURN_DEGREES end
-    if math.abs(turn) <= MAX_STORED_TURN_DEGREES then return turn, false end
-    return turn > 0 and turn - QUARTER_TURN_DEGREES or turn + QUARTER_TURN_DEGREES, true
-end
-
-function GradientGeometry.applyGeometry(shape, component, geometry, aspect)
+function GradientGeometry.applyGeometry(shape, component, geometry, ratio)
     if shape == LINEAR then
         component.FullX = geometry.start.x
         component.FullY = geometry.start.y
@@ -305,8 +184,7 @@ function GradientGeometry.applyGeometry(shape, component, geometry, aspect)
         component.ZeroY = geometry["end"].y
         return component
     end
-    local ratio = requireAspect(aspect, geometry.rotation)
-    local storedTurn, axesSwapped = storedTurnOf(geometry.rotation)
+    local storedTurn, axesSwapped = turnWithin45(geometry.rotation)
     local radians = math.rad(storedTurn)
     local cosine, sine = math.cos(radians), math.sin(radians)
     local semiWidth, semiHeight = geometry.width / 2 * ratio, geometry.height / 2

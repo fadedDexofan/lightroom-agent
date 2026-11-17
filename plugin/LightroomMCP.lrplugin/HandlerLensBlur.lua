@@ -5,6 +5,7 @@ local LrTasks = import 'LrTasks'
 local DecimalText = require 'DecimalText'
 local DevelopSession = require 'DevelopSession'
 local PhotoLookup = require 'PhotoLookup'
+local Reply = require 'Reply'
 
 local Handler = {}
 local SLIDERS = {
@@ -12,7 +13,6 @@ local SLIDERS = {
     { key = 'cat_eye', parameter = 'LensBlurCatEye', stored = 'CatEyeAmount' },
     { key = 'highlights_boost', parameter = 'LensBlurHighlightsBoost', stored = 'HighlightsBoost' },
 }
-local BOKEH = { Circle = true, SoapBubble = true, Blade = true, Ring = true, Anamorphic = true }
 
 local function sdk(fn, ...)
     local ok, value = LrTasks.pcall(fn, ...)
@@ -31,32 +31,23 @@ end
 local function requireApi()
     local version = LrApplication.versionTable()
     if version.major < 13 or (version.major == 13 and version.minor < 3) then
-        error('Lens Blur needs Lightroom Classic 13.3 or later')
+        Reply.refuse('Lens Blur needs Lightroom Classic 13.3 or later')
     end
-    for _, name in ipairs({ 'getProcessVersion', 'getValue', 'getRange', 'setValue',
-        'getSelectedLensBlurBokeh', 'setLensBlurBokeh', 'stopTracking' }) do
-        if type(LrDevelopController[name]) ~= 'function' then
-            error('Lens Blur needs Lightroom Classic 13.3 or later: missing ' .. name)
-        end
-    end
+    DevelopSession.requireControllerFunctions('Lens Blur', { 'getProcessVersion', 'getValue', 'setValue',
+        'getSelectedLensBlurBokeh', 'setLensBlurBokeh', 'stopTracking' }, 'Lightroom Classic 13.3')
 end
 
 local function target(args)
     requireApi()
-    local id = args.photo_id
-    if (type(id) ~= 'string' or not id:find('%S')) and not finite(id) then
-        error('photo_id is required')
-    end
     local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.resolveOne(catalog, id)
-    if not photo then error('Photo not found: ' .. tostring(id)) end
+    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local settings
     catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
     local legacy = { [5.0] = 'Version 1', [5.7] = 'Version 2' }
     local version = legacy[DecimalText.parse(settings and settings.ProcessVersion)]
     -- Opening legacy photos in Develop can materialize defaults before rejection.
     if version then
-        error('Lens Blur needs Process Version 3 or later; this photo uses ' .. version)
+        Reply.refuse('Lens Blur needs Process Version 3 or later; this photo uses ' .. version)
     end
     return catalog, photo
 end
@@ -65,7 +56,7 @@ local function requireProcess()
     local version = sdk(LrDevelopController.getProcessVersion)
     local number = type(version) == 'string' and tonumber(version:match('^Version (%d+)$'))
     if not number or number < 3 then
-        error('Lens Blur needs Process Version 3 or later; this photo uses ' .. tostring(version))
+        Reply.refuse('Lens Blur needs Process Version 3 or later; this photo uses ' .. tostring(version))
     end
 end
 
@@ -100,39 +91,6 @@ local function read(catalog, photo)
     if not result.focal_range then result.unavailable[#result.unavailable + 1] = 'focal_range' end
     if not result.bokeh then result.unavailable[#result.unavailable + 1] = 'bokeh' end
     return result
-end
-
-local function range(parameter, value, label)
-    local ok, low, high = LrTasks.pcall(LrDevelopController.getRange, parameter)
-    if not ok or not finite(low) or not finite(high) or low > high then
-        error('Lightroom did not report a valid range for ' .. label .. '; nothing was written')
-    end
-    if not finite(value) or value < low or value > high then
-        error(string.format('%s must be within Lightroom range %s to %s; nothing was written', label, low, high))
-    end
-end
-
-local function validate(args)
-    local changed = args.active ~= nil or args.bokeh ~= nil or args.focal_range ~= nil
-    if args.active ~= nil and type(args.active) ~= 'boolean' then error('active must be a boolean') end
-    if args.bokeh ~= nil and not BOKEH[args.bokeh] then error('Unknown Lens Blur bokeh style') end
-    for _, slider in ipairs(SLIDERS) do
-        local value = args[slider.key]
-        if value ~= nil then
-            changed = true
-            range(slider.parameter, value, slider.key)
-        end
-    end
-    if args.focal_range ~= nil then
-        local focal = args.focal_range
-        if type(focal) ~= 'table' or not finite(focal.near) or not finite(focal.far)
-            or focal.near < 0 or focal.far > 100 or focal.near > focal.far then
-            error('focal_range needs near <= far within 0 to 100; nothing was written')
-        end
-        range('LensBlurFocalRange', focal.near, 'focal_range.near')
-        range('LensBlurFocalRange', focal.far, 'focal_range.far')
-    end
-    if not changed then error('Provide at least one Lens Blur value') end
 end
 
 local function stored(photo)
@@ -177,10 +135,9 @@ local function setActive(catalog, photo, active)
     end)
 end
 
-function Handler.get(args)
-    args = args or {}
+function Handler.get(args, context)
     local catalog, photo = target(args)
-    return DevelopSession.withPhoto('get_lens_blur', catalog, photo, function()
+    return DevelopSession.withPhoto(context, catalog, photo, function()
         requireProcess()
         local result = read(catalog, photo)
         result.photo_id = tostring(photo.localIdentifier)
@@ -188,12 +145,10 @@ function Handler.get(args)
     end)
 end
 
-function Handler.set(args)
-    args = args or {}
+function Handler.set(args, context)
     local catalog, photo = target(args)
-    return DevelopSession.withPhoto('set_lens_blur', catalog, photo, function()
+    return DevelopSession.withPhoto(context, catalog, photo, function()
         requireProcess()
-        validate(args)
         local adjustments = args.bokeh ~= nil or args.focal_range ~= nil
         for _, slider in ipairs(SLIDERS) do adjustments = adjustments or args[slider.key] ~= nil end
         if adjustments or args.active == true then
@@ -241,7 +196,6 @@ function Handler.set(args)
         if args.active == false then setActive(catalog, photo, false) end
         local result = read(catalog, photo)
         result.photo_id = tostring(photo.localIdentifier)
-        result.success = true
         return result
     end)
 end

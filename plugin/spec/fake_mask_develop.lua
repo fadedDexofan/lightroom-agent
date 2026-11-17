@@ -40,7 +40,7 @@ function M.build(opts)
         for maskId in pairs(valuesOf[photo]) do storeFields(photo, maskId) end
         photo.getDevelopSettings = function()
             local entries = {}
-            for maskId, fields in pairs(storedOf[photo]) do
+            for maskId, fields in pairs(storedOf[photo] or {}) do
                 local entry = { What = "Correction", CorrectionID = maskId, CorrectionMasks = {} }
                 for key, value in pairs(fields) do entry[key] = M.deepCopy(value) end
                 entries[#entries + 1] = entry
@@ -116,6 +116,7 @@ function M.build(opts)
     catalog.kAllPhotos = "all photographs"
     catalog.getActiveSources = function() return ctx.sources end
     catalog.setActiveSources = function(_, newSources) ctx.sources = newSources end
+    ctx.catalog = catalog
 
     local lrApplication = { activeCatalog = function() return catalog end }
     if opts.version ~= false then

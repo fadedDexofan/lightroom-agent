@@ -146,6 +146,7 @@ function FakeMaskStore.attach(photo, opts)
         if not state.insideRead then state.readsOutsideGate = state.readsOutsideGate + 1 end
         state.reads = state.reads + 1
         local settings = {}
+        for key, value in pairs(opts.settings or {}) do settings[key] = value end
         if not opts.noProcessVersion then settings.ProcessVersion = opts.processVersion or "15.4" end
         local source = state.entries
         if #state.writes > 0 and state.readsSinceWrite < (opts.lagReadsAfterWrite or 0) then
@@ -179,12 +180,106 @@ function FakeMaskStore.trackGates(state, catalog)
         state.insideRead = false
         if not ok then error(err, 0) end
     end
-    catalog.withWriteAccessDo = function(self, description, fn)
-        state.insideWrite = true
-        local ok, err = pcall(write, self, description, fn)
-        state.insideWrite = false
-        if not ok then error(err, 0) end
+    catalog.withWriteAccessDo = function(self, description, fn, ...)
+        return write(self, description, function()
+            state.insideWrite = true
+            local ok, err = pcall(fn)
+            state.insideWrite = false
+            if not ok then error(err, 0) end
+        end, ...)
     end
+end
+
+local STORED_SLIDERS = {
+    local_Exposure = { stored = "LocalExposure2012", scale = 4 },
+    local_Contrast = { stored = "LocalContrast2012", scale = 100 },
+    local_colorgradeMidtoneHue = { stored = "LocalColorGradeMidtoneHue", scale = 1 },
+    local_glow = { stored = "LocalGlow", scale = 100 },
+}
+
+function FakeMaskStore.guardedHandler(handlerName, modules, opts)
+    local helper = require 'spec_helper'
+    opts = opts or {}
+    local listMasks = opts.listMasks or FakeMaskStore.maskListOf
+    local photos, stores, storeOf = {}, {}, {}
+    local catalog
+    for _, spec in ipairs(opts.photos or { { id = "1" } }) do
+        local photo = helper.fakePhoto({
+            id = spec.id, path = "/" .. spec.id .. ".jpg", orientation = spec.orientation or "AB",
+            dimensions = not spec.noDimensions and (spec.dimensions or { width = 3000, height = 2000 }) or nil,
+        })
+        stores[spec.id] = FakeMaskStore.attach(photo, spec)
+        storeOf[photo] = stores[spec.id]
+        photos[#photos + 1] = photo
+    end
+    local active = photos[1]
+    local module = opts.startModule or "library"
+    local calls = { modules = {}, getAllMasks = 0, stopTracking = {} }
+    catalog = helper.fakeCatalog({ photos = photos })
+    for _, photo in ipairs(photos) do FakeMaskStore.trackGates(storeOf[photo], catalog) end
+    catalog.getTargetPhoto = function() return active end
+    local recordSelection = catalog.setSelectedPhotos
+    catalog.setSelectedPhotos = function(self, photo, selected)
+        recordSelection(self, photo, selected)
+        active = photo
+    end
+    catalog.kAllPhotos = "all photographs"
+    catalog.getActiveSources = function() return { "folder" } end
+    catalog.setActiveSources = function() end
+
+    local selectedMask
+    local controller = {
+        getAllMasks = function()
+            calls.getAllMasks = calls.getAllMasks + 1
+            if opts.hideNewMasks then return {} end
+            return listMasks(storeOf[active].entries)
+        end,
+        selectMask = function(id) selectedMask = id end,
+        getSelectedMask = function() return selectedMask end,
+        getRange = function(name)
+            if opts.narrowRange then return -0.5, 0.5 end
+            if name == "local_Exposure" then return -4, 4 end
+            if name:match("Hue$") then return 0, 360 end
+            return -100, 100
+        end,
+        getValue = function(name)
+            if opts.wrongAdjustment then return 0 end
+            local slider = STORED_SLIDERS[name]
+            for _, entry in ipairs(storeOf[active].entries) do
+                if slider and entry.CorrectionID == selectedMask then return (entry[slider.stored] or 0) * slider.scale end
+            end
+            return 0
+        end,
+        selectMaskTool = function() end,
+        stopTracking = function(commit) calls.stopTracking[#calls.stopTracking + 1] = commit end,
+    }
+    if opts.withoutMaskApi then controller = {} end
+
+    helper.admitMaskWrites(opts.maskWrites)
+
+    helper.installImport({
+        LrApplication = {
+            activeCatalog = function() return catalog end,
+            versionTable = function() return opts.version or { major = 15, minor = 6 } end,
+        },
+        LrApplicationView = {
+            getCurrentModuleName = function() return module end,
+            switchToModule = function(name)
+                module = name
+                calls.modules[#calls.modules + 1] = name
+            end,
+        },
+        LrDevelopController = controller,
+        LrSelection = { selectNone = function() active = nil end },
+        LrTasks = { pcall = pcall, sleep = function() end },
+        LrLogger = helper.defaultLrLogger(),
+    })
+    for _, name in ipairs(modules) do package.loaded[name] = nil end
+    for _, name in ipairs({ handlerName, "GuardedMaskWrite", "DevelopSession", "Log",
+        "MaskCreationAdjustments", "MaskSelection", "LocalSliders" }) do
+        package.loaded[name] = nil
+    end
+    return require(handlerName), stores, calls, catalog
 end
 
 return FakeMaskStore

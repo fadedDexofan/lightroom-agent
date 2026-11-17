@@ -8,7 +8,6 @@
 local M = {}
 
 -- Make plugin sources requireable.
-local lfs_ok = pcall(function() return require 'lfs' end)
 local sep = package.config:sub(1, 1)
 local pluginRoot = "plugin" .. sep .. "LightroomMCP.lrplugin" .. sep .. "?.lua"
 if not package.path:find(pluginRoot, 1, true) then
@@ -22,6 +21,12 @@ local defaultImports = {
     LrStringUtils = { lower = string.lower },
     LrTasks = { pcall = pcall },
     LrDate = { currentTime = function() return 0 end },
+    LrProgressScope = function()
+        return {
+            setCancelable = function() end, setPortionComplete = function() end, setCaption = function() end,
+            isCanceled = function() return false end, done = function() end,
+        }
+    end,
 }
 
 function M.installImport(modules)
@@ -35,12 +40,62 @@ function M.installImport(modules)
     end
 end
 
+function M.refusalOf(fn)
+    local ok, err = pcall(fn)
+    if ok then error("expected a refusal, but the call succeeded", 2) end
+    local refusal = require('Reply').refusalOf(err)
+    if refusal == nil then error("expected a refusal, got: " .. tostring(err), 2) end
+    return refusal
+end
+
+function M.unknownOf(fn)
+    local ok, err = pcall(fn)
+    if ok then error("expected an unknown outcome, but the call succeeded", 2) end
+    local Reply = require('Reply')
+    if Reply.refusalOf(err) ~= nil then error("expected an unknown outcome, got a refusal: " .. tostring(err), 2) end
+    if Reply.notFoundOf(err) ~= nil then error("expected an unknown outcome, got: " .. tostring(err), 2) end
+    return Reply.messageOf(err)
+end
+
+function M.notFoundOf(fn)
+    local ok, err = pcall(fn)
+    if ok then error("expected not found, but the call succeeded", 2) end
+    local input = require('Reply').notFoundOf(err)
+    if input == nil then error("expected not found, got: " .. tostring(err), 2) end
+    return input
+end
+
+function M.catalogBusy(title, alreadyWritten)
+    local aborting = { withWriteAccessDo = function() return "aborted" end }
+    local _, err = pcall(require('CatalogWrite').run, aborting, title, function() end, alreadyWritten)
+    return require('Reply').messageOf(err)
+end
+
 function M.admitMaskWrites(decision)
     package.loaded.MaskWriteAdmission = {
         requireAdmitted = function()
-            if decision and decision.refuse then error(decision.refuse .. " Nothing was changed.", 0) end
+            if decision and decision.refuse then require('Reply').refuse(decision.refuse .. " Nothing was changed.") end
         end,
     }
+end
+
+function M.requestContext(budgetSeconds, overrides)
+    package.loaded.RequestContext = nil
+    local RequestContext = require 'RequestContext'
+    local context = RequestContext.new("test", budgetSeconds and budgetSeconds * 1000, nil)
+    context.report = function() end
+    for key, value in pairs(overrides or {}) do context[key] = value end
+    return context
+end
+
+function M.withFixtureSlider(fn)
+    local keys = require('Contract').LOCAL_KEYS
+    keys[#keys + 1] = { name = "local_Fixture", tolerance = 0.5, stored = "LocalFixture", scale = 100 }
+    package.loaded.LocalSliders = nil
+    local ok, err = pcall(fn)
+    keys[#keys] = nil
+    package.loaded.LocalSliders = nil
+    if not ok then error(err, 0) end
 end
 
 -- Default LrLogger stub used by every handler.
@@ -85,7 +140,8 @@ for _, key in ipairs({
 }) do
     VALID_METADATA_KEYS[key] = true
 end
-M.VALID_METADATA_KEYS = VALID_METADATA_KEYS
+
+local FORMATTED_ONLY_METADATA_KEYS = { copyName = true }
 
 local function readMetadata(meta, key)
     -- `__`-prefixed keys are test-internal sentinels (e.g. __appliedSettings)
@@ -97,6 +153,25 @@ local function readMetadata(meta, key)
     return meta[key]
 end
 
+local function readRawMetadata(meta, key)
+    if FORMATTED_ONLY_METADATA_KEYS[key] then
+        error("unsupported raw metadata key '" .. key .. "' (Lightroom reads it only through getFormattedMetadata)", 2)
+    end
+    return readMetadata(meta, key)
+end
+
+local function readFormattedMetadata(meta, key)
+    if FORMATTED_ONLY_METADATA_KEYS[key] then return meta[key] end
+    return readMetadata(meta, key)
+end
+
+local function copiedValue(value)
+    if type(value) ~= "table" then return value end
+    local copy = {}
+    for key, inner in pairs(value) do copy[key] = copiedValue(inner) end
+    return copy
+end
+
 -- Build a fake photo with the given metadata table.
 -- meta keys correspond to keys passed to getRawMetadata / getFormattedMetadata / localIdentifier.
 function M.fakePhoto(meta)
@@ -105,8 +180,8 @@ function M.fakePhoto(meta)
     end
     local photo = {
         localIdentifier = meta.localIdentifier or meta.id or "photo-id",
-        getRawMetadata = function(_, key) return readMetadata(meta, key) end,
-        getFormattedMetadata = function(_, key) return readMetadata(meta, key) end,
+        getRawMetadata = function(_, key) return readRawMetadata(meta, key) end,
+        getFormattedMetadata = function(_, key) return readFormattedMetadata(meta, key) end,
         getDevelopSettings = function() return meta.developSettings or {} end,
         addKeyword = function(_, kw)
             meta.__addedKeywords = meta.__addedKeywords or {}
@@ -120,20 +195,39 @@ function M.fakePhoto(meta)
         applyDevelopPreset = function(_, preset, plugin)
             meta.__appliedPreset = preset
             meta.__appliedPresetPlugin = plugin
+            meta.developSettings = meta.developSettings or {}
+            for key, value in pairs(preset:getSetting()) do
+                if key == "MaskGroupBasedCorrections" then
+                    local masks = copiedValue(meta.developSettings.MaskGroupBasedCorrections) or {}
+                    for _, entry in ipairs(value) do masks[#masks + 1] = copiedValue(entry) end
+                    meta.developSettings.MaskGroupBasedCorrections = masks
+                else
+                    meta.developSettings[key] = copiedValue(value)
+                end
+            end
         end,
         applyDevelopSettings = function(_, settings, historyName, flattenAutoNow)
+            meta.developSettings = meta.developSettings or {}
+            for key, value in pairs(settings) do meta.developSettings[key] = value end
             meta.__appliedSettings = settings
             meta.__appliedHistoryName = historyName
             meta.__appliedFlattenAutoNow = flattenAutoNow
         end,
     }
-    -- Opt in with aiUpdate = "ok" | "fail"; absent models LrC before 13.3.
+    -- Opt in with aiUpdate = "ok" | "error" | "nothing" | "fail"; absent models LrC before 13.3.
     if meta.aiUpdate then
         photo.updateAISettings = function()
             meta.__aiUpdateCalls = (meta.__aiUpdateCalls or 0) + 1
-            meta.__aiUpdateAfterSettings = meta.__appliedSettings
-            meta.__aiUpdateAfterPreset = meta.__appliedPreset
             if meta.aiUpdate == "fail" then error("AI update failed") end
+            if meta.aiUpdate ~= "ok" and meta.aiUpdate ~= "error" then return end
+            for _, correction in ipairs((meta.developSettings or {}).MaskGroupBasedCorrections or {}) do
+                for _, component in ipairs(correction.CorrectionMasks or {}) do
+                    if component.What == "Mask/Image" and component.MaskDigest == nil then
+                        component.MaskDigest = "digest-" .. tostring(photo.localIdentifier)
+                        if meta.aiUpdate == "error" then component.ErrorReason = 1 end
+                    end
+                end
+            end
         end
     end
     return photo
@@ -194,8 +288,6 @@ function M.countNameReads(keywords)
     return reads
 end
 
--- Build a fake collection.
--- opts (optional): smart = true for a smart collection.
 function M.fakeFolder(path, photos, children)
     return {
         getPath = function() return path end,
@@ -214,6 +306,8 @@ function M.fakeFolder(path, photos, children)
     }
 end
 
+-- Build a fake collection.
+-- opts (optional): smart = true for a smart collection.
 function M.fakeCollection(name, photos, opts)
     photos = photos or {}
     opts = opts or {}
@@ -222,7 +316,6 @@ function M.fakeCollection(name, photos, opts)
     local deleted = false
     return {
         getName = function() return name end,
-        type = function() return "LrCollection" end,
         isSmartCollection = function() return opts.smart == true end,
         getPhotos = function() return photos end,
         addPhotos = function(_, ps)
@@ -261,7 +354,6 @@ function M.fakeCollectionSet(name, opts)
         return value
     end
     set.getName = function() return read(name) end
-    set.type = function() return "LrCollectionSet" end
     set.getParent = function() return read(opts.parent) end
     set.getChildCollections = function() return read(collections) end
     set.getChildCollectionSets = function() return read(sets) end
@@ -460,7 +552,6 @@ function M.fakeCatalog(opts)
         getSelectionCall = function() return selectionCall end,
         withWriteAccessDo = function(_, actionName, fn, timeoutParams)
             if timeoutParams and opts.writeAccessAborts and opts.writeAccessAborts(actionName) then
-                if timeoutParams.callback then timeoutParams.callback() end
                 return "aborted"
             end
             writeAccessCount = writeAccessCount + 1
@@ -494,13 +585,6 @@ function M.fakeCatalog(opts)
             return "executed"
         end,
         getQueriedInsideWriteAccess = function() return queriedInsideWriteAccess end,
-        findPhotoByLocalIdentifier = function(_, id)
-            local target = tostring(id)
-            for _, p in ipairs(photos) do
-                if tostring(p.localIdentifier) == target then return p end
-            end
-            return nil
-        end,
         createCollection = function(_, name, parent, canReturnPrior)
             if not insideWriteAccess then
                 error("createCollection outside withWriteAccessDo")
@@ -660,14 +744,11 @@ local privateJson = loadPrivateJson()
 local plainRequire = require
 
 local function dispatchedHandlers()
-    local file = assert(io.open(assert(package.searchpath("PluginInfoProvider", package.path)), "r"))
-    local source = file:read("*a")
-    file:close()
-    local block = assert(source:match("local DISPATCH = (%b{})"))
+    local contract = assert(loadfile(assert(package.searchpath("Contract", package.path))))()
     local handlers = {}
-    for module, functionName in block:gmatch("=%s*(Handler%w+)%.([%w_]+)") do
-        handlers[module] = handlers[module] or {}
-        handlers[module][functionName] = true
+    for action, target in pairs(contract.DISPATCH) do
+        handlers[target[1]] = handlers[target[1]] or {}
+        handlers[target[1]][target[2]] = action
     end
     return handlers
 end
@@ -678,8 +759,9 @@ local function encodingResults(module, name)
     local wrapped = {}
     for key, value in pairs(module) do
         if type(value) == "function" and DISPATCHED[name][key] then
-            wrapped[key] = function(...)
-                local results = table.pack(value(...))
+            local action = DISPATCHED[name][key]
+            wrapped[key] = function(args, context, ...)
+                local results = table.pack(value(args, context or M.requestContext(nil, { title = action }), ...))
                 if type(results[1]) == "table" then
                     local ok, err = pcall(function() return privateJson:encode(results[1]) end)
                     if not ok then

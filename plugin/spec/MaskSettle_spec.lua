@@ -89,7 +89,7 @@ describe("MaskSettle.waitForCommit", function()
         local before = Settle.storedAdjustmentFields(catalog, photo, "a")
 
         assert.is_false(Settle.waitForCommit(catalog, photo, "a", before))
-        assert.is_true(state.sleeps >= Settle.COMMIT_TIMEOUT_SECONDS * 10 - 1)
+        assert.is_true(state.sleeps >= require("Contract").MASK_SAVE_WAIT_SECONDS * 10 - 1)
     end)
 
     it("sees a changed curve as a save", function()

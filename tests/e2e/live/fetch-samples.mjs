@@ -30,9 +30,11 @@ for (const sample of manifest.samples) {
   if (result.status !== "ok") failed++;
 }
 
-for (const supplied of resolveSuppliedFiles(manifest)) {
+for (const supplied of await resolveSuppliedFiles(manifest)) {
   const detail = supplied.filePath ? ` ${supplied.filePath}` : "";
-  console.log(`${supplied.key}: ${supplied.status}${detail} (${supplied.envVar})`);
+  const hash = supplied.status === "mismatch" ? `, sha256 ${supplied.actual} is not the manifest's ${supplied.sha256}` : "";
+  console.log(`${supplied.key}: ${supplied.status}${detail} (${supplied.envVar}${hash})`);
+  if (supplied.status === "mismatch") failed++;
 }
 
 process.exit(failed === 0 ? 0 : 1);

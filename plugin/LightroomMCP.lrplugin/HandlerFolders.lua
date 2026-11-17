@@ -1,12 +1,12 @@
 local LrApplication = import 'LrApplication'
+local Contract = require 'Contract'
 local PathForms = require 'PathForms'
 local PhotoSummary = require 'PhotoSummary'
 
 local FoldersHandler = {}
 
 local function pageBounds(args)
-    return math.max(0, math.floor(tonumber(args.limit) or 100)),
-        math.max(0, math.floor(tonumber(args.offset) or 0))
+    return args.limit or Contract.DEFAULT_PAGE_LIMIT, args.offset or 0
 end
 
 local function foldersInTreeOrder(catalog)
@@ -33,7 +33,6 @@ local function foldersInTreeOrder(catalog)
 end
 
 function FoldersHandler.listFolders(args)
-    args = args or {}
     local limit, offset = pageBounds(args)
     local all = foldersInTreeOrder(LrApplication.activeCatalog())
     local folders = {}
@@ -49,10 +48,6 @@ function FoldersHandler.listFolders(args)
 end
 
 function FoldersHandler.getFolderPhotos(args)
-    args = args or {}
-    if type(args.folder_path) ~= "string" or args.folder_path == "" then
-        error("folder_path is required")
-    end
     local catalog = LrApplication.activeCatalog()
     local target
     for _, entry in ipairs(foldersInTreeOrder(catalog)) do

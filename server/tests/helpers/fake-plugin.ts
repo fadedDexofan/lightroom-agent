@@ -230,15 +230,14 @@ export class FakePlugin {
       return;
     }
 
-    let result: unknown;
-    let error: string | undefined;
+    let reply: object;
     try {
-      result = await this.opts.handler(req.action, req.params);
+      reply = { id: req.id, result: { data: await this.opts.handler(req.action, req.params) } };
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      reply = { id: req.id, error: e instanceof Error ? e.message : String(e), effect: "unknown" };
     }
 
-    await this.sendResponse(req.id, { id: req.id, result, error });
+    await this.sendResponse(req.id, reply);
   }
 
   private async sendResponse(id: string, payload: object): Promise<void> {

@@ -1,15 +1,22 @@
 local AiMaskParts = require 'AiMaskParts'
 
 describe("AiMaskParts", function()
-    it("lists the people parts and landscape categories Lightroom offers", function()
-        assert.are.same({
+    it("accepts the people parts and landscape categories Lightroom offers", function()
+        local parts = {
             "face_skin", "iris_and_pupil", "body_skin", "hair", "lips", "facial_hair",
             "eye_sclera", "eyebrows", "clothes", "teeth", "entire_person",
-        }, AiMaskParts.PEOPLE_NAMES)
-        assert.are.same({
+        }
+        local categories = {
             "architecture", "mountains", "artificial_ground", "natural_ground",
             "vegetation", "sky", "water", "snow",
-        }, AiMaskParts.LANDSCAPE_NAMES)
+        }
+        local function namesOf(specs)
+            local names = {}
+            for index = 1, #parts + #categories do names[index] = specs[index] and specs[index].name end
+            return names
+        end
+        assert.are.same(parts, namesOf(AiMaskParts.parsePeople({ parts = parts }).specs))
+        assert.are.same(categories, namesOf(AiMaskParts.parseLandscape({ categories = categories }).specs))
     end)
 
     it("builds an all-people part as sub type 3 without digests or instance ids", function()
@@ -45,14 +52,6 @@ describe("AiMaskParts", function()
         assert.are.equal(13, component.MaskSubCategoryID)
     end)
 
-    it("refuses to pick a single person because Lightroom ignores a written instance", function()
-        for _, person in ipairs({ 1, 2, "1", 0, 1.5 }) do
-            local ok, message = pcall(AiMaskParts.parsePeople, { parts = { "teeth" }, person = person })
-            assert.is_false(ok)
-            assert.matches("person is not supported", tostring(message), 1, true)
-        end
-    end)
-
     it("builds a landscape category as sub type 0 with its 5000x id", function()
         local request = AiMaskParts.parseLandscape({ categories = { "snow", "mountains" } })
 
@@ -65,9 +64,4 @@ describe("AiMaskParts", function()
         assert.is_nil(snow.InstanceIDs)
     end)
 
-    it("rejects non-string and non-list input", function()
-        assert.has_error(function() AiMaskParts.parsePeople({ parts = "hair" }) end)
-        assert.has_error(function() AiMaskParts.parsePeople({ parts = { 5 } }) end)
-        assert.has_error(function() AiMaskParts.parseLandscape({ categories = { true } }) end)
-    end)
 end)

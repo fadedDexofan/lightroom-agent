@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { Dispatcher } from '../src/dispatcher.js';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { Dispatcher, PluginNotSentError, PluginTimeoutError } from '../src/dispatcher.js';
 
 interface SentRequest {
   id: string;
@@ -26,9 +26,22 @@ describe('Dispatcher', () => {
         return true;
       },
       getToken: () => 'test-token',
-      timeoutMs: 1000,
       log: (msg) => logs.push(msg),
     });
+  });
+
+  it('does not send a request with less than a second of its budget left', async () => {
+    await expect(dispatcher.call('write_develop_settings', {}, 999)).rejects.toBeInstanceOf(PluginNotSentError);
+    await expect(dispatcher.call('write_develop_settings', {}, -5)).rejects.toThrow(/was not sent/);
+    expect(sent).toEqual([]);
+  });
+
+  it('sends the budget it waits for with every request', () => {
+    void dispatcher.call('list_collections', {}, 1000).catch(() => {});
+    void dispatcher.call('export_photos', {}, 300_000).catch(() => {});
+    const budgets = sent.map((line) => (JSON.parse(line) as { budget_ms: number }).budget_ms);
+    dispatcher.rejectPending('done');
+    expect(budgets).toEqual([1000, 300_000]);
   });
 
   it.each(['null', '3', '"text"', '[]'])('ignores the non-object JSON line %s', (line) => {
@@ -37,8 +50,8 @@ describe('Dispatcher', () => {
   });
 
   it('rejects every pending call with the given reason', async () => {
-    const first = dispatcher.call('export_photos', {});
-    const second = dispatcher.call('ping', {});
+    const first = dispatcher.call('export_photos', {}, 1000);
+    const second = dispatcher.call('ping', {}, 1000);
 
     dispatcher.rejectPending('connection lost');
 
@@ -49,7 +62,7 @@ describe('Dispatcher', () => {
 
   it('progress does not resolve a pending request or consume its final response', async () => {
     const progress: unknown[] = [];
-    const pending = dispatcher.call('export_photos', {}, undefined, { onProgress: (value) => progress.push(value) });
+    const pending = dispatcher.call('export_photos', {}, 1000, { onProgress: (value) => progress.push(value) });
     const id = parseSent(sent[0]).id;
 
     dispatcher.handleResponseLine(JSON.stringify({ progressFor: id, progress: { progress: 1, total: 2, message: 'a.jpg' } }));
@@ -62,7 +75,7 @@ describe('Dispatcher', () => {
 
   it('cancel names only its active request and ignores cancellation after completion', async () => {
     const controller = new AbortController();
-    const pending = dispatcher.call('export_photos', {}, undefined, { signal: controller.signal });
+    const pending = dispatcher.call('export_photos', {}, 1000, { signal: controller.signal });
     const id = parseSent(sent[0]).id;
 
     controller.abort();
@@ -76,7 +89,7 @@ describe('Dispatcher', () => {
 
   it('cancel after a finished call sends no control frame', async () => {
     const controller = new AbortController();
-    const pending = dispatcher.call('export_photos', {}, undefined, { signal: controller.signal });
+    const pending = dispatcher.call('export_photos', {}, 1000, { signal: controller.signal });
     const id = parseSent(sent[0]).id;
     dispatcher.handleResponseLine(JSON.stringify({ id, result: { exported: 1 } }));
     await pending;
@@ -87,7 +100,7 @@ describe('Dispatcher', () => {
   });
 
   it('serializes the call as line-delimited JSON with id, action, params', async () => {
-    const promise = dispatcher.call('list_collections', { foo: 'bar' });
+    const promise = dispatcher.call('list_collections', { foo: 'bar' }, 1000);
     expect(sent).toHaveLength(1);
     const sentObj = parseSent(sent[0]);
     expect(sentObj.action).toBe('list_collections');
@@ -100,8 +113,8 @@ describe('Dispatcher', () => {
   });
 
   it('routes responses to the correct caller by id', async () => {
-    const p1 = dispatcher.call('a', {});
-    const p2 = dispatcher.call('b', {});
+    const p1 = dispatcher.call('a', {}, 1000);
+    const p2 = dispatcher.call('b', {}, 1000);
     const id1 = parseSent(sent[0]).id;
     const id2 = parseSent(sent[1]).id;
     expect(id1).not.toBe(id2);
@@ -115,7 +128,7 @@ describe('Dispatcher', () => {
   });
 
   it('propagates plugin errors through the response', async () => {
-    const promise = dispatcher.call('bogus', {});
+    const promise = dispatcher.call('bogus', {}, 1000);
     const id = parseSent(sent[0]).id;
     dispatcher.handleResponseLine(JSON.stringify({ id, error: 'Unknown action' }));
     const resp = await promise;
@@ -124,14 +137,70 @@ describe('Dispatcher', () => {
   });
 
   it('rejects with timeout if no response arrives within timeoutMs', async () => {
-    const promise = dispatcher.call('slow', {});
+    const promise = dispatcher.call('slow', {}, 1000);
     await expect(promise).rejects.toThrow(/timeout/i);
     expect(dispatcher.pendingCount()).toBe(0);
   });
 
+  it('asks the plug-in to stop a request that timed out and settles when its late reply arrives', async () => {
+    const promise = dispatcher.call('slow', {}, 1000);
+    const id = JSON.parse(sent[0]).id as string;
+    const error = await promise.catch((caught: unknown) => caught) as PluginTimeoutError;
+
+    expect(error).toBeInstanceOf(PluginTimeoutError);
+    expect(JSON.parse(sent[1])).toEqual({ hello: 'test-token', action: 'cancel', params: { request_id: id } });
+    let settled = false;
+    void error.settled.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    dispatcher.handleResponseLine(JSON.stringify({ id, result: { data: {} } }));
+    await error.settled;
+    expect(settled).toBe(true);
+  });
+
+  it('settles a timed-out request after the late-reply grace when no reply comes', async () => {
+    jest.useFakeTimers();
+    try {
+      const graced = new Dispatcher({ send: () => true, getToken: () => 'test-token', log: () => {}, lateReplyGraceMs: 50 });
+      const pending = graced.call('slow', {}, 1000);
+      const caught = pending.catch((error: unknown) => error);
+      jest.advanceTimersByTime(1000);
+      const error = await caught as PluginTimeoutError;
+      let settled = false;
+      void error.settled.then(() => { settled = true; });
+      jest.advanceTimersByTime(49);
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      jest.advanceTimersByTime(1);
+      await error.settled;
+      expect(settled).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('settles a timed-out request when the connection is lost before its late reply', async () => {
+    jest.useFakeTimers();
+    try {
+      const pending = dispatcher.call('slow', {}, 1000);
+      const caught = pending.catch((error: unknown) => error);
+      jest.advanceTimersByTime(1000);
+      const error = await caught as PluginTimeoutError;
+      let settled = false;
+      void error.settled.then(() => { settled = true; });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      dispatcher.rejectPending('connection lost');
+      await error.settled;
+      expect(settled).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('throws synchronously if send returns false', async () => {
     canSend = false;
-    await expect(dispatcher.call('x', {})).rejects.toThrow(/socket dropped/);
+    await expect(dispatcher.call('x', {}, 1000)).rejects.toThrow(/socket dropped/);
     expect(dispatcher.pendingCount()).toBe(0);
   });
 
@@ -146,14 +215,14 @@ describe('Dispatcher', () => {
   });
 
   it('cleans up pending map after timeout fires', async () => {
-    const p = dispatcher.call('x', {});
+    const p = dispatcher.call('x', {}, 1000);
     expect(dispatcher.pendingCount()).toBe(1);
     await p.catch(() => {});
     expect(dispatcher.pendingCount()).toBe(0);
   });
 
   it('cleans up pending map after response received', async () => {
-    const p = dispatcher.call('x', {});
+    const p = dispatcher.call('x', {}, 1000);
     const id = parseSent(sent[0]).id;
     expect(dispatcher.pendingCount()).toBe(1);
     dispatcher.handleResponseLine(JSON.stringify({ id, result: 'ok' }));
@@ -162,82 +231,26 @@ describe('Dispatcher', () => {
   });
 
   it('defaults params to empty object when undefined', async () => {
-    const p = dispatcher.call('x', undefined);
+    const p = dispatcher.call('x', undefined, 1000);
     const sentObj = parseSent(sent[0]);
     expect(sentObj.params).toEqual({});
     await p.catch(() => {});
   });
 
-  describe('per-action timeout overrides', () => {
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
-    it('honors a longer timeout for the configured action', async () => {
-      jest.useFakeTimers();
-      const d = new Dispatcher({
-        send: (line) => {
-          sent.push(line);
-          return true;
-        },
-        getToken: () => 'test-token',
-        timeoutMs: 1000,
-        actionTimeoutsMs: { export_photos: 60_000 },
-      });
-
-      const p = d.call('export_photos', {});
+  it('waits for the timeout the call names', async () => {
+    jest.useFakeTimers();
+    try {
+      const pending = dispatcher.call('export_photos', {}, 60_000);
       let settled = false;
-      void p.catch(() => {
-        settled = true;
-      });
-
-      // Past the default timeout, but the override keeps it pending.
-      jest.advanceTimersByTime(1000);
+      void pending.catch(() => { settled = true; });
+      jest.advanceTimersByTime(59_999);
       await Promise.resolve();
       expect(settled).toBe(false);
-      expect(d.pendingCount()).toBe(1);
-
-      // Past the override: now it rejects, reporting the override duration.
-      jest.advanceTimersByTime(59_000);
-      await expect(p).rejects.toThrow(/timeout \(60s\)/);
-      expect(d.pendingCount()).toBe(0);
-    });
-
-    it('falls back to the default timeout for unlisted actions', async () => {
-      jest.useFakeTimers();
-      const d = new Dispatcher({
-        send: (line) => {
-          sent.push(line);
-          return true;
-        },
-        getToken: () => 'test-token',
-        timeoutMs: 1000,
-        actionTimeoutsMs: { export_photos: 60_000 },
-      });
-
-      const p = d.call('list_collections', {});
-      jest.advanceTimersByTime(1000);
-      await expect(p).rejects.toThrow(/timeout \(1s\)/);
-      expect(d.pendingCount()).toBe(0);
-    });
-
-    it('falls back to the default when an override is non-positive', async () => {
-      jest.useFakeTimers();
-      const d = new Dispatcher({
-        send: (line) => {
-          sent.push(line);
-          return true;
-        },
-        getToken: () => 'test-token',
-        timeoutMs: 1000,
-        // 0 must mean "no override", not a 0 ms timer that rejects immediately.
-        actionTimeoutsMs: { export_photos: 0 },
-      });
-
-      const p = d.call('export_photos', {});
-      jest.advanceTimersByTime(1000);
-      await expect(p).rejects.toThrow(/timeout \(1s\)/);
-      expect(d.pendingCount()).toBe(0);
-    });
+      jest.advanceTimersByTime(1);
+      await expect(pending).rejects.toThrow(/timeout \(60s\)/);
+      expect(dispatcher.pendingCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

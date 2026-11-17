@@ -13,10 +13,22 @@ export interface PluginResponse {
   id: string;
   result?: unknown;
   error?: string;
+  effect?: "none" | "unknown";
 }
 
+export class PluginNotSentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PluginNotSentError";
+  }
+}
+
+const MIN_CALL_MS = 1_000;
+
+export const LATE_REPLY_GRACE_MS = 60_000;
+
 export class PluginTimeoutError extends Error {
-  constructor(readonly timeoutMs: number) {
+  constructor(readonly timeoutMs: number, readonly settled: Promise<void> = Promise.resolve()) {
     super(`Plugin response timeout (${timeoutMs / 1000}s)`);
     this.name = "PluginTimeoutError";
   }
@@ -33,34 +45,24 @@ interface PendingResponse {
 export interface DispatcherOptions {
   send: (line: string) => boolean;
   getToken: () => string;
-  timeoutMs?: number;
-  /**
-   * Per-action timeout overrides (ms), keyed by action name. Long-running
-   * actions like batch export/import need far more than the default before a
-   * healthy plugin can reply; with too short a timeout the call reports a
-   * false failure, and the plugin's eventual (correct) response arrives after
-   * the pending entry is gone, so it is dropped as an unknown id. Actions
-   * absent here -- or mapped to a non-positive value -- use `timeoutMs`.
-   */
-  actionTimeoutsMs?: Record<string, number>;
   log?: (msg: string) => void;
+  lateReplyGraceMs?: number;
 }
 
 export class Dispatcher {
   private pending = new Map<string, PendingResponse>();
   private idCounter = 0;
-  private readonly timeoutMs: number;
-  private readonly actionTimeoutsMs: Record<string, number>;
   private readonly send: (line: string) => boolean;
   private readonly getToken: () => string;
   private readonly log: (msg: string) => void;
+  private readonly lateReplyGraceMs: number;
+  private readonly lingering = new Map<string, () => void>();
 
   constructor(opts: DispatcherOptions) {
     this.send = opts.send;
     this.getToken = opts.getToken;
-    this.timeoutMs = opts.timeoutMs ?? 30_000;
-    this.actionTimeoutsMs = opts.actionTimeoutsMs ?? {};
     this.log = opts.log ?? ((msg: string) => console.error(msg));
+    this.lateReplyGraceMs = opts.lateReplyGraceMs ?? LATE_REPLY_GRACE_MS;
   }
 
   handleResponseLine(line: string): void {
@@ -83,6 +85,12 @@ export class Dispatcher {
     }
     const p = this.pending.get(resp.id);
     if (!p) {
+      const finish = this.lingering.get(resp.id);
+      if (finish) {
+        this.log(`Late response for timed-out id: ${resp.id}`);
+        finish();
+        return;
+      }
       this.log(`Response for unknown id: ${resp.id}`);
       return;
     }
@@ -92,14 +100,13 @@ export class Dispatcher {
     p.resolve(resp);
   }
 
-  async call(action: string, params: unknown, timeoutOverrideMs?: number, options?: CallOptions): Promise<PluginResponse> {
+  async call(action: string, params: unknown, timeoutMs: number, options?: CallOptions): Promise<PluginResponse> {
     const id = `req_${Date.now()}_${this.idCounter++}`;
-    // A non-positive override means "no override": `0` would otherwise arm a
-    // 0 ms timer that rejects on the next tick.
-    const override = timeoutOverrideMs ?? this.actionTimeoutsMs[action];
-    const timeoutMs = override !== undefined && override > 0 ? override : this.timeoutMs;
 
-    if (options?.signal?.aborted) throw new Error("Request cancelled");
+    if (options?.signal?.aborted) throw new PluginNotSentError("Request cancelled");
+    if (timeoutMs < MIN_CALL_MS) {
+      throw new PluginNotSentError(`Only ${Math.max(0, Math.round(timeoutMs))} ms of the time budget were left, so ${action} was not sent`);
+    }
     const cancel = () => {
       if (this.pending.has(id)) {
         this.send(JSON.stringify({ hello: this.getToken(), action: "cancel", params: { request_id: id } }));
@@ -108,8 +115,9 @@ export class Dispatcher {
     const responsePromise = new Promise<PluginResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         options?.signal?.removeEventListener("abort", cancel);
+        cancel();
         this.pending.delete(id);
-        reject(new PluginTimeoutError(timeoutMs));
+        reject(new PluginTimeoutError(timeoutMs, this.lingerFor(id)));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, onProgress: options?.onProgress,
         cleanup: () => options?.signal?.removeEventListener("abort", cancel) });
@@ -124,7 +132,10 @@ export class Dispatcher {
 
     let payload: string;
     try {
-      payload = JSON.stringify({ hello: this.getToken(), id, action, params: params ?? {}, reportProgress: Boolean(options?.onProgress) });
+      payload = JSON.stringify({
+        hello: this.getToken(), id, action, params: params ?? {},
+        reportProgress: Boolean(options?.onProgress), budget_ms: timeoutMs,
+      });
     } catch (err) {
       cleanup();
       throw err;
@@ -132,13 +143,27 @@ export class Dispatcher {
 
     if (!this.send(payload)) {
       cleanup();
-      throw new Error("Failed to send request to plugin (socket dropped)");
+      throw new PluginNotSentError("Failed to send request to plugin (socket dropped)");
     }
 
     return responsePromise;
   }
 
+  private lingerFor(id: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(grace);
+        this.lingering.delete(id);
+        resolve();
+      };
+      const grace = setTimeout(finish, this.lateReplyGraceMs);
+      grace.unref?.();
+      this.lingering.set(id, finish);
+    });
+  }
+
   rejectPending(reason: string): void {
+    for (const finish of [...this.lingering.values()]) finish();
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer);
       p.cleanup();

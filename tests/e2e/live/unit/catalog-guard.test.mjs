@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import {
   assertThrowawayCatalog,
@@ -8,7 +12,7 @@ import {
   parseOpenCatalogs,
   lightroomPid,
 } from "../lib/catalog-guard.mjs";
-import { THROWAWAY_CATALOG_ENV, THROWAWAY_MARKER_FILE } from "../lib/paths.mjs";
+import { LIGHTROOM_PROCESS_NAME, THROWAWAY_CATALOG_ENV, THROWAWAY_MARKER_FILE } from "../lib/paths.mjs";
 
 const HOME = path.resolve("/Users/tester");
 const REAL = path.join(HOME, "Pictures", "Lightroom", "Lightroom Catalog.lrcat");
@@ -93,4 +97,25 @@ test("multiple Lightroom executables do not select an arbitrary catalog owner", 
 test("no Lightroom executable or process-query failure reports no catalog owner", () => {
   assert.equal(lightroomPid(() => "81947 /Applications/AdobeIPCBroker"), null);
   assert.equal(lightroomPid(() => { throw new Error("process query denied"); }), null);
+});
+
+test("the runner's mutating modes refuse before starting a server when the open catalog has no throwaway marker", () => {
+  const runner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "mcp-runner.mjs");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-runner-guard-"));
+  try {
+    const bin = path.join(root, "bin");
+    const catalog = path.join(root, "unmarked", "Unmarked.lrcat");
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, "ps"), `#!/bin/sh\necho "4242 /Applications/X.app/Contents/MacOS/${LIGHTROOM_PROCESS_NAME}"\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, "lsof"), `#!/bin/sh\necho "p4242"\necho "n${catalog}"\n`, { mode: 0o755 });
+    for (const mode of ["write", "develop", "export", "preset-roundtrip", "all"]) {
+      const result = spawnSync(process.execPath, [runner, mode], {
+        encoding: "utf8", timeout: 20_000, env: { PATH: bin, HOME: root, LIGHTROOM_MCP_READ_ONLY: "true" },
+      });
+      assert.match(`${result.stdout}${result.stderr}`, /refusing to run: .*Unmarked\.lrcat is not a throwaway catalog/, mode);
+      assert.notEqual(result.status, 0, mode);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

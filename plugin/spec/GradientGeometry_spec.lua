@@ -3,12 +3,6 @@ local RadialEllipse = require 'radial_ellipse'
 
 local GradientGeometry
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 local function point(x, y) return { x = x, y = y } end
 
 local function linearArgs(overrides)
@@ -55,65 +49,12 @@ describe("GradientGeometry.parseCreate", function()
         assert.are.equal("outside", request.geometry.area)
     end)
 
-    it("accepts the image edges", function()
-        local request = GradientGeometry.parseCreate(linearArgs({ start = point(0, 0), ["end"] = point(1, 1) }))
-
-        assert.are.equal(1, request.geometry["end"].x)
-    end)
-
-    local rejected = {
-        { "a coordinate above 1", linearArgs({ ["end"] = point(0.5, 1.01) }), "end.y is outside the image" },
-        { "a negative coordinate", linearArgs({ start = point(-0.01, 0.5) }), "start.x is outside the image" },
-        { "a radial center outside the image", radialArgs({ center = point(1.5, 0.5) }), "center.x is outside the image" },
-        { "a string coordinate", linearArgs({ start = point("0.5", 0.5) }), "start.x must be a number" },
-        { "a boolean coordinate", linearArgs({ start = point(true, 0.5) }), "start.x must be a number" },
-        { "a missing y", linearArgs({ start = { x = 0.5 } }), "start.y must be a number" },
-        { "a point that is not an object", linearArgs({ start = 0.5 }), "start must be an object" },
-        { "an unknown point property", linearArgs({ start = { x = 0.5, y = 0.5, z = 1 } }), "unknown property z" },
-        { "identical start and end", linearArgs({ start = point(0.3, 0.3), ["end"] = point(0.3, 0.3) }),
-            "same point" },
-        { "a missing start", linearArgs({ start = false }), "start is required" },
-        { "a missing center", radialArgs({ center = false }), "center is required" },
-        { "zero width", radialArgs({ width = 0 }), "width must be greater than 0" },
-        { "oversized height", radialArgs({ height = 2.5 }), "height must be greater than 0" },
-        { "rotation beyond a full turn", radialArgs({ rotation = 361 }), "rotation must be between" },
-        { "feather above 100", radialArgs({ feather = 101 }), "feather must be between 0 and 100" },
-        { "an unknown area", radialArgs({ area = "around" }), 'area must be "inside" or "outside"' },
-        { "a radial field on a linear gradient", linearArgs({ feather = 10 }), "feather only applies to radial" },
-        { "a linear field on a radial gradient", radialArgs({ start = point(0, 0) }), "start only applies to linear" },
-        { "an unknown shape", { shape = "brush" }, 'shape must be "linear" or "radial"' },
-        { "an unknown mode", linearArgs({ mask_id = "m", mode = "intersect" }), 'mode must be "add" or "subtract"' },
-        { "subtract without a mask", linearArgs({ mode = "subtract" }), "needs mask_id" },
-        { "a name together with a mask id", linearArgs({ mask_id = "m", name = "Sky" }), "name applies to a new mask" },
-        { "an empty mask id", linearArgs({ mask_id = "" }), "mask_id must be a non-empty string" },
-        { "a numeric mask id", linearArgs({ mask_id = 4 }), "mask_id must be a non-empty string" },
-    }
-    for _, case in ipairs(rejected) do
-        it("rejects " .. case[1], function()
-            local args = case[2]
-            for key, value in pairs(args) do
-                if value == false then args[key] = nil end
-            end
-
-            local message = errorOf(function() GradientGeometry.parseCreate(args) end)
-
-            assert.is_truthy(message:find(case[3], 1, true), message)
+    it("rejects identical start and end", function()
+        local message = helper.refusalOf(function()
+            GradientGeometry.parseCreate(linearArgs({ start = point(0.3, 0.3), ["end"] = point(0.3, 0.3) }))
         end)
-    end
 
-    it("rejects NaN and infinite numbers", function()
-        for _, bad in ipairs({ 0 / 0, math.huge, -math.huge }) do
-            local message = errorOf(function() GradientGeometry.parseCreate(radialArgs({ rotation = bad })) end)
-
-            assert.is_truthy(message:find("rotation must be a number", 1, true))
-        end
-    end)
-
-    it("accepts a component request with subtract and an existing mask", function()
-        local request = GradientGeometry.parseCreate(linearArgs({ mask_id = "C1", mode = "subtract" }))
-
-        assert.are.equal("C1", request.maskId)
-        assert.are.equal("subtract", request.mode)
+        assert.is_truthy(message:find("same point", 1, true), message)
     end)
 end)
 
@@ -129,19 +70,6 @@ describe("GradientGeometry.parseUpdate", function()
 
         assert.are.equal("T1", request.toolId)
         assert.are.same({ center = point(0.4, 0.4), feather = 80 }, request.changes)
-    end)
-
-    it("requires a tool id and at least one field", function()
-        assert.is_truthy(errorOf(function() GradientGeometry.parseUpdate({ start = point(0, 0) }) end)
-            :find("tool_id is required", 1, true))
-        assert.is_truthy(errorOf(function() GradientGeometry.parseUpdate({ tool_id = "T1" }) end)
-            :find("at least one geometry field", 1, true))
-    end)
-
-    it("validates each given field", function()
-        assert.is_truthy(errorOf(function()
-            GradientGeometry.parseUpdate({ tool_id = "T1", start = point(2, 0) })
-        end):find("start.x is outside the image", 1, true))
     end)
 end)
 
@@ -169,7 +97,7 @@ describe("GradientGeometry stored form", function()
             center = point(0.5, 0.4), rotation = 0, feather = 20, area = "outside",
         })).geometry
 
-        local component = GradientGeometry.newComponent("radial", geometry, "add")
+        local component = GradientGeometry.newComponent("radial", geometry, "add", 1.5)
 
         assert.are.equal("Mask/CircularGradient", component.What)
         assert.is_true(math.abs(component.Left - 0.3) < 1e-9)
@@ -214,15 +142,6 @@ describe("GradientGeometry stored form", function()
         assert.is_true(math.abs(component.Bottom - (0.4 + 0.25 * reach)) < 1e-9)
     end)
 
-    it("needs the photo size only for a rotated radial", function()
-        local flat = GradientGeometry.parseCreate(radialArgs({ rotation = 0 })).geometry
-        local turned = GradientGeometry.parseCreate(radialArgs({ rotation = 20 })).geometry
-
-        assert.are.equal("Mask/CircularGradient", GradientGeometry.newComponent("radial", flat, "add").What)
-        local message = errorOf(function() GradientGeometry.newComponent("radial", turned, "add") end)
-        assert.is_truthy(message:find("size", 1, true))
-    end)
-
     it("marks a subtract component with blend mode 1", function()
         local geometry = GradientGeometry.parseCreate(linearArgs()).geometry
 
@@ -243,8 +162,7 @@ describe("GradientGeometry stored form", function()
     end)
 
     it("reports no shape for other mask types", function()
-        assert.is_nil(GradientGeometry.shapeOf({ What = "Mask/Aggregate" }))
-        assert.are.equal("linear", GradientGeometry.shapeOf({ What = "Mask/Gradient" }))
+        assert.is_nil(GradientGeometry.geometryOf({ What = "Mask/Aggregate" }, 1.5))
     end)
 
     it("merges changes over the current geometry and re-checks it", function()
@@ -255,7 +173,7 @@ describe("GradientGeometry stored form", function()
         assert.are.same(point(0.5, 0.2), merged.start)
         assert.are.same(point(0.9, 0.9), merged["end"])
         assert.are.same(point(0.5, 0.6), current["end"])
-        assert.is_truthy(errorOf(function()
+        assert.is_truthy(helper.refusalOf(function()
             GradientGeometry.mergeChanges("linear", current, { ["end"] = point(0.5, 0.2) })
         end):find("same point", 1, true))
     end)
@@ -263,7 +181,7 @@ describe("GradientGeometry stored form", function()
     it("refuses a field of the other shape when merging", function()
         local current = GradientGeometry.parseCreate(linearArgs()).geometry
 
-        local message = errorOf(function() GradientGeometry.mergeChanges("linear", current, { feather = 5 }) end)
+        local message = helper.refusalOf(function() GradientGeometry.mergeChanges("linear", current, { feather = 5 }) end)
 
         assert.is_truthy(message:find("feather only applies to radial gradients, but this tool is a linear", 1, true))
     end)
@@ -272,7 +190,7 @@ describe("GradientGeometry stored form", function()
         local component = { What = "Mask/CircularGradient", Flipped = true, MaskInverted = false }
         local geometry = GradientGeometry.parseCreate(radialArgs({ area = "outside" })).geometry
 
-        GradientGeometry.applyGeometry("radial", component, geometry)
+        GradientGeometry.applyGeometry("radial", component, geometry, 1.5)
 
         assert.is_nil(component.Flipped)
         assert.is_true(component.MaskInverted)
@@ -447,41 +365,52 @@ describe("GradientGeometry frame conversion", function()
         ImageFrame = require 'ImageFrame'
     end)
 
+    local function frameOf(orientation, settings)
+        return ImageFrame.of({ orientation = orientation, dimensions = { width = 3000, height = 2000 }, settings = settings })
+    end
+
     local radial = { center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = 30, feather = 40, area = "outside" }
 
-    it("hands back the very same geometry for a photo that is not rotated", function()
-        local frame = ImageFrame.fromOrientation("AB")
+    it("keeps the geometry of an uncropped upright photo", function()
+        local frame = frameOf("AB")
 
-        assert.are.equal(radial, GradientGeometry.toStoredFrame("radial", radial, frame))
-        assert.are.equal(radial, GradientGeometry.toDisplayedFrame("radial", radial, frame))
+        assert.are.same(radial, GradientGeometry.toStoredFrame("radial", radial, frame))
+        assert.are.same(radial, GradientGeometry.toDisplayedFrame("radial", radial, frame))
     end)
 
-    it("turns a displayed radial into the stored one and back for every orientation", function()
-        for _, orientation in ipairs({ "BA", "CD", "DC", "CB", "BC", "AD", "DA" }) do
-            local frame = ImageFrame.fromOrientation(orientation)
+    it("turns a displayed radial into the stored one and back for every orientation, crop and straighten", function()
+        for _, settings in ipairs({ {}, { CropLeft = 0.1, CropTop = 0.05, CropRight = 0.8, CropBottom = 0.9, CropAngle = -6 } }) do
+            for _, orientation in ipairs({ "AB", "BA", "CD", "DC", "CB", "BC", "AD", "DA" }) do
+                local frame = frameOf(orientation, settings)
 
-            local stored = GradientGeometry.toStoredFrame("radial", radial, frame)
-            local displayed = GradientGeometry.toDisplayedFrame("radial", stored, frame)
+                local stored = GradientGeometry.toStoredFrame("radial", radial, frame)
+                local displayed = GradientGeometry.toDisplayedFrame("radial", stored, frame)
 
-            assert.are.same(radial, displayed)
-            assert.are.equal(40, stored.feather)
-            assert.are.equal("outside", stored.area)
-            assert.are.equal(frame.swapsAxes and 0.5 or 0.3, stored.width)
+                assert.is_true(math.abs(displayed.center.x - 0.2) < 1e-5 and math.abs(displayed.center.y - 0.1) < 1e-5)
+                assert.is_true(math.abs(displayed.width - 0.3) < 1e-5 and math.abs(displayed.height - 0.5) < 1e-5)
+                assert.is_true(math.abs(displayed.rotation - 30) < 1e-5)
+                assert.are.equal(40, stored.feather)
+                assert.are.equal("outside", stored.area)
+                assert.is_true(math.abs(stored.width * frame.storedSize.width - 0.3 * frame.displayedSize.width) < 1e-6)
+            end
         end
     end)
 
-    it("does not change the geometry it was given", function()
-        local frame = ImageFrame.fromOrientation("BC")
+    it("reports a displayed radial turned past 45 degrees with swapped sizes, as the stored one is", function()
+        local frame = frameOf("AB", { CropAngle = 8 })
+        local stored = GradientGeometry.toStoredFrame("radial", radial, frame)
+        stored.rotation = stored.rotation + 30
 
-        GradientGeometry.toStoredFrame("radial", radial, frame)
+        local displayed = GradientGeometry.toDisplayedFrame("radial", stored, frame)
+
+        assert.is_true(math.abs(displayed.rotation + 30) < 1e-5)
+        assert.is_true(math.abs(displayed.width * frame.displayedSize.width - 0.5 * frame.displayedSize.height) < 1e-3)
+    end)
+
+    it("does not change the geometry it was given", function()
+        GradientGeometry.toStoredFrame("radial", radial, frameOf("BC"))
 
         assert.are.same(point(0.2, 0.1), radial.center)
         assert.are.equal(0.3, radial.width)
-    end)
-
-    it("inverts the aspect ratio only for orientations that swap the axes", function()
-        assert.are.equal(1.5, GradientGeometry.storedAspectOf(ImageFrame.fromOrientation("CD"), 1.5))
-        assert.is_true(math.abs(GradientGeometry.storedAspectOf(ImageFrame.fromOrientation("BC"), 1.5) - 2 / 3) < 1e-12)
-        assert.is_nil(GradientGeometry.storedAspectOf(ImageFrame.fromOrientation("BC"), nil))
     end)
 end)

@@ -1,5 +1,7 @@
 local BrushFeather = require 'BrushFeather'
+local Contract = require 'Contract'
 local DecimalText = require 'DecimalText'
+local Reply = require 'Reply'
 
 local BrushStrokes = {}
 
@@ -8,101 +10,25 @@ local PAINT_WHAT = "Mask/Paint"
 
 local DEFAULT_RADIUS = 0.14
 local DEFAULT_FLOW = 1
-local MAX_RADIUS = 1
-local MIN_FLOW = 0.01
-local MIN_DENSITY = 0.01
-local MAX_STROKES = 50
-local MAX_POINTS_PER_STROKE = 1000
+local DEFAULT_DENSITY = 1
 local MAX_DABS_PER_STROKE = 2000
 local DAB_SPACING_IN_RADII = 0.5
 local FLOW_TOKEN_DECIMALS = 10000
-local STORED_DECIMALS = 1000000
+local STORED_PLACES = Contract.STORED_MASK_DECIMAL_PLACES
+local STORED_SCALE = 10 ^ STORED_PLACES
 local ERASE_VALUE = 0
 local DISTANCE_EPSILON = 1e-9
 
-local STROKE_FIELDS = { points = true, radius = true, flow = true, feather = true, density = true, erase = true }
-local REASON_OF_UNSUPPORTED_FIELD = {
-    size = "size is not supported: Lightroom's Size slider is a screen size, so the stored radius changes with the"
-        .. " zoom of the Develop view; use radius, a fraction of the longer edge of the image",
-}
-
 local function fail(message)
-    error(message, 0)
-end
-
-local function isFiniteNumber(value)
-    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
-end
-
-local function parseCoordinate(value, field)
-    if not isFiniteNumber(value) then fail(field .. " must be a number") end
-    if value < 0 or value > 1 then
-        fail(field .. " is outside the image: it must be between 0 and 1 (normalized image coordinates)")
-    end
-    return value
-end
-
-local function parsePoint(value, field)
-    if type(value) ~= "table" then fail(field .. " must be an object with x and y") end
-    for key in pairs(value) do
-        if key ~= "x" and key ~= "y" then fail(field .. " has an unknown property " .. tostring(key)) end
-    end
-    return { x = parseCoordinate(value.x, field .. ".x"), y = parseCoordinate(value.y, field .. ".y") }
-end
-
-local function parseRadius(value, field)
-    if value == nil then return DEFAULT_RADIUS end
-    if not isFiniteNumber(value) or value <= 0 or value > MAX_RADIUS then
-        fail(string.format("%s must be greater than 0 and at most %d", field, MAX_RADIUS))
-    end
-    return value
+    Reply.refuse(message)
 end
 
 local function roundFlow(value)
     return math.floor(value * FLOW_TOKEN_DECIMALS + 0.5) / FLOW_TOKEN_DECIMALS
 end
 
-local function parseFlow(value, field)
-    if value == nil then return DEFAULT_FLOW end
-    if not isFiniteNumber(value) or value < MIN_FLOW or value > 1 then
-        fail(string.format("%s must be between %s and 1", field, tostring(MIN_FLOW)))
-    end
-    return roundFlow(value)
-end
-
 local function roundStored(value)
-    return math.floor(value * STORED_DECIMALS + 0.5) / STORED_DECIMALS
-end
-
-local function parseFeather(value, field)
-    if value == nil then return BrushFeather.SOFT end
-    if not isFiniteNumber(value) or value < 0 or value > BrushFeather.MAX_PERCENT then
-        fail(string.format("%s must be between 0 (hard) and %d (soft)", field, BrushFeather.MAX_PERCENT))
-    end
-    return BrushFeather.fromPercent(value)
-end
-
-local function parseErase(value, field)
-    if value == nil then return false end
-    if type(value) ~= "boolean" then fail(field .. " must be true or false") end
-    return value
-end
-
-local function parseDensity(value, erase, field)
-    if value == nil then return 1 end
-    if erase then fail(field .. " does not apply to an erase stroke: erasing removes the paint it covers") end
-    if not isFiniteNumber(value) or value < MIN_DENSITY or value > 1 then
-        fail(string.format("%s must be between %s and 1", field, tostring(MIN_DENSITY)))
-    end
-    return roundStored(value)
-end
-
-local function rejectUnknownFields(stroke, field)
-    for key in pairs(stroke) do
-        if not STROKE_FIELDS[key] then
-            fail(field .. ": " .. (REASON_OF_UNSUPPORTED_FIELD[key] or ("unknown property " .. tostring(key))))
-        end
-    end
+    return math.floor(value * STORED_SCALE + 0.5) / STORED_SCALE
 end
 
 local function dabCountOf(points, radius)
@@ -124,57 +50,27 @@ local function requireDabBudget(field, dabCount, radius)
     end
 end
 
-local function parseStroke(stroke, index)
-    local field = "strokes[" .. index .. "]"
-    if type(stroke) ~= "table" then fail(field .. " must be an object with points") end
-    rejectUnknownFields(stroke, field)
-    local rawPoints = stroke.points
-    if type(rawPoints) ~= "table" or #rawPoints == 0 then
-        fail(field .. ".points must list at least one point")
-    end
-    if #rawPoints > MAX_POINTS_PER_STROKE then
-        fail(string.format("%s.points has %d points; at most %d are allowed", field, #rawPoints, MAX_POINTS_PER_STROKE))
-    end
-    local points = {}
-    for pointIndex, rawPoint in ipairs(rawPoints) do
-        points[pointIndex] = parsePoint(rawPoint, field .. ".points[" .. pointIndex .. "]")
-    end
-    local brushSize = parseRadius(stroke.radius, field .. ".radius")
-    local flow = parseFlow(stroke.flow, field .. ".flow")
-    local feather = parseFeather(stroke.feather, field .. ".feather")
-    local erase = parseErase(stroke.erase, field .. ".erase")
-    local density = parseDensity(stroke.density, erase, field .. ".density")
-    local radius = roundStored(brushSize * BrushFeather.radiusScale(feather))
-    if radius <= 0 then
-        fail(field .. ".radius is too small to paint")
-    end
-    requireDabBudget(field, dabCountOf(points, radius), radius)
+local function parseStroke(stroke)
+    local feather = stroke.feather == nil and BrushFeather.SOFT or BrushFeather.fromPercent(stroke.feather)
     return {
-        points = points,
-        radius = radius,
-        flow = flow,
+        points = stroke.points,
+        radius = (stroke.radius or DEFAULT_RADIUS) * BrushFeather.radiusScale(feather),
+        flow = roundFlow(stroke.flow or DEFAULT_FLOW),
         centerWeight = roundStored(BrushFeather.centerWeight(feather)),
-        density = density,
-        erase = erase,
+        density = roundStored(stroke.density or DEFAULT_DENSITY),
+        erase = stroke.erase == true,
     }
 end
 
 function BrushStrokes.parseStrokes(strokes)
-    if type(strokes) ~= "table" or #strokes == 0 then
-        fail("strokes must list at least one stroke; an empty stroke list would paint an empty mask")
-    end
-    if #strokes > MAX_STROKES then
-        fail(string.format("strokes has %d entries; at most %d are allowed per call", #strokes, MAX_STROKES))
-    end
     local parsed = {}
     for index, stroke in ipairs(strokes) do
-        parsed[index] = parseStroke(stroke, index)
+        parsed[index] = parseStroke(stroke)
     end
     return parsed
 end
 
 function BrushStrokes.toStoredFrame(strokes, frame)
-    if frame.isNormal then return strokes end
     local mapped = {}
     for index, stroke in ipairs(strokes) do
         local points = {}
@@ -182,10 +78,14 @@ function BrushStrokes.toStoredFrame(strokes, frame)
             local x, y = frame.toStored(point.x, point.y)
             points[pointIndex] = { x = x, y = y }
         end
-        requireDabBudget("strokes[" .. index .. "]", dabCountOf(points, stroke.radius), stroke.radius)
+        local field = "strokes[" .. index .. "]"
+        local radius = roundStored(frame.longEdgeToStored(stroke.radius))
+        if radius <= 0 then fail(field .. ".radius is too small to paint") end
+        requireDabBudget(field, dabCountOf(points, radius), radius)
         local copy = {}
         for key, item in pairs(stroke) do copy[key] = item end
         copy.points = points
+        copy.radius = radius
         mapped[index] = copy
     end
     return mapped
@@ -196,7 +96,7 @@ local function clampUnit(value)
 end
 
 local function dabText(x, y)
-    return "d " .. DecimalText.fixed(clampUnit(x), 6) .. " " .. DecimalText.fixed(clampUnit(y), 6)
+    return "d " .. DecimalText.fixed(clampUnit(x), STORED_PLACES) .. " " .. DecimalText.fixed(clampUnit(y), STORED_PLACES)
 end
 
 local function dabsAlong(stroke)

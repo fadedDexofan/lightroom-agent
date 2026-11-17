@@ -1,12 +1,7 @@
+local helper = require 'spec_helper'
 local fake = require 'fake_mask_develop'
 
 local LINE = { 0, 0, 255, 255 }
-
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
 
 local function setup(overrides)
     local opts = {
@@ -50,7 +45,6 @@ describe("HandlerMaskCurves.setMaskCurves", function()
             curves = { main = { 0, 0, 64, 48, 192, 210, 255, 255 }, blue = { 0, 10, 255, 240 } },
         })
 
-        assert.is_true(r.success)
         assert.are.equal("mask-a", r.mask_id)
         assert.are.same({ 0, 0, 64, 48, 192, 210, 255, 255 }, r.curves.main)
         assert.are.same({ 0, 10, 255, 240 }, r.curves.blue)
@@ -106,7 +100,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
     it("rejects an unknown mask naming the masks on the photo, writing nothing", function()
         local ctx = setup()
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "nope", curves = { main = LINE } })
         end)
 
@@ -118,76 +112,17 @@ describe("HandlerMaskCurves.setMaskCurves", function()
     it("rejects an unknown photo", function()
         local ctx = setup()
 
-        local err = errorOf(function()
+        assert.are.equal("99", helper.notFoundOf(function()
             ctx.Handler.setMaskCurves({ photo_id = "99", mask_id = "mask-a", curves = { main = LINE } })
-        end)
-
-        assert.truthy(err:find("Photo not found: 99", 1, true))
+        end))
     end)
 
-    local invalidCurves = {
-        { "a non-table", "bad", "curves is required" },
-        { "an empty table", {}, "curves is required" },
-        { "an unknown channel", { alpha = LINE }, "Unknown curve channel alpha" },
-        { "a single point", { main = { 0, 0 } }, "curves.main must contain 2 to 32 input/output pairs" },
-        { "an odd count", { main = { 0, 0, 100, 255, 255 } }, "curves.main must contain 2 to 32 input/output pairs" },
-        { "too many pairs", { main = (function()
-            local points = {}
-            for index = 0, 32 do
-                points[#points + 1] = index * 7
-                points[#points + 1] = index * 7
-            end
-            return points
-        end)() }, "curves.main must contain 2 to 32 input/output pairs" },
-        { "a value over 255", { main = { 0, 0, 255, 256 } }, "curves.main[4] must be an integer from 0 to 255" },
-        { "a fractional value", { main = { 0, 0, 12.5, 100, 255, 255 } }, "curves.main[3] must be an integer from 0 to 255" },
-        { "a string value", { main = { 0, 0, "x", 100, 255, 255 } }, "curves.main[3] must be an integer from 0 to 255" },
-        { "a first input over 0", { main = { 1, 0, 255, 255 } }, "must start at input 0 and end at input 255" },
-        { "a last input under 255", { main = { 0, 0, 200, 255 } }, "must start at input 0 and end at input 255" },
-        { "inputs not increasing", { main = { 0, 0, 100, 50, 100, 60, 255, 255 } }, "inputs must be strictly increasing" },
-        { "a sparse array", { main = { [1] = 0, [2] = 0, [4] = 255, [5] = 255 } }, "must be an array" },
-    }
-    for _, case in ipairs(invalidCurves) do
-        it("rejects " .. case[1] .. " before opening Develop", function()
-            local ctx = setup()
-
-            local err = errorOf(function()
-                ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = case[2] })
-            end)
-
-            assert.truthy(err:find(case[3], 1, true), err)
-            assert.are.equal(0, #ctx.calls.setValue)
-            assert.are.same({}, ctx.calls.modules)
-        end)
-    end
-
-    it("requires photo_id and mask_id", function()
-        local ctx = setup()
-
-        assert.truthy(errorOf(function() ctx.Handler.setMaskCurves({ mask_id = "mask-a", curves = { main = LINE } }) end)
-            :find("photo_id is required", 1, true))
-        assert.truthy(errorOf(function() ctx.Handler.setMaskCurves({ photo_id = "1", curves = { main = LINE } }) end)
-            :find("mask_id is required", 1, true))
-    end)
-
-    it("names the minimum version when Lightroom is older, before any Develop work", function()
+    it("does not compare Lightroom's version number when the calls exist", function()
         local ctx = setup({ version = { major = 12, minor = 2 } })
-
-        local err = errorOf(function()
-            ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = LINE } })
-        end)
-
-        assert.truthy(err:find("set_mask_curves needs Lightroom Classic 12.3 or later", 1, true))
-        assert.truthy(err:find("this is Lightroom Classic 12.2", 1, true))
-        assert.are.same({}, ctx.calls.modules)
-    end)
-
-    it("accepts Lightroom Classic 12.3 exactly", function()
-        local ctx = setup({ version = { major = 12, minor = 3 } })
 
         local r = ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
 
-        assert.is_true(r.success)
+        assert.are.same({ 0, 9, 255, 255 }, r.curves.main)
     end)
 
     it("names the minimum version when the controller lacks the mask API", function()
@@ -195,11 +130,11 @@ describe("HandlerMaskCurves.setMaskCurves", function()
             controller.getAllMasks, controller.selectMask, controller.selectMaskTool = nil, nil, nil
         end })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = LINE } })
         end)
 
-        assert.truthy(err:find("needs Lightroom Classic 11 or later", 1, true))
+        assert.truthy(err:find("needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
     end)
 
     it("fails naming the minimum version when Lightroom returns no curve, writing nothing", function()
@@ -207,7 +142,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
             { id = "1", selectedMask = "mask-a", masks = { ["mask-a"] = { local_Exposure = 0 } } },
         } })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = LINE, red = LINE } })
         end)
 
@@ -220,7 +155,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
     it("reports a write Lightroom rejects and keeps earlier channels restored", function()
         local ctx = setup({ rejectSet = { local_Bluecurve = "curve refused" } })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.setMaskCurves({
                 photo_id = "1",
                 mask_id = "mask-a",
@@ -235,7 +170,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
     it("restores written channels when Lightroom ignores a later write", function()
         local ctx = setup({ ignoreSet = { local_Redcurve = true } })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.setMaskCurves({
                 photo_id = "1",
                 mask_id = "mask-a",
@@ -247,6 +182,26 @@ describe("HandlerMaskCurves.setMaskCurves", function()
         assert.are.same(LINE, ctx.valuesOf[ctx.photos[1]]["mask-a"].local_Maincurve)
     end)
 
+    it("answers unknown when the restore of a written channel is not confirmed", function()
+        local stuck = setup({ ignoreSet = { local_Redcurve = true } })
+        local mainWrites = 0
+        stuck.controller.setValue = (function(original)
+            return function(name, value)
+                if name == "local_Maincurve" then
+                    mainWrites = mainWrites + 1
+                    if mainWrites > 1 then return end
+                end
+                original(name, value)
+            end
+        end)(stuck.controller.setValue)
+        local err = helper.unknownOf(function()
+            stuck.Handler.setMaskCurves({
+                photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 }, red = { 0, 9, 255, 255 } },
+            })
+        end)
+        assert.matches("could not confirm restoring main; read the mask before retrying", err, 1, true)
+    end)
+
     it("fails and restores when a change is dropped after the settle wait", function()
         local ctx = setup({ onSleep = function(state)
             if #state.calls.setValue > 0 then
@@ -254,7 +209,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
             end
         end })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
         end)
 
@@ -262,8 +217,11 @@ describe("HandlerMaskCurves.setMaskCurves", function()
         assert.are.same(LINE, ctx.valuesOf[ctx.photos[1]]["mask-a"].local_Maincurve)
     end)
 
-    it("waits until Lightroom has saved the curves to the photo's settings before returning", function()
-        local ctx = setup({ commitLagSleeps = 15 })
+    it("works on a Lightroom without stopTracking by waiting for the save", function()
+        local ctx = setup({
+            commitLagSleeps = 15,
+            extend = function(controller) controller.stopTracking = nil end,
+        })
 
         ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
 
@@ -282,10 +240,10 @@ describe("HandlerMaskCurves.setMaskCurves", function()
         assert.are.same({ true }, ctx.calls.stopTracking)
     end)
 
-    it("fails naming the late save when Lightroom never saves the curves", function()
+    it("answers unknown naming the late save when Lightroom never saves the curves", function()
         local ctx = setup({ neverCommit = true })
 
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
         end)
 
@@ -301,8 +259,9 @@ describe("HandlerMaskCurves.setMaskCurves", function()
         assert.are.same({}, r.changed)
     end)
 
-    it("fails when another mask becomes selected while writing", function()
+    it("answers unknown and writes nothing into a mask that became selected while writing", function()
         local ctx = setup()
+        local maskB = fake.deepCopy(ctx.valuesOf[ctx.photos[1]]["mask-b"])
         ctx.controller.setValue = (function(original)
             return function(name, value)
                 original(name, value)
@@ -310,10 +269,76 @@ describe("HandlerMaskCurves.setMaskCurves", function()
             end
         end)(ctx.controller.setValue)
 
-        local err = errorOf(function()
+        local err = helper.unknownOf(function()
             ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
         end)
 
-        assert.truthy(err:find("Another mask became selected while writing", 1, true), err)
+        assert.truthy(err:find("mask mask-a is no longer selected; restored: nothing; not restored: main; read the mask"
+            .. " before retrying", 1, true), err)
+        assert.are.same({ 0, 9, 255, 255 }, ctx.valuesOf[ctx.photos[1]]["mask-a"].local_Maincurve)
+        assert.are.same(maskB, ctx.valuesOf[ctx.photos[1]]["mask-b"])
+    end)
+
+    it("names what was restored and what was not when another mask becomes selected during the restore", function()
+        local ctx = setup({ ignoreSet = { local_Redcurve = true } })
+        local maskB = fake.deepCopy(ctx.valuesOf[ctx.photos[1]]["mask-b"])
+        local redWrites = 0
+        ctx.controller.setValue = (function(original)
+            return function(name, value)
+                original(name, value)
+                if name == "local_Redcurve" then
+                    redWrites = redWrites + 1
+                    if redWrites == 3 then ctx.selectedMaskOf[ctx.photos[1]] = "mask-b" end
+                end
+            end
+        end)(ctx.controller.setValue)
+
+        local err = helper.unknownOf(function()
+            ctx.Handler.setMaskCurves({
+                photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 }, red = { 0, 9, 255, 255 } },
+            })
+        end)
+
+        assert.are.equal("Lightroom did not keep the red curve; mask mask-a is no longer selected; restored: red; not"
+            .. " restored: main; read the mask before retrying", err)
+        assert.are.same({ 0, 9, 255, 255 }, ctx.valuesOf[ctx.photos[1]]["mask-a"].local_Maincurve)
+        assert.are.same(maskB, ctx.valuesOf[ctx.photos[1]]["mask-b"])
+    end)
+
+    it("answers unknown for the move, not a dropped curve, when another mask is selected before the read-back", function()
+        local ctx = setup()
+        local maskB = fake.deepCopy(ctx.valuesOf[ctx.photos[1]]["mask-b"])
+        local flush = package.loaded.DevelopSession.flushPendingEdits
+        package.loaded.DevelopSession.flushPendingEdits = function(...)
+            flush(...)
+            ctx.selectedMaskOf[ctx.photos[1]] = "mask-b"
+        end
+
+        local err = helper.unknownOf(function()
+            ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
+        end)
+
+        assert.are.equal("Another mask became selected while writing; mask mask-a is no longer selected; restored:"
+            .. " nothing; not restored: main; read the mask before retrying", err)
+        assert.are.same(maskB, ctx.valuesOf[ctx.photos[1]]["mask-b"])
+    end)
+
+    it("refuses with nothing written when another mask is selected before the first write", function()
+        local ctx = setup()
+        ctx.controller.getValue = (function(original)
+            return function(name)
+                local value = original(name)
+                ctx.selectedMaskOf[ctx.photos[1]] = "mask-b"
+                return value
+            end
+        end)(ctx.controller.getValue)
+
+        local err = helper.refusalOf(function()
+            ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
+        end)
+
+        assert.truthy(err:find("Another mask became selected while writing; no curve had been written yet", 1, true),
+            err)
+        assert.are.equal(0, #ctx.calls.setValue)
     end)
 end)

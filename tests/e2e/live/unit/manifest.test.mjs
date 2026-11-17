@@ -100,24 +100,33 @@ test("download refuses an HTTP error", async () => {
   await assert.rejects(downloadSample(sample({ url: `${baseUrl}/missing` }), directory, { allowedUrls: localUrls() }), /HTTP 404/);
 });
 
-test("supplied files are resolved from environment variables", () => {
+test("supplied files are resolved from environment variables, and a declared hash must match", async () => {
   const present = path.join(workDirectory, "supplied.heic");
-  fs.writeFileSync(present, "x");
+  fs.writeFileSync(present, PAYLOAD);
   const manifest = {
     supplied: [
       { key: "a", envVar: "LRMCP_LIVE_A" },
       { key: "b", envVar: "LRMCP_LIVE_B" },
       { key: "c", envVar: "LRMCP_LIVE_C" },
+      { key: "d", envVar: "LRMCP_LIVE_D", sha256: PAYLOAD_SHA256 },
+      { key: "e", envVar: "LRMCP_LIVE_E", sha256: "0".repeat(64) },
     ],
   };
-  const resolved = resolveSuppliedFiles(manifest, {
+  const resolved = await resolveSuppliedFiles(manifest, {
     LRMCP_LIVE_A: present,
     LRMCP_LIVE_B: path.join(workDirectory, "absent.heic"),
+    LRMCP_LIVE_D: present,
+    LRMCP_LIVE_E: present,
   });
   assert.deepEqual(
-    resolved.map((entry) => entry.status),
-    ["present", "missing-file", "not-set"],
+    resolved.map((entry) => [entry.status, entry.actual ?? null]),
+    [["present", null], ["missing-file", null], ["not-set", null], ["present", PAYLOAD_SHA256], ["mismatch", PAYLOAD_SHA256]],
   );
+});
+
+test("validation reports a supplied hash that is not 64 lowercase hex characters", () => {
+  assert.deepEqual(validateManifest({ supplied: [{ key: "a", envVar: "LRMCP_LIVE_A", sha256: PAYLOAD_SHA256 }] }), []);
+  assert.match(validateManifest({ supplied: [{ key: "a", envVar: "LRMCP_LIVE_A", sha256: "ABC" }] }).join("\n"), /a: sha256 must be 64 lowercase hex characters/);
 });
 
 test("downloads outside the allowlist are refused before any request", async () => {

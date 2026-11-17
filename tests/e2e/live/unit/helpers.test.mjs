@@ -1,17 +1,24 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { batchCropOffsets, batchFileName } from "../lib/batch.mjs";
-import { chooseModalButton, parseModalWindows } from "../lib/ax.mjs";
-import { maskGroupsText, parseLuaTable, storedMaskGroups, summarizeMaskGroups } from "../lib/catalog-db.mjs";
+import { catalogWindowState, chooseModalButton, parseModalWindows, watchModalsWhile } from "../lib/ax.mjs";
+import { lastExportTimestamp, maskGroupsText, parseLuaTable, storedMaskGroups, summarizeMaskGroups } from "../lib/catalog-db.mjs";
 import { addedLuaFiles, assertOutsideTemporaryDirectory, listLuaFiles } from "../lib/plugin-bundle.mjs";
+import { jpegQuantTables } from "../lib/jpeg.mjs";
+import { createReport } from "../lib/proof.mjs";
 import {
+  alternationRate,
   bandDeltas,
+  changeCentroid,
+  colorCentroid,
   decodeBmp,
   ellipseInside,
   intersectionOverUnion,
+  meanChroma,
   patchDeltas,
   rectangleInside,
   regionDeltas,
@@ -47,6 +54,15 @@ test("modal windows are parsed and the safe button is chosen", () => {
     .join("\u001e");
   const windows = parseModalWindows(raw);
   assert.deepEqual(windows.map(chooseModalButton), ["OK", "Not Now", null]);
+});
+
+test("the open catalog is read from Lightroom's main window title", () => {
+  const requested = "/Users/me/Pictures/Lightroom/Lightroom Catalog.lrcat";
+  const main = (name) => ["", "", `${name} - Adobe Photoshop Lightroom Classic - Develop`];
+  assert.equal(catalogWindowState(main("Lightroom Catalog.lrcat"), requested), "requested");
+  assert.equal(catalogWindowState(main("lrmcp-live-20261112090706.lrcat"), requested), "other");
+  assert.equal(catalogWindowState(["", ""], requested), "waiting");
+  assert.equal(catalogWindowState(["Lightroom Plug-in Manager"], requested), "waiting");
 });
 
 test("the main window and Plug-in Manager are never treated as modals", () => {
@@ -194,4 +210,117 @@ test("batch crops are all distinct and stay inside the base image", () => {
   assert.deepEqual(batchCropOffsets(1, 400, 267), [{ x: 0, y: 0 }]);
   assert.equal(batchFileName(0), "batch_001.jpg");
   assert.equal(batchFileName(199), "batch_200.jpg");
+});
+
+test("the change centroid is the centre of the brightened area", () => {
+  const before = solidPixels(200, 100, 0.2);
+  const after = brightenWhere(before, ellipseInside({ center: { x: 0.7, y: 0.3 }, width: 0.1, height: 0.2 }), 0.3);
+  const centroid = changeCentroid(before, after);
+  assert.ok(Math.abs(centroid.x - 0.7) < 0.003 && Math.abs(centroid.y - 0.3) < 0.003, JSON.stringify(centroid));
+  assert.equal(changeCentroid(before, before), null);
+});
+
+test("a colour's centroid ignores pixels of other colours", () => {
+  const pixels = solidPixels(100, 100, 0.5);
+  for (const [x, y] of [[20, 30], [21, 30], [20, 31], [21, 31]]) {
+    const i = y * 100 + x;
+    pixels.R[i] = 0.86;
+    pixels.G[i] = 0.12;
+    pixels.B[i] = 0.12;
+  }
+  const centroid = colorCentroid(pixels, [220, 30, 30]);
+  assert.ok(Math.abs(centroid.x - 0.21) < 1e-6 && Math.abs(centroid.y - 0.31) < 1e-6, JSON.stringify(centroid));
+  assert.equal(colorCentroid(pixels, [30, 60, 220]), null);
+});
+
+test("chroma is zero on grey and positive on colour", () => {
+  const grey = solidPixels(10, 10, 0.4);
+  assert.equal(meanChroma(grey), 0);
+  grey.R.fill(0.8);
+  assert.ok(Math.abs(meanChroma(grey) - 0.4) < 1e-6);
+});
+
+test("the alternation rate is 1 on a one-pixel checkerboard and 0 on a flat field", () => {
+  const board = solidPixels(8, 6, 0);
+  for (let y = 0; y < 6; y++) for (let x = 0; x < 8; x++) if ((x + y) % 2 === 0) board.L[y * 8 + x] = 1;
+  assert.equal(alternationRate(board), 1);
+  assert.equal(alternationRate(solidPixels(8, 6, 0.5)), 0);
+});
+
+test("a proof report passes only when every check passed and writes its evidence where asked", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-proof-"));
+  const file = path.join(directory, "a.json");
+  const log = console.log;
+  const exitCode = process.exitCode;
+  console.log = () => {};
+  try {
+    const report = createReport("detail crop", ["node", "x.mjs", "--evidence", file]);
+    report.check("alternates", true, { rate: 1 });
+    report.check("size", false, { width: 2 });
+    const summary = report.finish({ photo: "1" });
+    assert.equal(summary.passed, false);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).checks.map((entry) => entry.passed), [true, false]);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    console.log = log;
+    process.exitCode = exitCode;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("JPEG quantisation tables are read from every DQT segment", () => {
+  const table = (id, value) => [id, ...Array(64).fill(value)];
+  const segment = (body) => [0xff, 0xdb, (body.length + 2) >> 8, (body.length + 2) & 0xff, ...body];
+  const jpeg = Buffer.from([0xff, 0xd8, ...segment(table(0, 1)), ...segment([...table(1, 2), ...table(2, 3)]), 0xff, 0xda, 0, 2, 0xff, 0xd9]);
+
+  assert.deepEqual(jpegQuantTables(jpeg).map((values) => [values.length, values[0]]), [[64, 1], [64, 2], [64, 3]]);
+});
+
+test("the export mark is read from the photo's image attributes row", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lrmcp-catalog-"));
+  const catalog = path.join(directory, "t.lrcat");
+  try {
+    execFileSync("sqlite3", [catalog, "create table AgLibraryImageAttributes (id_local integer, image integer, lastExportTimestamp, lastPublishTimestamp); insert into AgLibraryImageAttributes values (1, 10, 0.0, 0.0), (2, 11, 816176651.5, 0.0);"]);
+    assert.equal(lastExportTimestamp(catalog, 10), 0);
+    assert.equal(lastExportTimestamp(catalog, 11), 816176651.5);
+    assert.equal(lastExportTimestamp(catalog, 12), null);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a held modal records whether it was still listed when the call settled", async () => {
+  const failure = { title: "Export", text: "could not be written", buttons: ["OK"] };
+  const other = { title: "Note", text: "unrelated", buttons: ["OK"] };
+  const isTarget = (window) => window.title === "Export";
+  const timing = { holdMs: 200, pollMs: 5 };
+  const cases = [
+    { name: "settles alone while it is open", settlesAfterMs: 20, result: "alone", pressed: [], open: true },
+    { name: "closes by itself before the call settles", closesAfterMs: 20, settlesAfterMs: 60, result: "alone", pressed: [], open: false },
+    { name: "a press closes it and the call settles", pressCloses: true, result: "after press", pressed: ["Export"], open: false },
+    { name: "a press leaves it listed and the call settles", pressCloses: false, result: "after press", pressed: ["Export"], open: true },
+  ];
+  for (const scenario of cases) {
+    let open = [failure, other];
+    let release;
+    const call = new Promise((resolve) => { release = resolve; });
+    if (scenario.settlesAfterMs !== undefined) setTimeout(() => release("alone"), scenario.settlesAfterMs);
+    if (scenario.closesAfterMs !== undefined) setTimeout(() => { open = open.filter((candidate) => candidate !== failure); }, scenario.closesAfterMs);
+    const pressed = [];
+    const press = async (window) => {
+      pressed.push(window.title);
+      if (scenario.pressCloses) open = open.filter((candidate) => candidate !== window);
+      release("after press");
+    };
+    const watched = await watchModalsWhile(call, isTarget, { ...timing, list: () => open, press });
+    assert.equal(watched.result, scenario.result, scenario.name);
+    assert.deepEqual(pressed, scenario.pressed, scenario.name);
+    const [held, unheld] = watched.modals;
+    assert.deepEqual({ title: held.title, held: held.held, settled_while_open: held.settled_while_open },
+      { title: "Export", held: true, settled_while_open: scenario.open }, scenario.name);
+    assert.deepEqual({ title: unheld.title, held: unheld.held, pressed_at_seconds: unheld.pressed_at_seconds, settled_while_open: unheld.settled_while_open },
+      { title: "Note", held: false, pressed_at_seconds: null, settled_while_open: undefined }, scenario.name);
+    if (scenario.pressed.length === 0) assert.equal(held.pressed_at_seconds, null, scenario.name);
+    else assert.ok(held.pressed_at_seconds >= timing.holdMs / 1000, scenario.name);
+  }
 });

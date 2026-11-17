@@ -17,7 +17,7 @@ try {
   const copies = await tool("create_virtual_copies", {
     photo_ids: [requireFixtureId(marker, "arw_14bit")], copy_name: "LRMCP Lens Blur live test",
   });
-  copyId = copies.copies[0].copy_id;
+  copyId = copies.copies[0].copy_photo_id;
   await tool("set_lens_blur", { photo_id: copyId, active: false });
   const off = await tool("get_lens_blur", { photo_id: copyId });
   assert.equal(off.active, false);

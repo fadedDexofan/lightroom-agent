@@ -168,6 +168,39 @@ export async function clickWindowButton(windowTitle, buttonName) {
   onElement(windowTitle, "AXButton", buttonName, 'click e\n      return "clicked"');
 }
 
+export async function watchModalsWhile(call, isTarget, {
+  holdMs, pollMs, list = listModalWindows, press = (window) => clickWindowButton(window.title, "OK"), now = Date.now,
+}) {
+  const started = now();
+  const seconds = () => (now() - started) / 1000;
+  const sameWindow = (entry, window) => entry.title === window.title && entry.text === window.text;
+  const modals = [];
+  let settledAt = null;
+  const outcome = call.then((result) => {
+    settledAt = seconds();
+    return result;
+  });
+  while (settledAt === null) {
+    for (const window of list()) {
+      let entry = modals.find((known) => sameWindow(known, window));
+      if (entry === undefined) {
+        entry = { at_seconds: seconds(), title: window.title, text: window.text, buttons: window.buttons, held: isTarget(window), pressed_at_seconds: null };
+        modals.push(entry);
+      }
+      if (entry.held && entry.pressed_at_seconds === null && settledAt === null && seconds() - entry.at_seconds >= holdMs / 1000) {
+        entry.pressed_at_seconds = seconds();
+        await press(window);
+      }
+    }
+    await Promise.race([outcome, sleep(pollMs)]);
+  }
+  const openAtSettle = list();
+  for (const entry of modals.filter((known) => known.held)) {
+    entry.settled_while_open = openAtSettle.some((window) => sameWindow(entry, window));
+  }
+  return { result: await outcome, settled_at_seconds: settledAt, modals };
+}
+
 export async function dismissBlockingModals({ rounds = 6, pauseMs = 1500 } = {}) {
   const dismissed = [];
   for (let round = 0; round < rounds; round++) {
@@ -272,11 +305,17 @@ export async function quitLightroom({ timeoutMs = 120_000 } = {}) {
   throw new Error(`Lightroom did not quit within ${timeoutMs / 1000}s`);
 }
 
-export async function reopenWithCatalog(catalogPath, { timeoutMs = 180_000 } = {}) {
+const MAIN_WINDOW_TITLE = /^.+\.lrcat - .*Lightroom Classic/;
+
+export function catalogWindowState(windowNames, catalogPath) {
+  const windowPrefix = `${path.basename(catalogPath)} - `;
+  if (windowNames.some((name) => name.startsWith(windowPrefix))) return "requested";
+  return windowNames.some((name) => MAIN_WINDOW_TITLE.test(name)) ? "other" : "waiting";
+}
+
+async function launchWithCatalog(catalogPath, deadline) {
   if (lightroomIsRunning()) await quitLightroom();
   execFileSync("open", ["-a", LIGHTROOM_PROCESS_NAME, catalogPath]);
-  const windowPrefix = `${path.basename(catalogPath)} - `;
-  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await sleep(2000);
     let names = "";
@@ -285,10 +324,21 @@ export async function reopenWithCatalog(catalogPath, { timeoutMs = 180_000 } = {
     } catch {
       continue;
     }
-    if (names.split(", ").some((name) => name.startsWith(windowPrefix))) {
-      await ensureLightroomFrontmost();
-      return;
-    }
+    const state = catalogWindowState(names.split(", "), catalogPath);
+    if (state !== "waiting") return state;
   }
-  throw new Error(`Lightroom did not open ${catalogPath} within ${timeoutMs / 1000}s`);
+  return "waiting";
+}
+
+export async function reopenWithCatalog(catalogPath, { timeoutMs = 180_000, launches = 3 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (let launch = 1; launch <= launches && Date.now() < deadline; launch++) {
+    const state = await launchWithCatalog(catalogPath, deadline);
+    if (state === "requested") {
+      await ensureLightroomFrontmost();
+      return { launches: launch };
+    }
+    if (state === "waiting") break;
+  }
+  throw new Error(`Lightroom did not open ${catalogPath} within ${timeoutMs / 1000}s and ${launches} launches`);
 }

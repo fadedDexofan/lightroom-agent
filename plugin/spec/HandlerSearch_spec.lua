@@ -33,8 +33,8 @@ describe("HandlerSearch.searchPhotos", function()
         local full = Handler.searchPhotos({ limit = 1, include_path = true })
         local explicit = Handler.searchPhotos({ limit = 1, include_path = false })
 
-        assert.are.same({ id = "1", filename = "sunset.jpg", rating = 5,
-            dateTimeOriginal = "2024-06-01" }, slim.photos[1])
+        assert.are.same({ photo_id = "1", filename = "sunset.jpg", rating = 5,
+            date_time_original = "2024-06-01", flag = "none", color_label = "none" }, slim.photos[1])
         assert.are.same(slim, explicit)
         assert.are.equal("/a/sunset.jpg", full.photos[1].path)
         full.photos[1].path = nil
@@ -64,6 +64,60 @@ describe("HandlerSearch.searchPhotos", function()
         end
     end)
 
+    it("carries rating, flag and color label on every row through PhotoMarks", function()
+        catalog = helper.fakeCatalog({ photos = { helper.fakePhoto({ id = "1", path = "/m1.jpg", fileName = "m.jpg",
+            rating = 2, pickStatus = -1, colorNameForLabel = "red" }) } })
+        local row = Handler.searchPhotos({}).photos[1]
+        assert.are.same({ 2, "reject", "red" }, { row.rating, row.flag, row.color_label })
+    end)
+
+    it("tells on each row whether the photo is in a stack and whether it is the top", function()
+        local top = helper.fakePhoto({ id = "1", path = "/s/top.jpg", fileName = "top.jpg",
+            isInStackInFolder = true, stackPositionInFolder = 1, stackInFolderIsCollapsed = false })
+        local member = helper.fakePhoto({ id = "2", path = "/s/member.jpg", fileName = "member.jpg",
+            isInStackInFolder = true, stackPositionInFolder = 2, stackInFolderIsCollapsed = false,
+            topOfStackInFolderContainingPhoto = top })
+        top:setRawMetadata("topOfStackInFolderContainingPhoto", top)
+        local alone = helper.fakePhoto({ id = "3", path = "/s/alone.jpg", fileName = "alone.jpg" })
+        catalog = helper.fakeCatalog({ photos = { top, member, alone } })
+        local context = helper.requestContext()
+
+        local rows = Handler.searchPhotos({ filename = "" }, context).photos
+
+        assert.are.same({ position = 1, is_collapsed = false, top_photo_id = "1" }, rows[1].stack)
+        assert.are.same({ position = 2, is_collapsed = false, top_photo_id = "1" }, rows[2].stack)
+        assert.is_nil(rows[3].stack)
+        assert.are.same({}, context.warnings)
+    end)
+
+    it("warns that the hidden photos of a collapsed stack are not searched", function()
+        local top = helper.fakePhoto({ id = "7", path = "/s/top.jpg", fileName = "top.jpg",
+            isInStackInFolder = true, stackPositionInFolder = 1, stackInFolderIsCollapsed = true })
+        top:setRawMetadata("topOfStackInFolderContainingPhoto", top)
+        catalog = helper.fakeCatalog({ photos = { top, helper.fakePhoto({ id = "8", path = "/s/b.jpg", fileName = "b.jpg" }) } })
+        local context = helper.requestContext()
+
+        local result = Handler.searchPhotos({ filename = "" }, context)
+
+        assert.are.same({ position = 1, is_collapsed = true, top_photo_id = "7" }, result.photos[1].stack)
+        assert.are.equal(1, #context.warnings)
+        assert.truthy(context.warnings[1]:find("collapsed stack", 1, true))
+        assert.truthy(context.warnings[1]:find("7", 1, true))
+        assert.truthy(context.warnings[1]:find("get_photo_metadata", 1, true))
+    end)
+
+    it("answers a query that matches nothing with an empty page", function()
+        local result = Handler.searchPhotos({ filename = "nothing-like-this" })
+        assert.are.same({ count = 0, photos = {}, has_more = false }, result)
+    end)
+
+    it("puts the full-scan notice among the request's warnings, not in the data", function()
+        local context = helper.requestContext()
+        local result = Handler.searchPhotos({}, context)
+        assert.is_nil(result.warning)
+        assert.is_not_nil(context.warnings[1]:find("No filters applied", 1, true))
+    end)
+
     it("filters by filename substring (case-insensitive)", function()
         local result = Handler.searchPhotos({ filename = "PORTRAIT" })
         assert.are.equal(1, result.count)
@@ -73,46 +127,23 @@ describe("HandlerSearch.searchPhotos", function()
     it("filters by date range", function()
         local result = Handler.searchPhotos({ start_date = "2024-06-02", end_date = "2024-06-02" })
         assert.are.equal(1, result.count)
-        assert.are.equal("2", result.photos[1].id)
+        assert.are.equal("2", result.photos[1].photo_id)
     end)
 
     it("filters inclusively by start date", function()
         local result = Handler.searchPhotos({ start_date = "2024-06-02" })
         assert.are.equal(2, result.count)
-        assert.are.equal("2", result.photos[1].id)
-        assert.are.equal("3", result.photos[2].id)
+        assert.are.equal("2", result.photos[1].photo_id)
+        assert.are.equal("3", result.photos[2].photo_id)
     end)
 
     it("filters inclusively by end date", function()
         local result = Handler.searchPhotos({ end_date = "2024-06-02" })
         assert.are.equal(2, result.count)
-        assert.are.equal("1", result.photos[1].id)
-        assert.are.equal("2", result.photos[2].id)
+        assert.are.equal("1", result.photos[1].photo_id)
+        assert.are.equal("2", result.photos[2].photo_id)
     end)
 
-    it("rejects malformed date filters before querying Lightroom", function()
-        local ok, err = pcall(function()
-            Handler.searchPhotos({ start_date = "2024-6-02", end_date = "2024-06-03" })
-        end)
-        assert.is_false(ok)
-        assert.matches("start_date must use YYYY%-MM%-DD format", err)
-    end)
-
-    it("rejects invalid calendar dates before querying Lightroom", function()
-        local ok, err = pcall(function()
-            Handler.searchPhotos({ start_date = "2024-02-30" })
-        end)
-        assert.is_false(ok)
-        assert.matches("start_date must use a valid calendar date", err)
-    end)
-
-    it("rejects reversed date ranges before querying Lightroom", function()
-        local ok, err = pcall(function()
-            Handler.searchPhotos({ start_date = "2024-06-03", end_date = "2024-06-02" })
-        end)
-        assert.is_false(ok)
-        assert.matches("start_date must be on or before end_date", err)
-    end)
 
     it("returns empty when no photo matches", function()
         local result = Handler.searchPhotos({ rating = 1 })
@@ -162,22 +193,9 @@ describe("HandlerSearch.searchPhotos", function()
         catalog = helper.fakeCatalog({ photos = photos })
         local result = Handler.searchPhotos({ flag = "pick", rating = 5, file_type = "RAW", edited = false })
         assert.are.equal(1, result.count)
-        assert.are.equal("1", result.photos[1].id)
+        assert.are.equal("1", result.photos[1].photo_id)
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
-
-    for _, args in ipairs({
-        { flag = "maybe" }, { file_type = "GIF" }, { color_label = "pink" },
-        { camera = "" }, { lens = 42 }, { folder = "  " }, { iso = -1 }, { iso = math.huge },
-        { iso = 0/0 }, { edited = "false" },
-        { focal_length = 0 }, { focal_length = -32 }, { focal_length = math.huge },
-        { focal_length = 0/0 }, { focal_length = "32 mm" },
-    }) do
-        it("rejects invalid Library filters before a catalog query", function()
-            assert.has_error(function() Handler.searchPhotos(args) end)
-            assert.are.equal(0, catalog.getQueryCount())
-        end)
-    end
 
     it("intersects native focal length with other filters", function()
         catalog = helper.fakeCatalog({ photos = {
@@ -187,7 +205,7 @@ describe("HandlerSearch.searchPhotos", function()
         } })
         local result = Handler.searchPhotos({ focal_length = 32, rating = 5 })
         assert.are.equal(1, result.count)
-        assert.are.equal("1", result.photos[1].id)
+        assert.are.equal("1", result.photos[1].photo_id)
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
 
@@ -238,8 +256,8 @@ describe("HandlerSearch.searchPhotos pagination", function()
         assert.are.equal(250, r.count)
         assert.are.equal(100, #r.photos)
         assert.is_true(r.has_more)
-        assert.are.equal("1", r.photos[1].id)
-        assert.are.equal("100", r.photos[100].id)
+        assert.are.equal("1", r.photos[1].photo_id)
+        assert.are.equal("100", r.photos[100].photo_id)
     end)
 
     it("respects explicit limit up to total", function()
@@ -253,8 +271,8 @@ describe("HandlerSearch.searchPhotos pagination", function()
         local r = Handler.searchPhotos({ limit = 50, offset = 100 })
         assert.are.equal(250, r.count)
         assert.are.equal(50, #r.photos)
-        assert.are.equal("101", r.photos[1].id)
-        assert.are.equal("150", r.photos[50].id)
+        assert.are.equal("101", r.photos[1].photo_id)
+        assert.are.equal("150", r.photos[50].photo_id)
         assert.is_true(r.has_more)
     end)
 

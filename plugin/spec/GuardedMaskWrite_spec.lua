@@ -6,12 +6,6 @@ local linearComponent = Store.linearComponent
 local radialComponent = Store.radialComponent
 local correction = Store.correction
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 local HOME = "/Users/tester"
 local CERTIFICATION_FILE = HOME .. "/.config/lightroom-mcp/mask-certification.json"
 local THROWAWAY_CATALOG = HOME .. "/Pictures/lrmcp-live-1/lrmcp-live-1.lrcat"
@@ -19,10 +13,10 @@ local THROWAWAY_MARKER = HOME .. "/Pictures/lrmcp-live-1/lrmcp-live-catalog.json
 local PERSONAL_CATALOG = HOME .. "/Pictures/Lightroom/Lightroom Catalog.lrcat"
 local RUNNING_BUILD = "16.0.0 build 1234567"
 
-local function certification(build, processVersions)
+local function certification(build)
     return string.format(
-        '{"lightroom":{"version":"16.0","build":"%s"},"process_versions":["%s"],"certified_at":"2026-11-12T10:00:00Z","checks":["linear create"]}',
-        build, table.concat(processVersions or { "15.4" }, '","'))
+        '{"lightroom":{"version":"16.0","build":"%s"},"process_versions":["15.4"],"certified_at":"2026-11-12T10:00:00Z","checks":["linear create"]}',
+        build)
 end
 
 local function setup(opts)
@@ -60,7 +54,7 @@ local function setup(opts)
         },
         LrLogger = helper.defaultLrLogger(),
     })
-    for _, name in ipairs({ "GuardedMaskWrite", "MaskWriteAdmission", "PluginFiles", "Log" }) do
+    for _, name in ipairs({ "GuardedMaskWrite", "MaskWriteAdmission", "RunningLightroom", "PluginFiles", "Log" }) do
         package.loaded[name] = nil
     end
     local Guard = require 'GuardedMaskWrite'
@@ -99,17 +93,6 @@ describe("GuardedMaskWrite.preflight", function()
         assert.are.equal(1, state.reads)
     end)
 
-    it("refuses a write on a catalog without the kit marker when no certification exists", function()
-        local Guard, catalog, photo = setup({ catalogPath = PERSONAL_CATALOG, files = {} })
-
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
-
-        assert.is_truthy(message:find("Lightroom Classic 16.0 (" .. RUNNING_BUILD .. ") is not certified", 1, true))
-        assert.is_truthy(message:find("certified: none", 1, true))
-        assert.is_truthy(message:find("certify-mask-writes.mjs", 1, true))
-        assert.is_truthy(message:find("Nothing was changed", 1, true))
-    end)
-
     it("admits a write when the certification names the running build and the photo's process version", function()
         local Guard, catalog, photo = setup({
             catalogPath = PERSONAL_CATALOG,
@@ -120,30 +103,6 @@ describe("GuardedMaskWrite.preflight", function()
         assert.are.equal(1, #Guard.preflight(catalog, photo))
     end)
 
-    it("refuses a write when the certification is for another build", function()
-        local Guard, catalog, photo = setup({
-            catalogPath = PERSONAL_CATALOG,
-            files = { [CERTIFICATION_FILE] = certification("16.0 [ 202610010000-aaaaaaaa ]") },
-        })
-
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
-
-        assert.is_truthy(message:find("is not certified", 1, true))
-        assert.is_truthy(message:find("certified: 16.0 [ 202610010000-aaaaaaaa ]", 1, true))
-    end)
-
-    it("refuses on a certification written before builds were recorded and asks for a new run", function()
-        local Guard, catalog, photo = setup({
-            catalogPath = PERSONAL_CATALOG,
-            files = { [CERTIFICATION_FILE] = certification("16.0") },
-        })
-
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
-
-        assert.is_truthy(message:find("names no Lightroom build", 1, true))
-        assert.is_truthy(message:find("certify-mask-writes.mjs", 1, true))
-    end)
-
     it("refuses a photo whose process version the certification did not exercise", function()
         local Guard, catalog, photo = setup({
             catalogPath = PERSONAL_CATALOG,
@@ -151,16 +110,21 @@ describe("GuardedMaskWrite.preflight", function()
             processVersion = "11.0",
         })
 
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+        local message = helper.refusalOf(function() Guard.preflight(catalog, photo) end)
 
         assert.is_truthy(message:find("process version (11.0)", 1, true))
-        assert.is_truthy(message:find("certified: 15.4", 1, true))
+        assert.is_truthy(message:find("Nothing was changed", 1, true))
     end)
 
-    it("admits a write on the kit's throwaway catalog without a certification", function()
-        local Guard, catalog, photo = setup({ processVersion = "11.0" })
+    it("refuses under the planned process version even when the photo's own is certified", function()
+        local Guard, catalog, photo = setup({
+            catalogPath = PERSONAL_CATALOG,
+            files = { [CERTIFICATION_FILE] = certification(RUNNING_BUILD) },
+        })
 
-        assert.are.same({}, Guard.preflight(catalog, photo))
+        local message = helper.refusalOf(function() Guard.preflight(catalog, photo, "11.0") end)
+
+        assert.is_truthy(message:find("process version (11.0)", 1, true))
     end)
 
     it("refuses when an existing component lost a pinned field to a rename", function()
@@ -169,7 +133,7 @@ describe("GuardedMaskWrite.preflight", function()
         renamed.FullYY = 0.2
         local Guard, catalog, photo = setup({ entries = { correction("A", { renamed }) } })
 
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+        local message = helper.refusalOf(function() Guard.preflight(catalog, photo) end)
 
         assert.is_truthy(message:find("pinned mask format", 1, true))
         assert.is_truthy(message:find("missing FullY", 1, true))
@@ -180,7 +144,7 @@ describe("GuardedMaskWrite.preflight", function()
         local entry = correction("A", { linearComponent() }, { CorrectionSomethingNew = 1 })
         local Guard, catalog, photo = setup({ entries = { entry } })
 
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+        local message = helper.refusalOf(function() Guard.preflight(catalog, photo) end)
 
         assert.is_truthy(message:find("unexpected field CorrectionSomethingNew", 1, true))
     end)
@@ -208,7 +172,7 @@ describe("GuardedMaskWrite.preflight", function()
         local entry = correction("A", { linearComponent() }, { MainCurve = "0,0 255,255" })
         local Guard, catalog, photo = setup({ entries = { entry } })
 
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+        local message = helper.refusalOf(function() Guard.preflight(catalog, photo) end)
 
         assert.is_truthy(message:find("MainCurve must be a table", 1, true))
     end)
@@ -218,7 +182,7 @@ describe("GuardedMaskWrite.preflight", function()
             entries = { correction("A", { { What = "Mask/Teleport", MaskActive = true } }) },
         })
 
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+        local message = helper.refusalOf(function() Guard.preflight(catalog, photo) end)
 
         assert.is_truthy(message:find("unknown mask type Mask/Teleport", 1, true))
     end)
@@ -228,6 +192,16 @@ describe("GuardedMaskWrite.preflight", function()
         local Guard, catalog, photo = setup({ entries = { correction("AI", { ai }) } })
 
         assert.are.equal(1, #Guard.preflight(catalog, photo))
+    end)
+
+    it("refuses, writing nothing, when an existing mask holds a value it cannot copy", function()
+        local ai = { What = "Mask/Image", MaskActive = true, Opaque = io.stdout }
+        local Guard, catalog, photo, state = setup({ entries = { correction("AI", { ai }) } })
+
+        local message = helper.refusalOf(function() Guard.apply(catalog, photo, { description = "x", build = appendGradient(linearComponent()) }) end)
+
+        assert.is_truthy(message:find("userdata", 1, true))
+        assert.are.equal(0, #state.writes)
     end)
 
     it("accepts existing brush and luminance range masks", function()
@@ -248,14 +222,14 @@ describe("GuardedMaskWrite.preflight", function()
         assert.are.equal(2, #Guard.preflight(catalog, photo))
     end)
 
-    it("refuses an existing depth range mask", function()
+    it("refuses an existing range mask of an unsupported type", function()
         local range = {
             What = "Mask/RangeMask",
             CorrectionRangeMask = { Type = 3, DepthRange = "0 0 1 1" },
         }
         local Guard, catalog, photo = setup({ entries = { correction("D", { range }) } })
 
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+        local message = helper.refusalOf(function() Guard.preflight(catalog, photo) end)
 
         assert.is_truthy(message:find("unsupported range Type 3", 1, true))
     end)
@@ -267,7 +241,7 @@ describe("GuardedMaskWrite.preflight", function()
         }
         local Guard, catalog, photo = setup({ entries = { correction("C", { range }) } })
 
-        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+        local message = helper.refusalOf(function() Guard.preflight(catalog, photo) end)
 
         assert.is_truthy(message:find("exactly one PointModels entry", 1, true))
     end)
@@ -301,6 +275,19 @@ describe("GuardedMaskWrite.apply", function()
         assert.are.equal(0, state.readsOutsideGate)
     end)
 
+    it("accepts a clear that Lightroom stores as no mask key at all, without a rollback", function()
+        local existing = correction("Old", { radialComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" })
+        local Guard, catalog, photo, state = setup({ entries = { existing } })
+
+        local result = Guard.apply(catalog, photo, { description = "Clear", build = function() return {} end })
+
+        assert.are.equal(1, #state.writes)
+        assert.are.same({}, state.writes[1])
+        assert.is_nil(photo:getDevelopSettings().MaskGroupBasedCorrections)
+        assert.are.same({}, result.entries)
+        assert.are.equal(1, #result.previous)
+    end)
+
     it("writes past an existing mask that holds a local tone curve and keeps the curve", function()
         local curved = correction("Old", { radialComponent({ MaskID = "OLDT1" }) }, {
             CorrectionID = "OLD",
@@ -328,7 +315,7 @@ describe("GuardedMaskWrite.apply", function()
     it("hands build a copy so a failed build leaves the previous list intact", function()
         local Guard, catalog, photo, state = setup({ entries = { correction("A", { linearComponent() }) } })
 
-        local message = errorOf(function()
+        local message = helper.unknownOf(function()
             Guard.apply(catalog, photo, {
                 description = "x",
                 build = function(entries)
@@ -373,7 +360,7 @@ describe("GuardedMaskWrite.apply", function()
     it("refuses an uncertified Lightroom before writing masks", function()
         local Guard, catalog, photo, state = setup({ catalogPath = PERSONAL_CATALOG, files = {} })
 
-        errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.are.equal(0, #state.writes)
     end)
@@ -381,7 +368,7 @@ describe("GuardedMaskWrite.apply", function()
     it("refuses a new component with a string where a number belongs, writing nothing", function()
         local Guard, catalog, photo, state = setup()
 
-        local message = errorOf(function()
+        local message = helper.refusalOf(function()
             applyAppend(Guard, catalog, photo, linearComponent({ FullY = "0.2" }))
         end)
 
@@ -392,10 +379,10 @@ describe("GuardedMaskWrite.apply", function()
     it("refuses a boolean where a number belongs and a NaN", function()
         local Guard, catalog, photo, state = setup()
 
-        local booleanMessage = errorOf(function()
+        local booleanMessage = helper.refusalOf(function()
             applyAppend(Guard, catalog, photo, linearComponent({ ZeroX = true }))
         end)
-        local nanMessage = errorOf(function()
+        local nanMessage = helper.refusalOf(function()
             applyAppend(Guard, catalog, photo, linearComponent({ ZeroX = 0 / 0 }))
         end)
 
@@ -409,7 +396,7 @@ describe("GuardedMaskWrite.apply", function()
         local component = linearComponent()
         component.FullY = nil
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, component) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, component) end)
 
         assert.is_truthy(message:find("missing FullY", 1, true))
         assert.are.equal(0, #state.writes)
@@ -420,10 +407,10 @@ describe("GuardedMaskWrite.apply", function()
         local absent = linearComponent()
         absent.What = nil
 
-        local unknown = errorOf(function()
+        local unknown = helper.refusalOf(function()
             applyAppend(Guard, catalog, photo, linearComponent({ What = "Mask/Nope" }))
         end)
-        local missing = errorOf(function() applyAppend(Guard, catalog, photo, absent) end)
+        local missing = helper.refusalOf(function() applyAppend(Guard, catalog, photo, absent) end)
 
         assert.is_truthy(unknown:find("unknown mask type Mask/Nope", 1, true))
         assert.is_truthy(missing:find("unknown mask type nil", 1, true))
@@ -436,15 +423,29 @@ describe("GuardedMaskWrite.apply", function()
             return { What = "Mask/RangeMask", MaskActive = true, CorrectionRangeMask = rangeTable }
         end
 
-        local two = errorOf(function()
+        local two = helper.refusalOf(function()
             applyAppend(Guard, catalog, photo, range({ Type = 1, ColorAmount = 0.4, PointModels = { "a", "b" } }))
         end)
-        local depth = errorOf(function()
+        local unsupported = helper.refusalOf(function()
             applyAppend(Guard, catalog, photo, range({ Type = 3, DepthRange = "0 0 1 1" }))
         end)
 
         assert.is_truthy(two:find("exactly one PointModels entry", 1, true))
-        assert.is_truthy(depth:find("unsupported range Type 3", 1, true))
+        assert.is_truthy(unsupported:find("unsupported range Type 3", 1, true))
+        assert.are.equal(0, #state.writes)
+    end)
+
+    it("refuses without a rollback write when the catalog stays busy with another write", function()
+        local Guard, catalog, photo, state = setup({
+            entries = { correction("Old", { linearComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" }) },
+        })
+        catalog.withWriteAccessDo = function(_, _, _, timeoutParams)
+            if timeoutParams then return "aborted" end
+        end
+
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+
+        assert.are.equal(helper.catalogBusy("Test write"), message)
         assert.are.equal(0, #state.writes)
     end)
 
@@ -457,7 +458,7 @@ describe("GuardedMaskWrite.apply", function()
             end,
         })
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.is_truthy(message:find("previous masks were restored", 1, true))
         assert.is_truthy(message:find("count changed from 1 to 0", 1, true))
@@ -475,7 +476,7 @@ describe("GuardedMaskWrite.apply", function()
             end,
         })
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.is_truthy(message:find("FullY: wrote 0.2, read back 0.9", 1, true))
         assert.are.same({}, state.writes[2])
@@ -491,7 +492,7 @@ describe("GuardedMaskWrite.apply", function()
             end,
         })
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.is_truthy(message:find("Feather: wrote 50, read back 0", 1, true))
         assert.are.equal(2, #state.writes)
@@ -505,7 +506,7 @@ describe("GuardedMaskWrite.apply", function()
             end,
         })
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.is_truthy(message:find("mask count changed: wrote 1, read back 0", 1, true))
         assert.are.equal(2, #state.writes)
@@ -554,7 +555,7 @@ describe("GuardedMaskWrite.apply", function()
             end,
         })
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.is_truthy(message:find("previous masks were restored", 1, true))
         assert.is_nil(message:find("could not be confirmed restored", 1, true))
@@ -574,25 +575,41 @@ describe("GuardedMaskWrite.apply", function()
             end,
         })
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.is_truthy(message:find("LocalGlow: wrote 12, read back nil", 1, true))
         assert.are.equal(2, #state.writes)
         assert.are.equal(12, state.writes[2][1].LocalGlow)
     end)
 
-    it("reports when the rollback itself is not confirmed", function()
-        local Guard, catalog, photo = setup({
-            entries = { correction("Old", { linearComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" }) },
-            transformWrite = function(stored)
+    it("answers unknown when the rollback reads back different, or its gate stays busy after the write", function()
+        local cases = {
+            { name = "restore read back different", writes = 2, transformWrite = function(stored)
                 stored[1].CorrectionMasks = {}
                 return stored
-            end,
-        })
+            end },
+            { name = "restore gate busy", writes = 1, busyGate = 2, transformWrite = function(stored, writeNumber)
+                if writeNumber == 1 then stored[1].CorrectionMasks = {} end
+                return stored
+            end },
+        }
+        for _, case in ipairs(cases) do
+            local Guard, catalog, photo, state = setup({
+                entries = { correction("Old", { linearComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" }) },
+                transformWrite = case.transformWrite,
+            })
+            local write, gates = catalog.withWriteAccessDo, 0
+            catalog.withWriteAccessDo = function(self, description, fn, timeoutParams)
+                gates = gates + 1
+                if gates == case.busyGate then return "aborted" end
+                return write(self, description, fn, timeoutParams)
+            end
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+            local message = helper.unknownOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
-        assert.is_truthy(message:find("could not be confirmed restored", 1, true))
+            assert.is_truthy(message:find("could not be confirmed restored", 1, true), case.name)
+            assert.are.equal(case.writes, #state.writes, case.name)
+        end
     end)
 
     it("attempts a restore when the write call itself throws", function()
@@ -600,7 +617,7 @@ describe("GuardedMaskWrite.apply", function()
             rejectWrite = function(writeNumber) return writeNumber == 1 end,
         })
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.is_truthy(message:find("Lightroom rejected the write", 1, true))
         assert.are.equal(1, #state.writes)
@@ -610,7 +627,7 @@ describe("GuardedMaskWrite.apply", function()
     it("rolls back when the cross-check reports a problem", function()
         local Guard, catalog, photo, state = setup()
 
-        local message = errorOf(function()
+        local message = helper.refusalOf(function()
             applyAppend(Guard, catalog, photo, linearComponent(), {
                 crossCheck = function() return "mask list does not show the tool" end,
             })
@@ -624,7 +641,7 @@ describe("GuardedMaskWrite.apply", function()
     it("rolls back when the cross-check throws", function()
         local Guard, catalog, photo, state = setup()
 
-        local message = errorOf(function()
+        local message = helper.refusalOf(function()
             applyAppend(Guard, catalog, photo, linearComponent(), {
                 crossCheck = function() error("getAllMasks failed", 0) end,
             })
@@ -671,7 +688,7 @@ describe("GuardedMaskWrite.apply", function()
             end,
         })
 
-        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+        local message = helper.refusalOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.is_truthy(message:find("mask type changed", 1, true))
         assert.are.equal(2, #state.writes)
@@ -769,6 +786,17 @@ describe("GuardedMaskWrite.compareEntries", function()
         assert.are.equal(1, #omitted)
         assert.is_truthy(omitted[1]:find("LocalGlow: wrote 12, read back nil", 1, true))
         assert.are.equal(1, #changed)
+    end)
+
+    it("compares an omitted local adjustment with the slider's own neutral value", function()
+        local atNeutral = Guard.compareEntries(oneEntry(linearComponent(), { LocalColorGradeBlending = 50 }),
+            entryWithout({}, { "LocalColorGradeBlending" }))
+        local atZero = Guard.compareEntries(oneEntry(linearComponent(), { LocalColorGradeBlending = 0 }),
+            entryWithout({}, { "LocalColorGradeBlending" }))
+
+        assert.are.same({}, atNeutral)
+        assert.are.equal(1, #atZero)
+        assert.is_truthy(atZero[1]:find("LocalColorGradeBlending: wrote 0, read back nil", 1, true))
     end)
 
     it("still rejects an omitted zero outside the local adjustments", function()

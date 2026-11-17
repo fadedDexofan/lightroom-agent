@@ -6,13 +6,17 @@ import {
   ORIENTATIONS,
   RAMP256_LAYOUT,
   applyOrientation,
+  MARKER_DISCS,
   buildChart80,
+  buildCheckerboard,
+  buildMarkers,
   buildOrientationPattern,
   buildPano,
   buildRamp256,
   buildWidePlain,
   chart80Patches,
   classifyOrientation,
+  displayedFraction,
   displayedSize,
   expectedDisplayedCorners,
   hsvToRgb,
@@ -137,4 +141,52 @@ test("the F glyph breaks mirror symmetry inside the pattern", () => {
   assert.notDeepEqual(mirrored.rgb, pattern.rgb);
   const turned = applyOrientation(applyOrientation(pattern, 3), 3);
   assert.deepEqual(turned.rgb, pattern.rgb);
+});
+
+test("the checkerboard alternates black and white on every pixel", () => {
+  const board = buildCheckerboard(6, 4);
+  for (let y = 0; y < 4; y++) {
+    for (let x = 0; x < 6; x++) assert.deepEqual(pixelAt(board, x, y), (x + y) % 2 === 0 ? [255, 255, 255] : [0, 0, 0]);
+  }
+  const full = buildCheckerboard();
+  assert.deepEqual([full.width, full.height], [1200, 800]);
+});
+
+function centroidOf(canvas, color) {
+  let sx = 0;
+  let sy = 0;
+  let n = 0;
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      if (pixelAt(canvas, x, y).every((value, i) => value === color[i])) {
+        sx += x + 0.5;
+        sy += y + 0.5;
+        n++;
+      }
+    }
+  }
+  return { x: sx / n / canvas.width, y: sy / n / canvas.height };
+}
+
+test("markers carry three coloured discs at their stated positions", () => {
+  const markers = buildMarkers();
+  assert.deepEqual([markers.width, markers.height], [1500, 1000]);
+  assert.deepEqual(MARKER_DISCS.map((disc) => disc.name), ["red", "blue", "green"]);
+  for (const disc of MARKER_DISCS) {
+    const found = centroidOf(markers, disc.color);
+    assert.ok(Math.abs(found.x - disc.x) < 0.001 && Math.abs(found.y - disc.y) < 0.001, `${disc.name} ${JSON.stringify(found)}`);
+  }
+});
+
+test("a disc's displayed position follows the EXIF orientation", () => {
+  const markers = buildMarkers();
+  for (const orientation of ORIENTATIONS) {
+    const displayed = applyOrientation(markers, orientation);
+    for (const disc of MARKER_DISCS) {
+      const expected = displayedFraction(disc, orientation);
+      const found = centroidOf(displayed, disc.color);
+      assert.ok(Math.abs(found.x - expected.x) < 0.001 && Math.abs(found.y - expected.y) < 0.001,
+        `orientation ${orientation} ${disc.name}: ${JSON.stringify(found)} vs ${JSON.stringify(expected)}`);
+    }
+  }
 });

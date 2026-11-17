@@ -4,7 +4,9 @@ local LrTasks = import 'LrTasks'
 
 local DevelopSession = require 'DevelopSession'
 local JsonValue = require 'JsonValue'
+local MaskSelection = require 'MaskSelection'
 local PhotoLookup = require 'PhotoLookup'
+local Reply = require 'Reply'
 
 local HandlerSpots = {}
 local REQUIRED = { 'getAllSpots', 'getSelectedTool', 'selectTool', 'goToRemove',
@@ -18,26 +20,12 @@ local function copy(value)
     return result
 end
 
-local function same(left, right)
-    if type(left) ~= type(right) then return false end
-    if type(left) ~= 'table' then return left == right end
-    for key, value in pairs(left) do
-        if not same(value, right[key]) then return false end
-    end
-    for key in pairs(right) do if left[key] == nil then return false end end
-    return true
-end
-
 local function requireApi(name)
     local version = LrApplication.versionTable()
     if version.major < 14 or (version.major == 14 and version.minor < 1) then
-        error(name .. ' needs Lightroom Classic 14.1 or later')
+        Reply.refuse(name .. ' needs Lightroom Classic 14.1 or later')
     end
-    for _, key in ipairs(REQUIRED) do
-        if type(LrDevelopController[key]) ~= 'function' then
-            error(name .. ' needs Lightroom Classic 14.1 or later')
-        end
-    end
+    DevelopSession.requireControllerFunctions(name, REQUIRED, 'Lightroom Classic 14.1')
 end
 
 local function readSpots()
@@ -53,28 +41,23 @@ local function indexed(spots)
 end
 
 local function requireIndex(index, count)
-    if type(index) ~= 'number' or index ~= math.floor(index) or index < 1 or index > count then
-        error(string.format('Spot index %s is invalid; valid range: %s', tostring(index),
+    if index > count then
+        Reply.refuse(string.format('Spot index %s is invalid; valid range: %s', tostring(index),
             count == 0 and 'empty (no spots)' or '1..' .. tostring(count)))
     end
 end
 
-local function withPhoto(name, args, body)
-    requireApi(name)
-    local id = args.photo_id
-    if type(id) == 'number' then id = tostring(id) end
-    if type(id) ~= 'string' or id == '' then error('photo_id is required') end
+local function withPhoto(context, args, body)
+    requireApi(context.title)
     local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.resolveOne(catalog, id)
-    if not photo then error('Photo not found: ' .. id) end
-    local result = DevelopSession.withPhoto(name, catalog, photo, body)
-    result.success = true
-    result.photo_id = id
+    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local result = DevelopSession.withPhoto(context, catalog, photo, body)
+    result.photo_id = tostring(photo.localIdentifier)
     return result
 end
 
-local function withSelected(index, body)
-    local previousTool = LrDevelopController.getSelectedTool()
+local function withSelected(context, index, body)
+    local previousTool = MaskSelection.selectableTool(LrDevelopController.getSelectedTool())
     local previousIndex
     if previousTool == 'dust' then previousIndex = LrDevelopController.getSelectedSpotIndex() end
     local ok, result = LrTasks.pcall(function()
@@ -82,13 +65,13 @@ local function withSelected(index, body)
             LrDevelopController.goToRemove()
             if not DevelopSession.waitFor(function()
                 return LrDevelopController.getSelectedTool() == 'dust'
-            end, 5) then error('Lightroom did not open Remove') end
+            end, 5) then Reply.refuse('Lightroom did not open Remove') end
         end
         local spots = readSpots()
         requireIndex(index, #spots)
         local selected, message = LrDevelopController.setSelectedSpotIndex(index)
         if selected ~= true or LrDevelopController.getSelectedSpotIndex() ~= index then
-            error(string.format('Could not select spot %d; valid range: 1..%d (%s)',
+            Reply.refuse(string.format('Could not select spot %d; valid range: 1..%d (%s)',
                 index, #spots, tostring(message)))
         end
         return body(spots)
@@ -100,60 +83,68 @@ local function withSelected(index, body)
         elseif previousTool ~= 'dust' then
             LrDevelopController.selectTool(previousTool)
             if not DevelopSession.waitFor(function()
-                return LrDevelopController.getSelectedTool() == previousTool
+                return MaskSelection.selectableTool(LrDevelopController.getSelectedTool()) == previousTool
             end, 5) then error('Lightroom did not restore tool ' .. tostring(previousTool)) end
         end
     end)
+    local restoreProblem = not restored and ('Could not restore Remove tool state: ' .. Reply.messageOf(restoreError))
     if not ok then
-        if not restored then
-            error(tostring(result) .. '; could not restore Remove tool state: ' .. tostring(restoreError), 0)
-        end
-        error(result, 0)
+        if not restoreProblem then error(result, 0) end
+        local message = Reply.messageOf(result) .. '; ' .. restoreProblem
+        if Reply.refusalOf(result) then Reply.refuse(message) end
+        error(message, 0)
     end
-    if not restored then result.warning = 'Could not restore Remove tool state: ' .. tostring(restoreError) end
+    if restoreProblem then context:warn(restoreProblem) end
     return result
 end
 
-function HandlerSpots.list(args)
-    return withPhoto('list_spots', args, function()
+function HandlerSpots.list(args, context)
+    return withPhoto(context, args, function()
         local spots = readSpots()
         return { count = #spots, spots = indexed(spots) }
     end)
 end
 
-function HandlerSpots.update(args)
-    local params = args.params
-    if type(params) ~= 'table' or type(params.Opacity) ~= 'number'
-        or params.Opacity ~= params.Opacity or params.Opacity < 0 or params.Opacity > 1 then
-        error('params.Opacity must be a number from 0 to 1')
+local function problemWithOtherSpots(before, index)
+    local after = readSpots()
+    if #after ~= #before then return 'Lightroom changed the spot count' end
+    for otherIndex, spot in ipairs(before) do
+        if otherIndex ~= index and not JsonValue.equal(spot, after[otherIndex]) then
+            return 'Lightroom changed another spot'
+        end
     end
-    for key in pairs(params) do if key ~= 'Opacity' then error('Only params.Opacity is writable') end end
-    return withPhoto('update_spot', args, function()
-        return withSelected(args.index, function(before)
+    return nil
+end
+
+function HandlerSpots.update(args, context)
+    local params = args.params
+    return withPhoto(context, args, function()
+        return withSelected(context, args.index, function(before)
             local original = copy(LrDevelopController.getSelectedSpotParams())
             if type(original) ~= 'table' or original.SpotType ~= 'heal'
                 or type(original.Opacity) ~= 'number' then
-                error('Opacity editing is supported only for Heal spots with readable parameters')
+                Reply.refuse('Opacity editing is supported only for Heal spots with readable parameters')
             end
             if original.Opacity == params.Opacity then
                 return { index = args.index, changed = false, params = original }
             end
             local desired = copy(original)
             desired.Opacity = params.Opacity
+            local opacityKept = false
             local ok, err = LrTasks.pcall(function()
                 LrDevelopController.setSelectedSpotParams(desired)
                 if not DevelopSession.waitFor(function()
                     local current = LrDevelopController.getSelectedSpotParams()
                     return type(current) == 'table' and current.Opacity == params.Opacity
                 end, 5) then error('Lightroom did not keep Opacity') end
-                local after = readSpots()
-                if #after ~= #before then error('Lightroom changed the spot count') end
-                for index, spot in ipairs(before) do
-                    if index ~= args.index and not same(spot, after[index]) then
-                        error('Lightroom changed another spot')
-                    end
-                end
+                opacityKept = true
+                local problem = problemWithOtherSpots(before, args.index)
+                if problem then error(problem) end
             end)
+            if not ok and opacityKept then
+                error(Reply.messageOf(err) .. ' after the Opacity write landed, so nothing was written back;'
+                    .. ' list_spots to inspect', 0)
+            end
             if not ok then
                 local rolledBack, confirmed = LrTasks.pcall(function()
                     if LrDevelopController.setSelectedSpotIndex(args.index) ~= true then
@@ -161,11 +152,18 @@ function HandlerSpots.update(args)
                     end
                     LrDevelopController.setSelectedSpotParams(original)
                     return DevelopSession.waitFor(function()
-                        return same(LrDevelopController.getSelectedSpotParams(), original)
+                        return JsonValue.equal(LrDevelopController.getSelectedSpotParams(), original)
                     end, 5)
                 end)
-                error(tostring(err) .. ((rolledBack and confirmed) and '; original parameters restored'
-                    or '; rollback not confirmed; list_spots to inspect'))
+                if rolledBack and confirmed then
+                    local problem = problemWithOtherSpots(before, args.index)
+                    if problem then
+                        error(Reply.messageOf(err) .. '; original parameters restored, but ' .. problem
+                            .. '; list_spots to inspect', 0)
+                    end
+                    Reply.refuse(Reply.messageOf(err) .. '; original parameters restored')
+                end
+                error(Reply.messageOf(err) .. '; rollback not confirmed; list_spots to inspect', 0)
             end
             return { index = args.index, changed = true,
                 params = JsonValue.of(LrDevelopController.getSelectedSpotParams()) }
@@ -173,10 +171,9 @@ function HandlerSpots.update(args)
     end)
 end
 
-function HandlerSpots.delete(args)
-    if args.confirm ~= true then error('confirm must be true to delete a spot') end
-    return withPhoto('delete_spot', args, function()
-        return withSelected(args.index, function(before)
+function HandlerSpots.delete(args, context)
+    return withPhoto(context, args, function()
+        return withSelected(context, args.index, function(before)
             LrDevelopController.deleteSelectedSpot()
             local after
             if not DevelopSession.waitFor(function()
@@ -185,7 +182,7 @@ function HandlerSpots.delete(args)
             end, 5) then error('Lightroom did not delete the spot; list_spots to inspect') end
             local expected = copy(before)
             table.remove(expected, args.index)
-            if not same(expected, after) then error('Other spots changed during deletion; list_spots to inspect') end
+            if not JsonValue.equal(expected, after) then error('Other spots changed during deletion; list_spots to inspect') end
             return { deleted_index = args.index, count = #after, spots = indexed(after) }
         end)
     end)

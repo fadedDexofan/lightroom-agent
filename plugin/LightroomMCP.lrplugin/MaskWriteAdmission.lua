@@ -1,25 +1,15 @@
-local LrApplication = import 'LrApplication'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 
+local Reply = require 'Reply'
 local JSON = require 'JSON'
-local JsonValue = require 'JsonValue'
 local PluginFiles = require 'PluginFiles'
+local RunningLightroom = require 'RunningLightroom'
 
 local MaskWriteAdmission = {}
 
 local THROWAWAY_MARKER_FILE = "lrmcp-live-catalog.json"
 local CERTIFY_COMMAND = "node tests/e2e/live/certify-mask-writes.mjs"
-
-local function running()
-    local version = LrApplication.versionTable()
-    local label = tostring(version.major) .. "." .. tostring(version.minor)
-    local build
-    if version.build ~= nil then
-        build = string.format("%s.%s build %s", label, tostring(version.revision or 0), tostring(version.build))
-    end
-    return { version = label, build = build, version_table = JsonValue.of(version) }
-end
 
 local function isThrowaway(catalog)
     local path = catalog:getPath()
@@ -62,7 +52,7 @@ end
 
 function MaskWriteAdmission.status(catalog)
     local status = {
-        running = running(),
+        running = RunningLightroom.describe(),
         throwaway_catalog = isThrowaway(catalog),
         certification_file = PluginFiles.maskCertification(),
     }
@@ -75,11 +65,6 @@ function MaskWriteAdmission.status(catalog)
     if build == nil then
         status.reason = string.format(
             "Lightroom Classic %s reports no build number, so no certification can name it.", status.running.version)
-    elseif certified and certified.build == certified.version then
-        status.reason = string.format(
-            "The certification of %s names no Lightroom build (it was written before builds were recorded);"
-                .. " run `%s` on the live kit's throwaway catalog to certify %s.",
-            certified.version, CERTIFY_COMMAND, build)
     else
         status.reason = string.format(
             "Lightroom Classic %s (%s) is not certified for writing mask geometry (certified: %s). Run `%s`"
@@ -104,7 +89,7 @@ end
 
 function MaskWriteAdmission.requireAdmitted(catalog, processVersion)
     local decision = MaskWriteAdmission.decide(catalog, processVersion)
-    if not decision.admitted then error(decision.reason .. " Nothing was changed.", 0) end
+    if not decision.admitted then Reply.refuse(decision.reason .. " Nothing was changed.") end
 end
 
 return MaskWriteAdmission

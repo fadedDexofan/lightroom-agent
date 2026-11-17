@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
+import { dataOf, envelopeOf } from './helpers/envelope.js';
 import jpeg from 'jpeg-js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import { photoStats } from '../src/photo-stats.js';
@@ -16,24 +17,50 @@ function image(width: number, height: number, value: (x: number, y: number) => n
   return jpeg.encode({ width, height, data }, 100).data.toString('base64');
 }
 
-function handler(call: (action: string, params: unknown) => Promise<PluginResponse>) {
+function handler(call: (action: string, params: unknown, timeoutMs?: number) => Promise<PluginResponse>) {
   return createCallToolHandler({ isReady: () => true, dispatcher: { call } });
 }
 
-function preview(data: string): PluginResponse {
-  return { id: 'preview', result: { image: { data, mime_type: 'image/jpeg' } } };
+function preview(data: string, photoId = '1'): PluginResponse {
+  return { id: 'preview', result: { data: { photo_id: photoId, image: { data, mime_type: 'image/jpeg' } } } };
 }
 
 describe('photo stats', () => {
+  const flat = image(16, 16, () => 128);
+  const idOf = (params: unknown) => (params as { photo_ids: number[] }).photo_ids[0];
+
+  it('keeps the results measured when the plug-in call itself fails', async () => {
+    const response = await handler(async (_action, params) => {
+      if (idOf(params) === 2) throw new Error('Plugin request timed out');
+      return preview(flat, String(idOf(params)));
+    })('get_photo_stats', { photo_ids: [1, 2, 3] });
+    const envelope = envelopeOf(response);
+    expect((envelope.data as { results: { photo_id: string }[] }).results.map((result) => result.photo_id)).toEqual(['1']);
+    expect(envelope.remaining).toEqual([2, 3]);
+    expect(envelope.warnings).toEqual([expect.stringContaining('Plugin request timed out')]);
+  });
+
+  it('measures a full-size 20 MP preview', async () => {
+    const full = image(5000, 4000, () => 128);
+    const response = await handler(async () => preview(full))('get_photo_stats', { photo_ids: [1] });
+    const [result] = (dataOf(response) as { results: ReturnType<typeof photoStats>[] }).results;
+    expect([result.width, result.height]).toEqual([5000, 4000]);
+    expect(result.mean_luminance).toBeCloseTo(128, 0);
+  });
+
   it.each([
     { name: 'white', value: 255, shadow: 0, highlight: 1, bin: 63 },
     { name: 'black', value: 0, shadow: 1, highlight: 0, bin: 0 },
     { name: 'mid-gray', value: 128, shadow: 0, highlight: 0, bin: 32 },
   ])('clipping for $name JPEG', async ({ value, shadow, highlight, bin }) => {
-    const call = handler(async () => preview(image(32, 32, () => value)));
+    const call = handler(async (action, params) => {
+      expect(action).toBe('render_preview');
+      expect(params).toEqual({ photo_ids: [1], size: 512 });
+      return preview(image(32, 32, () => value));
+    });
 
     const response = await call('get_photo_stats', { photo_ids: [1] });
-    const data = JSON.parse(response.content[0].text) as { results: ReturnType<typeof photoStats>[] };
+    const data = dataOf(response) as { results: ReturnType<typeof photoStats>[] };
 
     expect(response.content).toHaveLength(1);
     expect(data.results[0].shadow_fraction).toBe(shadow);
@@ -45,16 +72,19 @@ describe('photo stats', () => {
 
   it('sharpness ranks a checkerboard at least twice its box blur', () => {
     const checker = (x: number, y: number) => (Math.floor(x / 16) + Math.floor(y / 16)) % 2 * 255;
+    const rowSums = Array.from({ length: 516 }, (_, y) => Array.from({ length: 512 }, (_, x) => {
+      let total = 0;
+      for (let dx = -4; dx <= 4; dx++) total += checker(Math.max(0, x + dx), y);
+      return total;
+    }));
     const blurred = (x: number, y: number) => {
       let total = 0;
-      for (let dy = -4; dy <= 4; dy++) {
-        for (let dx = -4; dx <= 4; dx++) total += checker(Math.max(0, x + dx), Math.max(0, y + dy));
-      }
+      for (let dy = -4; dy <= 4; dy++) total += rowSums[Math.max(0, y + dy)][x];
       return total / 81;
     };
 
-    const sharp = photoStats(image(512, 512, checker));
-    const soft = photoStats(image(512, 512, blurred));
+    const sharp = photoStats(Buffer.from(image(512, 512, checker), 'base64'));
+    const soft = photoStats(Buffer.from(image(512, 512, blurred), 'base64'));
 
     expect(sharp.sharpness).toBeGreaterThanOrEqual(soft.sharpness * 2);
   });
@@ -63,28 +93,28 @@ describe('photo stats', () => {
     const smaller = image(512, 256, (x, y) => (Math.floor(x / 16) + Math.floor(y / 16)) % 2 * 255);
     const larger = image(1024, 512, (x, y) => (Math.floor(x / 32) + Math.floor(y / 32)) % 2 * 255);
 
-    const ratio = photoStats(larger).sharpness / photoStats(smaller).sharpness;
+    const ratio = photoStats(Buffer.from(larger, 'base64')).sharpness / photoStats(Buffer.from(smaller, 'base64')).sharpness;
 
     expect(ratio).toBeGreaterThanOrEqual(0.75);
     expect(ratio).toBeLessThanOrEqual(1.25);
   });
 
-  it('batch preserves input order and isolates a missing preview', async () => {
+  it('batch preserves input order, names photos by string id and lists an unknown photo as not_found', async () => {
     const encoded = image(8, 8, () => 128);
     const call = handler(async (_action, params) => {
       const { photo_ids } = params as { photo_ids: number[] };
-      return photo_ids[0] === 2 ? { id: 'missing', error: 'Photo not found: 2' } : preview(encoded);
+      return photo_ids[0] === 2 ? { id: 'missing', result: { not_found: [2] } } : preview(encoded, String(photo_ids[0]));
     });
 
     const response = await call('get_photo_stats', { photo_ids: [1, 2, 3] });
-    const data: unknown = JSON.parse(response.content[0].text);
+    const envelope = envelopeOf(response);
 
-    expect(response.isError).toBeUndefined();
-    expect(data).toEqual({ results: [
-      expect.objectContaining({ photo_id: 1, mean_luminance: 128 }),
-      { photo_id: 2, error: 'Photo not found: 2' },
-      expect.objectContaining({ photo_id: 3, mean_luminance: 128 }),
+    expect(envelope.outcome).toBe('partial');
+    expect(envelope.data).toEqual({ results: [
+      expect.objectContaining({ photo_id: '1', mean_luminance: 128 }),
+      expect.objectContaining({ photo_id: '3', mean_luminance: 128 }),
     ] });
+    expect(envelope.not_found).toEqual([2]);
   });
 
   it.each([
@@ -99,19 +129,23 @@ describe('photo stats', () => {
     expect(response.content[0].text).toMatch(message);
   });
 
-  it('batch isolates invalid JPEG data and keeps duplicate ids', async () => {
+  it('batch lists invalid JPEG data and a failed preview as failed items', async () => {
     let count = 0;
     const encoded = image(8, 8, () => 110);
-    const call = handler(async () => preview(++count === 2 ? 'broken' : encoded));
+    const call = handler(async () => {
+      count++;
+      if (count === 3) return { id: 'preview', result: { failed: [{ photo_id: '3', reason: 'Preview failed' }] } };
+      return preview(count === 2 ? 'broken' : encoded, String(count));
+    });
 
-    const response = await call('get_photo_stats', { photo_ids: [1, 1, 1] });
-    const data: unknown = JSON.parse(response.content[0].text);
+    const response = await call('get_photo_stats', { photo_ids: [1, 2, 3] });
+    const envelope = envelopeOf(response);
 
-    expect(data).toEqual({ results: [
-      expect.objectContaining({ photo_id: 1, mean_luminance: 110 }),
-      { photo_id: 1, error: expect.any(String) },
-      expect.objectContaining({ photo_id: 1, mean_luminance: 110 }),
-    ] });
+    expect(envelope.data).toEqual({ results: [expect.objectContaining({ photo_id: '1', mean_luminance: 110 })] });
+    expect(envelope.failed).toEqual([
+      { photo_id: '2', reason: expect.any(String) },
+      { photo_id: '3', reason: 'Preview failed' },
+    ]);
   });
 
   it('size serializes one photo below 1500 characters', async () => {

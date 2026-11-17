@@ -9,10 +9,15 @@ import { encodePng } from "./lib/png.mjs";
 import {
   ORIENTATIONS,
   buildChart80,
+  buildCheckerboard,
+  buildMarkers,
   buildOrientationPattern,
   buildPano,
   buildRamp256,
   buildWidePlain,
+  MARKER_ORIENTATIONS,
+  STACK_CARDS,
+  createCanvas,
 } from "./lib/patterns.mjs";
 
 const skipJpeg = process.argv.includes("--png-only");
@@ -36,6 +41,11 @@ const chart80 = buildChart80();
 write("chart80", "chart80.png", encodePng(chart80), { width: chart80.width, height: chart80.height });
 const ramp256 = buildRamp256();
 write("ramp256", "ramp256.png", encodePng(ramp256), { width: ramp256.width, height: ramp256.height });
+const checkerboard = buildCheckerboard();
+write("checkerboard", "checkerboard.png", encodePng(checkerboard), { width: checkerboard.width, height: checkerboard.height });
+for (const card of STACK_CARDS) {
+  write(card.key, `${card.key}.png`, encodePng(createCanvas(card.width, card.height, card.color)), { width: card.width, height: card.height });
+}
 
 if (skipJpeg) {
   fs.writeFileSync(path.join(GENERATED_DIR, "generated.json"), JSON.stringify(index, null, 2) + "\n");
@@ -53,6 +63,16 @@ for (const orientation of ORIENTATIONS) {
   write(`orient_${orientation}`, `orient_${orientation}.jpg`, injectExifOrientation(orientationJpeg, orientation), {
     storedWidth: orientationPattern.width,
     storedHeight: orientationPattern.height,
+    exifOrientation: orientation,
+  });
+}
+
+const markers = buildMarkers();
+const markersJpeg = encodeJpegWithSips(markers);
+for (const orientation of MARKER_ORIENTATIONS) {
+  write(`markers_${orientation}`, `markers_${orientation}.jpg`, injectExifOrientation(markersJpeg, orientation), {
+    storedWidth: markers.width,
+    storedHeight: markers.height,
     exifOrientation: orientation,
   });
 }

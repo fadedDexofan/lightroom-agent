@@ -27,7 +27,10 @@
     {
       "key": "depth_heic",
       "envVar": "LRMCP_LIVE_DEPTH_HEIC",
-      "description": "iPhone Portrait-mode HEIC that carries a device depth map; depth range checks are skipped without it"
+      "description": "iPhone Portrait-mode HEIC that carries a device depth map; depth range checks are skipped without it. The pinned file is openize-heic-net's iphone_portrait_photo.heic (iPhone 14 Pro, 3024x4032, a glass of tea; disparity auxiliary image urn:mpeg:hevc:2015:auxid:2)",
+      "sha256": "c782e03d1ef2a709f6a84ff1b1612ef2dfa909e4872958d3975e15c79ab523c3",
+      "source": "https://raw.githubusercontent.com/openize-com/openize-heic-net/main/Openize.Heic.Tests/TestsData/samples/iphone_portrait_photo.heic",
+      "license": "Openize License (BSD-2-Clause derived); not redistributed"
     },
     {
       "key": "subject_photo",
@@ -37,7 +40,10 @@
     {
       "key": "people_photo",
       "envVar": "LRMCP_LIVE_PEOPLE_PHOTO",
-      "description": "Photo with at least one person for create_mask type people checks; optional"
+      "description": "Photo with at least one person for create_mask type people checks; optional. The pinned file is a 4000x5000 black-and-white portrait of a bearded man with long hair",
+      "sha256": "aa0467d2605c92d3ddc5eed890be3dab5cf3f9cda21d98182c9b918e1d873af7",
+      "source": "https://commons.wikimedia.org/wiki/File:Bearded_man_with_long_hair-3052641.jpg",
+      "license": "CC0-1.0; supplied locally like the others"
     }
   ]
 }

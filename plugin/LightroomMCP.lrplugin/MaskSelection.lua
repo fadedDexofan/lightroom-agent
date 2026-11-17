@@ -1,9 +1,8 @@
-local LrApplication = import 'LrApplication'
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local Reply = require 'Reply'
 local DevelopSession = require 'DevelopSession'
-local PhotoLookup = require 'PhotoLookup'
 
 local MaskSelection = {}
 
@@ -13,85 +12,238 @@ local MASK_SELECT_TIMEOUT_SECONDS = 8
 local MASK_RESELECT_SECONDS = 1
 local MASK_SELECT_SETTLE_SECONDS = 0.3
 
-function MaskSelection.requirePhotoId(value)
-    if type(value) == "number" then return tostring(value) end
-    if type(value) ~= "string" or value == "" then
-        error("photo_id is required")
-    end
-    return value
-end
-
-function MaskSelection.requireMaskId(value)
-    if type(value) ~= "string" or value == "" then
-        error("mask_id is required")
-    end
-    return value
-end
-
-function MaskSelection.requireTarget(args)
-    return MaskSelection.requirePhotoId(args.photo_id), MaskSelection.requireMaskId(args.mask_id)
-end
+local MASK_LISTED_TIMEOUT_SECONDS = 5
+local TOOL_SWITCH_TIMEOUT_SECONDS = 5
+local SLIDER_CONFIRM_TIMEOUT_SECONDS = 2
+local SLIDER_WRITE_ATTEMPTS = 2
+local MASKING_TOOL = "masking"
+local MASKING_TOOL_NAMES = { masking = true, local_point_color = true }
 
 function MaskSelection.requireControllerFunctions(toolName, names, minimumVersion)
     DevelopSession.requireMaskApi(toolName)
-    for _, name in ipairs(names) do
-        if type(LrDevelopController[name]) ~= "function" then
-            error(toolName .. " needs " .. minimumVersion .. " or later")
+    DevelopSession.requireControllerFunctions(toolName, names, minimumVersion)
+end
+
+function MaskSelection.idString(value)
+    if type(value) == "string" and value ~= "" then return value end
+    return nil
+end
+
+function MaskSelection.scalarOrNil(value)
+    local valueType = type(value)
+    if valueType == "string" or valueType == "number" or valueType == "boolean" then return value end
+    return nil
+end
+
+function MaskSelection.toolsOf(mask)
+    local tools = type(mask) == "table" and mask.Tools
+    if type(tools) ~= "table" then return {} end
+    return tools
+end
+
+function MaskSelection.findMask(masks, maskId)
+    for _, mask in ipairs(masks or {}) do
+        if type(mask) == "table" and mask.ID == maskId then return mask end
+    end
+    return nil
+end
+
+function MaskSelection.fingerprint(value)
+    if type(value) ~= "table" then return tostring(value) end
+    local keys = {}
+    for key in pairs(value) do keys[#keys + 1] = key end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+    local parts = {}
+    for _, key in ipairs(keys) do
+        parts[#parts + 1] = tostring(key) .. "=" .. MaskSelection.fingerprint(value[key])
+    end
+    return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local function savedMaskCount(catalog, photo)
+    local count = 0
+    catalog:withReadAccessDo(function()
+        local settings = photo:getDevelopSettings()
+        local groups = type(settings) == "table" and settings.MaskGroupBasedCorrections
+        if type(groups) == "table" then count = #groups end
+    end)
+    return count
+end
+
+function MaskSelection.holdsSavedMasks(catalog, photo, masks)
+    return #masks >= savedMaskCount(catalog, photo)
+end
+
+function MaskSelection.readMasks(catalog, photo)
+    local photoId = tostring(photo.localIdentifier)
+    local masks, lastError
+    local ready = DevelopSession.waitFor(function()
+        local ok, result = LrTasks.pcall(LrDevelopController.getAllMasks)
+        if not ok then
+            masks, lastError = nil, result
+            return false
         end
+        masks = type(result) == "table" and result or {}
+        return MaskSelection.holdsSavedMasks(catalog, photo, masks)
+    end, MASK_LIST_TIMEOUT_SECONDS)
+    if ready then return masks end
+    if masks == nil then
+        Reply.refuse(string.format("Lightroom could not read the masks of photo %s: %s; nothing was changed",
+            photoId, Reply.messageOf(lastError)))
     end
+    Reply.refuse(string.format("Develop lists %d of the %d masks in photo %s's saved settings; Develop has not"
+        .. " loaded them yet or an alert such as \"No sky detected\" is open: click OK in Lightroom if one is open,"
+        .. " then call again; nothing was changed", #masks, savedMaskCount(catalog, photo), photoId))
 end
 
-function MaskSelection.requireVersionAtLeast(toolName, major, minor, label)
-    local version = LrApplication.versionTable and LrApplication.versionTable() or nil
-    if type(version) ~= "table" or type(version.major) ~= "number" then return end
-    local installedMinor = type(version.minor) == "number" and version.minor or 0
-    if version.major < major or (version.major == major and installedMinor < minor) then
-        error(string.format("%s needs %s or later; this is Lightroom Classic %d.%d",
-            toolName, label, version.major, installedMinor))
-    end
+function MaskSelection.readMasksOrNil()
+    local ok, result = LrTasks.pcall(LrDevelopController.getAllMasks)
+    if not ok then return nil end
+    if type(result) ~= "table" then return {} end
+    return result
 end
 
-function MaskSelection.resolvePhoto(photoId)
-    local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.resolveOne(catalog, photoId)
-    if not photo then
-        error("Photo not found: " .. photoId)
-    end
-    return catalog, photo
-end
-
-local function listMaskIds()
-    local ok, masks = LrTasks.pcall(LrDevelopController.getAllMasks)
-    if not ok or type(masks) ~= "table" then return nil end
+function MaskSelection.idSet(masks)
     local ids = {}
     for _, mask in ipairs(masks) do
-        if type(mask) == "table" and type(mask.ID) == "string" then
-            ids[#ids + 1] = mask.ID
-        end
+        local id = type(mask) == "table" and MaskSelection.idString(mask.ID)
+        if id then ids[id] = true end
     end
     return ids
 end
 
-local function contains(list, wanted)
-    for _, item in ipairs(list) do
-        if item == wanted then return true end
+function MaskSelection.masksNotIn(masks, knownIds)
+    local fresh = {}
+    for _, mask in ipairs(masks) do
+        local id = type(mask) == "table" and MaskSelection.idString(mask.ID)
+        if id and not knownIds[id] then fresh[#fresh + 1] = mask end
+    end
+    return fresh
+end
+
+local function idsOf(masks)
+    local ids = {}
+    for _, mask in ipairs(masks) do ids[#ids + 1] = tostring(mask.ID) end
+    return ids
+end
+
+local function readMasksListingAll(knownIds)
+    local masks = MaskSelection.readMasksOrNil()
+    if not masks then return nil end
+    local listed = MaskSelection.idSet(masks)
+    for id in pairs(knownIds) do
+        if not listed[id] then return nil end
+    end
+    return masks
+end
+
+function MaskSelection.problemUnlessAddedRemoved(catalog, photo, knownIds, subject)
+    local masks
+    local listed = DevelopSession.waitFor(function()
+        masks = readMasksListingAll(knownIds)
+        return masks ~= nil and MaskSelection.holdsSavedMasks(catalog, photo, masks)
+    end, MASK_LISTED_TIMEOUT_SECONDS)
+    local leftovers
+    if listed then
+        for _, mask in ipairs(MaskSelection.masksNotIn(masks, knownIds)) do
+            LrTasks.pcall(LrDevelopController.deleteMask, mask.ID)
+        end
+        DevelopSession.waitFor(function()
+            local after = readMasksListingAll(knownIds)
+            leftovers = after and idsOf(MaskSelection.masksNotIn(after, knownIds)) or nil
+            return leftovers ~= nil and #leftovers == 0
+        end, MASK_LISTED_TIMEOUT_SECONDS)
+    end
+    if leftovers == nil then
+        return "Lightroom's mask list could not be read or did not list every mask on the photo, so " .. subject
+            .. " may still be on the photo: call list_masks before retrying"
+    end
+    if #leftovers > 0 then
+        return "could not remove " .. subject .. " (still listed: " .. table.concat(leftovers, ", ")
+            .. "): call list_masks before retrying"
+    end
+    return nil
+end
+
+local function toolListed(masks, maskId, toolId, toolType, subtype)
+    for _, tool in ipairs(MaskSelection.toolsOf(MaskSelection.findMask(masks, maskId))) do
+        if tostring(tool.ID) == tostring(toolId) and tool.Type == toolType
+            and (subtype == nil or tool.Subtype == subtype) then
+            return true
+        end
     end
     return false
 end
 
-local function requireMaskOnPhoto(photoId, maskId)
-    local ids
-    DevelopSession.waitFor(function()
-        ids = listMaskIds()
-        return ids ~= nil and (#ids > 0 or contains(ids, maskId))
-    end, MASK_LIST_TIMEOUT_SECONDS)
-    if ids == nil then
-        error("Lightroom could not read the masks of photo " .. photoId)
+function MaskSelection.problemUnlessListed(maskId, toolId, toolType, subtype)
+    if maskId == nil or toolId == nil then
+        return "Lightroom did not assign ids to the written mask"
     end
-    if not contains(ids, maskId) then
-        error(string.format("Mask not found on photo %s: %s (masks on this photo: %s)",
-            photoId, maskId, #ids > 0 and table.concat(ids, ", ") or "none"))
+    local listed = DevelopSession.waitFor(function()
+        local masks = MaskSelection.readMasksOrNil()
+        return masks ~= nil and toolListed(masks, tostring(maskId), toolId, toolType, subtype)
+    end, MASK_LISTED_TIMEOUT_SECONDS)
+    if listed then return nil end
+    return string.format("Lightroom's mask list has no %s tool %s in mask %s after the write",
+        subtype and (toolType .. " " .. subtype) or toolType, tostring(toolId), tostring(maskId))
+end
+
+local function sortedKeyNames(entry)
+    local names = {}
+    for key in pairs(entry) do names[#names + 1] = tostring(key) end
+    table.sort(names)
+    return table.concat(names, ", ")
+end
+
+function MaskSelection.normalizeTool(tool, photoId, ranges)
+    if type(tool) ~= "table" then
+        error("Lightroom returned a mask tool that is not a table for photo " .. photoId)
     end
+    local id = MaskSelection.idString(tool.ID)
+    if not id then
+        error("Lightroom returned a mask tool without an id for photo " .. photoId
+            .. " (fields: " .. sortedKeyNames(tool) .. ")")
+    end
+    return {
+        id = id,
+        type = MaskSelection.scalarOrNil(tool.Type),
+        subtype = MaskSelection.scalarOrNil(tool.Subtype),
+        inverted = tool.Inverted == true,
+        range = ranges and ranges[id] or nil,
+    }
+end
+
+function MaskSelection.normalizeMask(mask, photoId, ranges)
+    if type(mask) ~= "table" then
+        error("Lightroom returned a mask that is not a table for photo " .. photoId)
+    end
+    local id = MaskSelection.idString(mask.ID)
+    if not id then
+        error("Lightroom returned a mask without an id for photo " .. photoId
+            .. " (fields: " .. sortedKeyNames(mask) .. ")")
+    end
+    local tools = {}
+    for _, tool in ipairs(MaskSelection.toolsOf(mask)) do
+        tools[#tools + 1] = MaskSelection.normalizeTool(tool, photoId, ranges)
+    end
+    return {
+        id = id,
+        name = MaskSelection.scalarOrNil(mask.Name),
+        hidden = mask.Hidden == true,
+        tools = tools,
+    }
+end
+
+function MaskSelection.requireMask(masks, maskId, photoId)
+    local mask = MaskSelection.findMask(masks, maskId)
+    if mask then return mask end
+    local ids = {}
+    for _, listed in ipairs(masks) do
+        local id = type(listed) == "table" and MaskSelection.idString(listed.ID)
+        if id then ids[#ids + 1] = id end
+    end
+    Reply.refuse(string.format("Mask not found on photo %s: %s (masks on this photo: %s)",
+        photoId, tostring(maskId), #ids > 0 and table.concat(ids, ", ") or "none"))
 end
 
 function MaskSelection.readSelectedMask()
@@ -100,16 +252,106 @@ function MaskSelection.readSelectedMask()
     return nil
 end
 
+MaskSelection.SELECTION_MOVED = "Another mask became selected while writing"
+
+function MaskSelection.isSelected(maskId)
+    return MaskSelection.readSelectedMask() == maskId
+end
+
+function MaskSelection.movedBeforeWriting(maskId)
+    return "Another mask became selected before mask " .. tostring(maskId) .. " was written; nothing was written"
+end
+
+function MaskSelection.movedAfterWriting(maskId, written)
+    return string.format("%s mask %s; written: %s; read the mask before retrying",
+        MaskSelection.SELECTION_MOVED, tostring(maskId), table.concat(written, ", "))
+end
+
+function MaskSelection.refuseUnlessSelected(maskId)
+    if not MaskSelection.isSelected(maskId) then Reply.refuse(MaskSelection.movedBeforeWriting(maskId)) end
+end
+
+function MaskSelection.selectableTool(tool)
+    if MASKING_TOOL_NAMES[tool] then return MASKING_TOOL end
+    return tool
+end
+
+local function selectedTool()
+    if type(LrDevelopController.getSelectedTool) ~= "function" then return nil end
+    local ok, tool = LrTasks.pcall(LrDevelopController.getSelectedTool)
+    if ok and type(tool) == "string" then return MaskSelection.selectableTool(tool) end
+    return nil
+end
+
+function MaskSelection.openMaskingTool()
+    local previousTool = selectedTool()
+    if previousTool == MASKING_TOOL then return previousTool end
+    LrDevelopController.selectTool(MASKING_TOOL)
+    if previousTool ~= nil then
+        local opened = DevelopSession.waitFor(function()
+            return selectedTool() == MASKING_TOOL
+        end, TOOL_SWITCH_TIMEOUT_SECONDS)
+        if not opened then
+            LrTasks.pcall(LrDevelopController.selectTool, previousTool)
+            Reply.refuse("Lightroom did not open the masking tool; nothing was changed")
+        end
+    end
+    return previousTool
+end
+
+function MaskSelection.restoreTool(previousTool)
+    if previousTool == nil or previousTool == MASKING_TOOL then return end
+    LrTasks.pcall(LrDevelopController.selectTool, previousTool)
+end
+
+function MaskSelection.readSlider(name)
+    local ok, value = LrTasks.pcall(LrDevelopController.getValue, name)
+    if ok and type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge then
+        return value
+    end
+    return nil
+end
+
+function MaskSelection.sliderNear(slider, actual, wanted)
+    return actual ~= nil and math.abs(actual - wanted) <= slider.tolerance
+end
+
+function MaskSelection.sliderKept(slider, wanted, timeoutSeconds)
+    return DevelopSession.waitFor(function()
+        return MaskSelection.sliderNear(slider, MaskSelection.readSlider(slider.name), wanted)
+    end, timeoutSeconds)
+end
+
+function MaskSelection.writeSlider(slider, wanted, maskId)
+    local sent = false
+    for _ = 1, SLIDER_WRITE_ATTEMPTS do
+        if not MaskSelection.isSelected(maskId) then return false, MaskSelection.SELECTION_MOVED, sent end
+        sent = true
+        local ok, err = LrTasks.pcall(LrDevelopController.setValue, slider.name, wanted)
+        if not ok then
+            return false, string.format("Lightroom rejected %s %g: %s", slider.name, wanted, tostring(err)), sent
+        end
+        if MaskSelection.sliderKept(slider, wanted, SLIDER_CONFIRM_TIMEOUT_SECONDS) then return true, nil, sent end
+    end
+    return false, MaskSelection.sliderNotKept(slider, wanted), sent
+end
+
+function MaskSelection.sliderNotKept(slider, wanted)
+    local actual = MaskSelection.readSlider(slider.name)
+    return string.format("Lightroom did not keep %s %g (reads %s)",
+        slider.name, wanted, actual and string.format("%g", actual) or "nothing")
+end
+
 local function openMaskingPanel()
     if type(LrDevelopController.goToMasking) == "function" then
         LrTasks.pcall(LrDevelopController.goToMasking)
     end
 end
 
-local function selectMaskAndWait(maskId)
+function MaskSelection.selectMaskAndWait(maskId)
     local sinceSelect = MASK_RESELECT_SECONDS
     return DevelopSession.waitFor(function()
-        if MaskSelection.readSelectedMask() == maskId then return true end
+        if MaskSelection.isSelected(maskId) then return true end
         if sinceSelect >= MASK_RESELECT_SECONDS then
             LrTasks.pcall(LrDevelopController.selectMask, maskId)
             sinceSelect = 0
@@ -119,17 +361,19 @@ local function selectMaskAndWait(maskId)
     end, MASK_SELECT_TIMEOUT_SECONDS)
 end
 
-function MaskSelection.withMaskSelected(photoId, maskId, body)
-    requireMaskOnPhoto(photoId, maskId)
+function MaskSelection.withMaskSelected(catalog, photo, maskId, body)
+    local photoId = tostring(photo.localIdentifier)
+    local masks = MaskSelection.readMasks(catalog, photo)
+    MaskSelection.requireMask(masks, maskId, photoId)
     openMaskingPanel()
     local previousMask = MaskSelection.readSelectedMask()
-    if not selectMaskAndWait(maskId) then
-        error("Could not select mask " .. maskId .. " on photo " .. photoId .. " in Develop")
+    if not MaskSelection.selectMaskAndWait(maskId) then
+        Reply.refuse("Could not select mask " .. maskId .. " on photo " .. photoId .. " in Develop")
     end
     LrTasks.sleep(MASK_SELECT_SETTLE_SECONDS)
 
-    local ok, result = LrTasks.pcall(body)
-    if previousMask and previousMask ~= maskId then
+    local ok, result = LrTasks.pcall(body, masks)
+    if previousMask and MaskSelection.readSelectedMask() ~= previousMask then
         LrTasks.pcall(LrDevelopController.selectMask, previousMask)
     end
     if not ok then error(result, 0) end

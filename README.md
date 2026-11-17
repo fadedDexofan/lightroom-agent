@@ -21,7 +21,7 @@ To invoke a tool against an already installed, running compatible plug-in:
 LIGHTROOM_MCP_READ_ONLY=true node server/dist/index.js call search_photos '{"limit":5}'
 ```
 
-`call <tool> [json]` accepts a JSON object, defaulting to `{}`. It uses the same backend and access restrictions as MCP and does not install the plug-in. Stdout contains one complete JSON tool response, including image blocks when present; diagnostics use stderr. A response without wrapper `isError` exits 0, a wrapper error exits 1, and malformed command arguments exit 2. Parse the JSON text inside `content` as well: batch payloads can report `success: false`, `complete: false`, failures or `remaining_ids` without a wrapper error. Exit 0 alone does not establish that every photo finished processing. An interrupted call may already have changed Lightroom: inspect the result before retrying.
+`call <tool> [json]` accepts a JSON object, defaulting to `{}`. It uses the same backend and access restrictions as MCP and does not install the plug-in. Stdout contains one complete JSON tool response, including image blocks when present; diagnostics use stderr. A response whose `outcome` is `done` exits 0; any other outcome carries `isError` and exits 1, and malformed command arguments exit 2. On exit 1 read `outcome`, `failed`, `unknown`, `not_found` and `remaining` in the JSON text inside `content`: a `partial` result still holds the work that finished, and an `unknown` outcome may already have changed Lightroom, so inspect the state before retrying.
 
 For an MCP client, launch this checkout's `server/dist/index.js` with Node and its default `stdio` command. Use an absolute path in the client configuration. The inherited `.mcp.json` still launches the published npm package; loading a skill from this checkout does not switch that server or the installed Lua plug-in. Keep the server and Lua bundle revisions aligned when deploying.
 
@@ -209,10 +209,11 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | --- | --- |
 | `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
-| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location and copyright for one `photo_id` or up to 100 `photo_ids`. Batch results return `photos` in request order and `missing` identifiers. Pass `sections: ["developSettings"]` to include develop settings for each. |
+| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location and copyright for 1 to 100 `photo_ids`. Results return `photos` in request order; unknown identifiers are `not_found`. Develop settings are read with `get_develop_settings`. |
 | `summarize_develop_settings` | Read-only medians and ranges of numeric Develop settings by camera and ISO (1–400, 401–1600, 1601–6400, 6401+, unknown). Rating ≥4 by default; optional exported filter intersects rating. Reads up to 200 photos; reports matched/scanned/truncated and settings omitted to keep each group under 6,000 characters. Excludes crop, perspective and white balance. |
-| `get_photo_preview` | JPEG preview of one photo (raw files too), optionally cropped to a rendered-frame region. `size: "cull"` requests 512 for culling; `"detail"` requests 1024 for inspecting details. Numeric sizes 64–2048 and the default 512 remain supported. |
-| `get_photo_previews` | Up to 20 ordered JPEG thumbnails with per-photo errors and partial timeout results. |
+| `get_photo_preview` | JPEG preview of one photo (raw files too), optionally cropped to a rendered-frame region. `size: "cull"` returns an 864-pixel long edge for choosing among frames and is the default; `"review"` returns 1728 for a whole-frame look at rendering, tone and mask edges. Critical sharpness is judged with `get_photo_detail`, not a preview. A numeric size 64–2048 is the long edge returned; the server scales Lightroom's larger cached previews down to it. |
+| `get_photo_detail` | One to four regions cut from a full-resolution render with current Develop settings, one rendered pixel per returned pixel; the temporary export is deleted before the call returns. |
+| `get_photo_previews` | Up to 20 ordered JPEG thumbnails; photos that cannot be rendered are `failed`, unreached ones `remaining`. |
 | `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `find_duplicate_groups` | Find near-duplicate and burst groups using JPEG dHash and raw capture time (up to 100 photos; defaults 5 s / 10 bits; 25 s partial-result budget) |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
@@ -246,17 +247,21 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `compare_develop_presets` | Diff an approved historical preset against a candidate. |
 | `create_develop_preset` | Capture explicit settings from a photo as a versioned plugin checkpoint. |
 | `export_develop_preset` | Copy a custom/checkpoint preset backing file without overwriting. |
-| `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+). |
-| `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+). |
+| `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+); reads the preset's keys back on every photo. |
+| `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+); reads the copied keys back on every target. |
 | `match_photo_style` | Match global style after a confirmed snapshot per target; preserves framing, white balance, lens corrections and local masks. Returns snapshot IDs for restoration. |
-| `set_develop_settings` | Write SDK setting key/values directly. |
+| `set_develop_settings` | Write SDK setting key/values directly. Each key's range and the rules between keys are checked before the write; values finer than Lightroom keeps are rounded; the written values are read back after Lightroom normalises them, and any stored differently are listed as `adjusted`. Crop keys are in the stored frame; use `set_crop` for a frame as displayed. |
+| `describe_develop_keys` | For one photo, every develop key's kind, the range the tools enforce and the range Lightroom reports for it, marking where they differ; local sliders too when a `mask_id` is given. Also Lightroom's version, build and the photo's process version. |
+| `set_crop` | Crop one photo to a rectangle, or to an aspect ratio (4:5, 1:1, 1.91:1 …) with the largest frame around a centre, optionally straightened, stated as the photo is displayed before any crop or, with `relative_to: "crop"`, inside the current crop; any orientation. Refuses a frame whose corners would leave the photo and names the largest that fits; returns the frame's size in pixels and the stored keys. |
+| `get_crop` | Read a photo's current crop the way `set_crop` states it: rectangle in the photo as displayed before any crop, angle, and the cropped frame's size in pixels. |
 | `get_lens_blur` | Read Lens Blur state, controls, focal range and bokeh (LrC 13.3+, Process Version 3+); restores the Develop view. |
-| `get_raw_develop_settings` | Read one photo's develop settings exactly as Lightroom stores them, from the catalog without opening Develop: without `keys` the top-level names, types and table sizes; with `keys` the raw values (for example `ProcessVersion` or the whole `MaskGroupBasedCorrections`) and the names that are missing. |
+| `get_develop_settings` | Read develop settings exactly as Lightroom stores them, from the catalog without opening Develop, by the SDK names `set_develop_settings` writes: for one photo without `keys` the top-level names, types and table sizes; with `keys` each photo's values (for example `ProcessVersion` or the whole `MaskGroupBasedCorrections`) and the names it does not carry as `absent`. Up to 100 photos with `keys`. |
 | `set_lens_blur` | Set Lens Blur controls after enabling depth computation; validates runtime ranges and saved readback, then restores the view. |
 | `set_process_version` | Set photos to Version 1–6 with confirmation; refuses masked-photo downgrades and reports previous/actual versions. |
 | `list_develop_snapshots` | List a photo’s saved develop snapshots. |
 | `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |
 | `create_virtual_copies` | Create named virtual copies of up to 25 photos; return master and copy IDs and restore selection. |
+| `set_treatment` | Switch up to 100 photos between color and black and white through Lightroom's own conversion; read back the flag and report the profile before and after per photo. |
 | `apply_develop_snapshot` | Restore a saved develop snapshot. |
 | `delete_develop_snapshot` | Delete one saved develop snapshot. |
 | `apply_auto_adjustments` | Apply Lightroom Auto Tone, Auto White Balance, or both, restoring the Develop view afterwards. |
@@ -267,14 +272,15 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `delete_spot` | Delete one Remove spot by index with `confirm: true` |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
 | `get_mask_write_admission` | Report whether guarded mask-geometry writes are admitted in the open catalog: the running Lightroom version and build, the certified build with its time and checks, whether this is the live kit's throwaway catalog, and the refusal reason; with `photo_id` also that photo's process version, mask count and format problems of its existing masks. Read-only, opens no Develop. |
-| `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
+| `create_gradient_mask` | Place a linear or radial gradient mask at positions in the displayed frame (after crop, straighten and orientation), as a new mask or a component of one; optional `adjustments` (the `local_*` names) sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
 | `update_gradient_mask` | Move or reshape an existing linear or radial gradient by tool id; same guarded write. |
-| `create_brush_mask` | Paint a brush mask from strokes (points in normalized image coordinates, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
+| `create_brush_mask` | Paint a brush mask from strokes (points in the displayed frame, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` (the `local_*` names) sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
 | `add_brush_strokes` | Paint more strokes into an existing brush by tool id; same guarded write. |
-| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
-| `delete_masks` | With `photo_id`, delete masks or components by id, or all masks (LrC 11+); unknown ids delete nothing; briefly opens Develop. With only `photo_ids`, delete empty masks from up to 1000 photos without opening Develop or changing selection (LrC 14+). |
+| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` (the `local_*` names) sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, certified Lightroom only; briefly opens the photo in Develop. |
+| `delete_masks` | Delete masks or components by id, or all masks, on one `photo_id` (LrC 11+); unknown ids delete nothing; briefly opens Develop. |
+| `delete_empty_masks` | Delete masks without components from up to 1000 `photo_ids` without opening Develop or changing selection (LrC 14+). |
 | `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ..., Color Grading `local_colorgrade*` and `local_glow` where Lightroom has them) by mask id; out-of-range values are rejected before anything is written (LrC 11+); briefly opens the photo in Develop. |
-| `get_mask` | Read local adjustments, curves and Point Color in one Develop session; optional `kinds` selects `adjustments`, `curves` or `point_colors` (default all). Returns supported kinds and named errors for unsupported versions. |
+| `get_mask` | Read local adjustments, curves and Point Color in one Develop session; optional `kinds` selects `adjustments`, `curves` or `point_colors` (default all). Returns the kinds Lightroom can read and a named error for each kind whose calls it lacks. |
 | `invert_mask` | Invert a mask by id, in place or as an inverted copy that keeps the original (LrC 11.4+); briefly opens the photo in Develop. |
 | `create_mask` | Create Subject/Sky/Background masks (LrC 11+) with optional adjustments, or People parts/Landscape categories (guarded write, certified Lightroom only) with `type: "people", parts: [...]` or `type: "landscape", categories: [...]`. Returns mask ids; missing AI parts leave no new masks. People/Landscape reject `adjustments`; use `set_mask_adjustments` afterwards. A single person cannot be chosen. |
 | `create_mask_batch` | Add the same Subject, Sky or Background mask with the same adjustments to up to 200 photos, each mask recomputed for its own photo; opens only the first photo in Develop; guarded write, certified Lightroom only. |
@@ -282,12 +288,12 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `edit_mask_point_colors` | Add, update, delete or clear a mask's local Point Color swatches by mask id (LrC 13.2+); briefly opens the photo in Develop. |
 | `combine_mask` | Add, subtract or intersect a Subject, Sky or Background component on an existing mask by id and get the component's id (LrC 11+); briefly opens the photo in Develop. |
 
-Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
+Full schemas and parameter docs: [`server/src/tool-contracts.ts`](server/src/tool-contracts.ts) (develop keys and local sliders in [`server/src/develop-keys.ts`](server/src/develop-keys.ts)); `lightroom-mcp tools` prints them.
 
 AI scores and reasons stay in the catalog's private plug-in metadata. They do
 not appear in the Metadata panel, searches, keywords, IPTC, XMP, or exports.
 `set_ai_metadata` leaves omitted fields unchanged; pass `""` to clear a score
-or reason. `get_ai_metadata` omits unset fields and reports missing photo IDs.
+or reason. `get_ai_metadata` omits unset fields and lists unknown photo IDs as `not_found`.
 The initial provider schema is version 1: `aiScore` and `aiReason` are strings
 (the tools convert the score to and from an integer). Changes to these
 persistent field definitions require a schema version bump and migration;
@@ -314,10 +320,11 @@ user; thumbnails do not reliably distinguish a four-star photo from a five.
 
 1. Collect photo IDs with `search_photos`. Read existing flags and labels with
    `get_photo_metadata`, and private reasons with `get_ai_metadata`.
-2. Call `get_photo_previews` with at most 20 IDs at a time. The default minimum
-   edge is 256 pixels; returned JPEGs have no edge over 2000 pixels and share an
-   8 MiB byte budget. Text maps each `requested_id` to its 1-based `image_index`.
-   Inspect errors separately. Retry `remaining_ids` when `complete` is false.
+2. Call `get_photo_previews` with at most 20 IDs at a time. Each JPEG's longest
+   edge is the requested size (default 256 pixels, at most 2000), scaled down by
+   the server when Lightroom's cached preview is larger; the previews share an
+   8 MiB byte budget. Each preview names its `photo_id` and 1-based `image_index`.
+   Photos that could not be rendered are in `failed`; resend `remaining` when present.
 3. Propose rejects with a reason per photo and show the list to the user before
    writing. Keep uncertain shots for review; do not reject them automatically.
 4. For approved clear failures, call `set_rating_and_flag` with `flag: "reject"`. Mark
@@ -371,7 +378,7 @@ This server works with the catalog open in Lightroom Classic on your computer th
 ### Safeguards when changing photos
 
 - Deleting a collection with `delete_collection` keeps its photos in the catalog ([collection handler](plugin/LightroomMCP.lrplugin/HandlerCollections.lua)).
-- Mask tools that write Lightroom's undocumented mask format check the Lightroom version, the photo's process version and the format of existing masks before writing. They read the result back and attempt to restore the previous masks if it differs; an unconfirmed restoration is reported as an error. These checks live in [GuardedMaskWrite.lua](plugin/LightroomMCP.lrplugin/GuardedMaskWrite.lua). They apply to those mask writes, not to every edit.
+- Mask tools that write Lightroom's undocumented mask format are admitted only on the live kit's throwaway catalog or after a certification run passed for the running Lightroom build and the photo's process version, and check the format of existing masks before writing. They read the result back and attempt to restore the previous masks if it differs; an unconfirmed restoration is reported as an error. These checks live in [GuardedMaskWrite.lua](plugin/LightroomMCP.lrplugin/GuardedMaskWrite.lua). They apply to those mask writes, not to every edit.
 - Connections require the local token described in [Security](#security), checked by [PluginInfoProvider.lua](plugin/LightroomMCP.lrplugin/PluginInfoProvider.lua).
 
 ### What Lightroom's plug-in SDK does not expose
@@ -433,13 +440,15 @@ The plugin generates a 256-bit token in `~/.config/lightroom-mcp/token` on **Sta
 ```bash
 mise install                        # tools (node, bun, lua + luarocks, selene)
 mise run install                    # npm install in server/
-mise run build                      # regenerate skill prompt files, then tsc
+mise run build                      # regenerate the skill prompt, then tsc, then Contract.lua and the manifest tools
 mise run test                       # jest
 mise run mcpb                       # build .mcpb bundle
 mise run binary                     # build single-file binaries via Bun
 mise run lua:lint                   # selene-lint the Lua plugin
 mise run lua:test                   # busted specs for the Lua plugin
 ```
+
+`mise run test` runs Jest in parallel workers: quick for a local loop, but not the check a change has to pass. The port-owner tests run a child process under the production command timeout of 3 s, and on a loaded machine parallel workers can push such a child past it. The check is `cd server && npm run test:coverage`, which runs Jest in band with the coverage thresholds CI enforces.
 
 Repo layout:
 
@@ -453,8 +462,8 @@ Repo layout:
 ## Adding a new tool
 
 1. Add a new `Handler*.lua` under `plugin/LightroomMCP.lrplugin/`.
-2. Register it in the `DISPATCH` table in `PluginInfoProvider.lua`.
-3. Add a contract entry in `server/src/tool-contracts.ts`.
+2. Add a contract entry in `server/src/tool-contracts.ts` naming the handler in `run: { plugin: "HandlerX.fn" }` (or `run: { server }` for a tool the server runs over internal plug-in actions listed in `PLUGIN_ACTIONS`).
+3. Run `npm run build` in `server/`: it regenerates `plugin/LightroomMCP.lrplugin/Contract.lua`, the plug-in's dispatch map.
 4. Declare any new LR globals in `lightroom.yml` (selene std).
 
 ## Troubleshooting

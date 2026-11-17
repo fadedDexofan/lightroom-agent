@@ -1,16 +1,8 @@
 local LrApplication = import 'LrApplication'
+local Contract = require 'Contract'
 local JSON = require 'JSON'
 
 local Handler = {}
-
-local function integer(value, fallback, name, minimum, maximum)
-    if value == nil then return fallback end
-    if type(value) ~= "number" or value ~= value or value % 1 ~= 0
-        or value < minimum or value > maximum then
-        error(name .. " must be an integer from " .. minimum .. " to " .. maximum, 0)
-    end
-    return value
-end
 
 local function bucket(iso)
     if type(iso) ~= "number" or iso ~= iso or iso <= 0 or iso == math.huge then return "unknown" end
@@ -49,11 +41,8 @@ local function summarize(group)
 end
 
 function Handler.summarize(args)
-    local minRating = integer(args.min_rating, 4, "min_rating", 0, 5)
-    local maximum = integer(args.max_photos, 200, "max_photos", 1, 200)
-    if args.exported_only ~= nil and type(args.exported_only) ~= "boolean" then
-        error("exported_only must be a boolean", 0)
-    end
+    local minRating = args.min_rating or Contract.STYLE_SUMMARY_MIN_RATING
+    local maximum = args.max_photos or Contract.STYLE_SUMMARY_PHOTO_LIMIT
     local catalog = LrApplication.activeCatalog()
     local candidates = catalog:findPhotos({ searchDesc = {
         combine = "intersect", { criteria = "rating", operation = ">=", value = minRating },

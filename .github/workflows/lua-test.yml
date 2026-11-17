@@ -31,7 +31,10 @@ jobs:
       - name: Install Lua + luarocks
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.4 liblua5.4-dev luarocks
+          sudo apt-get install -y lua5.4 liblua5.4-dev luarocks locales
+
+      - name: Provision the comma-decimal locale the specs switch to
+        run: sudo locale-gen ru_RU.UTF-8
 
       - name: Install busted
         run: sudo luarocks install busted

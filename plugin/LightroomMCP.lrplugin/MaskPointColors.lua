@@ -1,107 +1,24 @@
 local MaskPointColors = {}
 
 MaskPointColors.MINIMUM_VERSION_LABEL = "Lightroom Classic 13.2"
-MaskPointColors.MINIMUM_MAJOR = 13
-MaskPointColors.MINIMUM_MINOR = 2
 MaskPointColors.MAX_SWATCHES = 8
 MaskPointColors.VALUE_TOLERANCE = 0.01
 
 local SCALARS = {
-    { name = "SrcHue", low = 0, high = 6, required = true },
-    { name = "SrcSat", low = 0, high = 1, required = true },
-    { name = "SrcLum", low = 0, high = 1, required = true },
-    { name = "HueShift", low = -1, high = 1 },
-    { name = "SatScale", low = -1, high = 1 },
-    { name = "LumScale", low = -1, high = 1 },
-    { name = "RangeAmount", low = 0, high = 1 },
+    { name = "SrcHue", required = true },
+    { name = "SrcSat", required = true },
+    { name = "SrcLum", required = true },
+    { name = "HueShift" },
+    { name = "SatScale" },
+    { name = "LumScale" },
+    { name = "RangeAmount" },
 }
 
 local RANGES = { "HueRange", "SatRange", "LumRange" }
 local RANGE_EDGES = { "LowerNone", "LowerFull", "UpperFull", "UpperNone" }
 
-MaskPointColors.scalars = SCALARS
-MaskPointColors.ranges = RANGES
-MaskPointColors.rangeEdges = RANGE_EDGES
-
 local function isFiniteNumber(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
-end
-
-local function formatNumber(value)
-    return string.format("%g", value)
-end
-
-local function requireNumberInRange(value, label, low, high)
-    if not isFiniteNumber(value) then
-        error(label .. " must be a number")
-    end
-    if value < low or value > high then
-        error(string.format("%s %s is outside its range %s to %s", label, formatNumber(value),
-            formatNumber(low), formatNumber(high)))
-    end
-end
-
-local function knownNames()
-    local names = {}
-    for _, scalar in ipairs(SCALARS) do names[#names + 1] = scalar.name end
-    for _, range in ipairs(RANGES) do names[#names + 1] = range end
-    return names
-end
-
-local function isKnownField(key)
-    for _, name in ipairs(knownNames()) do
-        if name == key then return true end
-    end
-    return false
-end
-
-local function isRangeEdge(key)
-    for _, edge in ipairs(RANGE_EDGES) do
-        if edge == key then return true end
-    end
-    return false
-end
-
-local function requireRange(value, label)
-    if type(value) ~= "table" or next(value) == nil then
-        error(label .. " must be an object with " .. table.concat(RANGE_EDGES, ", "))
-    end
-    for key in pairs(value) do
-        if type(key) ~= "string" or not isRangeEdge(key) then
-            error(string.format("Unknown field %s.%s; valid fields: %s", label, tostring(key),
-                table.concat(RANGE_EDGES, ", ")))
-        end
-    end
-    for _, edge in ipairs(RANGE_EDGES) do
-        requireNumberInRange(value[edge], label .. "." .. edge, 0, 1)
-    end
-end
-
-function MaskPointColors.requireSwatch(value, label, requireSource)
-    if type(value) ~= "table" or next(value) == nil then
-        error(label .. " is required: an object of Point Color swatch fields")
-    end
-    for key in pairs(value) do
-        if type(key) ~= "string" or not isKnownField(key) then
-            error(string.format("Unknown swatch field %s; valid fields: %s", tostring(key),
-                table.concat(knownNames(), ", ")))
-        end
-    end
-    for _, scalar in ipairs(SCALARS) do
-        local amount = value[scalar.name]
-        if amount == nil then
-            if requireSource and scalar.required then
-                error(label .. "." .. scalar.name .. " is required")
-            end
-        else
-            requireNumberInRange(amount, label .. "." .. scalar.name, scalar.low, scalar.high)
-        end
-    end
-    for _, range in ipairs(RANGES) do
-        if value[range] ~= nil then
-            requireRange(value[range], label .. "." .. range)
-        end
-    end
 end
 
 local function normalizeRange(raw)

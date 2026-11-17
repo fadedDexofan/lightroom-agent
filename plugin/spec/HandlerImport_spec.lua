@@ -79,6 +79,7 @@ local function fakePathUtils()
         leafName = function(p) return p:match("([^/]+)$") end,
         parent = function(p) return p:match("^(.*)/[^/]+$") end,
         child = function(parent, child) return parent .. "/" .. child end,
+        getStandardFilePath = function(name) assert(name == "home"); return "/home/u" end,
     }
 end
 
@@ -113,20 +114,20 @@ describe("HandlerImport.importPhotos", function()
             return setup(opts)
         end
 
-        it("fails before importing when the collection does not exist", function()
+        it("refuses a collection that does not exist before importing", function()
             local catalog, Handler = folder({})
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir", collection_name = "Trip" })
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("Collection not found: Trip", 1, true))
+            assert.are.equal("Collection not found: Trip", helper.refusalOf(function()
+                Handler.importPhotos({ source_path = "/dir", collection_name = "Trip" })
+            end))
             assert.are.equal(0, #catalog:getAllPhotos())
         end)
 
         it("refuses a smart collection before importing", function()
             local smart = helper.fakeCollection("Smart", {}, { smart = true })
             local catalog, Handler = folder({ collections = { smart } })
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir", collection_name = "Smart" })
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("smart collection", 1, true))
+            assert.are.equal("Cannot add or remove photos in a smart collection: Smart", helper.refusalOf(function()
+                Handler.importPhotos({ source_path = "/dir", collection_name = "Smart" })
+            end))
             assert.are.equal(0, #catalog:getAllPhotos())
         end)
 
@@ -138,7 +139,7 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Trips / City" })
 
-            assert.are.equal(2, r.added_to_collection)
+            assert.are.equal(2, r.data.added_to_collection)
             assert.are.equal(2, #nested.getAddedPhotos())
         end)
     end)
@@ -158,10 +159,10 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Shoot" })
 
-            assert.is_false(r.success)
-            assert.are.equal(2, r.imported)
+            assert.is_not_nil(r.failed)
+            assert.are.equal(2, r.data.imported)
             assert.are.equal("/dir/bad.jpg", r.failed[1].path)
-            assert.truthy(r.failed[1].error:find("dng_error_bad_format", 1, true))
+            assert.truthy(r.failed[1].reason:find("dng_error_bad_format", 1, true))
             assert.are.equal(2, #collection.getAddedPhotos())
         end)
 
@@ -180,12 +181,12 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Shoot" })
 
-            assert.is_false(r.success)
-            assert.are.equal(1, r.imported)
+            assert.is_not_nil(r.failed)
+            assert.are.equal(1, r.data.imported)
             assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
             assert.are.equal("/dir/b.jpg", r.failed[1].path)
-            assert.truthy(r.failed[1].error:find("busy", 1, true))
-            assert.are.equal(1, r.added_to_collection)
+            assert.truthy(r.failed[1].reason:find("busy", 1, true))
+            assert.are.equal(1, r.data.added_to_collection)
         end)
 
         it("reports photos that could not be added to the collection", function()
@@ -198,21 +199,63 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Shoot" })
 
-            assert.is_false(r.success)
-            assert.are.equal(1, r.imported)
-            assert.are.equal(0, r.added_to_collection)
+            assert.are.equal(1, r.data.imported)
+            assert.are.equal(0, r.data.added_to_collection)
             assert.are.equal(0, #collection.getAddedPhotos())
-            assert.are.equal("Shoot", r.failed[1].collection)
-            assert.truthy(r.failed[1].error:find("busy", 1, true))
+            assert.is_nil(r.failed)
+            assert.truthy(r.problem:find("not added to collection Shoot", 1, true))
+            assert.truthy(r.problem:find("busy", 1, true))
             assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
+        end)
+
+        it("reports a collection deleted during the import as a problem, keeping the imported photos", function()
+            local collections = { helper.fakeCollection("Shoot", {}) }
+            local catalog, Handler = setup({
+                collections = collections,
+                fs = { directories = { ["/dir"] = true }, dirContents = { "/dir/a.jpg" } },
+                writeAccessAborts = function(name)
+                    if name ~= "Add Imported Photos to Collection" then collections[1] = nil end
+                    return false
+                end,
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Shoot" })
+
+            assert.are.equal(1, r.data.imported)
+            assert.are.equal(0, r.data.added_to_collection)
+            assert.truthy(r.problem:find("not added to collection Shoot: Collection not found: Shoot", 1, true))
+            assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
+        end)
+
+        it("reports every file as failed, with nothing achieved, when the catalog stays busy throughout", function()
+            local catalog, Handler = setup({
+                fs = { directories = { ["/dir"] = true }, dirContents = { "/dir/a.jpg", "/dir/b.jpg" } },
+                writeAccessAborts = function(name) return name == "Import Photo" end,
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.is_nil(r.data)
+            assert.are.same({ "/dir/a.jpg", "/dir/b.jpg" }, { r.failed[1].path, r.failed[2].path })
+            assert.truthy(r.failed[1].reason:find("busy", 1, true))
+            assert.are.same({}, importedPaths(catalog))
+        end)
+
+        it("refuses a single file the busy catalog would not take, as having changed nothing", function()
+            local _, Handler = setup({
+                fs = { exists = { ["/a.jpg"] = true } },
+                writeAccessAborts = function(name) return name == "Import Photo" end,
+            })
+            local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/a.jpg" }) end)
+            assert.matches("/a.jpg: ", refusal, 1, true)
+            assert.matches("busy", refusal, 1, true)
         end)
 
         it("names the file when a single import fails", function()
             local catalog, Handler = setup({ fs = { exists = { ["/a.jpg"] = true } } })
             catalog.addPhoto = function() error("dng_error_bad_format") end
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/a.jpg" })
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("/a.jpg: ", 1, true))
+            local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/a.jpg" }) end)
+            assert.truthy(refusal:find("/a.jpg: ", 1, true))
         end)
     end)
 
@@ -223,9 +266,8 @@ describe("HandlerImport.importPhotos", function()
                 dirContents = { "/x.lrdata/0/a.dng" },
             },
         })
-        local ok, err = pcall(Handler.importPhotos, { source_path = "/x.lrdata" })
-        assert.is_false(ok)
-        assert.truthy(tostring(err):find("library packages", 1, true), tostring(err))
+        local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/x.lrdata" }) end)
+        assert.truthy(refusal:find("library packages", 1, true))
     end)
 
     it("skips files inside library packages", function()
@@ -236,9 +278,36 @@ describe("HandlerImport.importPhotos", function()
             },
         })
         local r = Handler.importPhotos({ source_path = "/dir" })
-        assert.are.equal(1, r.imported)
-        assert.are.equal(2, r.skipped_package_files)
+        assert.are.equal(1, r.data.imported)
+        assert.are.equal(2, r.data.skipped_package_files)
         assert.are.same({ "/dir/top.jpg" }, importedPaths(catalog))
+    end)
+
+    describe("source_path and copy_to", function()
+        it("expand a leading ~/ to the home folder", function()
+            local fs = { directories = { ["/home/u/card"] = true }, exists = {}, dirContents = { "/home/u/card/a.jpg" } }
+            local catalog, Handler = setup({ fs = fs })
+
+            local r = Handler.importPhotos({ source_path = "~/card", copy_to = "~/archive" })
+
+            assert.are.equal(1, r.data.imported)
+            assert.are.same({ "/home/u/archive/a.jpg" }, importedPaths(catalog))
+        end)
+
+        it("must be absolute, checked before anything is imported", function()
+            local fs = { directories = { ["/card"] = true, card = true }, dirContents = { "/card/a.jpg" } }
+            for _, case in ipairs({
+                { args = { source_path = "card" }, message = "source_path must be an absolute path" },
+                { args = { source_path = "/card", copy_to = "archive" }, message = "copy_to must be an absolute path" },
+            }) do
+                local catalog, Handler = setup({ fs = fs })
+
+                local refusal = helper.refusalOf(function() Handler.importPhotos(case.args) end)
+
+                assert.truthy(refusal:find(case.message, 1, true))
+                assert.are.equal(0, #catalog:getAllPhotos())
+            end
+        end)
     end)
 
     describe("copy_to", function()
@@ -252,13 +321,26 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/card", copy_to = "/archive" })
 
-            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.data.imported)
             assert.are.same({ "/archive/d/a.arw" }, importedPaths(catalog))
             local copied = {}
             for _, pair in ipairs(fs.copies) do copied[pair[2]] = pair[1] end
             assert.are.equal("/card/d/a.arw", copied["/archive/d/a.arw"])
             assert.are.equal("/card/d/a.jpg", copied["/archive/d/a.jpg"])
             assert.are.equal("/card/d/a.xmp", copied["/archive/d/a.xmp"])
+        end)
+
+        it("keeps the whole file name when Lightroom lists the source under /tmp for a /private/tmp source", function()
+            local fs = {
+                directories = { ["/private/tmp/card"] = true },
+                exists = { ["/tmp/card/eb_fringe.png"] = true },
+                dirContents = { "/tmp/card/eb_fringe.png" },
+            }
+            local catalog, Handler = setup({ fs = fs })
+
+            Handler.importPhotos({ source_path = "/private/tmp/card", copy_to = "/archive" })
+
+            assert.are.same({ "/archive/eb_fringe.png" }, importedPaths(catalog))
         end)
 
         it("reuses an identical copy and renames a different file in the way", function()
@@ -310,11 +392,28 @@ describe("HandlerImport.importPhotos", function()
             assert.are.same({ { "/card/a.arw", "/archive/a.arw" } }, separate.copies)
         end)
 
-        it("fails a single import when the copy fails", function()
+        it("fails a single import when the copy fails, saying what copy_to may hold, without refusing", function()
             local _, Handler = setup({ fs = { copyFails = true, exists = { ["/card/a.jpg"] = true } } })
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/card/a.jpg", copy_to = "/archive" })
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("could not copy", 1, true))
+
+            local r = Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" })
+
+            assert.are.equal("/card/a.jpg", r.failed[1].path)
+            assert.truthy(r.failed[1].reason:find("could not copy", 1, true))
+            assert.truthy(r.failed[1].reason:find("anything copied into /archive before the failure stays there", 1, true))
+        end)
+
+        it("fails a single copied file the busy catalog would not take, naming the copy left on disk", function()
+            local catalog, Handler = setup({
+                fs = { exists = { ["/card/a.jpg"] = true } },
+                writeAccessAborts = function(name) return name == "Import Photo" end,
+            })
+
+            local r = Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" })
+
+            assert.is_nil(r.data)
+            assert.truthy(r.failed[1].reason:find("busy", 1, true))
+            assert.truthy(r.failed[1].reason:find("the copy /archive/a.jpg stays on disk", 1, true))
+            assert.are.same({}, importedPaths(catalog))
         end)
     end)
 
@@ -342,9 +441,9 @@ describe("HandlerImport.importPhotos", function()
             local r = Handler.importPhotos({ source_path = "/dir" })
 
             assert.are.same({ "/dir/c.arw" }, added)
-            assert.are.equal(1, r.imported)
-            assert.are.equal(2, r.already_in_catalog)
-            assert.is_true(r.complete)
+            assert.are.equal(1, r.data.imported)
+            assert.are.equal(2, r.data.already_in_catalog)
+            assert.is_nil(r.remaining)
             assert.is_false(catalog:getQueriedInsideWriteAccess())
         end)
 
@@ -353,9 +452,9 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir" })
 
-            assert.are.equal(0, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
-            assert.are.equal(1, r.skipped_sidecar_jpegs)
+            assert.are.equal(0, r.data.imported)
+            assert.are.equal(1, r.data.already_in_catalog)
+            assert.are.equal(1, r.data.skipped_sidecar_jpegs)
         end)
 
         it("reports a single file that is already in the catalog", function()
@@ -366,9 +465,9 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir/a.arw" })
 
-            assert.is_true(r.success)
-            assert.are.equal(0, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
+            assert.is_nil(r.failed)
+            assert.are.equal(0, r.data.imported)
+            assert.are.equal(1, r.data.already_in_catalog)
             assert.are.equal(1, #catalog:getAllPhotos())
         end)
 
@@ -385,8 +484,8 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir" })
 
-            assert.are.equal(1, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal(1, r.data.imported)
+            assert.are.equal(1, r.data.already_in_catalog)
         end)
 
         it("counts a lowercase path to an all-caps file on a case-insensitive volume", function()
@@ -397,8 +496,8 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
 
-            assert.are.equal(0, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal(0, r.data.imported)
+            assert.are.equal(1, r.data.already_in_catalog)
         end)
 
         describe("on a case-sensitive volume", function()
@@ -434,10 +533,9 @@ describe("HandlerImport.importPhotos", function()
                     photos = { helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }) },
                 })
 
-                local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/a.jpg" })
+                local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/dir/a.jpg" }) end)
 
-                assert.is_false(ok)
-                assert.truthy(tostring(err):find("/dir/a.jpg: differs only in case from /dir/A.jpg", 1, true))
+                assert.truthy(refusal:find("/dir/a.jpg: differs only in case from /dir/A.jpg", 1, true))
                 assert.are.same({}, added)
             end)
 
@@ -449,12 +547,12 @@ describe("HandlerImport.importPhotos", function()
 
                 local r = Handler.importPhotos({ source_path = "/dir" })
 
-                assert.are.equal(0, r.imported)
-                assert.are.equal(1, r.already_in_catalog)
-                assert.is_false(r.success)
+                assert.are.equal(0, r.data.imported)
+                assert.are.equal(1, r.data.already_in_catalog)
+                assert.is_not_nil(r.failed)
                 assert.are.equal(1, #r.failed)
                 assert.are.equal("/dir/a.jpg", r.failed[1].path)
-                assert.truthy(r.failed[1].error:find("differs only in case from /dir/A.jpg", 1, true))
+                assert.truthy(r.failed[1].reason:find("differs only in case from /dir/A.jpg", 1, true))
                 assert.are.same({}, added)
             end)
 
@@ -463,7 +561,7 @@ describe("HandlerImport.importPhotos", function()
 
                 local r = Handler.importPhotos({ source_path = "/dir" })
 
-                assert.are.equal(1, r.imported)
+                assert.are.equal(1, r.data.imported)
                 assert.are.same({ "/dir/A.jpg" }, added)
                 assert.are.equal("/dir/a.jpg", r.failed[1].path)
             end)
@@ -473,10 +571,9 @@ describe("HandlerImport.importPhotos", function()
                     photos = { helper.fakePhoto({ path = "/dir/a.jpg", id = "/dir/a.jpg" }) },
                 })
 
-                local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/A.jpg" })
+                local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/dir/A.jpg" }) end)
 
-                assert.is_false(ok)
-                assert.truthy(tostring(err):find("differs only in case from /dir/a.jpg", 1, true))
+                assert.truthy(refusal:find("differs only in case from /dir/a.jpg", 1, true))
                 assert.are.same({}, added)
             end)
 
@@ -491,8 +588,8 @@ describe("HandlerImport.importPhotos", function()
 
                 local r = Handler.importPhotos({ source_path = "/dir" })
 
-                assert.are.equal(0, r.imported)
-                assert.are.equal(2, r.already_in_catalog)
+                assert.are.equal(0, r.data.imported)
+                assert.are.equal(2, r.data.already_in_catalog)
                 assert.is_nil(r.failed)
                 assert.are.same({}, added)
             end)
@@ -503,10 +600,9 @@ describe("HandlerImport.importPhotos", function()
                     exists = { ["/card/a.jpg"] = true, ["/dest/A.jpg"] = true },
                 })
 
-                local ok, err = pcall(Handler.importPhotos, { source_path = "/card/a.jpg", copy_to = "/dest" })
+                local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/dest" }) end)
 
-                assert.is_false(ok)
-                assert.truthy(tostring(err):find("/dest/a.jpg: differs only in case from /dest/A.jpg", 1, true))
+                assert.truthy(refusal:find("/dest/a.jpg: differs only in case from /dest/A.jpg", 1, true))
                 assert.is_nil(fs.copies)
                 assert.are.same({}, added)
             end)
@@ -518,8 +614,8 @@ describe("HandlerImport.importPhotos", function()
 
                 local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
 
-                assert.are.equal(0, r.imported)
-                assert.are.equal(1, r.already_in_catalog)
+                assert.are.equal(0, r.data.imported)
+                assert.are.equal(1, r.data.already_in_catalog)
                 assert.are.same({}, added)
             end)
         end)
@@ -532,8 +628,8 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir/a.ARW" })
 
-            assert.are.equal(0, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal(0, r.data.imported)
+            assert.are.equal(1, r.data.already_in_catalog)
         end)
 
         it("counts a path spelled in another case as the catalog entry", function()
@@ -544,8 +640,8 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir/Q.jpg" })
 
-            assert.are.equal(0, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal(0, r.data.imported)
+            assert.are.equal(1, r.data.already_in_catalog)
             assert.are.equal(1, #catalog:getAllPhotos())
         end)
 
@@ -554,7 +650,7 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir" })
 
-            assert.is_nil(r.already_in_catalog)
+            assert.is_nil(r.data.already_in_catalog)
         end)
 
         it("counts an NFC folder listing against the NFD path in the catalog", function()
@@ -563,9 +659,9 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir" })
 
-            assert.is_true(r.success)
-            assert.are.equal(0, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
+            assert.is_nil(r.failed)
+            assert.are.equal(0, r.data.imported)
+            assert.are.equal(1, r.data.already_in_catalog)
             assert.is_nil(r.failed)
         end)
 
@@ -579,8 +675,8 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir" })
 
-            assert.is_false(r.success)
-            assert.are.equal(1, r.imported)
+            assert.is_not_nil(r.failed)
+            assert.are.equal(1, r.data.imported)
             assert.are.equal(1, #r.failed)
             assert.are.equal("/dir/bad.arw", r.failed[1].path)
         end)
@@ -591,9 +687,9 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir" })
 
-            assert.is_false(r.success)
+            assert.is_not_nil(r.failed)
             assert.are.equal(2, #r.failed)
-            assert.truthy(r.failed[1].error:find("failed to import photo", 1, true))
+            assert.truthy(r.failed[1].reason:find("failed to import photo", 1, true))
         end)
     end)
 
@@ -634,12 +730,12 @@ describe("HandlerImport.importPhotos", function()
             local r = Handler.importPhotos({ source_path = "/root" })
 
             assert.are.same({}, added)
-            assert.is_false(r.success)
-            assert.are.equal(0, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
+            assert.is_not_nil(r.failed)
+            assert.are.equal(0, r.data.imported)
+            assert.are.equal(1, r.data.already_in_catalog)
             assert.are.equal("/root/dir2/a.jpg", r.failed[1].path)
-            assert.truthy(r.failed[1].error:find("differs only in case from /root/Dir2", 1, true))
-            assert.is_true(r.complete)
+            assert.truthy(r.failed[1].reason:find("differs only in case from /root/Dir2", 1, true))
+            assert.is_nil(r.remaining)
         end)
 
         it("answers again when the folder is imported a second time", function()
@@ -661,7 +757,7 @@ describe("HandlerImport.importPhotos", function()
             local r = Handler.importPhotos({ source_path = "/root" })
 
             assert.are.same({ "/root/Dir2/a.jpg", "/root/Dir2/b.jpg" }, added)
-            assert.are.equal(2, r.imported)
+            assert.are.equal(2, r.data.imported)
             assert.are.equal(1, #r.failed)
             assert.are.equal("/root/dir2/a.jpg", r.failed[1].path)
         end)
@@ -689,10 +785,9 @@ describe("HandlerImport.importPhotos", function()
             setupOpts.exists = { ["/root/dir2/a.jpg"] = true }
             local Handler, added = caseSensitiveVolume(setupOpts)
 
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/root/dir2/a.jpg" })
+            local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/root/dir2/a.jpg" }) end)
 
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("differs only in case from /root/Dir2", 1, true))
+            assert.truthy(refusal:find("differs only in case from /root/Dir2", 1, true))
             assert.are.same({}, added)
         end)
 
@@ -706,7 +801,7 @@ describe("HandlerImport.importPhotos", function()
             local r = Handler.importPhotos({ source_path = "/src", copy_to = "/dest" })
 
             assert.are.same({ "/dest/Dir2/a.jpg" }, added)
-            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.data.imported)
             assert.are.equal("/src/dir2/b.jpg", r.failed[1].path)
         end)
 
@@ -724,7 +819,7 @@ describe("HandlerImport.importPhotos", function()
 
             assert.are.same({ "/root/dir2/b.jpg" }, added)
             assert.are.equal("/root/Dir2/a.jpg", r.failed[1].path)
-            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.data.imported)
         end)
 
         it("copies nothing into a case-variant folder", function()
@@ -755,8 +850,8 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/root/dir2" })
 
-            assert.is_true(r.success)
-            assert.are.equal(1, r.already_in_catalog)
+            assert.is_nil(r.failed)
+            assert.are.equal(1, r.data.already_in_catalog)
             assert.are.equal(1, #catalog:getAllPhotos())
         end)
 
@@ -771,7 +866,7 @@ describe("HandlerImport.importPhotos", function()
             local r = Handler.importPhotos({ source_path = "/root" })
 
             assert.are.same({ "/root/Dir2/b.jpg" }, added)
-            assert.is_true(r.success)
+            assert.is_nil(r.failed)
         end)
 
         it("keeps a folder that is itself in the catalog in both spellings", function()
@@ -789,7 +884,7 @@ describe("HandlerImport.importPhotos", function()
             local r = Handler.importPhotos({ source_path = "/root" })
 
             assert.are.same({ "/root/dir2/c.jpg" }, added)
-            assert.is_true(r.success)
+            assert.is_nil(r.failed)
         end)
     end)
 
@@ -816,10 +911,9 @@ describe("HandlerImport.importPhotos", function()
                 local r, paths = importFolder(case.files)
 
                 assert.are.same(case.kept, paths)
-                assert.are.equal(1, r.imported)
-                assert.are.equal(#case.files - 1, r.skipped_sidecar_jpegs)
-                assert.are.equal(0, r.skipped)
-                assert.is_nil(r.message)
+                assert.are.equal(1, r.data.imported)
+                assert.are.equal(#case.files - 1, r.data.skipped_sidecar_jpegs)
+                assert.is_nil(r.data.skipped_by_extension)
             end)
         end
 
@@ -836,7 +930,7 @@ describe("HandlerImport.importPhotos", function()
                 local r, paths = importFolder(case.files)
 
                 assert.are.same(case.files, paths)
-                assert.is_nil(r.skipped_sidecar_jpegs)
+                assert.is_nil(r.data.skipped_sidecar_jpegs)
             end)
         end
 
@@ -846,14 +940,13 @@ describe("HandlerImport.importPhotos", function()
             local r, paths = importFolder(files, { separate_jpegs = true })
 
             assert.are.same(files, paths)
-            assert.is_nil(r.skipped_sidecar_jpegs)
+            assert.is_nil(r.data.skipped_sidecar_jpegs)
         end)
 
         it("adds only the raw to the collection and to remaining_paths", function()
             local added = {}
             local collection = {
                 getName = function() return "Shoot" end,
-                type = function() return "LrCollection" end,
                 isSmartCollection = function() return false end,
                 addPhotos = function(_, photos) added = photos end,
             }
@@ -864,17 +957,16 @@ describe("HandlerImport.importPhotos", function()
                     dirContents = { "/dir/a.cr3", "/dir/a.jpg", "/dir/b.cr3", "/dir/b.jpg" },
                 },
             })
-            local context = {
+            local context = helper.requestContext(nil, {
                 isCanceled = function() return #catalog:getAllPhotos() >= 1 end,
-                report = function() end,
-            }
+            })
 
             local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Shoot" }, context)
 
-            assert.are.same({ "/dir/b.cr3" }, r.remaining_paths)
+            assert.are.same({ "/dir/b.cr3" }, r.remaining)
             assert.are.equal(1, #added)
             assert.are.equal("/dir/a.cr3", added[1]:getRawMetadata('path'))
-            assert.are.equal(2, r.skipped_sidecar_jpegs)
+            assert.are.equal(2, r.data.skipped_sidecar_jpegs)
         end)
 
         for _, volume in ipairs({
@@ -893,10 +985,9 @@ describe("HandlerImport.importPhotos", function()
                         exists = { [case.jpeg] = true, [case.raw] = true },
                     } })
 
-                    local ok, err = pcall(Handler.importPhotos, { source_path = case.jpeg })
+                    local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = case.jpeg }) end)
 
-                    assert.is_false(ok)
-                    assert.truthy(tostring(err):find("Import " .. case.raw .. " instead", 1, true))
+                    assert.truthy(refusal:find("Import " .. case.raw .. " instead", 1, true))
                     assert.are.same({}, importedPaths(catalog))
                 end)
             end
@@ -908,10 +999,9 @@ describe("HandlerImport.importPhotos", function()
                 exists = { ["/dir/S1.JPG"] = true, ["/dir/S1.ARW"] = true },
             } })
 
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/s1.jpg" })
+            local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/dir/s1.jpg" }) end)
 
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("Import /dir/S1.ARW instead", 1, true))
+            assert.truthy(refusal:find("Import /dir/S1.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
@@ -923,7 +1013,7 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir/Q.jpg" })
 
-            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.data.imported)
             assert.are.same({ "/dir/Q.jpg" }, importedPaths(catalog))
         end)
 
@@ -934,7 +1024,7 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
 
-            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.data.imported)
             assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
         end)
 
@@ -945,10 +1035,9 @@ describe("HandlerImport.importPhotos", function()
                 exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
             } })
 
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/cafe\204\129.jpg" })
+            local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" }) end)
 
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("Import /dir/caf\195\169.ARW instead", 1, true))
+            assert.truthy(refusal:find("Import /dir/caf\195\169.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
@@ -958,10 +1047,9 @@ describe("HandlerImport.importPhotos", function()
                 exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ArW"] = true },
             } })
 
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/cafe\204\129.jpg" })
+            local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" }) end)
 
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("Import /dir/caf\195\169.ArW instead", 1, true))
+            assert.truthy(refusal:find("Import /dir/caf\195\169.ArW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
@@ -985,7 +1073,7 @@ describe("HandlerImport.importPhotos", function()
 
                     local r = Handler.importPhotos({ source_path = case.path })
 
-                    assert.are.equal(1, r.imported)
+                    assert.are.equal(1, r.data.imported)
                     assert.are.same({ case.path }, importedPaths(catalog))
                 end)
             end
@@ -998,10 +1086,9 @@ describe("HandlerImport.importPhotos", function()
                 exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Caf\195\169.ARW"] = true },
             } })
 
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/Cafe\204\129.jpg" })
+            local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/dir/Cafe\204\129.jpg" }) end)
 
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("Import /dir/Caf\195\169.ARW instead", 1, true))
+            assert.truthy(refusal:find("Import /dir/Caf\195\169.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
@@ -1028,10 +1115,9 @@ describe("HandlerImport.importPhotos", function()
                         exists = case.exists,
                     } })
 
-                    local ok, err = pcall(Handler.importPhotos, { source_path = case.path })
+                    local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = case.path }) end)
 
-                    assert.is_false(ok)
-                    assert.truthy(tostring(err):find("Import " .. case.raw .. " instead", 1, true))
+                    assert.truthy(refusal:find("Import " .. case.raw .. " instead", 1, true))
                     assert.are.same({}, importedPaths(catalog))
                 end)
             end
@@ -1044,10 +1130,9 @@ describe("HandlerImport.importPhotos", function()
                 exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
             } })
 
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/Cafe\204\129.jpg" })
+            local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/dir/Cafe\204\129.jpg" }) end)
 
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("Import /dir/caf\195\169.ARW instead", 1, true))
+            assert.truthy(refusal:find("Import /dir/caf\195\169.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
@@ -1059,7 +1144,7 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" })
 
-            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.data.imported)
         end)
 
         it("imports a lone JPEG beside its raw with separate_jpegs", function()
@@ -1067,7 +1152,7 @@ describe("HandlerImport.importPhotos", function()
 
             local r = Handler.importPhotos({ source_path = "/dir/a.jpg", separate_jpegs = true })
 
-            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.data.imported)
             assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
         end)
 
@@ -1090,7 +1175,7 @@ describe("HandlerImport.importPhotos", function()
 
                 local r = Handler.importPhotos({ source_path = case.source })
 
-                assert.are.equal(1, r.imported)
+                assert.are.equal(1, r.data.imported)
                 assert.are.same({ case.source }, importedPaths(catalog))
             end)
         end
@@ -1101,44 +1186,50 @@ describe("HandlerImport.importPhotos", function()
             directories = { ["/dir"] = true },
             dirContents = { "/dir/a.jpg", "/dir/b.jpg", "/dir/c.jpg" },
         } })
-        local context = {
+        local context = helper.requestContext(nil, {
             isCanceled = function() return #catalog:getAllPhotos() >= 1 end,
-            report = function() end,
-        }
+        })
 
         local r = Handler.importPhotos({ source_path = "/dir" }, context)
 
-        assert.are.equal(1, r.imported)
-        assert.is_false(r.complete)
-        assert.are.same({ "/dir/b.jpg", "/dir/c.jpg" }, r.remaining_paths)
+        assert.are.equal(1, r.data.imported)
+        assert.are.same({ "/dir/b.jpg", "/dir/c.jpg" }, r.remaining)
         assert.are.equal(1, #catalog:getAllPhotos())
     end)
 
+    it("imports nothing and lists every file as remaining when the budget is spent before the first", function()
+        local catalog, Handler = setup({ fs = {
+            directories = { ["/dir"] = true },
+            dirContents = { "/dir/a.jpg", "/dir/b.jpg" },
+        } })
+
+        local r = Handler.importPhotos({ source_path = "/dir" }, helper.requestContext(30))
+
+        assert.is_nil(r.data)
+        assert.are.same({ "/dir/a.jpg", "/dir/b.jpg" }, r.remaining)
+        assert.are.equal(0, #catalog:getAllPhotos())
+    end)
+
     it("imports a single photo", function()
-        local catalog, Handler = setup({
+        local _, Handler = setup({
             fs = { exists = { ["/photo.jpg"] = true }, directories = {} },
         })
 
         local r = Handler.importPhotos({ source_path = "/photo.jpg" })
 
-        assert.is_true(r.success)
-        assert.are.equal(1, r.imported)
+        assert.is_nil(r.failed)
+        assert.are.equal(1, r.data.imported)
     end)
 
-    it("errors when source path does not exist", function()
+    it("refuses a source path that does not exist, naming it", function()
         local _, Handler = setup({ fs = { exists = {} } })
-        assert.has_error(function()
+        assert.are.equal("Source path does not exist: /missing.jpg", helper.refusalOf(function()
             Handler.importPhotos({ source_path = "/missing.jpg" })
-        end)
-    end)
-
-    it("errors without source_path", function()
-        local _, Handler = setup({ fs = {} })
-        assert.has_error(function() Handler.importPhotos({}) end)
+        end))
     end)
 
     it("imports multiple photos from directory and filters extensions", function()
-        local catalog, Handler = setup({
+        local _, Handler = setup({
             fs = {
                 exists = { ["/dir"] = true },
                 directories = { ["/dir"] = true },
@@ -1147,7 +1238,7 @@ describe("HandlerImport.importPhotos", function()
         })
 
         local r = Handler.importPhotos({ source_path = "/dir" })
-        assert.are.equal(3, r.imported)
+        assert.are.equal(3, r.data.imported)
     end)
 
     it("imports photos nested in subfolders", function()
@@ -1169,8 +1260,8 @@ describe("HandlerImport.importPhotos", function()
 
         local r = Handler.importPhotos({ source_path = "/dir" })
 
-        assert.is_true(r.success)
-        assert.are.equal(3, r.imported)
+        assert.is_nil(r.failed)
+        assert.are.equal(3, r.data.imported)
     end)
 
     it("imports camera raw formats beyond Canon, Nikon and Sony, in any case", function()
@@ -1187,10 +1278,9 @@ describe("HandlerImport.importPhotos", function()
 
         local r = Handler.importPhotos({ source_path = "/dir" })
 
-        assert.are.equal(10, r.imported)
-        assert.are.equal(0, r.skipped)
-        assert.is_nil(r.skipped_by_extension)
-        assert.is_nil(r.message)
+        assert.are.equal(10, r.data.imported)
+        assert.is_nil(r.data.skipped_by_extension)
+        assert.is_nil(r.data.skipped_by_extension)
     end)
 
     it("reports the files it skipped by extension", function()
@@ -1204,12 +1294,8 @@ describe("HandlerImport.importPhotos", function()
 
         local r = Handler.importPhotos({ source_path = "/dir" })
 
-        assert.are.equal(1, r.imported)
-        assert.are.equal(4, r.skipped)
-        assert.are.same({ xmp = 2, txt = 1, [""] = 1 }, r.skipped_by_extension)
-        assert.are.equal(
-            "Skipped 4 files with unsupported extensions ((none): 1, txt: 1, xmp: 2)",
-            r.message)
+        assert.are.equal(1, r.data.imported)
+        assert.are.same({ xmp = 2, txt = 1, [""] = 1 }, r.data.skipped_by_extension)
     end)
 
     it("names the skipped extensions when a folder has no importable photos", function()
@@ -1221,10 +1307,9 @@ describe("HandlerImport.importPhotos", function()
             },
         })
 
-        local ok, err = pcall(Handler.importPhotos, { source_path = "/dir" })
+        local refusal = helper.refusalOf(function() Handler.importPhotos({ source_path = "/dir" }) end)
 
-        assert.is_false(ok)
-        assert.truthy(tostring(err):find("skipped files by extension: mov: 1, xmp: 1", 1, true))
+        assert.truthy(refusal:find("skipped files by extension: mov: 1, xmp: 1", 1, true))
     end)
 
     it("acquires catalog write access per photo, not once for the batch", function()
@@ -1241,7 +1326,7 @@ describe("HandlerImport.importPhotos", function()
 
         local r = Handler.importPhotos({ source_path = "/dir" })
 
-        assert.are.equal(3, r.imported)
+        assert.are.equal(3, r.data.imported)
         assert.are.equal(3, catalog:getWriteAccessCount())
     end)
 end)

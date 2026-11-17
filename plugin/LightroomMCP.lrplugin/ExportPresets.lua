@@ -488,12 +488,6 @@ end
 -- one. Returns the entry with `settings`: the LrExportSession settings
 -- table, LR_-prefixed and safe to modify.
 function ExportPresets.resolve(name, folder)
-    if type(name) ~= "string" or name == "" then
-        error("export_preset must be a non-empty string")
-    end
-    if folder ~= nil and (type(folder) ~= "string" or folder == "") then
-        error("export_preset_folder must be a non-empty string")
-    end
     local entries = allEntries()
     local matches = findMatches(entries, name, folder, false)
     if #matches == 0 then
@@ -531,7 +525,5 @@ end
 
 ExportPresets.FIXED_DESTINATION_TYPES = FIXED_DESTINATION_TYPES
 ExportPresets.specificFolderPath = specificFolderPath
--- Exposed for the specs.
-ExportPresets._parse = readPresetSource
 
 return ExportPresets

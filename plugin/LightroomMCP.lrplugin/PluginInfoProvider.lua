@@ -1,5 +1,4 @@
 local LrTasks = import 'LrTasks'
-local LrProgressScope = import 'LrProgressScope'
 local LrDialogs = import 'LrDialogs'
 local LrFunctionContext = import 'LrFunctionContext'
 local LrSocket = import 'LrSocket'
@@ -10,40 +9,9 @@ local LrFileUtils = import 'LrFileUtils'
 
 local JSON = require 'JSON'
 local PluginFiles = require 'PluginFiles'
-local HandlerSearch = require 'HandlerSearch'
-local HandlerCollections = require 'HandlerCollections'
-local HandlerFolders = require 'HandlerFolders'
-local HandlerKeywords = require 'HandlerKeywords'
-local HandlerMetadata = require 'HandlerMetadata'
-local HandlerStyleSummary = require 'HandlerStyleSummary'
-local HandlerLensBlur = require 'HandlerLensBlur'
-local HandlerRawDevelopSettings = require 'HandlerRawDevelopSettings'
-local HandlerMaskAdmission = require 'HandlerMaskAdmission'
-local HandlerAiMetadata = require 'HandlerAiMetadata'
-local HandlerOrganization = require 'HandlerOrganization'
-local HandlerUndo = require 'HandlerUndo'
-local HandlerImport = require 'HandlerImport'
-local HandlerRemoveFromCatalog = require 'HandlerRemoveFromCatalog'
-local HandlerExport = require 'HandlerExport'
-local HandlerSelection = require 'HandlerSelection'
-local HandlerPreview = require 'HandlerPreview'
-local HandlerDevelop = require 'HandlerDevelop'
-local HandlerSnapshots = require 'HandlerSnapshots'
-local HandlerVirtualCopies = require 'HandlerVirtualCopies'
-local HandlerMasks = require 'HandlerMasks'
-local HandlerSpots = require 'HandlerSpots'
-local HandlerGradientMasks = require 'HandlerGradientMasks'
-local HandlerBrushMasks = require 'HandlerBrushMasks'
-local HandlerRangeMasks = require 'HandlerRangeMasks'
-local HandlerMaskDelete = require 'HandlerMaskDelete'
-local HandlerMaskAdjustments = require 'HandlerMaskAdjustments'
-local HandlerMaskRead = require 'HandlerMaskRead'
-local HandlerMaskInvert = require 'HandlerMaskInvert'
-local HandlerMaskCurves = require 'HandlerMaskCurves'
-local HandlerMaskPointColors = require 'HandlerMaskPointColors'
-local HandlerMaskCreate = require 'HandlerMaskCreate'
-local HandlerMaskBatch = require 'HandlerMaskBatch'
-local HandlerMaskCombine = require 'HandlerMaskCombine'
+local Contract = require 'Contract'
+local Reply = require 'Reply'
+local RequestContext = require 'RequestContext'
 local Log = require 'Log'
 
 local DEFAULT_REQUEST_PORT = 58763
@@ -185,99 +153,19 @@ end
 
 local SUPERSEDED_CHECK_TICKS = 5
 
-local DISPATCH = {
-    -- Heartbeat no-op. The MCP server pings on this action every
-    -- HEARTBEAT_INTERVAL_SECONDS (server/src/index.ts) so the plugin can
-    -- tell a healthy-but-idle session apart from a genuinely dead one
-    -- without waiting out a long fixed timer. It travels through the same
-    -- auth + dispatch path as any other action, so consumeMessage's
-    -- lastRequestTime update (below) already treats it as liveness — no
-    -- separate heartbeat bookkeeping needed. See STALE_RECONNECT_SECONDS.
-    ping = function(_params) return { pong = true } end,
-    search_photos = HandlerSearch.searchPhotos,
-    list_folders = HandlerFolders.listFolders,
-    get_folder_photos = HandlerFolders.getFolderPhotos,
-    list_collections = HandlerCollections.listCollections,
-    create_collection = HandlerCollections.createCollection,
-    create_smart_collection = HandlerCollections.createSmartCollection,
-    add_to_collection = HandlerCollections.addToCollection,
-    get_collection_photos = HandlerCollections.getCollectionPhotos,
-    remove_from_collection = HandlerCollections.removeFromCollection,
-    delete_collection = HandlerCollections.deleteCollection,
-    get_lens_blur = HandlerLensBlur.get,
-    get_raw_develop_settings = HandlerRawDevelopSettings.get,
-    get_mask_write_admission = HandlerMaskAdmission.get,
-    set_lens_blur = HandlerLensBlur.set,
-    get_photo_metadata = HandlerMetadata.getPhotoMetadata,
-    summarize_develop_settings = HandlerStyleSummary.summarize,
-    get_photo_preview = HandlerPreview.getPhotoPreview,
-    get_photo_previews = HandlerPreview.getPhotoPreviews,
-    find_duplicate_groups = HandlerPreview.findDuplicateGroups,
-    get_photo_stats = HandlerPreview.getPhotoStats,
-    set_gps = HandlerMetadata.setGps,
-    set_location = HandlerMetadata.setLocation,
-    set_metadata = HandlerMetadata.setMetadata,
-    set_ai_metadata = HandlerAiMetadata.setAiMetadata,
-    get_ai_metadata = HandlerAiMetadata.getAiMetadata,
-    set_keywords = HandlerOrganization.setKeywords,
-    remove_keyword_subtree = HandlerOrganization.removeKeywordSubtree,
-    list_keywords = HandlerKeywords.listKeywords,
-    rename_keyword = HandlerKeywords.renameKeyword,
-    set_rating_and_flag = HandlerOrganization.setRatingAndFlag,
-    undo_last_step = HandlerUndo.undoLastStep,
-    remove_photos_from_catalog = HandlerRemoveFromCatalog.removePhotos,
-    set_color_label = HandlerOrganization.setColorLabel,
-    import_photos = HandlerImport.importPhotos,
-    export_photos = HandlerExport.exportPhotos,
-    export_photo_metadata = HandlerExport.exportPhotoMetadata,
-    list_export_presets = HandlerExport.listExportPresets,
-    get_selected_photos = HandlerSelection.getSelectedPhotos,
-    -- Test-only, no matching MCP tool contract: only the raw TCP probe
-    -- (manual-test.mjs / the e2e playbook) can reach it. See HandlerSelection.
-    set_selection = HandlerSelection.setSelection,
-    list_develop_presets = HandlerDevelop.listDevelopPresets,
-    get_develop_preset = HandlerDevelop.getDevelopPreset,
-    compare_develop_presets = HandlerDevelop.compareDevelopPresets,
-    create_develop_preset = HandlerDevelop.createDevelopPreset,
-    export_develop_preset = HandlerDevelop.exportDevelopPreset,
-    apply_develop_preset = HandlerDevelop.applyDevelopPreset,
-    copy_develop_settings = HandlerDevelop.copyDevelopSettings,
-    match_photo_style = HandlerDevelop.matchPhotoStyle,
-    set_develop_settings = HandlerDevelop.setDevelopSettings,
-    set_process_version = HandlerDevelop.setProcessVersion,
-    list_develop_snapshots = HandlerSnapshots.list,
-    create_virtual_copies = HandlerVirtualCopies.create,
-    create_develop_snapshot = HandlerSnapshots.create,
-    apply_develop_snapshot = HandlerSnapshots.apply,
-    delete_develop_snapshot = HandlerSnapshots.delete,
-    apply_denoise = HandlerDevelop.applyDenoise,
-    reset_develop_adjustments = HandlerDevelop.resetDevelopAdjustments,
-    apply_auto_adjustments = HandlerDevelop.applyAutoAdjustments,
-    list_masks = HandlerMasks.listMasks,
-    list_spots = HandlerSpots.list,
-    update_spot = HandlerSpots.update,
-    delete_spot = HandlerSpots.delete,
-    create_gradient_mask = HandlerGradientMasks.createGradientMask,
-    update_gradient_mask = HandlerGradientMasks.updateGradientMask,
-    create_brush_mask = HandlerBrushMasks.createBrushMask,
-    add_brush_strokes = HandlerBrushMasks.addBrushStrokes,
-    create_range_mask = HandlerRangeMasks.createRangeMask,
-    delete_masks = HandlerMaskDelete.deleteMasks,
-    set_mask_adjustments = HandlerMaskAdjustments.setMaskAdjustments,
-    get_mask = HandlerMaskRead.getMask,
-    invert_mask = HandlerMaskInvert.invertMask,
-    set_mask_curves = HandlerMaskCurves.setMaskCurves,
-    edit_mask_point_colors = HandlerMaskPointColors.editMaskPointColors,
-    create_mask = HandlerMaskCreate.createMask,
-    create_mask_batch = HandlerMaskBatch.createMaskBatch,
-    combine_mask = HandlerMaskCombine.combineMask,
-}
+local function ping(_params) return { pong = true } end
+
+local function handlerFor(action)
+    if action == "ping" then return ping end
+    local target = Contract.DISPATCH[action]
+    if not target then return nil end
+    return require(target[1])[target[2]]
+end
 
 -- Generous wait so the very first response after handshake doesn't get
 -- dropped while LrSocket is still settling sendConnected on the response
--- side. Must stay below the server's dispatcher timeout (30s) so a real
--- send-side outage still surfaces as a server-side timeout, not silent
--- success.
+-- side. A request's own time left caps it, so a real send-side outage still
+-- surfaces as a server-side timeout, not silent success.
 local SEND_WAIT_SECONDS = 25
 -- After this many seconds of waiting for sendConnected, request a fresh
 -- response-side rebind. Recovers from states where the response listener
@@ -320,14 +208,15 @@ end
 local TOKEN_MISMATCH_MESSAGE = "The Lightroom MCP token does not match the running plug-in. "
     .. "Click Stop Server, then Start Server in Plug-in Manager, and check LIGHTROOM_MCP_TOKEN_PATH if it is set."
 
-local function sendResponse(response)
+local function sendResponse(response, waitLimitSeconds)
+    local waitSeconds = math.min(SEND_WAIT_SECONDS, math.max(0, waitLimitSeconds or SEND_WAIT_SECONDS))
     if shutdownRequested() then
         addLog("Drop response (shutting down) id=" .. tostring(response.id))
         return
     end
     local waited = 0
     local selfHealRequested = false
-    while not pluginState.sendConnected and waited < SEND_WAIT_SECONDS do
+    while not pluginState.sendConnected and waited < waitSeconds do
         if shutdownRequested() then
             addLog("Drop response (shutting down) id=" .. tostring(response.id))
             return
@@ -341,7 +230,7 @@ local function sendResponse(response)
         waited = waited + 0.1
     end
     if not pluginState.responseSocket or not pluginState.sendConnected then
-        addLog("Drop response (send socket disconnected after " .. SEND_WAIT_SECONDS .. "s) id=" .. tostring(response.id))
+        addLog("Drop response (send socket disconnected after " .. waitSeconds .. "s) id=" .. tostring(response.id))
         return
     end
     local ok, payload = pcall(function() return JSON:encode(response) end)
@@ -349,6 +238,7 @@ local function sendResponse(response)
         addLog("JSON encode failed id=" .. tostring(response.id) .. ": " .. tostring(payload))
         payload = JSON:encode({
             id = response.id,
+            effect = "unknown",
             error = "The plug-in's reply could not be encoded as JSON (" .. tostring(payload)
                 .. "); the operation may have run, so check Lightroom before retrying.",
         })
@@ -358,10 +248,15 @@ local function sendResponse(response)
 end
 
 local activeRequests = {}
-local LONG_ACTIONS = {
-    set_process_version = true, export_photos = true, import_photos = true, apply_denoise = true,
-    create_mask_batch = true, reset_develop_adjustments = true,
-}
+
+local function contextFor(request)
+    local id = request.id
+    local sendProgress = nil
+    if request.reportProgress then
+        sendProgress = function(progress) sendResponse({ progressFor = id, progress = progress }, 0) end
+    end
+    return RequestContext.new(tostring(request.action), request.budget_ms, sendProgress)
+end
 
 local function dispatchAction(request)
     if shutdownRequested() then return end
@@ -371,7 +266,7 @@ local function dispatchAction(request)
 
     if request.undecodable then
         addLog("Rejecting undecodable request id=" .. tostring(id))
-        sendResponse({ id = id, error = "Malformed request: " .. request.undecodable })
+        sendResponse({ id = id, error = "Malformed request: " .. request.undecodable, effect = "none" })
         return
     end
 
@@ -390,9 +285,9 @@ local function dispatchAction(request)
     -- is still queued waiting on sendConnected (see STALE_RESTART_HARD_CAP_SECONDS).
     pluginState.inFlightRequests = (pluginState.inFlightRequests or 0) + 1
 
-    local handler = DISPATCH[action]
+    local handler = handlerFor(action)
     if not handler then
-        sendResponse({ id = id, error = "Unknown action: " .. tostring(action) })
+        sendResponse({ id = id, error = "Unknown action: " .. tostring(action), effect = "none" })
         pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
         return
     end
@@ -401,43 +296,29 @@ local function dispatchAction(request)
     -- Lightroom's Lua sandbox: using them in the dispatcher's error path
     -- turns a handler error into a silent nil-call that never reaches the
     -- client. Stick to LrTasks.pcall.
-    local context
-    if LONG_ACTIONS[action] then
-        local scope = LrProgressScope { title = action, caption = "Starting" }
-        scope:setCancelable(true)
-        context = activeRequests[id] or { cancelled = false }
-        context.lastProgress = -1
-        function context:isCanceled() return self.cancelled or scope:isCanceled() end
-        function context:report(progress, total, message)
-            scope:setPortionComplete(progress, math.max(total, 1))
-            scope:setCaption(tostring(message))
-            if request.reportProgress and progress > self.lastProgress then
-                self.lastProgress = progress
-                sendResponse({ progressFor = id, progress = { progress = progress, total = total, message = tostring(message) } })
-            end
-        end
-        context.scope = scope
-        activeRequests[id] = context
-    end
+    local context = (id ~= nil and activeRequests[id]) or contextFor(request)
     local execOk, resultOrErr = LrTasks.pcall(function()
         return handler(params, context)
     end)
-    activeRequests[id] = nil
-    if context then
-        if context:isCanceled() then addLog("Cancelled " .. action .. " id=" .. tostring(id)) end
-        context.scope:done()
+    if context:isCanceled() then addLog("Cancelled " .. action .. " id=" .. tostring(id)) end
+    context:finish()
+    local missing = Reply.notFoundOf(resultOrErr)
+    if not execOk and missing ~= nil then
+        execOk, resultOrErr = true, Reply.parts({ not_found = { missing } })
     end
     if execOk then
-        sendResponse({ id = id, result = resultOrErr })
+        local parts = Reply.isParts(resultOrErr) and resultOrErr or { data = resultOrErr }
+        if #context.warnings > 0 then
+            parts.warnings = parts.warnings or {}
+            for _, warning in ipairs(context.warnings) do parts.warnings[#parts.warnings + 1] = warning end
+        end
+        sendResponse({ id = id, result = parts }, context:timeLeft())
     else
         addLog("Handler " .. action .. " error: " .. tostring(resultOrErr))
-        local message = tostring(resultOrErr)
-        local source, detail = message:match("^([^\r\n]-%.lua):%d+: (.*)$")
-        if source and (source:match("^%S+%.lua$") or source:match("^[/\\]")
-            or source:match("^%a:[/\\]") or source:match("^%.%.%.")) then
-            message = detail
-        end
-        sendResponse({ id = id, error = message })
+        local message = Reply.messageOf(resultOrErr)
+        if #context.warnings > 0 then message = message .. " Warnings: " .. table.concat(context.warnings, "; ") end
+        sendResponse({ id = id, error = message, effect = Reply.refusalOf(resultOrErr) and "none" or "unknown" },
+            context:timeLeft())
     end
     pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
 end
@@ -458,7 +339,7 @@ local function consumeMessage(message)
         -- A client that cannot be decoded still deserves an answer, or it sits
         -- there until its own 30s timeout with no clue why. Salvage id+token by
         -- pattern: only an authenticated caller gets the error back, so
-        -- unauthenticated garbage stays silent as before.
+        -- unauthenticated garbage stays silent.
         local salvagedToken = message:match('"hello"%s*:%s*"([^"]*)"')
         local salvagedId = message:match('"id"%s*:%s*"([^"]*)"')
         if salvagedId and pluginState.token and salvagedToken == pluginState.token then
@@ -472,7 +353,7 @@ local function consumeMessage(message)
         addLog("Auth failed (token mismatch) id=" .. tostring(request.id))
         if request.id then
             LrTasks.startAsyncTask(function()
-                sendResponse({ id = request.id, error = TOKEN_MISMATCH_MESSAGE })
+                sendResponse({ id = request.id, error = TOKEN_MISMATCH_MESSAGE, effect = "none" })
             end)
         end
         return nil
@@ -483,7 +364,7 @@ local function consumeMessage(message)
         if target and activeRequests[target] then activeRequests[target].cancelled = true end
         return nil
     end
-    if LONG_ACTIONS[request.action] and request.id then activeRequests[request.id] = { cancelled = false } end
+    if request.id then activeRequests[request.id] = contextFor(request) end
     return request
 end
 
@@ -592,6 +473,7 @@ local function startServer()
                     if request then
                         LrTasks.startAsyncTask(function()
                             dispatchAction(request)
+                            if request.id ~= nil then activeRequests[request.id] = nil end
                         end)
                     end
                 end,
@@ -887,7 +769,7 @@ local PluginInfoProvider = {
     logBindFailure = logBindFailure,
     isSuperseded = isSuperseded,
     BIND_FAILURE_LOG_INTERVAL_SECONDS = BIND_FAILURE_LOG_INTERVAL_SECONDS,
-    handlePing = DISPATCH.ping,
+    handlePing = ping,
     HEARTBEAT_INTERVAL_SECONDS = HEARTBEAT_INTERVAL_SECONDS,
     STALE_RECONNECT_SECONDS = STALE_RECONNECT_SECONDS,
     STALE_RESTART_HARD_CAP_SECONDS = STALE_RESTART_HARD_CAP_SECONDS,

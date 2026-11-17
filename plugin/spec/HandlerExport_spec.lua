@@ -40,7 +40,7 @@ local function setup(opts)
             LrLogger = helper.defaultLrLogger(),
             LrDate = { currentTime = opts.clock },
             LrFileUtils = { exists = function() return "directory" end },
-            LrPathUtils = {},
+            LrPathUtils = { child = function(dir, name) return dir .. "/" .. name end },
             LrExportSession = function(args)
                 table.insert(exportSessionCalls, args)
                 return {
@@ -69,19 +69,17 @@ describe("HandlerExport.exportPhotos", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler = setup({ photos = { p } })
         local secondError
-        local context = {
+        local context = helper.requestContext(nil, {
+            title = "export_photos",
             isCanceled = function()
-                local ok, message = pcall(Handler.exportPhotos, { photo_ids = { "1" }, destination = "/out" })
-                secondError = not ok and message or nil
+                secondError = helper.refusalOf(function() Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }) end)
                 return false
             end,
-            report = function() end,
-        }
+        })
         Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }, context)
-        assert.is_truthy(secondError:find("export_photos is already running; wait for it to finish, then call again", 1, true))
+        assert.are.equal("export_photos is already running; wait for it to finish, then call again", secondError)
 
-        assert.has_error(function() Handler.exportPhotos({ photo_ids = { "1" } }) end, "destination is required")
-        assert.are.equal(1, Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }).exported)
+        assert.are.equal(1, #Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }).data.files)
     end)
 
     it("stops waiting for an export stuck on one photo", function()
@@ -89,31 +87,44 @@ describe("HandlerExport.exportPhotos", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler = setup({ photos = { p }, clock = function() return now end })
         local outcomes = {}
-        local function retryAfter(seconds)
-            now = now + seconds
-            local ok = pcall(Handler.exportPhotos, { photo_ids = { "1" }, destination = "/out" })
-            table.insert(outcomes, ok)
-        end
         local called = false
-        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }, {
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }, helper.requestContext(nil, {
             isCanceled = function()
                 if called then return false end
                 called = true
-                retryAfter(299)
-                retryAfter(1)
+                now = now + 299
+                outcomes.at_299 = helper.refusalOf(function() Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }) end)
+                now = now + 1
+                outcomes.at_300 = #Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }).data.files
                 return false
             end,
-            report = function() end,
-        })
-        assert.are.same({ false, true }, outcomes)
+        }))
+        assert.are.same({ at_299 = "export_photos is already running; wait for it to finish, then call again", at_300 = 1 }, outcomes)
     end)
 
-    it("lists ids that match no photo", function()
+    it("lists inputs that match no photo as not_found, as given", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler = setup({ photos = { p } })
-        local r = Handler.exportPhotos({ photo_ids = { "1", "999" }, destination = "/out" })
-        assert.are.equal(1, r.exported)
-        assert.are.same({ "999" }, r.missing)
+        local r = Handler.exportPhotos({ photo_ids = { "1", 999 }, destination = "/out" })
+        assert.are.equal(1, #r.data.files)
+        assert.are.same({ 999 }, r.not_found)
+    end)
+
+    it("stops at the request's budget and lists the photos it did not reach as remaining", function()
+        local now = 0
+        local photos = {
+            helper.fakePhoto({ id = "1", path = "/a.jpg" }),
+            helper.fakePhoto({ id = "2", path = "/b.jpg" }),
+            helper.fakePhoto({ id = "3", path = "/c.jpg" }),
+        }
+        local _, Handler, calls = setup({ photos = photos, clock = function() return now end })
+        local context = helper.requestContext(150, { report = function() now = now + 50 end })
+
+        local r = Handler.exportPhotos({ photo_ids = { "1", "2", "/c.jpg" }, destination = "/out" }, context)
+
+        assert.are.equal(2, #r.data.files)
+        assert.are.same({ "/c.jpg" }, r.remaining)
+        assert.are.equal(2, #calls)
     end)
 
     describe("rendition results", function()
@@ -127,7 +138,7 @@ describe("HandlerExport.exportPhotos", function()
                 LrLogger = helper.defaultLrLogger(),
                 LrFileUtils = {
                     exists = function(path)
-                        if path == "/out" then return "directory" end
+                        if path == "/out" or path == (args or {}).destination then return "directory" end
                         return written[path] or false
                     end,
                 },
@@ -156,80 +167,87 @@ describe("HandlerExport.exportPhotos", function()
                 destinationPath = "/out/a.jpg",
                 waitForRender = function() return true, "/out/a-2.jpg" end,
             } }, nil, { "/out/a-2.jpg" })
-            assert.is_true(r.success)
-            assert.are.equal(1, r.exported)
-            assert.are.same({ { id = "1", path = "/out/a-2.jpg" } }, r.files)
+            assert.is_nil(r.failed)
+            assert.are.same({ { photo_id = "1", path = "/out/a-2.jpg" } }, r.data.files)
         end)
 
-        it("counts a skipped existing file as skipped, not exported", function()
+        it("names a written file under the destination as the caller spelled it", function()
+            local r = exportWith({ {
+                destinationPath = "/tmp/out/a.jpg",
+                waitForRender = function() return true, "/tmp/out/a.jpg" end,
+            } }, { destination = "/private/tmp/out" }, { "/tmp/out/a.jpg" })
+            assert.are.same({ { photo_id = "1", path = "/private/tmp/out/a.jpg" } }, r.data.files)
+        end)
+
+        it("lists a skipped existing file's photo as skipped, not exported", function()
             local r = exportWith({}, { on_existing = "skip" })
-            assert.is_true(r.success)
-            assert.are.equal(0, r.exported)
-            assert.are.equal(1, r.skipped)
-            assert.are.same({}, r.files)
+            assert.is_nil(r.failed)
+            assert.are.same({ "1" }, r.data.skipped)
+            assert.are.same({}, r.data.files)
         end)
 
-        it("reports a render Lightroom refused", function()
-            local r = exportWith({ { waitForRender = function() return false, "could not be written" end } })
-            assert.is_false(r.success)
-            assert.are.equal(0, r.exported)
-            assert.are.same({ { id = "1", reason = "could not be written" } }, r.failed)
-            assert.are.same({}, r.files)
-        end)
+        for _, case in ipairs({
+            { name = "a render Lightroom refused", reason = "could not be written",
+                renditions = { { waitForRender = function() return false, "could not be written" end } } },
+            { name = "a render that left no file", reason = "Lightroom wrote no file",
+                renditions = { { waitForRender = function() return true, "/out/a.jpg" end } } },
+            { name = "no rendition when not skipping", reason = "Lightroom rendered no file", renditions = {} },
+        }) do
+            it("reports " .. case.name .. " as unknown, naming what the photo may have gained", function()
+                local r = exportWith(case.renditions)
+                assert.is_nil(r.data)
+                assert.is_nil(r.failed)
+                assert.are.same({ { photo_id = "1", reason = case.reason .. "; the photo may have gained one Export history step and the exported mark" } }, r.unknown)
+            end)
+        end
 
-        it("reports a render that left no file", function()
-            local r = exportWith({ { waitForRender = function() return true, "/out/a.jpg" end } })
-            assert.is_false(r.success)
-            assert.are.equal("Lightroom wrote no file", r.failed[1].reason)
-            assert.are.same({}, r.files)
-        end)
+        for _, case in ipairs({ { raises = "export", outcome = "unknown" }, { raises = "session", outcome = "failed" } }) do
+            it("records an error on one photo (" .. case.raises .. ") as " .. case.outcome .. " and keeps the files already"
+                .. " written", function()
+                local photos = {
+                    helper.fakePhoto({ id = "1", path = "/a.jpg" }),
+                    helper.fakePhoto({ id = "2", path = "/b.jpg" }),
+                    helper.fakePhoto({ id = "3", path = "/c.jpg" }),
+                }
+                local catalog = helper.fakeCatalog({ photos = photos })
+                helper.installImport({
+                    LrApplication = { activeCatalog = function() return catalog end },
+                    LrLogger = helper.defaultLrLogger(),
+                    LrFileUtils = { exists = function(path) return path == "/out" and "directory" or "file" end },
+                    LrPathUtils = { child = function(dir, name) return dir .. "/" .. name end },
+                    LrExportSession = function(args)
+                        local photo = args.photosToExport[1]
+                        if case.raises == "session" and photo.localIdentifier == "2" then error("render engine failed", 0) end
+                        return {
+                            doExportOnCurrentTask = function()
+                                if case.raises == "export" and photo.localIdentifier == "2" then
+                                    error("render engine failed", 0)
+                                end
+                            end,
+                            renditions = function()
+                                local done = false
+                                return function()
+                                    if done then return nil end
+                                    done = true
+                                    return 1, { waitForRender = function() return true, "/out/" .. photo.localIdentifier .. ".jpg" end }
+                                end
+                            end,
+                        }
+                    end,
+                })
+                package.loaded.HandlerExport = nil
 
-        it("reports no rendition when not skipping", function()
-            local r = exportWith({})
-            assert.is_false(r.success)
-            assert.are.equal(0, r.skipped)
-        end)
+                local r = require('HandlerExport').exportPhotos({ photo_ids = { "1", "2", "3" }, destination = "/out" })
 
-        it("records an error on one photo as its failure and keeps the files already written", function()
-            local photos = {
-                helper.fakePhoto({ id = "1", path = "/a.jpg" }),
-                helper.fakePhoto({ id = "2", path = "/b.jpg" }),
-                helper.fakePhoto({ id = "3", path = "/c.jpg" }),
-            }
-            local catalog = helper.fakeCatalog({ photos = photos })
-            helper.installImport({
-                LrApplication = { activeCatalog = function() return catalog end },
-                LrLogger = helper.defaultLrLogger(),
-                LrFileUtils = { exists = function(path) return path == "/out" and "directory" or "file" end },
-                LrPathUtils = { child = function(dir, name) return dir .. "/" .. name end },
-                LrExportSession = function(args)
-                    local photo = args.photosToExport[1]
-                    return {
-                        doExportOnCurrentTask = function()
-                            if photo.localIdentifier == "2" then error("render engine failed", 0) end
-                        end,
-                        renditions = function()
-                            local done = false
-                            return function()
-                                if done then return nil end
-                                done = true
-                                return 1, { waitForRender = function() return true, "/out/" .. photo.localIdentifier .. ".jpg" end }
-                            end
-                        end,
-                    }
-                end,
-            })
-            package.loaded.HandlerExport = nil
-
-            local r = require('HandlerExport').exportPhotos({ photo_ids = { "1", "2", "3" }, destination = "/out" })
-
-            assert.is_false(r.success)
-            assert.are.equal(2, r.exported)
-            assert.are.same({ { id = "1", path = "/out/1.jpg" }, { id = "3", path = "/out/3.jpg" } }, r.files)
-            assert.are.equal(1, #r.failed)
-            assert.are.equal("2", r.failed[1].id)
-            assert.truthy(r.failed[1].reason:find("render engine failed", 1, true))
-        end)
+                assert.are.same({ { photo_id = "1", path = "/out/1.jpg" }, { photo_id = "3", path = "/out/3.jpg" } }, r.data.files)
+                local other = case.outcome == "failed" and "unknown" or "failed"
+                assert.is_nil(r[other])
+                assert.are.equal(1, #r[case.outcome])
+                assert.are.equal("2", r[case.outcome][1].photo_id)
+                assert.truthy(r[case.outcome][1].reason:find("render engine failed", 1, true))
+                assert.are.equal(case.outcome == "unknown", r[case.outcome][1].reason:find("may have gained", 1, true) ~= nil)
+            end)
+        end
     end)
 
     it("reports rising progress with the photo currently being exported", function()
@@ -239,12 +257,11 @@ describe("HandlerExport.exportPhotos", function()
         }
         local _, Handler, calls = setup({ photos = photos })
         local progress = {}
-        local context = {
-            isCanceled = function() return false end,
+        local context = helper.requestContext(nil, {
             report = function(_, completed, total, message)
                 progress[#progress + 1] = { completed, total, message, exported = #calls }
             end,
-        }
+        })
 
         Handler.exportPhotos({ photo_ids = { "1", "2" }, destination = "/out" }, context)
 
@@ -264,15 +281,12 @@ describe("HandlerExport.exportPhotos", function()
             helper.fakePhoto({ id = "5", path = "/e.jpg" }),
         }
         local _, Handler, calls = setup({ photos = photos })
-        local context = { isCanceled = function() return #calls >= 2 end, report = function() end }
+        local context = helper.requestContext(nil, { isCanceled = function() return #calls >= 2 end })
 
         local r = Handler.exportPhotos({ photo_ids = { "1", "2", "3", "4", "5" }, destination = "/out" }, context)
 
-        assert.are.equal(2, r.exported)
-        assert.is_nil(r.message)
-        assert.is_false(r.complete)
-        assert.are.same({ "3", "4", "5" }, r.remaining_ids)
-        assert.are.same({ { id = "1", path = "/out/1" }, { id = "2", path = "/out/1" } }, r.files)
+        assert.are.same({ "3", "4", "5" }, r.remaining)
+        assert.are.same({ { photo_id = "1", path = "/out/1" }, { photo_id = "2", path = "/out/1" } }, r.data.files)
         assert.are.equal(2, #calls)
     end)
 
@@ -282,12 +296,21 @@ describe("HandlerExport.exportPhotos", function()
 
         local r = Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" })
 
-        assert.is_true(r.success)
-        assert.are.equal(1, r.exported)
-        assert.are.equal("/out", r.destination)
+        assert.is_nil(r.failed)
+        assert.are.equal(1, #r.data.files)
+        assert.are.equal("/out", r.data.destination)
         assert.are.equal("JPEG", calls[1].exportSettings.LR_format)
-        -- Lightroom's jpeg_quality is 0-1; the tool's quality is 0-100.
-        assert.are.equal(0.9, calls[1].exportSettings.LR_jpeg_quality)
+    end)
+
+    it("exports a photo named twice, by path and by id, once, and lists a repeated unknown id once", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler, calls = setup({ photos = { p } })
+
+        local r = Handler.exportPhotos({ photo_ids = { "1", "/a.jpg", "1", "404", "404" }, destination = "/out" })
+
+        assert.are.equal(1, #r.data.files)
+        assert.are.same({ "404" }, r.not_found)
+        assert.are.equal(1, #calls)
     end)
 
     it("creates a missing destination folder before exporting", function()
@@ -296,7 +319,7 @@ describe("HandlerExport.exportPhotos", function()
 
         local r = Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out/new" })
 
-        assert.is_true(r.success)
+        assert.is_nil(r.failed)
         assert.are.same({ "/out/new" }, createdDirs)
         assert.are.equal("/out/new", calls[1].exportSettings.LR_export_destinationPathPrefix)
     end)
@@ -314,9 +337,9 @@ describe("HandlerExport.exportPhotos", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler, calls = setup({ photos = { p }, paths = { ["/out.jpg"] = "file" } })
 
-        assert.has_error(function()
+        assert.are.equal("destination is not a directory: /out.jpg", helper.refusalOf(function()
             Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out.jpg" })
-        end, "destination is not a directory: /out.jpg")
+        end))
         assert.are.equal(0, #calls)
     end)
 
@@ -324,48 +347,23 @@ describe("HandlerExport.exportPhotos", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler, calls = setup({ photos = { p }, paths = { ["/ro/sub"] = false }, createFails = true })
 
-        assert.has_error(function()
+        assert.are.equal("could not create destination folder: /ro/sub", helper.refusalOf(function()
             Handler.exportPhotos({ photo_ids = { "1" }, destination = "/ro/sub" })
-        end, "could not create destination folder: /ro/sub")
+        end))
         assert.are.equal(0, #calls)
     end)
 
-    it("creates no folder when another argument is rejected", function()
-        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
-        for _, bad in ipairs({
-            { format = "gif", err = "format must be one of: jpeg, png, tiff, original" },
-            { on_existing = "bogus", err = "on_existing must be one of: rename, overwrite, skip" },
-            { quality = "high", err = "quality must be a number between 0 and 100" },
-            { quality = 101, err = "quality must be a number between 0 and 100" },
-            { quality = -1, err = "quality must be a number between 0 and 100" },
-        }) do
-            local _, Handler, calls, createdDirs = setup({ photos = { p }, paths = { ["/out/new"] = false } })
-
-            assert.has_error(function()
-                Handler.exportPhotos({
-                    photo_ids = { "1" }, destination = "/out/new", format = bad.format,
-                    on_existing = bad.on_existing, quality = bad.quality,
-                })
-            end, bad.err)
-            assert.are.same({}, createdDirs)
-            assert.are.equal(0, #calls)
-        end
-    end)
-
-    it("rejects an empty, relative or control-character destination before creating anything", function()
+    it("rejects a relative destination before creating anything", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         for destination, err in pairs({
-            [""] = "destination is required",
-            ["  "] = "destination is required",
             ["relative/x"] = "destination must be an absolute path",
             ["~x"] = "destination must be an absolute path",
-            ["/out/a\nb"] = "destination must not contain control characters",
         }) do
             local _, Handler, calls, createdDirs = setup({ photos = { p }, paths = { [destination] = false } })
 
-            assert.has_error(function()
+            assert.are.equal(err, helper.refusalOf(function()
                 Handler.exportPhotos({ photo_ids = { "1" }, destination = destination })
-            end, err)
+            end))
             assert.are.same({}, createdDirs)
             assert.are.equal(0, #calls)
         end
@@ -376,10 +374,9 @@ describe("HandlerExport.exportPhotos", function()
         for _, destination in ipairs({ "/out/.", "/out//x", "/out/x/../y", "/out/./x", "/out/..", "/out\\x" }) do
             local _, Handler, calls, createdDirs = setup({ photos = { p }, paths = { [destination] = false } })
 
-            local ok, err = pcall(Handler.exportPhotos, { photo_ids = { "1" }, destination = destination })
+            local refusal = helper.refusalOf(function() Handler.exportPhotos({ photo_ids = { "1" }, destination = destination }) end)
 
-            assert.is_false(ok, destination)
-            assert.truthy(tostring(err):find("written canonically", 1, true), tostring(err))
+            assert.truthy(refusal:find("written canonically", 1, true))
             assert.are.same({}, createdDirs)
             assert.are.equal(0, #calls)
         end
@@ -402,26 +399,28 @@ describe("HandlerExport.exportPhotos", function()
 
         assert.are.same({ "/home/u/out" }, createdDirs)
         assert.are.equal("/home/u/out", calls[1].exportSettings.LR_export_destinationPathPrefix)
-        assert.are.equal("/home/u/out", r.destination)
+        assert.are.equal("/home/u/out", r.data.destination)
     end)
 
-    it("accepts only Windows absolute paths on Windows", function()
+    it("accepts only canonical Windows absolute paths on Windows", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler = setup({ photos = { p } })
         _G.WIN_ENV = true
-        local results = {}
-        for _, path in ipairs({ "C:\\out", "C:/out", "\\\\srv\\s", "C:out", "/out" }) do
-            results[path] = pcall(Handler.exportPhotos, { photo_ids = { "1" }, destination = path })
+        finally(function() _G.WIN_ENV = nil end)
+        local export = function(path)
+            return function() return Handler.exportPhotos({ photo_ids = { "1" }, destination = path }) end
         end
-        _G.WIN_ENV = nil
 
-        assert.are.same({
-            ["C:\\out"] = true,
-            ["C:/out"] = false,
-            ["\\\\srv\\s"] = true,
-            ["C:out"] = false,
-            ["/out"] = false,
-        }, results)
+        for _, path in ipairs({ "C:\\out", "\\\\srv\\s" }) do
+            assert.are.equal(path, export(path)().data.destination)
+        end
+        for path, refusal in pairs({
+            ["C:/out"] = "destination must be written canonically: \\ between names, no empty, '.' or '..' names",
+            ["C:out"] = "destination must be an absolute path",
+            ["/out"] = "destination must be an absolute path",
+        }) do
+            assert.are.equal(refusal, helper.refusalOf(export(path)))
+        end
     end)
 
     it("never lets Lightroom prompt about existing files", function()
@@ -436,15 +435,6 @@ describe("HandlerExport.exportPhotos", function()
 
         Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", on_existing = "skip" })
         assert.are.equal("skip", calls[3].exportSettings.LR_collisionHandling)
-    end)
-
-    it("rejects an unknown on_existing mode, including Lightroom's own ask", function()
-        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
-        local _, Handler = setup({ photos = { p } })
-
-        assert.has_error(function()
-            Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", on_existing = "ask" })
-        end, "on_existing must be one of: rename, overwrite, skip")
     end)
 
     describe("overwriting into a catalog folder", function()
@@ -465,12 +455,12 @@ describe("HandlerExport.exportPhotos", function()
         it("refuses any catalog folder before rendering or creating anything, naming it and the ways out", function()
             for _, destination in ipairs({ "/archive/2026", "/archive/2025", "/ARCHIVE/2026", "/f\195\182to", "/link" }) do
                 local _, Handler, calls, createdDirs = catalogSetup({ paths = { [destination] = false } })
-                local ok, err = pcall(Handler.exportPhotos,
-                    { photo_ids = { "2" }, destination = destination, on_existing = "overwrite" })
-                assert.is_false(ok, destination)
-                assert.truthy(tostring(err):find("a folder of this catalog", 1, true), tostring(err))
-                assert.truthy(tostring(err):find(destination, 1, true), tostring(err))
-                assert.truthy(tostring(err):find("outside the catalog or on_existing rename or skip", 1, true))
+                local err = helper.refusalOf(function()
+                    Handler.exportPhotos({ photo_ids = { "2" }, destination = destination, on_existing = "overwrite" })
+                end)
+                assert.truthy(err:find("a folder of this catalog", 1, true), err)
+                assert.truthy(err:find(destination, 1, true), err)
+                assert.truthy(err:find("outside the catalog or on_existing rename or skip", 1, true))
                 assert.are.equal(0, #calls)
                 assert.are.same({}, createdDirs)
             end
@@ -482,18 +472,6 @@ describe("HandlerExport.exportPhotos", function()
             Handler.exportPhotos({ photo_ids = { "2" }, destination = "/archive/2026", on_existing = "rename" })
             assert.are.equal(2, #calls)
         end)
-    end)
-
-    it("rejects an unsupported format instead of silently exporting another", function()
-        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
-        local _, Handler = setup({ photos = { p } })
-
-        assert.has_error(function()
-            Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", format = "bmp" })
-        end, "format must be one of: jpeg, png, tiff, original")
-        assert.has_error(function()
-            Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", format = 7 })
-        end, "format must be one of: jpeg, png, tiff, original")
     end)
 
     it("applies width/height constraint", function()
@@ -519,17 +497,13 @@ describe("HandlerExport.exportPhotos", function()
         assert.are.equal("TIFF", calls[1].exportSettings.LR_format)
     end)
 
-    it("requires photo_ids and destination", function()
-        local _, Handler = setup({})
-        assert.has_error(function() Handler.exportPhotos({ destination = "/x" }) end)
-        assert.has_error(function() Handler.exportPhotos({ photo_ids = { "1" } }) end)
-    end)
-
-    it("errors when no photos match", function()
-        local _, Handler = setup({ photos = {} })
-        assert.has_error(function()
-            Handler.exportPhotos({ photo_ids = { "missing" }, destination = "/out" })
-        end)
+    it("answers only not_found and creates nothing when no photo matches", function()
+        local _, Handler, calls, createdDirs = setup({ photos = {}, paths = { ["/out/new"] = false } })
+        local r = Handler.exportPhotos({ photo_ids = { "missing" }, destination = "/out/new" })
+        assert.is_nil(r.data)
+        assert.are.same({ "missing" }, r.not_found)
+        assert.are.equal(0, #calls)
+        assert.are.same({}, createdDirs)
     end)
 
     it("resolves photos OUTSIDE the read-access gate", function()
@@ -538,7 +512,7 @@ describe("HandlerExport.exportPhotos", function()
 
         local r = Handler.exportPhotos({ photo_ids = { "/a.jpg" }, destination = "/out" })
 
-        assert.are.equal(1, r.exported)
+        assert.are.equal(1, #r.data.files)
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
 
@@ -576,8 +550,7 @@ describe("HandlerExport.exportPhotos", function()
 
         local r = Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" })
 
-        assert.is_true(r.success)
-        assert.are.equal(1, r.exported)
+        assert.are.equal(1, #r.data.files)
         assert.is_false(exportRanInsideReadAccess)
     end)
 end)
@@ -655,41 +628,44 @@ describe("HandlerExport.exportPhotoMetadata", function()
 
     it("writes the given photos' metadata, with keyword paths, to the file", function()
         local p1 = photoOne()
-        local p2 = helper.fakePhoto({ id = 12, path = "/p/b.jpg", fileName = "b.jpg", keywords = {} })
+        local p2 = helper.fakePhoto({ id = 12, path = "/p/b.jpg", fileName = "b.jpg", keywords = {},
+            pickStatus = -1, colorNameForLabel = "gray" })
         local _, Handler = setupMetadata({ photos = { p1, p2 } })
         local out = tempJson()
 
         local r = Handler.exportPhotoMetadata({ photo_ids = { 11, 12 }, destination = out })
-        assert.is_nil(r.message)
 
-        assert.is_true(r.success)
-        assert.are.equal(2, r.exported)
-        assert.are.same({}, r.missing)
+        assert.are.equal(2, r.data.exported)
+        assert.is_nil(r.not_found)
 
         local data = readJson(out)
-        assert.are.equal(1, data.version)
+        assert.are.equal(2, data.version)
         assert.are.equal(2, data.count)
         local a = data.photos[1]
-        assert.are.equal(11, a.id)
+        assert.are.equal("11", a.photo_id)
         assert.are.equal("UUID-11", a.uuid)
         assert.are.equal("/p/a.dng", a.path)
         assert.are.equal("a.dng", a.filename)
-        assert.are.equal("2016-03-13T15:03:39", a.captureTime)
+        assert.are.equal("2016-03-13T15:03:39", a.capture_time)
+        assert.are.equal("DNG", a.file_format)
+        assert.is_false(a.is_virtual_copy)
         assert.are.same({ width = 3648, height = 5472 }, a.dimensions)
-        assert.are.same({ width = 3000, height = 4500 }, a.croppedDimensions)
+        assert.are.same({ width = 3000, height = 4500 }, a.cropped_dimensions)
         assert.are.equal(4, a.rating)
+        assert.are.same({ "none", "none" }, { a.flag, a.color_label })
         assert.are.equal("A title", a.title)
         assert.are.same({ latitude = 51.5, longitude = -0.12, altitude = 14 }, a.gps)
         assert.are.equal("London", a.location.city)
         assert.are.same({ "Paris", "summer" }, a.keywords)
-        assert.are.same({ "Places|Paris", "summer" }, a.keywordPaths)
+        assert.are.same({ "Places|Paris", "summer" }, a.keyword_paths)
         assert.is_nil(a.developSettings)
 
         local b = data.photos[2]
-        assert.are.equal(12, b.id)
+        assert.are.equal("12", b.photo_id)
+        assert.are.same({ 0, "reject", "none" }, { b.rating, b.flag, b.color_label })
         assert.is_nil(b.gps)
         assert.is_nil(b.location)
-        assert.are.same({}, b.keywordPaths)
+        assert.are.same({}, b.keyword_paths)
     end)
 
     it("exports the current selection when photo_ids is omitted", function()
@@ -700,8 +676,8 @@ describe("HandlerExport.exportPhotoMetadata", function()
 
         local r = Handler.exportPhotoMetadata({ destination = out })
 
-        assert.are.equal(1, r.exported)
-        assert.are.equal(12, readJson(out).photos[1].id)
+        assert.are.equal(1, r.data.exported)
+        assert.are.equal("12", readJson(out).photos[1].photo_id)
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
 
@@ -711,8 +687,8 @@ describe("HandlerExport.exportPhotoMetadata", function()
 
         local r = Handler.exportPhotoMetadata({ photo_ids = { 11, "nope" }, destination = out })
 
-        assert.are.equal(1, r.exported)
-        assert.are.same({ "nope" }, r.missing)
+        assert.are.equal(1, r.data.exported)
+        assert.are.same({ "nope" }, r.not_found)
         assert.are.equal(1, readJson(out).count)
     end)
 
@@ -727,33 +703,19 @@ describe("HandlerExport.exportPhotoMetadata", function()
         assert.are.same({ dir }, createdDirs)
     end)
 
-    it("validates destination and photo_ids, and refuses an empty export", function()
+    it("refuses an empty export and a relative destination", function()
         local _, Handler = setupMetadata({ photos = { photoOne() }, targetPhotos = {} })
         local out = tempJson()
 
-        assert.has_error(function() Handler.exportPhotoMetadata({}) end, "destination is required")
-        assert.has_error(function() Handler.exportPhotoMetadata({ destination = "/tmp/out.txt" }) end,
-            "destination must be a .json file path")
-        assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = out, photo_ids = {} })
-        end, "photo_ids must be a non-empty array when given")
-        assert.has_error(function() Handler.exportPhotoMetadata({ destination = out }) end,
-            "No photos found to export metadata for")
-        assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = out, photo_ids = { "nope" } })
-        end, "No photos found to export metadata for (not found: nope)")
-        assert.has_error(function()
+        assert.are.equal("No photos found to export metadata for",
+            helper.refusalOf(function() Handler.exportPhotoMetadata({ destination = out }) end))
+        local none = Handler.exportPhotoMetadata({ destination = out, photo_ids = { "nope" } })
+        assert.is_nil(none.data)
+        assert.are.same({ "nope" }, none.not_found)
+        assert.is_nil(io.open(out, "r"))
+        assert.are.equal("destination must be an absolute path", helper.refusalOf(function()
             Handler.exportPhotoMetadata({ destination = "out.json", photo_ids = { 11 } })
-        end, "destination must be an absolute path")
-        assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = "/tmp/.zshrc\0.json", photo_ids = { 11 } })
-        end, "destination must not contain control characters")
-        assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = "/tmp/a\nb.json", photo_ids = { 11 } })
-        end, "destination must not contain control characters")
-        assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = out, photo_ids = { 11 }, overwrite = "yes" })
-        end, "overwrite must be a boolean")
+        end))
     end)
 
     it("refuses to replace an existing file unless overwrite is true", function()
@@ -763,9 +725,10 @@ describe("HandlerExport.exportPhotoMetadata", function()
         f:write("previous")
         f:close()
 
-        assert.has_error(function()
-            Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out })
-        end, "destination already exists: " .. out .. " (pass overwrite: true to replace it)")
+        assert.are.equal("destination already exists: " .. out .. " (pass overwrite: true to replace it)",
+            helper.refusalOf(function()
+                Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out })
+            end))
         local kept = assert(io.open(out, "r"))
         assert.are.equal("previous", kept:read("*a"))
         kept:close()
@@ -775,9 +738,9 @@ describe("HandlerExport.exportPhotoMetadata", function()
         assert.are.equal(1, readJson(out).count)
     end)
 
-    it("refuses a file that appears at the destination while photos are read", function()
-        local catalog, Handler = setupMetadata({ photos = { photoOne() } })
+    it("refuses a file that appears at the destination while photos are read, creating no folder", function()
         local out = tempJson()
+        local catalog, Handler = setupMetadata({ photos = { photoOne() }, missingDir = out:match("^(.*)[/\\][^/\\]*$") })
         local read = catalog.withReadAccessDo
         catalog.withReadAccessDo = function(self, fn)
             read(self, fn)
@@ -786,33 +749,33 @@ describe("HandlerExport.exportPhotoMetadata", function()
             f:close()
         end
 
-        assert.has_error(function()
-            Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out })
-        end, "destination already exists: " .. out .. " (pass overwrite: true to replace it)")
+        assert.are.equal("destination already exists: " .. out .. " (pass overwrite: true to replace it)",
+            helper.refusalOf(function()
+                Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out })
+            end))
         local kept = assert(io.open(out, "r"))
         assert.are.equal("raced", kept:read("*a"))
         kept:close()
         os.remove(out)
+        assert.are.same({}, createdDirs)
     end)
 
-    it("accepts only Windows absolute paths on Windows", function()
+    it("accepts only canonical Windows absolute paths on Windows", function()
         local _, Handler = setupMetadata({ photos = { photoOne() }, targetPhotos = {} })
         _G.WIN_ENV = true
-        local results = {}
-        for _, path in ipairs({ "C:\\x.json", "C:/x.json", "\\\\srv\\s\\x.json", "C:x.json", "/x.json" }) do
-            local ok, err = pcall(Handler.exportPhotoMetadata, { destination = path })
-            results[path] = ok or tostring(err):match("absolute path") == nil
-        end
-        _G.WIN_ENV = nil
+        finally(function() _G.WIN_ENV = nil end)
 
-        -- Accepted paths get past the path check and fail later on the empty selection.
-        assert.are.same({
-            ["C:\\x.json"] = true,
-            ["C:/x.json"] = true,
-            ["\\\\srv\\s\\x.json"] = true,
-            ["C:x.json"] = false,
-            ["/x.json"] = false,
-        }, results)
+        for path, refusal in pairs({
+            ["C:\\x.json"] = "No photos found to export metadata for",
+            ["\\\\srv\\s\\x.json"] = "No photos found to export metadata for",
+            ["C:/x.json"] = "destination must be written canonically: \\ between names, no empty, '.' or '..' names",
+            ["C:x.json"] = "destination must be an absolute path",
+            ["/x.json"] = "destination must be an absolute path",
+        }) do
+            assert.are.equal(refusal, helper.refusalOf(function()
+                Handler.exportPhotoMetadata({ destination = path })
+            end))
+        end
     end)
 
     it("removes a partial file it created when the write fails", function()
@@ -828,20 +791,20 @@ describe("HandlerExport.exportPhotoMetadata", function()
             }, {})
         end
 
-        local ok, err = pcall(Handler.exportPhotoMetadata, { photo_ids = { 11 }, destination = out })
+        local ok, err = pcall(helper.unknownOf, function() Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out }) end)
         io.open = realOpen
 
-        assert.is_false(ok)
-        assert.truthy(tostring(err):find("No space left on device", 1, true))
+        assert.is_true(ok, tostring(err))
+        assert.truthy(err:find("No space left on device", 1, true))
         assert.is_nil(realOpen(out, "r"))
     end)
 
     it("refuses a directory as destination", function()
         local _, Handler = setupMetadata({ photos = { photoOne() }, existingDir = "/data/dir.json" })
 
-        assert.has_error(function()
+        assert.are.equal("destination is a directory: /data/dir.json", helper.refusalOf(function()
             Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = "/data/dir.json", overwrite = true })
-        end, "destination is a directory: /data/dir.json")
+        end))
     end)
 
     it("expands ~/ to the home folder", function()
@@ -851,7 +814,7 @@ describe("HandlerExport.exportPhotoMetadata", function()
 
         local r = Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = "~/" .. name })
 
-        assert.are.equal(out, r.destination)
+        assert.are.equal(out, r.data.destination)
         assert.are.equal(1, readJson(out).count)
     end)
 
@@ -861,7 +824,7 @@ describe("HandlerExport.exportPhotoMetadata", function()
 
         local r = Handler.exportPhotoMetadata({ photo_ids = { 11, 11, "/p/a.dng" }, destination = out })
 
-        assert.are.equal(1, r.exported)
+        assert.are.equal(1, r.data.exported)
         assert.are.equal(1, readJson(out).count)
     end)
 
@@ -873,10 +836,191 @@ describe("HandlerExport.exportPhotoMetadata", function()
         local catalog, Handler = setupMetadata({ photos = {}, targetPhotos = many })
         local out = tempJson()
 
-        assert.has_error(function()
+        assert.are.equal("1001 photos are selected (or in the filmstrip); export at most 1000 at a time "
+            .. "by selecting fewer or passing photo_ids", helper.refusalOf(function()
             Handler.exportPhotoMetadata({ destination = out })
-        end, "1001 photos are selected (or in the filmstrip); export at most 1000 at a time "
-            .. "by selecting fewer or passing photo_ids")
+        end))
         assert.are.equal(0, catalog.getReadAccessCount())
+    end)
+end)
+
+describe("HandlerExport.renderDetailSource", function()
+    local function detailSetup(opts)
+        opts = opts or {}
+        local files, deleted, sessions = {}, {}, {}
+        for _, name in ipairs(opts.leftovers or {}) do files["/tmp/lightroom-mcp-detail/" .. name] = true end
+        local catalog = helper.fakeCatalog({ photos = { helper.fakePhoto({ localIdentifier = 7, path = "/p/a.arw" }) } })
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return catalog end },
+            LrDate = { currentTime = function() return opts.now or 0 end },
+            LrLogger = helper.defaultLrLogger(),
+            LrFileUtils = {
+                exists = function(path)
+                    if path == "/tmp/lightroom-mcp-detail" then return "directory" end
+                    for name in pairs(files) do
+                        if name:sub(1, #path + 1) == path .. "/" then return "directory" end
+                    end
+                    return files[path] and "file" or false
+                end,
+                files = function(directory)
+                    local list = {}
+                    for path in pairs(files) do
+                        if path:sub(1, #directory + 1) == directory .. "/" and not path:find("/", #directory + 2, true) then
+                            list[#list + 1] = path
+                        end
+                    end
+                    table.sort(list)
+                    local i = 0
+                    return function() i = i + 1; return list[i] end
+                end,
+                directoryEntries = function(directory)
+                    local seen, list = {}, {}
+                    for path in pairs(files) do
+                        local child = path:sub(1, #directory + 1) == directory .. "/"
+                            and path:match("^[^/]+", #directory + 2)
+                        if child and not seen[child] then
+                            seen[child] = true
+                            list[#list + 1] = directory .. "/" .. child
+                        end
+                    end
+                    table.sort(list)
+                    local i = 0
+                    return function() i = i + 1; return list[i] end
+                end,
+                delete = function(path)
+                    for name in pairs(files) do
+                        if name == path or name:sub(1, #path + 1) == path .. "/" then files[name] = nil end
+                    end
+                    deleted[#deleted + 1] = path
+                end,
+                createAllDirectories = function() end,
+            },
+            LrPathUtils = {
+                child = function(dir, name) return dir .. "/" .. name end,
+                leafName = function(path) return path:match("[^/]+$") end,
+                getStandardFilePath = function(name) assert(name == "temp"); return "/tmp" end,
+            },
+            LrExportSession = function(args)
+                if opts.sessionError then error(opts.sessionError, 0) end
+                sessions[#sessions + 1] = args
+                return {
+                    doExportOnCurrentTask = function() if opts.renderError then error(opts.renderError, 0) end end,
+                    renditions = function()
+                        local done = false
+                        return function()
+                            if done then return nil end
+                            done = true
+                            local path = args.exportSettings.LR_export_destinationPathPrefix .. "/a.jpg"
+                            files[path] = true
+                            return 1, { waitForRender = function()
+                                if opts.duringRender then opts.duringRender() end
+                                if opts.renderMessage then return false, opts.renderMessage end
+                                return true, path
+                            end }
+                        end
+                    end,
+                }
+            end,
+        })
+        package.loaded.ExportPresets = nil
+        package.loaded.HandlerExport = nil
+        return require 'HandlerExport', sessions, files, deleted
+    end
+
+    it("renders the photo at full size, quality 100, sRGB, unsharpened and unimported into its own temporary folder", function()
+        local Handler, sessions = detailSetup()
+
+        local r = Handler.renderDetailSource({ photo_id = "/p/a.arw" })
+
+        local folder = sessions[1].exportSettings.LR_export_destinationPathPrefix
+        assert.matches("^/tmp/lightroom%-mcp%-detail/[^/]+$", folder)
+        assert.are.same({
+            photo_id = "7", path = folder .. "/a.jpg",
+            source = "export", left_on_photo = { "one Export history step", "the exported mark" },
+        }, r)
+        local s = sessions[1].exportSettings
+        assert.are.same({ "JPEG", 1, "sRGB", false, false, false, "specificFolder", folder, false },
+            { s.LR_format, s.LR_jpeg_quality, s.LR_export_colorSpace, s.LR_size_doConstrain, s.LR_outputSharpeningOn,
+                s.LR_reimportExportedPhoto, s.LR_export_destinationType, s.LR_export_destinationPathPrefix,
+                s.LR_export_useSubfolder })
+    end)
+
+    it("renders each call into a folder of its own and leaves other calls' files alone", function()
+        local Handler, sessions, files, deleted = detailSetup({ leftovers = { "other/b.jpg" } })
+        local first = Handler.renderDetailSource({ photo_id = 7 })
+        local second = Handler.renderDetailSource({ photo_id = 7 })
+        assert.are_not.equal(sessions[1].exportSettings.LR_export_destinationPathPrefix,
+            sessions[2].exportSettings.LR_export_destinationPathPrefix)
+        assert.are_not.equal(first.path, second.path)
+        assert.is_true(files[first.path])
+        assert.is_true(files["/tmp/lightroom-mcp-detail/other/b.jpg"])
+        assert.are.same({}, deleted)
+    end)
+
+    it("removes render folders started longer ago than a hung export can last, and keeps newer ones", function()
+        local base = "/tmp/lightroom-mcp-detail/"
+        local Handler, sessions, files = detailSetup({ now = 1000, leftovers = {
+            "700000-1/abandoned.jpg", "700001-2/recent.jpg", "other/b.jpg" } })
+
+        Handler.renderDetailSource({ photo_id = 7 })
+
+        assert.is_nil(files[base .. "700000-1/abandoned.jpg"])
+        assert.is_true(files[base .. "700001-2/recent.jpg"])
+        assert.is_true(files[base .. "other/b.jpg"])
+        assert.is_true(files[sessions[1].exportSettings.LR_export_destinationPathPrefix .. "/a.jpg"])
+    end)
+
+    for _, case in ipairs({
+        { name = "an export error", opts = { renderError = "render engine failed" }, reason = "render engine failed" },
+        { name = "a refused render", opts = { renderMessage = "AI Updates Recommended: Cancel" },
+            reason = "AI Updates Recommended: Cancel" },
+    }) do
+        it("reports " .. case.name .. " as unknown, naming what the photo may have gained, and leaves no file behind", function()
+            local Handler, _, files = detailSetup(case.opts)
+            local r = Handler.renderDetailSource({ photo_id = 7 })
+            assert.is_nil(r.data)
+            assert.is_nil(r.failed)
+            assert.are.same({ {
+                photo_id = "7",
+                reason = case.reason .. "; the photo may have gained one Export history step and the exported mark",
+            } }, r.unknown)
+            assert.are.same({}, files)
+        end)
+    end
+
+    it("reports an export session that could not start as failed, naming nothing left on the photo", function()
+        local Handler, _, files = detailSetup({ sessionError = "session refused" })
+        local r = Handler.renderDetailSource({ photo_id = 7 })
+        assert.is_nil(r.unknown)
+        assert.are.same({ { photo_id = "7", reason = "session refused" } }, r.failed)
+        assert.are.same({}, files)
+    end)
+
+    it("answers an unknown photo with not_found", function()
+        local Handler = detailSetup()
+        assert.are.same({ 404 }, Handler.renderDetailSource({ photo_id = 404 }).not_found)
+    end)
+
+    it("shares the export lock with export_photos, naming the call that holds it", function()
+        local Handler = detailSetup()
+        local inner
+        local context = helper.requestContext(nil, { title = "an_internal_action", isCanceled = function()
+            inner = helper.refusalOf(function() Handler.renderDetailSource({ photo_id = 7 }) end)
+            return false
+        end })
+        Handler.exportPhotos({ photo_ids = { "7" }, destination = "/tmp/lightroom-mcp-detail" }, context)
+        assert.are.equal("export_photos is already running; wait for it to finish, then call again", inner)
+    end)
+
+    it("names get_photo_detail, not its internal action, when a detail render holds the lock", function()
+        local Handler
+        local inner
+        Handler = detailSetup({ duringRender = function()
+            inner = helper.refusalOf(function()
+                Handler.exportPhotos({ photo_ids = { "7" }, destination = "/tmp/out" }, helper.requestContext(nil, { title = "export_photos" }))
+            end)
+        end })
+        Handler.renderDetailSource({ photo_id = 7 }, helper.requestContext(nil, { title = "render_detail_source" }))
+        assert.are.equal("get_photo_detail is already running; wait for it to finish, then call again", inner)
     end)
 end)

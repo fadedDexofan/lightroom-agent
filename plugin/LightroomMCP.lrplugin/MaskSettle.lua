@@ -1,9 +1,9 @@
+local Contract = require 'Contract'
 local DevelopSession = require 'DevelopSession'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 
 local MaskSettle = {}
 
-local COMMIT_TIMEOUT_SECONDS = 8
 local MASK_SHAPE_FIELD = "CorrectionMasks"
 local NUMBER_TOLERANCE = 1e-9
 
@@ -38,9 +38,7 @@ end
 function MaskSettle.waitForCommit(catalog, photo, maskId, fieldsBefore)
     return DevelopSession.waitFor(function()
         return not MaskSettle.sameFields(MaskSettle.storedAdjustmentFields(catalog, photo, maskId), fieldsBefore)
-    end, COMMIT_TIMEOUT_SECONDS)
+    end, Contract.MASK_SAVE_WAIT_SECONDS)
 end
-
-MaskSettle.COMMIT_TIMEOUT_SECONDS = COMMIT_TIMEOUT_SECONDS
 
 return MaskSettle

@@ -17,6 +17,11 @@ export function developHistory(catalogPath, photoId) {
   ).map(([id, name]) => ({ id: Number(id), name }));
 }
 
+export function lastExportTimestamp(catalogPath, photoId) {
+  const [row] = sqliteRows(catalogPath, `select lastExportTimestamp from AgLibraryImageAttributes where image=${Number(photoId)}`);
+  return row ? Number(row[0]) : null;
+}
+
 export function storedSettingsRow(catalogPath, photoId) {
   const out = execFileSync(
     "sqlite3",

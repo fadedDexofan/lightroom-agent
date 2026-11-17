@@ -17,11 +17,17 @@ local function setup(options)
         { SpotType = 'heal', Opacity = 1, opacity = 1, Masks = { { MaskID = 'first' } } },
         { SpotType = 'heal', Opacity = 0.7, opacity = 0.7, Masks = { { MaskID = 'second' } } },
     }
-    local calls = { writes = 0, deletes = 0, opens = 0 }
+    local calls = { writes = 0, deletes = 0, opens = 0, tools = {} }
     local controller = {
         getAllSpots = function() return clone(spots) end,
-        getSelectedTool = function() return tool end,
-        selectTool = function(value) if not options.ignoreRestore then tool = value end end,
+        getSelectedTool = function()
+            if options.pointColorSubtool and tool == 'masking' then return 'local_point_color' end
+            return tool
+        end,
+        selectTool = function(value)
+            calls.tools[#calls.tools + 1] = value
+            if not options.ignoreRestore then tool = value end
+        end,
         goToRemove = function() tool = 'dust'; calls.opens = calls.opens + 1 end,
         setSelectedSpotIndex = function(index)
             if options.refuse or not spots[index] then return false, 'not selectable' end
@@ -36,13 +42,17 @@ local function setup(options)
             if options.throw then error('SDK failure') end
             if options.ignoreAfterFirst and calls.writes > 1 then return end
             if not options.ignore then spots[selected] = clone(params) end
+            if options.keepsOpacity and calls.writes == 1 then spots[selected].Opacity = options.keepsOpacity end
             if options.changeOther and calls.writes == 1 then spots[2].Opacity = 0.1 end
+            if options.addSpot and calls.writes == 1 then spots[#spots + 1] = { SpotType = 'clone', Opacity = 1 } end
+            if options.throwAfterWrite and calls.writes == 1 then error('SDK failure') end
         end,
         deleteSelectedSpot = function()
             calls.deletes = calls.deletes + 1
             if not options.ignore then table.remove(spots, selected) end
         end,
     }
+    for _, name in ipairs(options.without or {}) do controller[name] = nil end
     local originalSelect = catalog.setSelectedPhotos
     catalog.setSelectedPhotos = function(self, photo, selection)
         originalSelect(self, photo, selection)
@@ -64,22 +74,19 @@ local function setup(options)
     })
     package.loaded.HandlerSpots = nil
     package.loaded.DevelopSession = nil
+    package.loaded.PhotoLookup = nil
     local handler = require 'HandlerSpots'
     return handler, calls, function() return spots end, function()
         return { active = active.localIdentifier, module = module, tool = tool }
     end
 end
 
-local function failure(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 describe('Remove spots', function()
     it('lists complete SDK fields with reusable one-based indices and restores the view', function()
         local handler, calls, spots, state = setup()
-        local result = handler.list({ photo_id = '2' })
+        local result = handler.list({ photo_id = '/2.jpg' })
+        assert.are.equal('2', result.photo_id)
+        assert.is_nil(result.success)
         assert.are.equal(2, result.count)
         assert.are.same({ index = 1, params = spots()[1] }, result.spots[1])
         assert.are.same({ active = '1', module = 'library', tool = 'loupe' }, state())
@@ -103,7 +110,8 @@ describe('Remove spots', function()
     it('updates only uppercase Opacity using the full selected table', function()
         local handler, calls, spots, state = setup()
         local second = clone(spots()[2])
-        local result = handler.update({ photo_id = '2', index = 1, params = { Opacity = 0.4 } })
+        local result = handler.update({ photo_id = '/2.jpg', index = 1, params = { Opacity = 0.4 } })
+        assert.are.equal('2', result.photo_id)
         assert.are.equal(0.4, result.params.Opacity)
         assert.are.equal(1, result.params.opacity)
         assert.are.same(second, spots()[2])
@@ -120,15 +128,16 @@ describe('Remove spots', function()
     it('deletes only the selected spot and returns shifted indices', function()
         local handler, calls, spots = setup()
         local expected = clone(spots()[2])
-        local result = handler.delete({ photo_id = '2', index = 1, confirm = true })
+        local result = handler.delete({ photo_id = '/2.jpg', index = 1 })
+        assert.are.equal('2', result.photo_id)
         assert.are.same({ expected }, spots())
         assert.are.same({ { index = 1, params = expected } }, result.spots)
         assert.are.equal(1, calls.deletes)
     end)
 
-    it('rejects an out-of-range index without a write', function()
+    it('refuses an out-of-range index without a write', function()
         local handler, calls = setup()
-        assert.truthy(failure(function()
+        assert.truthy(helper.refusalOf(function()
             handler.update({ photo_id = '2', index = 3, params = { Opacity = 0.4 } })
         end):find('valid range: 1..2', 1, true))
         assert.are.equal(0, calls.writes)
@@ -137,8 +146,8 @@ describe('Remove spots', function()
     it('reports the range when SDK selection returns false and leaves all spots unchanged', function()
         local handler, calls, spots, state = setup({ refuse = true })
         local original = clone(spots())
-        assert.truthy(failure(function()
-            handler.delete({ photo_id = '2', index = 1, confirm = true })
+        assert.truthy(helper.refusalOf(function()
+            handler.delete({ photo_id = '2', index = 1 })
         end):find('valid range: 1..2', 1, true))
         assert.are.same(original, spots())
         assert.are.equal(0, calls.deletes)
@@ -151,54 +160,109 @@ describe('Remove spots', function()
         assert.are.equal('dust', state().tool)
     end)
 
-    it('says the rollback is unconfirmed when Lightroom ignores it', function()
-        local handler = setup({ changeOther = true, ignoreAfterFirst = true })
-        local message = failure(function()
+    it('restores Masking, not its local Point Color subtool, without a warning', function()
+        local handler, calls, spots, state = setup({ tool = 'masking', pointColorSubtool = true })
+        local context = helper.requestContext(nil, { title = 'update_spot' })
+        handler.update({ photo_id = '1', index = 1, params = { Opacity = 0.3 } }, context)
+        assert.are.equal(0.3, spots()[1].Opacity)
+        assert.are.same({ 'masking' }, calls.tools)
+        assert.are.equal('masking', state().tool)
+        assert.are.same({}, context.warnings)
+    end)
+
+    it('answers an Opacity Lightroom did not keep, with an unconfirmed rollback, as unknown', function()
+        local handler = setup({ keepsOpacity = 0.5, ignoreAfterFirst = true })
+        local message = helper.unknownOf(function()
             handler.update({ photo_id = '2', index = 1, params = { Opacity = 0.3 } })
         end)
-        assert.truthy(message:find('changed another spot', 1, true))
+        assert.truthy(message:find('did not keep Opacity', 1, true))
         assert.is_nil(message:find('restored', 1, true))
         assert.truthy(message:find('list_spots', 1, true))
     end)
 
-    it('reports a rollback as restored only after reading the original back', function()
-        local handler = setup({ changeOther = true })
-        local message = failure(function()
+    for _, case in ipairs({
+        { fake = 'changeOther', names = 'changed another spot' },
+        { fake = 'addSpot', names = 'changed the spot count' },
+    }) do
+        it('answers unknown and writes nothing back when Lightroom changed other spots (' .. case.fake .. ')', function()
+            local handler, calls = setup({ [case.fake] = true })
+            local message = helper.unknownOf(function()
+                handler.update({ photo_id = '2', index = 1, params = { Opacity = 0.3 } })
+            end)
+            assert.truthy(message:find(case.names, 1, true), message)
+            assert.truthy(message:find('list_spots', 1, true), message)
+            assert.is_nil(message:find('restored', 1, true), message)
+            assert.are.equal(1, calls.writes)
+        end)
+    end
+
+    it('refuses an Opacity Lightroom did not keep once the rollback reads back, and restores tool and module', function()
+        local handler, _, _, state = setup({ ignore = true })
+        local message = helper.refusalOf(function()
             handler.update({ photo_id = '2', index = 1, params = { Opacity = 0.3 } })
         end)
+        assert.truthy(message:find('did not keep Opacity', 1, true))
         assert.truthy(message:find('original parameters restored', 1, true))
-    end)
-
-    it('fails when an update is ignored and restores tool and module', function()
-        local handler, _, _, state = setup({ ignore = true })
-        assert.truthy(failure(function()
-            handler.update({ photo_id = '2', index = 1, params = { Opacity = 0.3 } })
-        end):find('did not keep Opacity', 1, true))
         assert.are.same({ active = '1', module = 'library', tool = 'loupe' }, state())
-    end)
-
-    it('requires confirmation and refuses every unproven field', function()
-        local handler, calls = setup()
-        failure(function() handler.delete({ photo_id = '1', index = 1 }) end)
-        for _, params in ipairs({ { opacity = 0.3 }, { Opacity = -1 }, { Opacity = 0.3, radius = 0.4 } }) do
-            failure(function() handler.update({ photo_id = '1', index = 1, params = params }) end)
-        end
-        assert.are.equal(0, calls.writes)
-        assert.are.equal(0, calls.deletes)
     end)
 
     it('names the minimum SDK version before opening Develop', function()
         local handler, calls = setup({ old = true })
-        assert.truthy(failure(function() handler.list({ photo_id = '1' }) end):find('14.1', 1, true))
+        assert.truthy(helper.refusalOf(function() handler.list({ photo_id = '1' }) end):find('14.1', 1, true))
+        assert.are.equal(0, calls.opens)
+    end)
+
+    it('names the missing function and the minimum version before opening Develop', function()
+        local handler, calls = setup({ without = { 'getSelectedSpotParams' } })
+        assert.are.equal('list_spots needs LrDevelopController.getSelectedSpotParams, which this Lightroom does not offer'
+            .. ' (Lightroom Classic 14.1 or later has it)', helper.refusalOf(function() handler.list({ photo_id = '1' }) end))
         assert.are.equal(0, calls.opens)
     end)
 
     it('keeps a finished delete when the tool cannot be restored', function()
         local handler, calls, spots = setup({ ignoreRestore = true })
-        local result = handler.delete({ photo_id = '1', index = 1, confirm = true })
-        assert.is_true(result.success)
-        assert.truthy(result.warning:find('Could not restore', 1, true))
+        local context = helper.requestContext(nil, { title = 'delete_spot' })
+        local result = handler.delete({ photo_id = '1', index = 1 }, context)
+        assert.is_nil(result.success)
+        assert.is_nil(result.warning)
+        assert.truthy(context.warnings[1]:find('Could not restore', 1, true))
         assert.are.equal(1, calls.deletes)
         assert.are.equal(1, #spots())
+    end)
+
+    it('answers an unknown photo as not found before opening Develop', function()
+        local handler, calls = setup()
+        assert.are.equal('999', helper.notFoundOf(function() handler.list({ photo_id = '999' }) end))
+        assert.are.equal(0, calls.opens)
+    end)
+
+    it('answers unknown when writing the spot raises on every call, rollback included', function()
+        local handler, calls = setup({ throw = true })
+        local message = helper.unknownOf(function()
+            handler.update({ photo_id = '1', index = 1, params = { Opacity = 0.4 } })
+        end)
+        assert.truthy(message:find('SDK failure; rollback not confirmed', 1, true), message)
+        assert.are.equal(2, calls.writes)
+    end)
+
+    it('refuses with the original restored when writing the spot raises and nothing changed', function()
+        local handler, calls, spots = setup({ throwAfterWrite = true, ignore = true })
+        local before = clone(spots())
+        local message = helper.refusalOf(function()
+            handler.update({ photo_id = '1', index = 1, params = { Opacity = 0.4 } })
+        end)
+        assert.truthy(message:find('SDK failure; original parameters restored', 1, true), message)
+        assert.are.same(before, spots())
+        assert.are.equal(2, calls.writes)
+    end)
+
+    it('answers unknown when writing the spot raises after Lightroom changed another spot', function()
+        local handler, _, spots = setup({ throwAfterWrite = true, ignore = true, changeOther = true })
+        local message = helper.unknownOf(function()
+            handler.update({ photo_id = '1', index = 1, params = { Opacity = 0.4 } })
+        end)
+        assert.truthy(message:find('SDK failure', 1, true), message)
+        assert.truthy(message:find('Lightroom changed another spot', 1, true), message)
+        assert.are.equal(0.1, spots()[2].Opacity)
     end)
 end)

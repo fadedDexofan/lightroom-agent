@@ -1,3 +1,5 @@
+local Reply = require 'Reply'
+
 local PathForms = {}
 
 local TO_NFD = {
@@ -1008,6 +1010,62 @@ end
 
 function PathForms.same(left, right)
     return left == right or PathForms.toNfd(left) == PathForms.toNfd(right)
+end
+
+local PRIVATE_ALIASES = { "/private/tmp", "/private/var", "/private/etc" }
+
+local function withoutPrivate(path)
+    for _, alias in ipairs(PRIVATE_ALIASES) do
+        if path == alias or path:sub(1, #alias + 1) == alias .. "/" then return path:sub(#"/private" + 1) end
+    end
+    return path
+end
+
+local function below(root, path)
+    if path:sub(1, #root) ~= root then return nil end
+    local rest = path:sub(#root + 1)
+    if rest == "" or rest:match("^[/\\]") then return (rest:gsub("^[/\\]+", "")) end
+    return nil
+end
+
+function PathForms.relative(root, path)
+    local base = withoutPrivate(root):gsub("[/\\]+$", "")
+    local full = withoutPrivate(path)
+    return below(base, full) or below(PathForms.toNfd(base), PathForms.toNfd(full))
+end
+
+local function canonical(path, name)
+    local separator = WIN_ENV and "\\" or "/"
+    local separatorPattern = WIN_ENV and "%\\" or "/"
+    local problem = name .. " must be written canonically: " .. separator
+        .. " between names, no empty, '.' or '..' names"
+    if path:find(WIN_ENV and "/" or "\\", 1, true) then Reply.refuse(problem) end
+    local root = WIN_ENV and (path:match("^%a:\\") or path:match("^\\\\")) or "/"
+    local names = path:sub(#root + 1)
+    if names:sub(-1) == separator then names = names:sub(1, -2) end
+    if names == "" then return root end
+    for part in (names .. separator):gmatch("(.-)" .. separatorPattern) do
+        if part == "" or part == "." or part == ".." then Reply.refuse(problem) end
+    end
+    return root .. names
+end
+
+-- Expands a leading ~/ and refuses a relative path: one resolves against
+-- Lightroom's working directory ("/" on macOS), which fails with an unhelpful
+-- "Read-only file system".
+function PathForms.absolute(path, name)
+    local LrPathUtils = import 'LrPathUtils'
+    if path:match("^~[/\\]") then
+        path = LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), path:sub(3))
+    end
+    local absolute
+    if WIN_ENV then
+        absolute = path:match("^%a:[/\\]") or path:match("^\\\\")
+    else
+        absolute = path:match("^/")
+    end
+    if not absolute then Reply.refuse(name .. " must be an absolute path") end
+    return canonical(path, name)
 end
 
 return PathForms

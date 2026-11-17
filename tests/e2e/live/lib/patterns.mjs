@@ -257,3 +257,65 @@ export function buildPano(width = 2400, height = 240) {
   }
   return canvas;
 }
+
+export function buildCheckerboard(width = 1200, height = 800) {
+  const canvas = createCanvas(width, height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) if ((x + y) % 2 === 0) canvas.rgb.set([255, 255, 255], (y * width + x) * 3);
+  }
+  return canvas;
+}
+
+const MARKER_LEVEL = 128;
+const MARKER_TEXTURE = 6;
+const MARKER_RADIUS = 18;
+
+export const MARKER_ORIENTATIONS = [1, 6, 8];
+
+export const STACK_CARDS = [
+  { key: "stack_1", width: 900, height: 600, color: [200, 60, 60] },
+  { key: "stack_2", width: 600, height: 600, color: [60, 170, 80] },
+  { key: "stack_3", width: 600, height: 900, color: [60, 90, 200] },
+];
+
+export const MARKER_DISCS = [
+  { name: "red", color: [220, 30, 30], x: 0.65, y: 0.4 },
+  { name: "blue", color: [30, 60, 220], x: 0.3, y: 0.7 },
+  { name: "green", color: [30, 190, 60], x: 0.85, y: 0.85 },
+];
+
+export function buildMarkers(width = 1500, height = 1000, seed = 7) {
+  const canvas = createCanvas(width, height);
+  const random = createRng(seed);
+  for (let i = 0; i < canvas.rgb.length; i += 3) {
+    const level = MARKER_LEVEL + Math.round((random() * 2 - 1) * MARKER_TEXTURE);
+    canvas.rgb.set([level, level, level], i);
+  }
+  for (const disc of MARKER_DISCS) {
+    const cx = disc.x * width;
+    const cy = disc.y * height;
+    for (let y = Math.floor(cy - MARKER_RADIUS); y <= Math.ceil(cy + MARKER_RADIUS); y++) {
+      for (let x = Math.floor(cx - MARKER_RADIUS); x <= Math.ceil(cx + MARKER_RADIUS); x++) {
+        if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= MARKER_RADIUS) canvas.rgb.set(disc.color, (y * width + x) * 3);
+      }
+    }
+  }
+  return canvas;
+}
+
+const DISPLAYED_FRACTION = {
+  1: ({ x, y }) => ({ x, y }),
+  2: ({ x, y }) => ({ x: 1 - x, y }),
+  3: ({ x, y }) => ({ x: 1 - x, y: 1 - y }),
+  4: ({ x, y }) => ({ x, y: 1 - y }),
+  5: ({ x, y }) => ({ x: y, y: x }),
+  6: ({ x, y }) => ({ x: 1 - y, y: x }),
+  7: ({ x, y }) => ({ x: 1 - y, y: 1 - x }),
+  8: ({ x, y }) => ({ x: y, y: 1 - x }),
+};
+
+export function displayedFraction(point, orientation) {
+  const map = DISPLAYED_FRACTION[orientation];
+  if (!map) throw new Error(`orientation must be 1..8, got ${orientation}`);
+  return map(point);
+}

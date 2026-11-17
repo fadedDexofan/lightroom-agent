@@ -6,8 +6,8 @@ describe('HandlerVirtualCopies', function()
     local function setup(opts)
         opts = opts or {}
         photos = {}
-        for i = 1, 3 do
-            photos[i] = helper.fakePhoto({ id = tostring(i), path = '/' .. i .. '.jpg' })
+        for i = 1, 5 do
+            photos[i] = helper.fakePhoto({ id = tostring(i), path = '/' .. i .. '.jpg', fileName = i .. '.jpg' })
         end
         if opts.virtualInput then
             photos[3] = helper.fakePhoto({ id = '3', path = '/1.jpg',
@@ -42,7 +42,7 @@ describe('HandlerVirtualCopies', function()
             assert.is_false(catalog.isInsideReadAccess())
             assert.are.equal(1, #state.selected)
             calls.create[#calls.create + 1] = { photo = state.active, name = name }
-            if opts.failCreate then error('SDK failure') end
+            if opts.failCreate or opts.failCreateAt == #calls.create then error('SDK failure') end
             local master = state.active:getRawMetadata('masterPhoto') or state.active
             local copy = helper.fakePhoto({ id = tostring(100 + #calls.create),
                 isVirtualCopy = true, masterPhoto = master })
@@ -51,13 +51,17 @@ describe('HandlerVirtualCopies', function()
         end
         helper.installImport({
             LrApplication = { activeCatalog = function() return catalog end },
-            LrApplicationView = {},
+            LrApplicationView = { getCurrentModuleName = function() return 'library' end, switchToModule = function() end },
+            LrDate = { currentTime = function() return 0 end },
+            LrProgressScope = function() return { setCancelable = function() end, setPortionComplete = function() end,
+                setCaption = function() end, done = function() end, isCanceled = function() return false end } end,
             LrDevelopController = {},
             LrLogger = helper.defaultLrLogger(),
             LrSelection = { selectNone = function() state.active, state.selected = nil, {} end },
             LrTasks = { pcall = pcall, sleep = function() end },
         })
         package.loaded.DevelopSession = nil
+        package.loaded.DevelopBatch = nil
         package.loaded.HandlerVirtualCopies = nil
         Handler = require 'HandlerVirtualCopies'
     end
@@ -70,14 +74,15 @@ describe('HandlerVirtualCopies', function()
         assert.are.same({ photos[1], photos[2] }, last.photos)
     end
 
-    it('creates named copies and returns stable photo, master and copy ids', function()
+    it('creates named copies and returns resolved photo, master and copy ids as strings', function()
         setup()
-        local result = Handler.create({ photo_ids = { '3', '2' }, copy_name = 'Experiment' })
-        assert.are.equal(2, result.created)
-        assert.are.same({
-            { photo_id = '3', master_id = '3', copy_id = '101' },
-            { photo_id = '2', master_id = '2', copy_id = '102' },
-        }, result.copies)
+        local result = Handler.create({ photo_ids = { '3', 2 }, copy_name = 'Experiment' })
+        assert.are.same({ copies = {
+            { photo_id = '3', master_photo_id = '3', copy_photo_id = '101' },
+            { photo_id = '2', master_photo_id = '2', copy_photo_id = '102' },
+        } }, result.data)
+        assert.is_nil(result.created)
+        assert.is_nil(result.not_found)
         assert.are.equal('Experiment', calls.create[1].name)
         assert.are.equal('Experiment', calls.create[2].name)
         assertRestored()
@@ -87,11 +92,11 @@ describe('HandlerVirtualCopies', function()
         assert.are.equal(0, catalog.getWriteAccessCount())
     end)
 
-    it('deduplicates ids and paths to the same photo and reports missing ids', function()
+    it('deduplicates ids and paths to the same photo and lists unknown inputs as not_found', function()
         setup()
         local result = Handler.create({ photo_ids = { '3', '3', '/3.jpg', '999' } })
-        assert.are.equal(1, result.created)
-        assert.are.same({ '999' }, result.missing)
+        assert.are.equal(1, #result.data.copies)
+        assert.are.same({ '999' }, result.not_found)
         assert.is_nil(calls.create[1].name)
         assertRestored()
     end)
@@ -107,9 +112,8 @@ describe('HandlerVirtualCopies', function()
     it('returns the original master when the input is itself a virtual copy', function()
         setup({ virtualInput = true })
         local result = Handler.create({ photo_ids = { '3', '1' } })
-        assert.are.equal(2, result.created)
-        assert.are.same({ photo_id = '3', master_id = '1', copy_id = '101' }, result.copies[1])
-        assert.are.same({ photo_id = '1', master_id = '1', copy_id = '102' }, result.copies[2])
+        assert.are.same({ photo_id = '3', master_photo_id = '1', copy_photo_id = '101' }, result.data.copies[1])
+        assert.are.same({ photo_id = '1', master_photo_id = '1', copy_photo_id = '102' }, result.data.copies[2])
         assertRestored()
     end)
 
@@ -129,43 +133,40 @@ describe('HandlerVirtualCopies', function()
         assert.are.same({}, state.selected)
     end)
 
-    it('restores selection when the SDK fails and releases the session lock', function()
-        setup({ failCreate = true })
-        local ok, failure = pcall(Handler.create, { photo_ids = { '3' } })
-        assert.is_false(ok)
-        assert.matches('SDK failure', failure, 1, true)
+    it('keeps the copies created before a failure on the third of five photos as data', function()
+        setup({ failCreateAt = 3 })
+        local result = Handler.create({ photo_ids = { '1', '2', '3', '4', '5' } })
+        assert.are.same({ photo_id = '1', master_photo_id = '1', copy_photo_id = '101' }, result.data.copies[1])
+        assert.are.same({ photo_id = '2', master_photo_id = '2', copy_photo_id = '102' }, result.data.copies[2])
+        assert.are.equal('3', result.unknown[1].photo_id)
+        assert.matches('SDK failure', result.unknown[1].reason, 1, true)
         assertRestored()
-        ok, failure = pcall(Handler.create, { photo_ids = { '3' } })
-        assert.is_false(ok)
-        assert.matches('SDK failure', failure, 1, true)
     end)
 
-    it('returns the created copies with a warning when the selection cannot be restored', function()
-        setup({ failRestore = true })
+    it('reports an SDK failure as an unknown outcome and releases the session lock', function()
+        setup({ failCreate = true })
         local result = Handler.create({ photo_ids = { '3' } })
-        assert.are.equal(1, result.created)
-        assert.are.equal(1, #result.copies)
-        assert.are.equal('3', result.copies[1].photo_id)
-        assert.matches('Could not restore the previous photo selection', result.warning, 1, true)
+        assert.is_nil(result.data)
+        assert.are.same({ photo_id = '3', reason = 'SDK failure' }, result.unknown[1])
+        assertRestored()
+        result = Handler.create({ photo_ids = { '3' } })
+        assert.are.equal('3', result.unknown[1].photo_id)
     end)
 
-    it('leaves selection untouched when no photo resolves', function()
+    it('warns with the created copies when the selection cannot be restored', function()
+        setup({ failRestore = true })
+        local context = helper.requestContext(nil, { title = 'create_virtual_copies' })
+        local result = Handler.create({ photo_ids = { '3' } }, context)
+        assert.are.equal('3', result.data.copies[1].photo_id)
+        assert.matches('the previous selection was not restored', context.warnings[1], 1, true)
+    end)
+
+    it('answers not_found without touching the selection when no photo resolves', function()
         setup()
-        assert.has_error(function() Handler.create({ photo_ids = { '999' } }) end,
-            'No photos matched photo_ids')
+        local result = Handler.create({ photo_ids = { '999' } })
+        assert.is_nil(result.data)
+        assert.are.same({ '999' }, result.not_found)
         assert.are.same({}, calls.selection)
         assert.are.same({}, calls.create)
-    end)
-
-    it('rejects malformed inputs before changing the selection', function()
-        setup()
-        for _, args in ipairs({ {}, { photo_ids = {} }, { photo_ids = { false } },
-            { photo_ids = { '3' }, copy_name = ' ' } }) do
-            assert.has_error(function() Handler.create(args) end)
-        end
-        local ids = {}
-        for i = 1, 26 do ids[i] = '3' end
-        assert.has_error(function() Handler.create({ photo_ids = ids }) end)
-        assert.are.same({}, calls.selection)
     end)
 end)

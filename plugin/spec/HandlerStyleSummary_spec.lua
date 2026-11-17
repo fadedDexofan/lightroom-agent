@@ -35,12 +35,12 @@ describe("HandlerStyleSummary", function()
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
 
-    it("uses inclusive rating search outside the read gate", function()
+    it("searches ratings of 4 and up by default, inclusive and outside the read gate", function()
         load({ photo(1, 5, "Sony", 100), photo(2, 4, "Sony", 100), photo(3, 3, "Sony", 100) })
         local search
         local inner = catalog.findPhotos
         catalog.findPhotos = function(self, args) search = args.searchDesc return inner(self, args) end
-        assert.are.equal(2, Handler.summarize({ min_rating = 4 }).scanned)
+        assert.are.equal(2, Handler.summarize({}).scanned)
         assert.are.same({ combine = "intersect", { criteria = "rating", operation = ">=", value = 4 } }, search)
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
@@ -115,14 +115,4 @@ describe("HandlerStyleSummary", function()
         assert.is_true(#JSON:encode(group) <= 6000)
         assert.is_true(group.settings_omitted > 0)
     end)
-
-    for _, args in ipairs({ { min_rating = -1 }, { min_rating = 6 }, { min_rating = 4.5 },
-        { min_rating = "4" }, { max_photos = 0 }, { max_photos = 201 }, { max_photos = math.huge },
-        { max_photos = 0/0 }, { exported_only = "yes" } }) do
-        it("rejects invalid arguments before querying", function()
-            load({})
-            assert.has_error(function() Handler.summarize(args) end)
-            assert.are.equal(0, catalog.getQueryCount())
-        end)
-    end
 end)

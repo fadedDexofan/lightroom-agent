@@ -1,26 +1,26 @@
 import type { Tool } from "@modelcontextprotocol/server";
 import type { Toolset } from "./toolsets.js";
-import { TOOL_CONTRACTS } from "./tool-contracts.js";
+import { TOOL_CONTRACTS, type ToolContract } from "./tool-contracts.js";
 
-export function publishedInputSchema(schema: Tool["inputSchema"]): Tool["inputSchema"] {
-  const published = { ...schema };
-  // Claude Code drops tools with root combinators; private validation keeps them.
-  delete published.oneOf;
-  delete published.anyOf;
-  delete published.allOf;
-  return published;
+const DEVELOP_READ_SENTENCE = "Opens the photo in Develop, then restores module, source and selection; runs one at a time"
+  + " with other Develop calls, and commits any slider change the user is making in Develop at that moment.";
+
+export function publishedDescription(
+  { description, rules, develop, annotations }: Pick<ToolContract, "description" | "rules" | "develop" | "annotations">,
+): string {
+  const developNote = develop === "drives" && annotations.readOnlyHint ? ` ${DEVELOP_READ_SENTENCE}` : "";
+  const ruleNote = rules?.length ? ` Rules: ${rules.map((rule) => rule.text).join("; ")}.` : "";
+  return `${description}${developNote}${ruleNote}`;
 }
 
-export const TOOL_DEFINITIONS: Tool[] = TOOL_CONTRACTS.map(
-  ({ name, title, annotations, description, inputSchema, alwaysLoad }) => ({
-    name,
-    title,
-    annotations,
-    description,
-    inputSchema: publishedInputSchema(inputSchema),
-    ...(alwaysLoad ? { _meta: { "anthropic/alwaysLoad": true } } : {}),
-  }),
-);
+export const TOOL_DEFINITIONS: Tool[] = TOOL_CONTRACTS.map((contract) => ({
+  name: contract.name,
+  title: contract.title,
+  annotations: contract.annotations,
+  description: publishedDescription(contract),
+  inputSchema: contract.inputSchema,
+  ...(contract.alwaysLoad ? { _meta: { "anthropic/alwaysLoad": true } } : {}),
+}));
 
 export function listToolsHandler(toolsets: ReadonlySet<Toolset> = new Set(["core"]), readOnly = false): { tools: Tool[] } {
   return { tools: TOOL_DEFINITIONS.filter((_tool, index) => {

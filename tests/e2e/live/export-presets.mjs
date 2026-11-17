@@ -76,7 +76,7 @@ try {
   const numbered = ["live_001.jpg", "live_002.jpg", "live_003.jpg"];
   for (const onExisting of ["rename", "overwrite", "skip"]) {
     const { result, files } = await exportTo({ photo_ids: three, export_preset: "Seq", on_existing: onExisting });
-    check(`sequence with ${onExisting}`, result.data?.exported === 3 && files.join() === numbered.join(), { files, exported: result.data?.exported });
+    check(`sequence with ${onExisting}`, result.data?.files.length === 3 && files.join() === numbered.join(), { files, exported: result.data?.files.length });
   }
   const from5 = await exportTo({ photo_ids: three, export_preset: "SeqFrom5" });
   check("sequence from start number", from5.files.join() === "live_005.jpg,live_006.jpg,live_007.jpg", from5.files);
@@ -118,23 +118,23 @@ try {
   fs.mkdirSync(readOnly, { mode: 0o555 });
   const denied = await session.tool("export_photos", { photo_ids: [chart], export_preset: "Plain", export_preset_folder: FOLDER, destination: readOnly }, { timeoutMs: 60000 });
   fs.chmodSync(readOnly, 0o755);
-  check("read-only destination is not counted", denied.isError || (denied.data.exported === 0 && denied.data.success === false), denied.isError ? denied.text : denied.data);
+  check("read-only destination is not counted", denied.isError && !denied.data, denied.text);
   const first = await exportTo({ export_preset: "Plain" });
   const skipped = await session.tool("export_photos", { photo_ids: [chart], export_preset: "Plain", export_preset_folder: FOLDER, destination: first.destination, on_existing: "skip" }, { timeoutMs: 60000 });
-  check("skip is not counted as exported", skipped.data?.exported === 0 && skipped.data?.skipped === 1, skipped.data);
+  check("skip is not counted as exported", skipped.data?.files.length === 0 && skipped.data?.skipped?.length === 1, skipped.data);
 
   for (const usePreset of [true, false]) {
     const destination = newDestination();
     const args = usePreset ? { export_preset: "Plain", export_preset_folder: FOLDER } : {};
     const results = await Promise.all(Array.from({ length: 6 }, () => session.tool("export_photos", { photo_ids: [chart], destination, ...args }, { timeoutMs: 120000 })));
-    const reported = results.reduce((sum, result) => sum + (result.data?.exported ?? 0), 0);
+    const reported = results.reduce((sum, result) => sum + (result.data?.files.length ?? 0), 0);
     const files = filesIn(destination);
     const refused = results.filter((result) => result.isError && result.text.includes("already running")).length;
     check(`parallel exports run one at a time (preset ${usePreset})`, reported >= 1 && reported === files.length && reported + refused === 6, { reported, refused, files: files.length });
   }
   const parallelDestinations = [newDestination(), newDestination()];
   const twoFolders = await Promise.all(parallelDestinations.map((destination) => session.tool("export_photos", { photo_ids: [chart], destination }, { timeoutMs: 120000 })));
-  const twoFoldersReported = twoFolders.reduce((sum, result) => sum + (result.data?.exported ?? 0), 0);
+  const twoFoldersReported = twoFolders.reduce((sum, result) => sum + (result.data?.files.length ?? 0), 0);
   const twoFoldersWritten = parallelDestinations.reduce((sum, destination) => sum + filesIn(destination).length, 0);
   check("parallel exports to two folders", twoFoldersReported === 1 && twoFoldersWritten === 1, { twoFoldersReported, twoFoldersWritten });
 

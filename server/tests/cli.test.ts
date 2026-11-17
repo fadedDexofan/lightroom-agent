@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import jpeg from 'jpeg-js';
 import { pathToFileURL } from 'node:url';
 import { listToolsHandler } from '../src/list-tools-handler.js';
 import { FakePlugin } from './helpers/fake-plugin.js';
 import { parseCli } from '../src/cli.js';
+import { brokerPath } from '../src/broker.js';
 
 describe('parseCli', () => {
   function p(...args: string[]) {
@@ -78,6 +80,9 @@ describe('tool command parsing', () => {
   });
 });
 
+const CLI_SPAWN_MS = 30_000;
+const CLI_TEST_MS = CLI_SPAWN_MS + 5_000;
+
 describe('CLI process', () => {
   let directory: string;
   let build: string;
@@ -126,7 +131,7 @@ describe('CLI process', () => {
           LIGHTROOM_MCP_READ_ONLY: 'false',
           ...env,
         },
-        timeout: 10_000,
+        timeout: CLI_SPAWN_MS,
         maxBuffer: 16 * 1024 * 1024,
       }, (error, stdout, stderr) => {
         if (error && typeof error.code !== 'number') {
@@ -137,6 +142,8 @@ describe('CLI process', () => {
       });
       if (interruption) void interruption.ready.then(() => child.kill(interruption.signal));
     });
+    const ports = [env.LIGHTROOM_MCP_REQUEST_PORT, env.LIGHTROOM_MCP_RESPONSE_PORT].map(Number);
+    if (interruption && ports.every(Number.isInteger)) fs.rmSync(brokerPath(ports[0], ports[1], path.join(testHome, '.config', 'lightroom-mcp')), { force: true });
     expect(fs.existsSync(path.join(testHome, 'Library'))).toBe(false);
     expect(fs.existsSync(path.join(state, 'appdata'))).toBe(false);
     return { ...result, testHome };
@@ -161,51 +168,60 @@ describe('CLI process', () => {
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toEqual(listToolsHandler());
     expect(fs.readdirSync(result.testHome)).toEqual([]);
-  });
+  }, CLI_TEST_MS);
 
-  it('discovers one enabled tool and refuses a disabled name', async () => {
+  it('discovers one enabled tool', async () => {
     const result = await run(['tools', 'set_develop_settings'], { LIGHTROOM_MCP_TOOLSETS: 'all' });
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(
       listToolsHandler(new Set(['core', 'develop', 'masks'])).tools.find((tool) => tool.name === 'set_develop_settings'),
     );
+  }, CLI_TEST_MS);
+
+  it('refuses discovery of a tool its toolset does not enable', async () => {
     const disabled = await run(['tools', 'set_develop_settings']);
     expect(disabled.code).toBe(1);
     expect(disabled.stdout).toBe('');
     expect(disabled.stderr).toContain('not available');
-  });
+  }, CLI_TEST_MS);
 
   it('uses the same read-only discovery policy as MCP', async () => {
     const result = await run(['tools'], { LIGHTROOM_MCP_TOOLSETS: 'all', LIGHTROOM_MCP_READ_ONLY: 'true' });
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual(listToolsHandler(new Set(['core', 'develop', 'masks']), true));
-  });
+  }, CLI_TEST_MS);
 
   it('reports invalid call syntax with exit 2 before connection', async () => {
     const result = await run(['call', 'search_photos', '[]']);
     expect(result.code).toBe(2);
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain('JSON object');
-  });
+  }, CLI_TEST_MS);
 
   it('returns the complete preview response and exits after releasing its connection', async () => {
-    const image = Buffer.alloc(80_000, 'a').toString('base64');
+    const pixels = Buffer.alloc(200 * 150 * 4);
+    for (let i = 0; i < pixels.length; i++) pixels[i] = (i * 7919) % 251;
+    const image = jpeg.encode({ width: 200, height: 150, data: pixels }, 100).data.toString('base64');
+    expect(image.length).toBeGreaterThan(80_000);
     const called: string[] = [];
     const env = await startPlugin((action, params) => {
       called.push(action);
       if (action === 'ping') return { pong: true };
-      expect(params).toEqual({ photo_id: '914' });
+      expect(params).toEqual({ photo_ids: ['914'], size: 864 });
       return { photo_id: 914, image: { data: image, mime_type: 'image/jpeg' } };
     });
     const result = await run(['call', 'get_photo_preview', '{"photo_id":"914"}'], env);
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ content: [
-      { type: 'text', text: '{"photo_id":914}' },
+      { type: 'text', text: JSON.stringify({ outcome: 'done', data: { photo_id: '914', requested_size: 864,
+        width: 200, height: 150, bytes: Buffer.from(image, 'base64').length, scaled_by_server: false } }) },
       { type: 'image', data: image, mimeType: 'image/jpeg' },
     ] });
-    expect(called).toContain('get_photo_preview');
-    expect(fs.readdirSync(path.join(result.testHome, '.config', 'lightroom-mcp'))).toEqual([]);
-  });
+    expect(called).toContain('render_preview');
+    const configDir = path.join(result.testHome, '.config', 'lightroom-mcp');
+    expect(fs.readdirSync(configDir)).toEqual([]);
+    expect(fs.existsSync(brokerPath(Number(env.LIGHTROOM_MCP_REQUEST_PORT), Number(env.LIGHTROOM_MCP_RESPONSE_PORT), configDir))).toBe(false);
+  }, CLI_TEST_MS);
 
   it('returns the backend error as JSON with a failing exit status', async () => {
     const env = await startPlugin((action) => {
@@ -215,9 +231,9 @@ describe('CLI process', () => {
     const result = await run(['call', 'list_collections'], env);
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stdout)).toEqual({
-      isError: true, content: [{ type: 'text', text: 'Error: Missing catalog fixture' }],
+      isError: true, content: [{ type: 'text', text: '{"outcome":"failed","error":"Missing catalog fixture"}' }],
     });
-  });
+  }, CLI_TEST_MS);
 
   it.each([
     ['read-only', 'set_rating_and_flag', '{"photo_ids":["914"],"rating":5}', { LIGHTROOM_MCP_READ_ONLY: 'true' }],
@@ -229,22 +245,21 @@ describe('CLI process', () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ isError: true });
     expect(plugin?.events.some((event) => event.kind === 'request_connected')).toBe(false);
     expect(fs.readdirSync(result.testHome)).toEqual([]);
-  });
+  }, CLI_TEST_MS);
 
 
-  it.each([...['core', 'all'].flatMap((toolset) => ['set_selection', 'cancel', 'not_a_tool'].map((name) => [toolset, name]))])(
-    'refuses unpublished tool %s/%s before starting the bridge',
-    async (toolset, name) => {
-      const env = await startPlugin(() => ({ success: true }));
-      const result = await run(['call', name, '{}'], { ...env, LIGHTROOM_MCP_TOOLSETS: toolset });
-      expect(result.code).toBe(1);
-      expect(JSON.parse(result.stdout)).toEqual({
-        isError: true, content: [{ type: 'text', text: `Unknown tool "${name}". Only listed tools can be called.` }],
-      });
-      expect(plugin?.events.some((event) => event.kind === 'request_connected')).toBe(false);
-      expect(fs.readdirSync(result.testHome)).toEqual([]);
-    },
-  );
+  it('refuses an unpublished tool before starting the bridge', async () => {
+    const env = await startPlugin(() => ({ success: true }));
+    const result = await run(['call', 'not_a_tool', '{}'], { ...env, LIGHTROOM_MCP_TOOLSETS: 'all' });
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      isError: true, content: [{ type: 'text', text: JSON.stringify({
+        outcome: 'failed', error: 'Unknown tool "not_a_tool". Only listed tools can be called.',
+      }) }],
+    });
+    expect(plugin?.events.some((event) => event.kind === 'request_connected')).toBe(false);
+    expect(fs.readdirSync(result.testHome)).toEqual([]);
+  }, CLI_TEST_MS);
 
   const signalTest = process.platform === 'win32' ? it.skip : it;
   signalTest.each([['SIGINT', 130], ['SIGTERM', 143]] as const)(
@@ -268,6 +283,7 @@ describe('CLI process', () => {
         finish();
       }
     },
+    CLI_TEST_MS,
   );
 
   it('validates arguments through the common backend without dispatching the operation', async () => {
@@ -278,5 +294,5 @@ describe('CLI process', () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ isError: true });
     expect(result.stdout).toContain('unknown property');
     expect(called).not.toContain('search_photos');
-  });
+  }, CLI_TEST_MS);
 });

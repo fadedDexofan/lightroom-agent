@@ -39,139 +39,147 @@
   "tools": [
     {
       "name": "search_photos",
-      "description": "Search the catalog by filename, keywords, rating, or date."
+      "description": "Search photos using intersecting Library filters (paginated): filename, keywords, rating, capture date, camera, lens, ISO, focal length, flag, color label, edited status, file type and folder."
     },
     {
       "name": "get_selected_photos",
-      "description": "Photos currently selected in Lightroom (or the filmstrip)."
+      "description": "Get currently selected photos in Lightroom (or filmstrip if no selection)."
+    },
+    {
+      "name": "summarize_develop_settings",
+      "description": "Summarize numeric Develop settings by camera model and ISO (1-400, 401-1600, 1601-6400, 6401+, unknown)."
     },
     {
       "name": "get_photo_metadata",
-      "description": "Detailed metadata for one photo_id or up to 100 photo_ids; sections: [\"developSettings\"] includes develop settings for each."
+      "description": "Read 1-100 photos, field names in snake_case: rating (0 = unrated), flag and color_label in the set_rating_and_flag/set_color_label values, keywords/nested keyword_paths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/state_province/country/iso_country_code, copyright and accessibility alt_text/extended_description (LrC 13.2+, omitted when empty); develop settings are read with get_develop_settings."
     },
     {
       "name": "get_photo_preview",
-      "description": "Get a JPEG preview of a photo as an image."
+      "description": "Lightroom-rendered JPEG with Develop edits (raw supported)."
+    },
+    {
+      "name": "get_photo_detail",
+      "description": "Cut 1-4 regions from a full-resolution render of a photo with its current Develop settings, one rendered pixel per returned pixel, to judge sharpness of a detail such as the nearest eye."
     },
     {
       "name": "get_photo_previews",
-      "description": "Get up to 20 ordered JPEG thumbnails for first-pass culling."
+      "description": "Get JPEG thumbnails for 1–20 photos in input order for culling."
     },
     {
       "name": "find_duplicate_groups",
-      "description": "Find read-only duplicate and burst groups using preview similarity and raw capture time"
+      "description": "Group near-duplicates/bursts from up to 100 IDs/paths using 64-bit dHash of current JPEG previews (minimum edge 64) and raw capture time."
     },
     {
       "name": "get_photo_stats",
-      "description": "Read histogram, clipping and sharpness from rendered previews for up to 20 photos."
+      "description": "Measure current rendered JPEG previews for up to 20 photos; results by photo_id, failures as failed, photos not started within 20 s as remaining."
     },
     {
       "name": "set_gps",
-      "description": "Set the GPS position of photos."
+      "description": "Replace GPS coordinates in decimal degrees."
     },
     {
       "name": "set_location",
-      "description": "Set the IPTC location fields of photos."
-    },
-    {
-      "name": "set_ai_metadata",
-      "description": "Store or clear private AI scores and reasons in the catalog"
-    },
-    {
-      "name": "get_ai_metadata",
-      "description": "Read private AI scores and reasons for a batch of photos"
+      "description": "Set IPTC location fields from get_photo_metadata."
     },
     {
       "name": "set_metadata",
-      "description": "Set title, caption, headline, creator and copyright fields of photos."
+      "description": "Set IPTC text from get_photo_metadata."
+    },
+    {
+      "name": "set_ai_metadata",
+      "description": "Store an AI score and reason in private per-photo plug-in metadata in this catalog."
+    },
+    {
+      "name": "get_ai_metadata",
+      "description": "Read private per-photo AI scores and reasons in one batch (up to 1000 IDs or paths)."
     },
     {
       "name": "list_folders",
-      "description": "List catalog folders with full paths and direct photo counts."
+      "description": "List catalog folders in tree order as a paginated flat list of full paths, names and photo_count (direct photos only, excluding subfolders)."
     },
     {
       "name": "get_folder_photos",
-      "description": "List photos in a folder, optionally including subfolders."
+      "description": "List photos in a catalog folder by its full path from list_folders (paginated)."
     },
     {
       "name": "list_collections",
-      "description": "List all collections and collection sets."
-    },
-    {
-      "name": "create_smart_collection",
-      "description": "Save search filters as a smart collection"
+      "description": "List all collections in the catalog (paginated): name (the path through collection sets that the collection tools take), is_smart and photo_count."
     },
     {
       "name": "create_collection",
-      "description": "Create a new collection."
+      "description": "Create a collection; returns its path."
+    },
+    {
+      "name": "create_smart_collection",
+      "description": "Save intersecting search_photos filters as an auto-updating smart collection; at least one filter."
     },
     {
       "name": "add_to_collection",
-      "description": "Add photos to an existing collection."
+      "description": "Add photos to a regular collection; a smart collection is refused."
     },
     {
       "name": "get_collection_photos",
-      "description": "List the photos in a collection, regular or smart."
+      "description": "List the photos in a collection, regular or smart (paginated)."
     },
     {
       "name": "remove_from_collection",
-      "description": "Remove photos from a collection."
+      "description": "Remove photos from a regular collection; catalog and other memberships stay."
     },
     {
       "name": "delete_collection",
-      "description": "Delete a collection; its photos stay in the catalog."
+      "description": "Delete a collection; photos stay in the catalog."
     },
     {
       "name": "set_keywords",
-      "description": "Add or remove keywords on photos, by name or hierarchy path."
+      "description": "Add/remove keyword names or parent-first '|' paths from list_keywords, ignoring case."
     },
     {
       "name": "remove_keyword_subtree",
-      "description": "Detach a parent keyword and its descendants from photos; keyword nodes stay in the catalog."
+      "description": "Detach a parent keyword and every descendant from photo_ids, or all tagged photos with catalog_wide=true."
     },
     {
       "name": "list_keywords",
-      "description": "List the keyword hierarchy as full paths."
+      "description": "List paginated parent-first keyword paths ('Places|Europe|Paris'), synonyms and include_on_export (paginated)."
     },
     {
       "name": "rename_keyword",
-      "description": "Rename a keyword everywhere it is used."
+      "description": "Rename in place; tagged photos update, parent/children/synonyms stay."
     },
     {
       "name": "undo_last_step",
-      "description": "Undo one shared Lightroom history step, including user actions, with confirm: true."
+      "description": "Undo one shared Lightroom history step (confirm:true), including a user/other plug-in action after your edit."
     },
     {
       "name": "set_rating_and_flag",
-      "description": "Set star rating, pick flag, or both on photos."
-    },
-    {
-      "name": "remove_photos_from_catalog",
-      "description": "Remove specified photos from the catalog with explicit confirmation; keep files on disk (Lightroom Classic 14.3+)"
+      "description": "Set rating, flag, or both in one write."
     },
     {
       "name": "set_color_label",
-      "description": "Set or clear color labels on photos."
+      "description": "Set a color label or none to clear; get_photo_metadata and photo rows report color_label in the same values; an unlabelled photo reads none."
+    },
+    {
+      "name": "remove_photos_from_catalog",
+      "description": "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (LrC 14.3+, confirm:true)."
     },
     {
       "name": "import_photos",
-      "description": "Import photos into the catalog."
+      "description": "Import a photo or a folder recursively."
     },
     {
       "name": "export_photos",
-      "description": "Export photos with format/quality/dimensions or a saved export preset."
+      "description": "Export photos, optionally with a saved export preset; format/quality/width/height override only those preset settings."
     },
     {
       "name": "list_export_presets",
-      "description": "List saved export presets."
+      "description": "List saved export presets (not Lightroom's built-ins) with folder, file, id, format, quality, size, file_naming and destination."
     },
     {
       "name": "export_photo_metadata",
-      "description": "Write metadata for many photos to a JSON file."
+      "description": "Export up to 1000 photos to disk JSON: file/capture time/dimensions/rating/flag/color_label/title/caption/GPS/location/keywords/keyword_paths (version 2 file, snake_case keys, string photo_id), no develop settings."
     },
     {
       "name": "list_develop_presets",
-      "description": "List available Develop presets."
+      "description": "List Lightroom-visible Develop presets and plugin-managed checkpoints (paginated)."
     },
     {
       "name": "get_develop_preset",
@@ -179,11 +187,11 @@
     },
     {
       "name": "compare_develop_presets",
-      "description": "Compare two Develop presets and return a deterministic per-setting diff for iterative style matching."
+      "description": "Compare two Develop presets and return a deterministic per-setting diff for iterative style matching"
     },
     {
       "name": "create_develop_preset",
-      "description": "Create a versioned plugin-managed Develop preset checkpoint from selected settings on one photo."
+      "description": "Capture selected settings as a versioned plugin Develop checkpoint, hidden from Develop; export for handoff."
     },
     {
       "name": "export_develop_preset",
@@ -191,154 +199,170 @@
     },
     {
       "name": "apply_develop_preset",
-      "description": "Apply a Develop preset to photos."
+      "description": "Apply an exact Develop preset; provide preset_uuid or preset_name."
     },
     {
       "name": "copy_develop_settings",
-      "description": "Copy Develop settings from one photo to others."
+      "description": "Copy Develop settings; omitted settings includes the masks, which replace each target's masks through the guarded mask write (admission, format check of the target's masks, read-back, rollback)."
     },
     {
       "name": "match_photo_style",
-      "description": "Match a reference photo's global style after a confirmed snapshot, preserving framing, white balance, lens corrections and masks."
+      "description": "Apply the reference photo's global look (tone, color, curves, detail, noise, grain, vignette) after confirming a Develop snapshot per target."
     },
     {
       "name": "set_develop_settings",
-      "description": "Set Develop settings directly on a photo."
+      "description": "Set Develop settings directly on a photo by Lightroom SDK name; each key's kind and range are in the settings schema."
+    },
+    {
+      "name": "describe_develop_keys",
+      "description": "Describe every develop key the tools know for one photo on the running Lightroom: its kind and enum values, the range set_develop_settings and the mask tools enforce, and for number keys the range Lightroom reports for this photo (live, null when it reports none), marked differs where the two disagree."
+    },
+    {
+      "name": "set_crop",
+      "description": "Crop one photo to a frame: either a rectangle, or an aspect ratio with the largest frame that fits around a centre (optionally scaled down), each with an optional straighten angle."
+    },
+    {
+      "name": "get_crop",
+      "description": "Read one photo's current crop as set_crop states it: the rectangle in the photo as displayed before any crop, the straighten angle and the cropped frame's width and height in pixels, for every orientation."
     },
     {
       "name": "get_lens_blur",
-      "description": "Read Lens Blur state and controls on one photo (Lightroom Classic 13.3+)."
+      "description": "Read Lens Blur active/amount/cat_eye/highlights_boost/focal_range near/far/focal_range_raw (four SDK values)/bokeh (LrC 13.3+, Process Version 3+)."
     },
     {
-      "name": "get_raw_develop_settings",
-      "description": "Read one photo's develop settings as Lightroom stores them, without opening Develop."
+      "name": "get_develop_settings",
+      "description": "Read develop settings as stored, from the catalog (no Develop or selection change), by the same SDK names set_develop_settings writes."
     },
     {
       "name": "set_lens_blur",
-      "description": "Set Lens Blur controls with ordered activation and saved readback (Lightroom Classic 13.3+)."
+      "description": "Set any subset of Lens Blur active/amount/cat_eye/highlights_boost/focal_range/bokeh (LrC 13.3+, Process Version 3+)."
     },
     {
       "name": "set_process_version",
-      "description": "Set photos to Lightroom Version 1 through Version 6 with confirmation"
-    },
-    {
-      "name": "apply_auto_adjustments",
-      "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
-    },
-    {
-      "name": "reset_develop_adjustments",
-      "description": "Reset all develop adjustments; requires confirmation. Recover edits through Lightroom History."
-    },
-    {
-      "name": "apply_denoise",
-      "description": "Turn on AI Denoise at a given amount on photos."
-    },
-    {
-      "name": "list_masks",
-      "description": "List the masks on a photo with their ids, names, component tools and stored ranges."
-    },
-    {
-      "name": "get_mask_write_admission",
-      "description": "Report whether guarded mask writes are admitted for the running Lightroom build."
-    },
-    {
-      "name": "create_gradient_mask",
-      "description": "Place a linear or radial gradient mask on a photo from normalized image coordinates."
-    },
-    {
-      "name": "update_gradient_mask",
-      "description": "Move or reshape an existing linear or radial gradient mask by tool id."
-    },
-    {
-      "name": "create_brush_mask",
-      "description": "Paint a brush mask on a photo from strokes of normalized image coordinates (radius, flow, feather, density, erase)."
-    },
-    {
-      "name": "add_brush_strokes",
-      "description": "Paint more strokes into an existing brush mask by tool id (radius, flow, feather, density, erase)."
-    },
-    {
-      "name": "create_range_mask",
-      "description": "Create a luminance, color or depth range mask on a photo, as a new mask or a component of one."
-    },
-    {
-      "name": "delete_masks",
-      "description": "Delete masks or components on one photo, or empty masks from a photo list."
-    },
-    {
-      "name": "set_mask_adjustments",
-      "description": "Change local adjustment sliders on an existing mask of a photo."
-    },
-    {
-      "name": "get_mask",
-      "description": "Read selected local mask adjustments, curves and Point Color in one Develop session"
-    },
-    {
-      "name": "invert_mask",
-      "description": "Invert a mask on a photo in place, or create an inverted copy of it."
-    },
-    {
-      "name": "create_mask",
-      "description": "Create Subject, Sky, Background, People parts or Landscape category masks"
-    },
-    {
-      "name": "create_mask_batch",
-      "description": "Add the same Subject, Sky or Background mask to many photos, each recomputed for its own photo."
-    },
-    {
-      "name": "set_mask_curves",
-      "description": "Set the local tone curve of a mask on a photo, per channel."
-    },
-    {
-      "name": "edit_mask_point_colors",
-      "description": "Add, update, delete or clear the local Point Color swatches of a mask."
-    },
-    {
-      "name": "combine_mask",
-      "description": "Add, subtract or intersect a Subject, Sky or Background component on an existing mask."
-    },
-    {
-      "name": "list_develop_snapshots",
-      "description": "List saved develop snapshots for a photo"
+      "description": "Set Version 1–6 (confirm:true; appearance can change)."
     },
     {
       "name": "create_virtual_copies",
-      "description": "Create virtual copies and restore the previous selection"
+      "description": "Create one virtual copy per distinct photo (max 25), named copy_name if given."
+    },
+    {
+      "name": "set_treatment",
+      "description": "Switch photos to black_and_white or color through Lightroom's own conversion: on a raw it also swaps the profile (Adobe Color and Adobe Monochrome) and removes or restores the HSL keys."
+    },
+    {
+      "name": "list_develop_snapshots",
+      "description": "List a photo develop snapshots with their ids and names."
     },
     {
       "name": "create_develop_snapshot",
-      "description": "Save current develop settings as a named snapshot"
+      "description": "Save the current develop settings as a named snapshot."
     },
     {
       "name": "apply_develop_snapshot",
-      "description": "Restore saved develop settings from a snapshot"
+      "description": "Restore a photo develop settings from one of its snapshots."
     },
     {
       "name": "delete_develop_snapshot",
-      "description": "Delete one saved develop snapshot"
+      "description": "Delete one snapshot belonging to the photo."
     },
     {
-      "name": "summarize_develop_settings",
-      "description": "Summarize numeric Develop settings by camera and ISO for rated or exported photos"
+      "name": "apply_auto_adjustments",
+      "description": "Apply Auto Tone, Auto White Balance or both to up to 100 photos."
+    },
+    {
+      "name": "reset_develop_adjustments",
+      "description": "Reset all Develop edits, including crop/masks, on up to 100 photos (confirm:true); recover through Lightroom History."
+    },
+    {
+      "name": "apply_denoise",
+      "description": "Enable/change AI Denoise through Develop (LrC 15+), not a develop key."
     },
     {
       "name": "list_spots",
-      "description": "List Remove spots and SDK parameters"
+      "description": "List Remove spots (LrC 14.1+): count, 1-based index and complete SDK params including nested fields."
     },
     {
       "name": "update_spot",
-      "description": "Update a Heal spot Opacity"
+      "description": "Set one Heal spot params.Opacity (uppercase, 0..1) by 1-based list_spots index (LrC 14.1+)."
     },
     {
       "name": "delete_spot",
-      "description": "Delete a Remove spot by index"
+      "description": "Delete Remove spot by 1-based list_spots index (LrC 14.1+, confirm:true)."
+    },
+    {
+      "name": "list_masks",
+      "description": "List masks (Lightroom Classic 11+): id/name/hidden and tools with id/type/subtype/inverted."
+    },
+    {
+      "name": "get_mask_write_admission",
+      "description": "Whether guarded mask writes are admitted here: running Lightroom version/build, certified build/time/checks, throwaway-catalog flag, refusal reason."
+    },
+    {
+      "name": "create_gradient_mask",
+      "description": "Place a linear or radial gradient (certified Lightroom only; shared guarded-write and coordinate rules apply)."
+    },
+    {
+      "name": "update_gradient_mask",
+      "description": "Reshape a gradient by tool_id from list_masks or create_gradient_mask (certified Lightroom only; shared guarded-write and coordinate rules apply)."
+    },
+    {
+      "name": "create_brush_mask",
+      "description": "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (certified Lightroom only; shared guarded-write and coordinate rules apply)."
+    },
+    {
+      "name": "add_brush_strokes",
+      "description": "Append strokes to a brush by tool_id from list_masks or create_brush_mask (certified Lightroom only; shared guarded-write and coordinate rules apply)."
+    },
+    {
+      "name": "create_range_mask",
+      "description": "Create a luminance, color or depth range (certified Lightroom only; shared guarded-write and coordinate rules apply)."
+    },
+    {
+      "name": "delete_masks",
+      "description": "Delete mask_ids, tool_ids or all=true on one photo_id (LrC 11+)."
+    },
+    {
+      "name": "delete_empty_masks",
+      "description": "Delete masks that have no tools on up to 1000 photos (LrC 14+), without opening Develop; module and selection stay."
+    },
+    {
+      "name": "set_mask_adjustments",
+      "description": "Change any subset of local SDK sliders on a mask_id from list_masks (LrC 11+); others stay unchanged."
+    },
+    {
+      "name": "get_mask",
+      "description": "Read local adjustments, tone curves and Point Color by mask_id from list_masks in one Develop session."
+    },
+    {
+      "name": "invert_mask",
+      "description": "Invert by mask_id from list_masks (Lightroom Classic 11.4+)."
+    },
+    {
+      "name": "create_mask",
+      "description": "Create Subject, Sky or Background (Lightroom Classic 11+), or People/Landscape masks (certified Lightroom; shared guarded-write rules)."
+    },
+    {
+      "name": "create_mask_batch",
+      "description": "Create Subject, Sky or Background masks with the same adjustments on up to 200 photos (certified Lightroom only; shared guarded-write rules apply)."
+    },
+    {
+      "name": "set_mask_curves",
+      "description": "Set local tone curves by mask_id from list_masks (Lightroom Classic 12.3+)."
+    },
+    {
+      "name": "edit_mask_point_colors",
+      "description": "Edit local Point Color swatches by mask_id from list_masks (Lightroom Classic 13.2+)."
+    },
+    {
+      "name": "combine_mask",
+      "description": "Add, subtract or intersect a detected Subject, Sky or Background component on a mask (Lightroom Classic 11+)."
     }
   ],
   "prompts": [
     {
       "name": "raw-photo-lightroom-preset",
       "description": "Closed-loop RAW editing, reference matching and Lightroom preset workflow.",
-      "text": "# SKILL.md\n\n---\nname: raw-photo-lightroom-preset\ndescription: Use for RAW photo culling, Lightroom Classic or Camera Raw editing, reference-style matching, closed-loop Lightroom MCP adjustments, lighting-cluster preset creation, XMP fallback generation, NEF/DNG/TIFF preview workflows, or Chinese requests about matching previous edits. Prefer Lightroom-rendered before/after feedback when Lightroom MCP tools are available.\n---\n\n# RAW Photo Lightroom Preset v2\n\n## Core rules\n\n- Judge color only from RAW files rendered by Lightroom/Camera Raw. Use ordinary camera JPGs only for composition, focus, and expression triage.\n- Preserve originals and the user's master edit. Do not move, rename, delete, overwrite, or batch-edit photos unless the user asks.\n- Treat a preset as a reusable starting point, not a finished edit.\n- Separate technical correction from creative style. Never guess 30-50 sliders at once.\n- Prefer a closed loop: inspect Lightroom state, render, adjust a small pass, render again, compare, then continue.\n- Do not claim Lightroom import, visual fidelity, or manual QA passed unless it was actually performed.\n\n## Choose the route\n\n1. Read `references/workflow.md` for every shoot.\n2. Read `references/style-library.md` before choosing a style or reference direction.\n3. If Lightroom MCP tools are available and Lightroom Classic is running, also read `references/lightroom-mcp.md` and use the closed-loop route.\n4. Otherwise use Lightroom/Camera Raw neutral previews and the manual-preview route. State that Lightroom-side feedback is unavailable.\n5. If provenance is missing or ambiguous, stop color work and mark the affected item `未分類`.\n\n## Closed-loop route\n\nUse one representative RAW per lighting cluster first.\n\n1. Capture the current photo metadata and develop settings.\n2. If the user has an approved historical look, list presets and read it with `get_develop_preset`. Use UUID or folder/scope to avoid duplicate-name ambiguity.\n3. Export a baseline JPEG from Lightroom into a new empty review folder.\n4. Apply one bounded pass at a time:\n   - technical correction;\n   - tonal shape;\n   - color correction;\n   - creative look;\n   - detail/noise.\n5. Export and inspect after each pass. Compare against the baseline and any user-approved reference image.\n6. Create uniquely versioned checkpoints with `create_develop_preset` and diff them against the approved look with `compare_develop_presets`.\n7. Keep a checkpoint log of settings and rendered files. Stop when the remaining difference needs healing or subjective user choice.\n8. Ask for approval on representative before/after results before copying settings across a cluster.\n9. Export an accepted custom/checkpoint preset with `export_develop_preset`; never overwrite an existing destination. Import it into Lightroom before claiming compatibility. Use Lightroom's UI for a visible canonical preset when needed. The bundled generator remains a fallback for a verified global-setting subset.\n\n## Manual-preview route\n\nRequire Lightroom/Camera Raw exports with recorded provenance. Classify lighting clusters, choose representative files, propose style direction, and get user agreement before generating presets. Keep exposure, white balance, skin, local edits, and denoise as per-image follow-up unless the evidence supports a shared adjustment.\n\n## Safe XMP fallback\n\nUse `scripts/generate_xmp_preset.py` only after style direction is agreed:\n\n```powershell\npython scripts/generate_xmp_preset.py --list-styles\npython scripts/generate_xmp_preset.py --list-modifiers\npython scripts/generate_xmp_preset.py --style graduation-bright-natural --name \"Graduation Bright Natural\" --output \"Graduation_Bright_Natural.xmp\"\npython scripts/generate_xmp_preset.py --style graduation-documentary --modifier low-light-noise-controlled --name \"Graduation Documentary Low Light\" --output \"Graduation_Documentary_Low_Light.xmp\"\n```\n\nThe generator:\n\n- accepts only `.xmp` output;\n- refuses existing output unless `--force` is explicit;\n- refuses paths that look like RAW/JPG sidecar XMP files, even with `--force`;\n- writes atomically;\n- validates known Camera Raw keys, types, and ranges;\n- emits point curves as RDF sequences;\n- omits Profile, White Balance, and lens settings unless explicitly requested;\n- uses ASCII metadata by default; use `--allow-unicode-metadata` only when the target Lightroom setup has been tested.\n\nUse `--unsafe-set KEY=VALUE` only for controlled research against a Lightroom-exported golden fixture. Never use it for routine delivery.\n\n## Validation levels\n\nReport these separately:\n\n- `Parser-level`: XML is well formed.\n- `Generator-level`: CLI, safety checks, schema validation, and tests pass.\n- `Lightroom import-level`: the target Lightroom version imports the XMP and exposes the expected fields.\n- `Visual fidelity-level`: Lightroom-rendered output matches the intended/reference look.\n\nOnly the last two require real Lightroom validation.\n\n\n# references/lightroom-mcp.md\n\n# Lightroom MCP Integration\n\n## Server capabilities\n\nUpstream repository: `https://github.com/Automaat/lightroom-mcp`\n\nDetect available tools at runtime because main can differ from the installed release. Enable `LIGHTROOM_MCP_TOOLSETS=develop` in the MCP server environment for this workflow, or `develop,masks` for local masks (`all` enables both). In the desktop bundle, set **Enabled toolsets**. Restart the server after changing the setting; the default exposes only core catalog and metadata tools.\n\n## Why it helps\n\nThe integration adds the missing feedback loop:\n\n- `get_selected_photos`: identify representatives selected in Lightroom.\n- `get_photo_metadata`: read EXIF for one `photo_id` or up to 100 `photo_ids`. Batch results contain `photos` in request order and `missing` identifiers; repeated identifiers return repeated entries. Pass `sections: [\"developSettings\"]` to read every Develop key supported by `set_develop_settings` for each photo. Single-photo results keep their existing shape.\n- `get_photo_preview`: inspect a Lightroom-rendered preview without exporting a file.\n- `set_develop_settings`: apply bounded global/HSL/detail settings.\n- `create_develop_snapshot`, `list_develop_snapshots`, `apply_develop_snapshot`, and `delete_develop_snapshot`: save and restore a photo's Develop state and manage its snapshots.\n- `export_photos`: render the actual Lightroom result for visual comparison.\n- `copy_develop_settings`: apply an approved subset to a cluster.\n- `get_develop_preset`: read exact historical preset settings.\n- `compare_develop_presets`: diff an approved look and a versioned candidate.\n- `create_develop_preset`: capture explicit settings from a representative as a plugin-managed checkpoint.\n- `export_develop_preset`: copy an exportable backing file without overwriting.\n- `apply_denoise`: apply AI Denoise on Lightroom Classic 15+.\n- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, and `delete_masks`: inspect and manage local masks. Call `delete_masks` with only `photo_ids` to remove empty masks in bulk without opening Develop; use `photo_id` and exactly one of `mask_ids`, `tool_ids` or `all` for targeted deletion.\n- `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask` with `type: \"people\"` or `type: \"landscape\"`: create or edit mask geometry and AI parts on supported Lightroom versions.\n- `get_mask`, `set_mask_adjustments`, `set_mask_curves`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color. `get_mask` reads all three in one session; pass `kinds: [\"adjustments\"]`, `[\"curves\"]` or `[\"point_colors\"]` to read only selected kinds.\n\nThis improves setting selection. It does not by itself create a canonical preset XMP.\n\n## Current gaps\n\n- Export returns the written file path for each exported photo in `files`; inspect those files, not the folder.\n- `create_virtual_copies` and `reset_develop_adjustments` need the develop toolset. `reset_develop_adjustments` removes all Develop edits, including crop and masks. `undo_last_step` undoes one shared history step that may belong to the user or another plug-in.\n- Adobe's SDK creates plugin-managed presets that are hidden from the Develop panel. Use versioned names and export/import the accepted file, or create a visible canonical preset through Lightroom's UI.\n- A preset can be exported only when Lightroom exposes a backing file. Built-in presets can lack one, and the backing format is determined by Lightroom.\n- Global develop-setting allowlists do not expose Profile, Color Grading, Calibration, or global Point Color. Local Point Color is available through the mask tools above.\n- Global develop-setting schemas do not enforce Lightroom-specific numeric ranges. Apply the bounds in the v2 workflow or fallback generator.\n- `copy_develop_settings` without an explicit field list copies the full source settings. Always provide the intended field list for cluster work.\n\n## Safe closed-loop sequence\n\n1. Require Lightroom Classic to be open and the Lightroom MCP plugin server to report connected sockets.\n2. Use a user-selected representative or an explicitly approved test photo.\n3. Capture metadata/develop settings and export baseline.\n4. Read the approved historical preset when one exists.\n5. Change only the current pass's keys with bounded values.\n6. Re-read settings and export to a new empty folder.\n7. Inspect before/after. Create a uniquely versioned plugin checkpoint only for explicit intended fields.\n8. Compare the candidate checkpoint against the approved historical preset and record the diff.\n9. Continue, revert by applying recorded values when possible, or stop for manual Lightroom work.\n10. Export the accepted checkpoint to a new filename, import/round-trip it in Lightroom, then copy an approved subset only after user approval.\n\nDo not use this route on a master edit when the baseline cannot be restored with the available tool subset.\n\n## Preset creation decision\n\n- Best with Lightroom MCP: create a versioned plugin checkpoint from explicit intended fields, compare it to the approved look, export it, then import/round-trip it in Lightroom.\n- Best for a visible Develop-panel preset: use Lightroom's Create Preset UI from the accepted representative and select only intended fields.\n- Acceptable fallback: use `generate_xmp_preset.py` for supported global settings, then import and visually validate it in Lightroom.\n- Not acceptable: wrap the old one-shot XMP generator in MCP and call that a closed loop.\n\n## Installation boundary\n\nThis is an optional local dependency. Do not install packages, edit Codex MCP configuration, or install a Lightroom plugin unless the user requests that setup. A newly configured MCP server normally requires restarting the local Codex client before its tools become available in a new task.\n\n\n# references/style-library.md\n\n# John's Intent-Based Style Library v2\n\nTreat styles as visual goals. Derive per-photo settings from Lightroom-rendered feedback and user-approved references. The numeric values in `styles.json` are conservative fallback settings, not the definition of the style.\n\n## Reference manifest\n\nKeep reference files outside the skill and record them in the current project with relative paths:\n\n```yaml\nstyle_id: john-outdoor-documentary\nreferences:\n  - relative_path: references/john_ref_001.jpg\n    source_raw: RAW/DSC_0001.NEF\n    renderer: Lightroom Classic 15.5\n    approved: true\ngoals:\n  skin: natural and restrained\n  greens: slightly muted and not yellow\n  highlights: soft roll-off\n  shadows: open with a subtle cool bias\n  contrast: medium\n```\n\nDo not hard-code machine-specific `D:\\photo\\...` paths in the reusable skill.\n\n## Base styles\n\n### `neutral-natural`\n\n- Intent: technically clean, low-drama baseline for mixed subject matter.\n- Preserve: believable neutrals, natural skin, recoverable highlights.\n- Avoid for: a user-requested stylized or high-contrast delivery.\n\n### `graduation-bright-natural`\n\n- Intent: clean event delivery with gentle microcontrast and controlled greens/yellows.\n- Preserve: faces, white clothing, certificates, and highlight detail.\n- Avoid for: dramatic stage frames, severe backlight, or high-ISO scenes without a modifier.\n\n### `graduation-documentary`\n\n- Intent: stronger dimensional event coverage without harsh skin or crushed black clothing.\n- Preserve: scene depth and documentary atmosphere.\n- Avoid for: soft close-up portraits or frames with blocked shadows.\n\n### `warm-cosplay-portrait`\n\n- Intent: warm subject separation with restrained orange skin and subdued foliage.\n- Preserve: face exposure and costume color identity.\n- Avoid for: neutral documentation and mixed-light interiors.\n\n### `dramatic-fine-art`\n\n- Intent: deeper tonal structure and selective color emphasis for details, flowers, reflections, or competition images.\n- Preserve: highlight texture and intentional color accents.\n- Avoid for: batch event delivery and skin-critical groups.\n\n## Technical modifiers\n\n### `low-light-noise-controlled`\n\nUse with a base style for high-ISO stage, night, aquarium, or indoor event files. Evaluate noise at 100%, reduce over-sharpening, and keep AI Denoise as a manual recommendation. Prefer an ISO-adaptive preset created by Lightroom when the shoot spans multiple ISO values.\n\n## Matching procedure\n\n1. Ask for or identify approved reference images.\n2. Compare target and reference for WB, skin, foliage, sky, neutral objects, highlight roll-off, shadow openness, and global contrast.\n3. Select one base style and zero or more technical modifiers per lighting cluster.\n4. Adjust the representative RAW through the five-pass workflow.\n5. Save the accepted intent and references; do not promote one frame's slider values into a permanent style definition without repeated evidence.\n\n\n# references/styles.json\n\n{\n  \"schema_version\": 2,\n  \"tested_target\": {\n    \"mode\": \"SDR RAW fallback\",\n    \"lightroom_classic\": \"15.5 local runtime; XMP import remains manually unverified\",\n    \"process_version\": \"15.4\"\n  },\n  \"base_attrs\": {\n    \"PresetType\": \"Normal\",\n    \"SupportsAmount\": \"False\",\n    \"SupportsColor\": \"True\",\n    \"SupportsMonochrome\": \"False\",\n    \"SupportsHighDynamicRange\": \"False\",\n    \"SupportsNormalDynamicRange\": \"True\",\n    \"SupportsSceneReferred\": \"True\",\n    \"SupportsOutputReferred\": \"True\",\n    \"CameraModelRestriction\": \"\",\n    \"Copyright\": \"\",\n    \"ContactInfo\": \"\",\n    \"Version\": \"15.0\",\n    \"ProcessVersion\": \"15.4\",\n    \"ConvertToGrayscale\": \"False\",\n    \"Treatment\": \"Color\"\n  },\n  \"styles\": {\n    \"neutral-natural\": {\n      \"display_name\": \"Neutral Natural\",\n      \"intent\": \"Technically clean and restrained baseline.\",\n      \"settings\": {\n        \"Contrast2012\": 0,\n        \"Highlights2012\": -15,\n        \"Shadows2012\": 10,\n        \"Whites2012\": 5,\n        \"Blacks2012\": -5,\n        \"Vibrance\": 5,\n        \"Saturation\": 0\n      }\n    },\n    \"graduation-bright-natural\": {\n      \"display_name\": \"Graduation Bright Natural\",\n      \"intent\": \"Clean event delivery with gentle microcontrast and restrained foliage.\",\n      \"settings\": {\n        \"Contrast2012\": 4,\n        \"Highlights2012\": -24,\n        \"Shadows2012\": 18,\n        \"Whites2012\": 8,\n        \"Blacks2012\": -6,\n        \"Texture\": 2,\n        \"Clarity2012\": -2,\n        \"Vibrance\": 6,\n        \"Saturation\": -2,\n        \"HueAdjustmentYellow\": -4,\n        \"HueAdjustmentGreen\": -8,\n        \"SaturationAdjustmentYellow\": -6,\n        \"SaturationAdjustmentGreen\": -10,\n        \"LuminanceAdjustmentOrange\": 4\n      }\n    },\n    \"graduation-documentary\": {\n      \"display_name\": \"Graduation Documentary\",\n      \"intent\": \"Dimensional event coverage without harsh skin or crushed blacks.\",\n      \"settings\": {\n        \"Contrast2012\": 12,\n        \"Highlights2012\": -20,\n        \"Shadows2012\": 8,\n        \"Whites2012\": 10,\n        \"Blacks2012\": -14,\n        \"Texture\": 8,\n        \"Clarity2012\": 4,\n        \"Dehaze\": 2,\n        \"Vibrance\": 5,\n        \"HueAdjustmentYellow\": -6,\n        \"HueAdjustmentGreen\": -10,\n        \"SaturationAdjustmentYellow\": -8,\n        \"SaturationAdjustmentGreen\": -12,\n        \"LuminanceAdjustmentOrange\": 3\n      }\n    },\n    \"warm-cosplay-portrait\": {\n      \"display_name\": \"Warm Cosplay Portrait\",\n      \"intent\": \"Warm subject separation with restrained orange skin and foliage.\",\n      \"settings\": {\n        \"Contrast2012\": 12,\n        \"Highlights2012\": -24,\n        \"Shadows2012\": 12,\n        \"Whites2012\": 5,\n        \"Blacks2012\": -16,\n        \"Texture\": 0,\n        \"Clarity2012\": 2,\n        \"Dehaze\": 2,\n        \"Vibrance\": 8,\n        \"Saturation\": -3,\n        \"HueAdjustmentOrange\": -3,\n        \"HueAdjustmentYellow\": -8,\n        \"HueAdjustmentGreen\": -12,\n        \"SaturationAdjustmentOrange\": -2,\n        \"SaturationAdjustmentYellow\": -10,\n        \"SaturationAdjustmentGreen\": -16,\n        \"LuminanceAdjustmentOrange\": 5\n      }\n    },\n    \"dramatic-fine-art\": {\n      \"display_name\": \"Dramatic Fine Art\",\n      \"intent\": \"Deeper tonal structure and selective color emphasis.\",\n      \"settings\": {\n        \"Contrast2012\": 18,\n        \"Highlights2012\": -30,\n        \"Shadows2012\": -2,\n        \"Whites2012\": 10,\n        \"Blacks2012\": -24,\n        \"Texture\": 10,\n        \"Clarity2012\": 8,\n        \"Dehaze\": 4,\n        \"Vibrance\": 12,\n        \"Saturation\": -4,\n        \"SaturationAdjustmentRed\": 4,\n        \"SaturationAdjustmentYellow\": -8,\n        \"SaturationAdjustmentGreen\": -14,\n        \"SaturationAdjustmentBlue\": -6,\n        \"PostCropVignetteAmount\": -8,\n        \"GrainAmount\": 5\n      }\n    }\n  },\n  \"modifiers\": {\n    \"low-light-noise-controlled\": {\n      \"display_name\": \"Low Light Noise Controlled\",\n      \"intent\": \"Conservative detail and noise starting point for high ISO files.\",\n      \"settings\": {\n        \"Texture\": -4,\n        \"Clarity2012\": -2,\n        \"Sharpness\": 35,\n        \"SharpenRadius\": 1.0,\n        \"SharpenDetail\": 15,\n        \"SharpenEdgeMasking\": 60,\n        \"LuminanceSmoothing\": 15,\n        \"LuminanceNoiseReductionDetail\": 45,\n        \"LuminanceNoiseReductionContrast\": 5,\n        \"ColorNoiseReduction\": 25\n      }\n    }\n  }\n}\n\n\n# references/workflow.md\n\n# RAW-First Lightroom Workflow v2\n\n## 1. Establish provenance\n\nFor each RAW/preview pair, record:\n\n- `relative_raw_path`\n- `relative_preview_path`\n- RAW and preview stem\n- capture time, camera model, dimensions, and file size when available\n- renderer: Lightroom Classic or Camera Raw\n- renderer version\n- baseline profile\n- whether Catalog edits, sidecar XMP, virtual copies, or RAW+JPEG pairing already exist\n- export time and export settings\n- `provenance_status`: `confirmed`, `ambiguous`, or `missing`\n\nDo not pair by basename alone when two folders contain the same stem. Require relative paths plus metadata. Missing, duplicate, or conflicting matches become `未分類`.\n\nIf the master RAW already has edits, do not reset it. Use a user-approved virtual copy, duplicate catalog, or dedicated representative photo. If none is available, stop before mutation.\n\n## 2. Culling contract\n\nKeep selection, editing need, and style confidence separate.\n\n### `selection_status`\n\n- `交付候選` (`delivery_candidate`): strong composition, focus, and expression.\n- `保留` (`keep`): worth retaining but not a delivery priority.\n- `淘汰` (`reject`): clear technical or content failure when the user asked for rejection decisions.\n- `待確認` (`uncertain`): duplicate ambiguity or insufficient evidence.\n\n### `edit_status`\n\n- `RAW 待檢` (`raw_review_required`): ordinary JPG only or RAW render missing.\n- `輕微全域調整` (`minor_global_adjustment`): global exposure, WB, tone, or color likely sufficient.\n- `需局部調整` (`local_edit_required`): masks, crop, healing, subject/background separation, or local skin work is needed.\n- `未知` (`unknown`): evidence is insufficient.\n\n### `style_status`\n\n- `已分類` (`classified`)\n- `未分類` (`unclassified`)\n\nUse `confidence`: `high`, `medium`, or `low`. A camera JPG can support `selection_status`, but it cannot by itself establish a final `edit_status` or preset direction.\n\n## 3. Cluster before editing\n\nCluster by lighting and intent, not only event name. Typical splits include outdoor shade, indoor warm/mixed light, stage light, backlight, and high ISO. Choose one representative RAW per cluster and keep difficult outliers separate.\n\nDo not create one universal preset for visibly different clusters.\n\n## 4. Closed-loop editing passes\n\nExport every comparison from Lightroom into a unique, initially empty folder. Use one photo per folder when the MCP export response does not return exact filenames.\n\n### Pass 0 - Baseline\n\n- Read current metadata and develop settings.\n- Export the current Lightroom render.\n- Record baseline settings and file hash/path.\n- Record the reference image and the user's intent, if provided.\n\n### Pass 1 - Technical correction\n\nAdjust only WB, Exposure, Highlights, Shadows, Whites, and Blacks. Target usable exposure, protected skin/highlights, and plausible shadows. Do not add creative color here.\n\n### Pass 2 - Tonal shape\n\nAdjust Contrast and small Whites/Blacks refinements. Use a point curve only when the active integration can round-trip it reliably. Describe the tonal goal, such as soft highlight roll-off, before setting numbers.\n\n### Pass 3 - Color correction\n\nCorrect Temperature/Tint first, then bounded HSL changes based on visible subjects such as skin, foliage, sky, neutral objects, and artificial lighting. Do not map an event label directly to arbitrary HSL values.\n\n### Pass 4 - Creative look\n\nApply only the controls supported by the active route. Keep creative choices distinct from technical correction. If Color Grading, Calibration, or Point Color cannot be read back and rendered reliably, leave them for Lightroom manual finishing.\n\n### Pass 5 - Detail/noise\n\nUse ISO, camera, subject texture, and a 100% check. Treat low-light/noise as a modifier, not a style. AI Denoise remains a manual recommendation unless the active route explicitly supports and verifies it.\n\nUse one or two render/inspect cycles per pass and stop after eight total renders unless the user asks for deeper iteration. Stop earlier when changes oscillate, the visual gain is negligible, or the remaining work is local/subjective.\n\n## 5. Checkpoints and batch application\n\nAfter each pass, record:\n\n- previous and new setting values\n- rendered output path\n- visible improvement and regression notes\n- whether the pass is accepted, reverted, or pending\n\nDo not copy settings to a cluster until the representative before/after is approved. Copy only the fields intended for that cluster; avoid silently copying crop, lens state, profile, WB, or detail settings.\n\n## 6. Preset handoff\n\nPrefer this order:\n\n1. When preset-roundtrip MCP tools are available, read the approved historical preset, create a uniquely versioned plugin checkpoint from explicit intended fields, and compare the two.\n2. Export the accepted checkpoint without overwriting an existing file. Import it into the target Lightroom version and round-trip export it when high confidence is required.\n3. Use Lightroom Create Preset when the preset must be visible in the Develop panel; plugin-managed SDK checkpoints are hidden by design.\n4. Use the bundled generator only when Lightroom export is unavailable and the required settings are within its validated subset.\n\nEvery handoff includes:\n\n- cluster and representative photo\n- preset filename and group\n- included and intentionally excluded settings\n- expected per-frame Exposure/WB range\n- skin, noise, and detail checks\n- photos that need local edits or a separate preset\n- four validation levels from `SKILL.md`\n\n## 7. Report shape\n\nProvide a concise Markdown summary plus a machine-readable CSV/JSON row for every photo when the user needs operational handoff. Do not invent star/color-label mappings. If requested, define them as a separate Lightroom mapping layer with explicit columns such as `selection_status`, `edit_status`, `style_status`, `confidence`, and `compliance_status`."
+      "text": "# SKILL.md\n\n---\nname: raw-photo-lightroom-preset\ndescription: Use for RAW photo culling, Lightroom Classic or Camera Raw editing, reference-style matching, closed-loop Lightroom MCP adjustments, lighting-cluster preset creation, XMP fallback generation, NEF/DNG/TIFF preview workflows, or Chinese requests about matching previous edits. Prefer Lightroom-rendered before/after feedback when Lightroom MCP tools are available.\n---\n\n# RAW Photo Lightroom Preset v2\n\n## Core rules\n\n- Judge color only from RAW files rendered by Lightroom/Camera Raw. Use ordinary camera JPGs only for composition, focus, and expression triage.\n- Preserve originals and the user's master edit. Do not move, rename, delete, overwrite, or batch-edit photos unless the user asks.\n- Treat a preset as a reusable starting point, not a finished edit.\n- Separate technical correction from creative style. Never guess 30-50 sliders at once.\n- Prefer a closed loop: inspect Lightroom state, render, adjust a small pass, render again, compare, then continue.\n- Do not claim Lightroom import, visual fidelity, or manual QA passed unless it was actually performed.\n\n## Choose the route\n\n1. Read `references/workflow.md` for every shoot.\n2. Read `references/style-library.md` before choosing a style or reference direction.\n3. If Lightroom MCP tools are available and Lightroom Classic is running, also read `references/lightroom-mcp.md` and use the closed-loop route.\n4. Otherwise use Lightroom/Camera Raw neutral previews and the manual-preview route. State that Lightroom-side feedback is unavailable.\n5. If provenance is missing or ambiguous, stop color work and mark the affected item `未分類`.\n\n## Closed-loop route\n\nUse one representative RAW per lighting cluster first.\n\n1. Capture the current photo metadata and develop settings.\n2. If the user has an approved historical look, list presets and read it with `get_develop_preset`. Use UUID or folder/scope to avoid duplicate-name ambiguity.\n3. Export a baseline JPEG from Lightroom into a new empty review folder.\n4. Apply one bounded pass at a time:\n   - technical correction;\n   - tonal shape;\n   - color correction;\n   - creative look;\n   - detail/noise.\n5. Export and inspect after each pass. Compare against the baseline and any user-approved reference image.\n6. Create uniquely versioned checkpoints with `create_develop_preset` and diff them against the approved look with `compare_develop_presets`.\n7. Keep a checkpoint log of settings and rendered files. Stop when the remaining difference needs healing or subjective user choice.\n8. Ask for approval on representative before/after results before copying settings across a cluster.\n9. Export an accepted custom/checkpoint preset with `export_develop_preset`; never overwrite an existing destination. Import it into Lightroom before claiming compatibility. Use Lightroom's UI for a visible canonical preset when needed. The bundled generator remains a fallback for a verified global-setting subset.\n\n## Manual-preview route\n\nRequire Lightroom/Camera Raw exports with recorded provenance. Classify lighting clusters, choose representative files, propose style direction, and get user agreement before generating presets. Keep exposure, white balance, skin, local edits, and denoise as per-image follow-up unless the evidence supports a shared adjustment.\n\n## Safe XMP fallback\n\nUse `scripts/generate_xmp_preset.py` only after style direction is agreed:\n\n```powershell\npython scripts/generate_xmp_preset.py --list-styles\npython scripts/generate_xmp_preset.py --list-modifiers\npython scripts/generate_xmp_preset.py --style graduation-bright-natural --name \"Graduation Bright Natural\" --output \"Graduation_Bright_Natural.xmp\"\npython scripts/generate_xmp_preset.py --style graduation-documentary --modifier low-light-noise-controlled --name \"Graduation Documentary Low Light\" --output \"Graduation_Documentary_Low_Light.xmp\"\n```\n\nThe generator:\n\n- accepts only `.xmp` output;\n- refuses existing output unless `--force` is explicit;\n- refuses paths that look like RAW/JPG sidecar XMP files, even with `--force`;\n- writes atomically;\n- validates known Camera Raw keys, types, and ranges;\n- emits point curves as RDF sequences;\n- omits Profile, White Balance, and lens settings unless explicitly requested;\n- uses ASCII metadata by default; use `--allow-unicode-metadata` only when the target Lightroom setup has been tested.\n\nUse `--unsafe-set KEY=VALUE` only for controlled research against a Lightroom-exported golden fixture. Never use it for routine delivery.\n\n## Validation levels\n\nReport these separately:\n\n- `Parser-level`: XML is well formed.\n- `Generator-level`: CLI, safety checks, schema validation, and tests pass.\n- `Lightroom import-level`: the target Lightroom version imports the XMP and exposes the expected fields.\n- `Visual fidelity-level`: Lightroom-rendered output matches the intended/reference look.\n\nOnly the last two require real Lightroom validation.\n\n\n# references/lightroom-mcp.md\n\n# Lightroom MCP Integration\n\n## Server capabilities\n\nUpstream repository: `https://github.com/Automaat/lightroom-mcp`\n\nDetect available tools at runtime because main can differ from the installed release. Enable `LIGHTROOM_MCP_TOOLSETS=develop` in the MCP server environment for this workflow, or `develop,masks` for local masks (`all` enables both). In the desktop bundle, set **Enabled toolsets**. Restart the server after changing the setting; the default exposes only core catalog and metadata tools.\n\n## Why it helps\n\nThe integration adds the missing feedback loop:\n\n- `get_selected_photos`: identify representatives selected in Lightroom.\n- `get_photo_metadata`: read EXIF for 1 to 100 `photo_ids`. Results contain `photos` in request order and `not_found` identifiers; repeated identifiers return repeated entries.\n- `get_develop_settings`: read Develop values by the SDK names `set_develop_settings` writes, for 1 to 100 `photo_ids` with `keys`.\n- `get_photo_preview`: inspect a Lightroom-rendered preview without exporting a file.\n- `set_develop_settings`: apply bounded global/HSL/detail settings.\n- `create_develop_snapshot`, `list_develop_snapshots`, `apply_develop_snapshot`, and `delete_develop_snapshot`: save and restore a photo's Develop state and manage its snapshots.\n- `export_photos`: render the actual Lightroom result for visual comparison.\n- `copy_develop_settings`: apply an approved subset to a cluster.\n- `get_develop_preset`: read exact historical preset settings.\n- `compare_develop_presets`: diff an approved look and a versioned candidate.\n- `create_develop_preset`: capture explicit settings from a representative as a plugin-managed checkpoint.\n- `export_develop_preset`: copy an exportable backing file without overwriting.\n- `apply_denoise`: apply AI Denoise on Lightroom Classic 15+.\n- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, `delete_masks` and `delete_empty_masks`: inspect and manage local masks. Call `delete_empty_masks` with `photo_ids` to remove empty masks in bulk without opening Develop; call `delete_masks` with `photo_id` and exactly one of `mask_ids`, `tool_ids` or `all` for targeted deletion.\n- `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask` with `type: \"people\"` or `type: \"landscape\"`: create or edit mask geometry and AI parts on supported Lightroom versions.\n- `get_mask`, `set_mask_adjustments`, `set_mask_curves`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color. `get_mask` reads all three in one session; pass `kinds: [\"adjustments\"]`, `[\"curves\"]` or `[\"point_colors\"]` to read only selected kinds.\n\nThis improves setting selection. It does not by itself create a canonical preset XMP.\n\n## Current gaps\n\n- Export returns the written file path for each exported photo in `files`; inspect those files, not the folder.\n- `create_virtual_copies` and `reset_develop_adjustments` need the develop toolset. `reset_develop_adjustments` removes all Develop edits, including crop and masks. `undo_last_step` undoes one shared history step that may belong to the user or another plug-in.\n- Adobe's SDK creates plugin-managed presets that are hidden from the Develop panel. Use versioned names and export/import the accepted file, or create a visible canonical preset through Lightroom's UI.\n- A preset can be exported only when Lightroom exposes a backing file. Built-in presets can lack one, and the backing format is determined by Lightroom.\n- Global develop settings do not expose Profile, Calibration, or global Point Color. Local Point Color is available through the mask tools above.\n- `set_develop_settings` publishes each key's range in its schema and refuses an out-of-range value before writing; after the write it reads the values back and lists any Lightroom stored differently as `adjusted`.\n- `copy_develop_settings` without an explicit field list copies the full source settings. Always provide the intended field list for cluster work.\n\n## Safe closed-loop sequence\n\n1. Require Lightroom Classic to be open and the Lightroom MCP plugin server to report connected sockets.\n2. Use a user-selected representative or an explicitly approved test photo.\n3. Capture metadata/develop settings and export baseline.\n4. Read the approved historical preset when one exists.\n5. Change only the current pass's keys with bounded values.\n6. Re-read settings and export to a new empty folder.\n7. Inspect before/after. Create a uniquely versioned plugin checkpoint only for explicit intended fields.\n8. Compare the candidate checkpoint against the approved historical preset and record the diff.\n9. Continue, revert by applying recorded values when possible, or stop for manual Lightroom work.\n10. Export the accepted checkpoint to a new filename, import/round-trip it in Lightroom, then copy an approved subset only after user approval.\n\nDo not use this route on a master edit when the baseline cannot be restored with the available tool subset.\n\n## Preset creation decision\n\n- Best with Lightroom MCP: create a versioned plugin checkpoint from explicit intended fields, compare it to the approved look, export it, then import/round-trip it in Lightroom.\n- Best for a visible Develop-panel preset: use Lightroom's Create Preset UI from the accepted representative and select only intended fields.\n- Acceptable fallback: use `generate_xmp_preset.py` for supported global settings, then import and visually validate it in Lightroom.\n- Not acceptable: wrap the old one-shot XMP generator in MCP and call that a closed loop.\n\n## Installation boundary\n\nThis is an optional local dependency. Do not install packages, edit Codex MCP configuration, or install a Lightroom plugin unless the user requests that setup. A newly configured MCP server normally requires restarting the local Codex client before its tools become available in a new task.\n\n\n# references/style-library.md\n\n# John's Intent-Based Style Library v2\n\nTreat styles as visual goals. Derive per-photo settings from Lightroom-rendered feedback and user-approved references. The numeric values in `styles.json` are conservative fallback settings, not the definition of the style.\n\n## Reference manifest\n\nKeep reference files outside the skill and record them in the current project with relative paths:\n\n```yaml\nstyle_id: john-outdoor-documentary\nreferences:\n  - relative_path: references/john_ref_001.jpg\n    source_raw: RAW/DSC_0001.NEF\n    renderer: Lightroom Classic 15.5\n    approved: true\ngoals:\n  skin: natural and restrained\n  greens: slightly muted and not yellow\n  highlights: soft roll-off\n  shadows: open with a subtle cool bias\n  contrast: medium\n```\n\nDo not hard-code machine-specific `D:\\photo\\...` paths in the reusable skill.\n\n## Base styles\n\n### `neutral-natural`\n\n- Intent: technically clean, low-drama baseline for mixed subject matter.\n- Preserve: believable neutrals, natural skin, recoverable highlights.\n- Avoid for: a user-requested stylized or high-contrast delivery.\n\n### `graduation-bright-natural`\n\n- Intent: clean event delivery with gentle microcontrast and controlled greens/yellows.\n- Preserve: faces, white clothing, certificates, and highlight detail.\n- Avoid for: dramatic stage frames, severe backlight, or high-ISO scenes without a modifier.\n\n### `graduation-documentary`\n\n- Intent: stronger dimensional event coverage without harsh skin or crushed black clothing.\n- Preserve: scene depth and documentary atmosphere.\n- Avoid for: soft close-up portraits or frames with blocked shadows.\n\n### `warm-cosplay-portrait`\n\n- Intent: warm subject separation with restrained orange skin and subdued foliage.\n- Preserve: face exposure and costume color identity.\n- Avoid for: neutral documentation and mixed-light interiors.\n\n### `dramatic-fine-art`\n\n- Intent: deeper tonal structure and selective color emphasis for details, flowers, reflections, or competition images.\n- Preserve: highlight texture and intentional color accents.\n- Avoid for: batch event delivery and skin-critical groups.\n\n## Technical modifiers\n\n### `low-light-noise-controlled`\n\nUse with a base style for high-ISO stage, night, aquarium, or indoor event files. Evaluate noise at 100%, reduce over-sharpening, and keep AI Denoise as a manual recommendation. Prefer an ISO-adaptive preset created by Lightroom when the shoot spans multiple ISO values.\n\n## Matching procedure\n\n1. Ask for or identify approved reference images.\n2. Compare target and reference for WB, skin, foliage, sky, neutral objects, highlight roll-off, shadow openness, and global contrast.\n3. Select one base style and zero or more technical modifiers per lighting cluster.\n4. Adjust the representative RAW through the five-pass workflow.\n5. Save the accepted intent and references; do not promote one frame's slider values into a permanent style definition without repeated evidence.\n\n\n# references/styles.json\n\n{\n  \"schema_version\": 2,\n  \"tested_target\": {\n    \"mode\": \"SDR RAW fallback\",\n    \"lightroom_classic\": \"15.5 local runtime; XMP import remains manually unverified\",\n    \"process_version\": \"15.4\"\n  },\n  \"base_attrs\": {\n    \"PresetType\": \"Normal\",\n    \"SupportsAmount\": \"False\",\n    \"SupportsColor\": \"True\",\n    \"SupportsMonochrome\": \"False\",\n    \"SupportsHighDynamicRange\": \"False\",\n    \"SupportsNormalDynamicRange\": \"True\",\n    \"SupportsSceneReferred\": \"True\",\n    \"SupportsOutputReferred\": \"True\",\n    \"CameraModelRestriction\": \"\",\n    \"Copyright\": \"\",\n    \"ContactInfo\": \"\",\n    \"Version\": \"15.0\",\n    \"ProcessVersion\": \"15.4\",\n    \"ConvertToGrayscale\": \"False\",\n    \"Treatment\": \"Color\"\n  },\n  \"styles\": {\n    \"neutral-natural\": {\n      \"display_name\": \"Neutral Natural\",\n      \"intent\": \"Technically clean and restrained baseline.\",\n      \"settings\": {\n        \"Contrast2012\": 0,\n        \"Highlights2012\": -15,\n        \"Shadows2012\": 10,\n        \"Whites2012\": 5,\n        \"Blacks2012\": -5,\n        \"Vibrance\": 5,\n        \"Saturation\": 0\n      }\n    },\n    \"graduation-bright-natural\": {\n      \"display_name\": \"Graduation Bright Natural\",\n      \"intent\": \"Clean event delivery with gentle microcontrast and restrained foliage.\",\n      \"settings\": {\n        \"Contrast2012\": 4,\n        \"Highlights2012\": -24,\n        \"Shadows2012\": 18,\n        \"Whites2012\": 8,\n        \"Blacks2012\": -6,\n        \"Texture\": 2,\n        \"Clarity2012\": -2,\n        \"Vibrance\": 6,\n        \"Saturation\": -2,\n        \"HueAdjustmentYellow\": -4,\n        \"HueAdjustmentGreen\": -8,\n        \"SaturationAdjustmentYellow\": -6,\n        \"SaturationAdjustmentGreen\": -10,\n        \"LuminanceAdjustmentOrange\": 4\n      }\n    },\n    \"graduation-documentary\": {\n      \"display_name\": \"Graduation Documentary\",\n      \"intent\": \"Dimensional event coverage without harsh skin or crushed blacks.\",\n      \"settings\": {\n        \"Contrast2012\": 12,\n        \"Highlights2012\": -20,\n        \"Shadows2012\": 8,\n        \"Whites2012\": 10,\n        \"Blacks2012\": -14,\n        \"Texture\": 8,\n        \"Clarity2012\": 4,\n        \"Dehaze\": 2,\n        \"Vibrance\": 5,\n        \"HueAdjustmentYellow\": -6,\n        \"HueAdjustmentGreen\": -10,\n        \"SaturationAdjustmentYellow\": -8,\n        \"SaturationAdjustmentGreen\": -12,\n        \"LuminanceAdjustmentOrange\": 3\n      }\n    },\n    \"warm-cosplay-portrait\": {\n      \"display_name\": \"Warm Cosplay Portrait\",\n      \"intent\": \"Warm subject separation with restrained orange skin and foliage.\",\n      \"settings\": {\n        \"Contrast2012\": 12,\n        \"Highlights2012\": -24,\n        \"Shadows2012\": 12,\n        \"Whites2012\": 5,\n        \"Blacks2012\": -16,\n        \"Texture\": 0,\n        \"Clarity2012\": 2,\n        \"Dehaze\": 2,\n        \"Vibrance\": 8,\n        \"Saturation\": -3,\n        \"HueAdjustmentOrange\": -3,\n        \"HueAdjustmentYellow\": -8,\n        \"HueAdjustmentGreen\": -12,\n        \"SaturationAdjustmentOrange\": -2,\n        \"SaturationAdjustmentYellow\": -10,\n        \"SaturationAdjustmentGreen\": -16,\n        \"LuminanceAdjustmentOrange\": 5\n      }\n    },\n    \"dramatic-fine-art\": {\n      \"display_name\": \"Dramatic Fine Art\",\n      \"intent\": \"Deeper tonal structure and selective color emphasis.\",\n      \"settings\": {\n        \"Contrast2012\": 18,\n        \"Highlights2012\": -30,\n        \"Shadows2012\": -2,\n        \"Whites2012\": 10,\n        \"Blacks2012\": -24,\n        \"Texture\": 10,\n        \"Clarity2012\": 8,\n        \"Dehaze\": 4,\n        \"Vibrance\": 12,\n        \"Saturation\": -4,\n        \"SaturationAdjustmentRed\": 4,\n        \"SaturationAdjustmentYellow\": -8,\n        \"SaturationAdjustmentGreen\": -14,\n        \"SaturationAdjustmentBlue\": -6,\n        \"PostCropVignetteAmount\": -8,\n        \"GrainAmount\": 5\n      }\n    }\n  },\n  \"modifiers\": {\n    \"low-light-noise-controlled\": {\n      \"display_name\": \"Low Light Noise Controlled\",\n      \"intent\": \"Conservative detail and noise starting point for high ISO files.\",\n      \"settings\": {\n        \"Texture\": -4,\n        \"Clarity2012\": -2,\n        \"Sharpness\": 35,\n        \"SharpenRadius\": 1.0,\n        \"SharpenDetail\": 15,\n        \"SharpenEdgeMasking\": 60,\n        \"LuminanceSmoothing\": 15,\n        \"LuminanceNoiseReductionDetail\": 45,\n        \"LuminanceNoiseReductionContrast\": 5,\n        \"ColorNoiseReduction\": 25\n      }\n    }\n  }\n}\n\n\n# references/workflow.md\n\n# RAW-First Lightroom Workflow v2\n\n## 1. Establish provenance\n\nFor each RAW/preview pair, record:\n\n- `relative_raw_path`\n- `relative_preview_path`\n- RAW and preview stem\n- capture time, camera model, dimensions, and file size when available\n- renderer: Lightroom Classic or Camera Raw\n- renderer version\n- baseline profile\n- whether Catalog edits, sidecar XMP, virtual copies, or RAW+JPEG pairing already exist\n- export time and export settings\n- `provenance_status`: `confirmed`, `ambiguous`, or `missing`\n\nDo not pair by basename alone when two folders contain the same stem. Require relative paths plus metadata. Missing, duplicate, or conflicting matches become `未分類`.\n\nIf the master RAW already has edits, do not reset it. Use a user-approved virtual copy, duplicate catalog, or dedicated representative photo. If none is available, stop before mutation.\n\n## 2. Culling contract\n\nKeep selection, editing need, and style confidence separate.\n\n### `selection_status`\n\n- `交付候選` (`delivery_candidate`): strong composition, focus, and expression.\n- `保留` (`keep`): worth retaining but not a delivery priority.\n- `淘汰` (`reject`): clear technical or content failure when the user asked for rejection decisions.\n- `待確認` (`uncertain`): duplicate ambiguity or insufficient evidence.\n\n### `edit_status`\n\n- `RAW 待檢` (`raw_review_required`): ordinary JPG only or RAW render missing.\n- `輕微全域調整` (`minor_global_adjustment`): global exposure, WB, tone, or color likely sufficient.\n- `需局部調整` (`local_edit_required`): masks, crop, healing, subject/background separation, or local skin work is needed.\n- `未知` (`unknown`): evidence is insufficient.\n\n### `style_status`\n\n- `已分類` (`classified`)\n- `未分類` (`unclassified`)\n\nUse `confidence`: `high`, `medium`, or `low`. A camera JPG can support `selection_status`, but it cannot by itself establish a final `edit_status` or preset direction.\n\n## 3. Cluster before editing\n\nCluster by lighting and intent, not only event name. Typical splits include outdoor shade, indoor warm/mixed light, stage light, backlight, and high ISO. Choose one representative RAW per cluster and keep difficult outliers separate.\n\nDo not create one universal preset for visibly different clusters.\n\n## 4. Closed-loop editing passes\n\nExport every comparison from Lightroom into a unique, initially empty folder. Use one photo per folder when the MCP export response does not return exact filenames.\n\n### Pass 0 - Baseline\n\n- Read current metadata and develop settings.\n- Export the current Lightroom render.\n- Record baseline settings and file hash/path.\n- Record the reference image and the user's intent, if provided.\n\n### Pass 1 - Technical correction\n\nAdjust only WB, Exposure, Highlights, Shadows, Whites, and Blacks. Target usable exposure, protected skin/highlights, and plausible shadows. Do not add creative color here.\n\n### Pass 2 - Tonal shape\n\nAdjust Contrast and small Whites/Blacks refinements. Use a point curve only when the active integration can round-trip it reliably. Describe the tonal goal, such as soft highlight roll-off, before setting numbers.\n\n### Pass 3 - Color correction\n\nCorrect Temperature/Tint first, then bounded HSL changes based on visible subjects such as skin, foliage, sky, neutral objects, and artificial lighting. Do not map an event label directly to arbitrary HSL values.\n\n### Pass 4 - Creative look\n\nApply only the controls supported by the active route. Keep creative choices distinct from technical correction. If Color Grading, Calibration, or Point Color cannot be read back and rendered reliably, leave them for Lightroom manual finishing.\n\n### Pass 5 - Detail/noise\n\nUse ISO, camera, subject texture, and a 100% check. Treat low-light/noise as a modifier, not a style. AI Denoise remains a manual recommendation unless the active route explicitly supports and verifies it.\n\nUse one or two render/inspect cycles per pass and stop after eight total renders unless the user asks for deeper iteration. Stop earlier when changes oscillate, the visual gain is negligible, or the remaining work is local/subjective.\n\n## 5. Checkpoints and batch application\n\nAfter each pass, record:\n\n- previous and new setting values\n- rendered output path\n- visible improvement and regression notes\n- whether the pass is accepted, reverted, or pending\n\nDo not copy settings to a cluster until the representative before/after is approved. Copy only the fields intended for that cluster; avoid silently copying crop, lens state, profile, WB, or detail settings.\n\n## 6. Preset handoff\n\nPrefer this order:\n\n1. When preset-roundtrip MCP tools are available, read the approved historical preset, create a uniquely versioned plugin checkpoint from explicit intended fields, and compare the two.\n2. Export the accepted checkpoint without overwriting an existing file. Import it into the target Lightroom version and round-trip export it when high confidence is required.\n3. Use Lightroom Create Preset when the preset must be visible in the Develop panel; plugin-managed SDK checkpoints are hidden by design.\n4. Use the bundled generator only when Lightroom export is unavailable and the required settings are within its validated subset.\n\nEvery handoff includes:\n\n- cluster and representative photo\n- preset filename and group\n- included and intentionally excluded settings\n- expected per-frame Exposure/WB range\n- skin, noise, and detail checks\n- photos that need local edits or a separate preset\n- four validation levels from `SKILL.md`\n\n## 7. Report shape\n\nProvide a concise Markdown summary plus a machine-readable CSV/JSON row for every photo when the user needs operational handoff. Do not invent star/color-label mappings. If requested, define them as a separate Lightroom mapping layer with explicit columns such as `selection_status`, `edit_status`, `style_status`, `confidence`, and `compliance_status`."
     }
   ],
   "user_config": {

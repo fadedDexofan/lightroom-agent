@@ -41,8 +41,8 @@ function catalogRows() {
 
 async function importFrom(sourcePath) {
   const result = await session.tool("import_photos", { source_path: sourcePath }, { timeoutMs });
-  assert.equal(result.isError, false, result.text);
-  return result.data;
+  assert.notEqual(result.outcome, "unknown", result.text);
+  return result.envelope;
 }
 
 try {
@@ -52,16 +52,17 @@ try {
   fs.mkdirSync(path.join(root, "Dir2"));
   fs.copyFileSync(source, path.join(root, "Dir2", "a.jpg"));
   const first = await importFrom(path.join(root, "Dir2"));
-  assert.equal(first.imported, 1);
+  assert.equal(first.data.imported, 1);
 
   fs.mkdirSync(path.join(root, "dir2"));
   fs.copyFileSync(source, path.join(root, "dir2", "a.jpg"));
   const second = await importFrom(root);
-  assert.equal(second.imported, 0);
-  assert.equal(second.already_in_catalog, 1);
+  assert.equal(second.outcome, "partial");
+  assert.equal(second.data.imported, 0);
+  assert.equal(second.data.already_in_catalog, 1);
   assert.equal(second.failed.length, 1);
   assert.equal(second.failed[0].path, path.join(root, "dir2", "a.jpg"));
-  assert.match(second.failed[0].error, /differs only in case/);
+  assert.match(second.failed[0].reason, /differs only in case/);
 
   const third = await importFrom(root);
   assert.deepEqual(third, second);
@@ -73,7 +74,7 @@ try {
   fs.mkdirSync(path.join(root, "other"));
   fs.copyFileSync(source, path.join(root, "other", "b.jpg"));
   const later = await importFrom(path.join(root, "other"));
-  assert.equal(later.imported, 1);
+  assert.equal(later.data.imported, 1);
 
   const rows = catalogRows();
   assert.deepEqual(

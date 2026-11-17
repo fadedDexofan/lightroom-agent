@@ -10,7 +10,7 @@
 // missed pong itself; a failed/timed-out ping is only logged for visibility.
 
 export interface HeartbeatDispatcher {
-  call(action: string, params: unknown, timeoutMs?: number): Promise<unknown>;
+  call(action: string, params: unknown, timeoutMs: number): Promise<unknown>;
 }
 
 /**
@@ -23,6 +23,7 @@ export interface HeartbeatDispatcher {
 export function startHeartbeat(
   dispatcher: HeartbeatDispatcher,
   intervalMs: number,
+  timeoutMs: number,
   onError: (err: Error) => void = (err) => console.error(`[heartbeat] ping failed: ${err.message}`),
   onSuccess: () => void = () => {},
   connectionGeneration: () => number = () => 0,
@@ -32,7 +33,7 @@ export function startHeartbeat(
     const ifCurrent = (settle: () => void) => {
       if (generation === connectionGeneration()) settle();
     };
-    dispatcher.call("ping", {}).then(
+    dispatcher.call("ping", {}, timeoutMs).then(
       () => ifCurrent(onSuccess),
       (err: Error) => ifCurrent(() => onError(err)),
     );
@@ -45,7 +46,7 @@ export function startHeartbeat(
  */
 export async function probePlugin(
   dispatcher: HeartbeatDispatcher,
-  timeoutMs?: number,
+  timeoutMs: number,
 ): Promise<boolean> {
   try {
     await dispatcher.call("ping", {}, timeoutMs);

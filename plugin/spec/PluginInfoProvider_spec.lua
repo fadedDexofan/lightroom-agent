@@ -4,12 +4,6 @@ local helper = require 'spec_helper'
 -- has no real side effects. The lifecycle logic under test lives in the
 -- module body + resetForReload + PluginInit wiring; none of it binds a
 -- socket at load time (binding happens only inside startServer).
-local HANDLER_MODULES = {
-    'JSON', 'HandlerLensBlur', 'HandlerSearch', 'HandlerCollections', 'HandlerFolders', 'HandlerKeywords', 'HandlerMetadata', 'HandlerStyleSummary', 'HandlerAiMetadata',
-    'HandlerOrganization', 'HandlerUndo', 'HandlerImport', 'HandlerRemoveFromCatalog', 'HandlerExport', 'HandlerVirtualCopies',
-    'HandlerSelection', 'HandlerDevelop', 'HandlerSnapshots', 'HandlerMasks', 'HandlerSpots', 'HandlerMaskDelete', 'HandlerMaskAdjustments', 'HandlerMaskRead', 'HandlerMaskCurves', 'HandlerMaskPointColors', 'HandlerMaskInvert', 'HandlerMaskCreate', 'HandlerMaskCombine', 'HandlerGradientMasks', 'HandlerBrushMasks', 'HandlerRangeMasks', 'HandlerAiMasks', 'HandlerMaskBatch', 'HandlerPreview', 'HandlerRawDevelopSettings', 'HandlerMaskAdmission',
-}
-
 -- opts (all optional) let a test drive the otherwise-async server task:
 --   runTask        -- actually execute the postAsyncTaskWithContext body
 --   cleanups       -- array; each registered cleanup handler is appended
@@ -84,8 +78,9 @@ local function installStubs(prefs, asyncTasks, opts)
         },
         LrFileUtils = { createAllDirectories = function() end },
     })
-    for _, name in ipairs(HANDLER_MODULES) do
-        package.loaded[name] = {}
+    package.loaded.JSON = {}
+    for _, target in pairs(require('Contract').DISPATCH) do
+        package.loaded[target[1]] = {}
     end
 end
 
@@ -95,6 +90,20 @@ end
 local function loadInfoProvider()
     package.loaded.PluginInfoProvider = nil
     return require 'PluginInfoProvider'
+end
+
+local function serving(opts, asyncTasks)
+    local binds, sends = {}, {}
+    local stubOpts = { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds, sends = sends }
+    for key, value in pairs(opts or {}) do stubOpts[key] = value end
+    installStubs(nil, asyncTasks, stubOpts)
+    package.loaded.JSON = nil
+    package.loaded.Reply = nil
+    local mod = loadInfoProvider()
+    mod.startServer()
+    local state = _G.LightroomMCP_State
+    state.sendConnected = true
+    return binds, sends, state
 end
 
 local function loadPluginInit()
@@ -220,29 +229,37 @@ describe("PluginInfoProvider server task", function()
         io.open = realOpen
     end)
 
-    describe("undecodable requests", function()
-        local function startServerCapturing(sends)
-            local binds = {}
-            installStubs(nil, nil, {
-                runTask = true, stopLoopOnSleep = true, cleanups = {},
-                capturedBinds = binds, sends = sends,
-            })
-            package.loaded.JSON = nil
-            local mod = loadInfoProvider()
-            mod.startServer()
-            _G.LightroomMCP_State.sendConnected = true
-            return binds
-        end
+    describe("progress", function()
+        it("drops a progress event at once while the response socket is down, and still answers", function()
+            local sleeps, reporting = 0, false
+            local binds, sends, state = serving({ onSleep = function() if reporting then sleeps = sleeps + 1 end end })
+            package.loaded.HandlerSearch = {
+                searchPhotos = function(_, context)
+                    state.sendConnected = false
+                    reporting = true
+                    context:report(1, 2, "half")
+                    reporting = false
+                    state.sendConnected = true
+                    return { done = true }
+                end,
+            }
 
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"p1","action":"search_photos","reportProgress":true}')
+
+            assert.are.equal(0, sleeps)
+            assert.are.same({ done = true }, require('JSON'):decode(sends[#sends]).result.data)
+        end)
+    end)
+
+    describe("undecodable requests", function()
         local function malformed(token)
             return '{"hello":"' .. token .. '","id":"req_1","action":"ping","params":{"x":"\\q"}}'
         end
 
         it("answers an authenticated client instead of leaving it to time out", function()
-            local sends = {}
-            local binds = startServerCapturing(sends)
+            local binds, sends, state = serving()
 
-            binds[1].onMessage(nil, malformed(_G.LightroomMCP_State.token))
+            binds[1].onMessage(nil, malformed(state.token))
 
             assert.is_not_nil(sends[1])
             assert.is_nil(sends[2])
@@ -251,8 +268,7 @@ describe("PluginInfoProvider server task", function()
         end)
 
         it("answers a well-formed request with a wrong token", function()
-            local sends = {}
-            local binds = startServerCapturing(sends)
+            local binds, sends = serving()
 
             binds[1].onMessage(nil, '{"hello":"not-the-token","id":"req_1","action":"ping"}')
 
@@ -262,8 +278,7 @@ describe("PluginInfoProvider server task", function()
         end)
 
         it("stays silent when the salvaged token does not match", function()
-            local sends = {}
-            local binds = startServerCapturing(sends)
+            local binds, sends = serving()
 
             binds[1].onMessage(nil, malformed("not-the-token"))
 
@@ -271,10 +286,9 @@ describe("PluginInfoProvider server task", function()
         end)
 
         it("stays silent when no id can be salvaged", function()
-            local sends = {}
-            local binds = startServerCapturing(sends)
+            local binds, sends, state = serving()
 
-            binds[1].onMessage(nil, '{"hello":"' .. _G.LightroomMCP_State.token .. '","action":"ping"')
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","action":"ping"')
 
             assert.is_nil(sends[1])
         end)
@@ -282,19 +296,10 @@ describe("PluginInfoProvider server task", function()
 
     describe("handler errors", function()
         local function dispatchError(message, level)
-            local binds, sends = {}, {}
-            installStubs(nil, nil, {
-                runTask = true, stopLoopOnSleep = true, cleanups = {},
-                capturedBinds = binds, sends = sends,
-            })
-            package.loaded.JSON = nil
+            local binds, sends, state = serving()
             package.loaded.HandlerSearch = {
                 searchPhotos = function() error(message, level) end,
             }
-            local mod = loadInfoProvider()
-            mod.startServer()
-            local state = _G.LightroomMCP_State
-            state.sendConnected = true
             binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"e1","action":"search_photos"}')
             return require('JSON'):decode(sends[1]).error
         end
@@ -312,74 +317,153 @@ describe("PluginInfoProvider server task", function()
             assert.are.equal("photo_ids is required", dispatchError(message, 0))
         end)
 
+        it("removes the position Lightroom gives a plug-in chunk", function()
+            assert.are.equal("Include every virtual copy when removing its master",
+                dispatchError('[string "HandlerRemoveFromCatalog.lua"]:144: Include every virtual copy when removing its master', 0))
+        end)
+
         it("keeps plain messages and embedded Lua file names unchanged", function()
             for _, message in ipairs({ "photo_ids is required", "Cannot read settings.lua:42: invalid file", "file.jpg:42: missing" }) do
                 assert.are.equal(message, dispatchError(message, 0))
             end
         end)
 
-        it("dispatches get_raw_develop_settings to its handler", function()
-            local binds, sends = {}, {}
-            installStubs(nil, nil, {
-                runTask = true, stopLoopOnSleep = true, cleanups = {},
-                capturedBinds = binds, sends = sends,
-            })
-            package.loaded.JSON = nil
+        it("dispatches get_develop_settings to its handler", function()
+            local binds, sends, state = serving()
             local received
             package.loaded.HandlerRawDevelopSettings = {
-                get = function(params) received = params; return { photo_id = "7", count = 0, keys = {} } end,
+                get = function(params) received = params; return { photos = { { photo_id = "7", keys = {} } } } end,
             }
-            local mod = loadInfoProvider()
-            mod.startServer()
-            local state = _G.LightroomMCP_State
-            state.sendConnected = true
+
             binds[1].onMessage(nil, '{"hello":"' .. state.token
-                .. '","id":"r1","action":"get_raw_develop_settings","params":{"photo_id":"7"}}')
+                .. '","id":"r1","action":"get_develop_settings","params":{"photo_ids":["7"]}}')
 
             local reply = require('JSON'):decode(sends[1])
             assert.is_nil(reply.error)
-            assert.are.equal("7", reply.result.photo_id)
-            assert.are.equal("7", received.photo_id)
+            assert.are.equal("7", reply.result.data.photos[1].photo_id)
+            assert.are.same({ "7" }, received.photo_ids)
         end)
 
         it("dispatches get_mask_write_admission to its handler", function()
-            local binds, sends = {}, {}
-            installStubs(nil, nil, {
-                runTask = true, stopLoopOnSleep = true, cleanups = {},
-                capturedBinds = binds, sends = sends,
-            })
-            package.loaded.JSON = nil
+            local binds, sends, state = serving()
             local received
             package.loaded.HandlerMaskAdmission = {
                 get = function(params) received = params; return { admitted = false } end,
             }
-            local mod = loadInfoProvider()
-            mod.startServer()
-            local state = _G.LightroomMCP_State
-            state.sendConnected = true
+
             binds[1].onMessage(nil, '{"hello":"' .. state.token
                 .. '","id":"r1","action":"get_mask_write_admission","params":{"photo_id":"7"}}')
 
             local reply = require('JSON'):decode(sends[1])
             assert.is_nil(reply.error)
-            assert.is_false(reply.result.admitted)
+            assert.is_false(reply.result.data.admitted)
             assert.are.equal("7", received.photo_id)
         end)
 
+        it("gives every handler the request's deadline and lets the server cancel it", function()
+            local binds, _, state = serving()
+            local seen = {}
+            package.loaded.HandlerSearch = {
+                searchPhotos = function(_, context)
+                    seen.left = context:timeLeft()
+                    seen.before = context:isCanceled()
+                    binds[1].onMessage(nil, '{"hello":"' .. state.token
+                        .. '","action":"cancel","params":{"request_id":"c1"}}')
+                    seen.after = context:isCanceled()
+                    return {}
+                end,
+            }
+
+            binds[1].onMessage(nil, '{"hello":"' .. state.token
+                .. '","id":"c1","action":"search_photos","budget_ms":30000}')
+
+            assert.are.same({ left = 30, before = false, after = true }, seen)
+        end)
+
+        it("sends a handler's parts as the result and wraps a plain return as data", function()
+            local binds, sends, state = serving()
+            local Reply = require 'Reply'
+            package.loaded.HandlerSearch = {
+                searchPhotos = function() return { photos = {} } end,
+            }
+            package.loaded.HandlerCollections = {
+                listCollections = function()
+                    return Reply.parts({ data = { collections = {} }, not_found = { "x" } })
+                end,
+            }
+
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"p1","action":"search_photos"}')
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"p2","action":"list_collections"}')
+
+            local JSON = require 'JSON'
+            assert.are.same({ data = { photos = {} } }, JSON:decode(sends[1]).result)
+            assert.are.same({ data = { collections = {} }, not_found = { "x" } }, JSON:decode(sends[2]).result)
+        end)
+
+        it("marks a refusal as having no effect and any other handler error as unknown", function()
+            local binds, sends, state = serving()
+            local Reply = require 'Reply'
+            package.loaded.HandlerOrganization = {
+                setRatingAndFlag = function()
+                    Reply.refuse("The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Rating and Flag")
+                end,
+                setColorLabel = function() error("Lightroom threw") end,
+            }
+
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"r1","action":"set_rating_and_flag"}')
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"r2","action":"set_color_label"}')
+
+            local JSON = require 'JSON'
+            local refused, failed = JSON:decode(sends[1]), JSON:decode(sends[2])
+            assert.are.same({ "The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Rating and Flag", "none" },
+                { refused.error, refused.effect })
+            assert.are.equal("unknown", failed.effect)
+            assert.truthy(failed.error:find("Lightroom threw", 1, true))
+        end)
+
+        it("answers a photo a handler could not find with not_found", function()
+            local binds, sends, state = serving()
+            local Reply = require 'Reply'
+            package.loaded.HandlerMasks = { listMasks = function(params) Reply.notFound(params.photo_id) end }
+
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"n1","action":"list_masks","params":{"photo_id":404}}')
+
+            local reply = require('JSON'):decode(sends[1])
+            assert.is_nil(reply.error)
+            assert.are.same({ not_found = { 404 } }, reply.result)
+        end)
+
+        it("adds the request's warnings to the parts of a result and to the text of an error", function()
+            local binds, sends, state = serving()
+            local Reply = require 'Reply'
+            package.loaded.HandlerOrganization = {
+                setRatingAndFlag = function(_, context)
+                    context:warn("view not restored")
+                    return Reply.parts({ data = { done = true }, warnings = { "own warning" } })
+                end,
+                setColorLabel = function(_, context)
+                    context:warn("view not restored")
+                    Reply.refuse("The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Color Label")
+                end,
+            }
+
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"w1","action":"set_rating_and_flag"}')
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"w2","action":"set_color_label"}')
+
+            local JSON = require 'JSON'
+            assert.are.same({ data = { done = true }, warnings = { "own warning", "view not restored" } },
+                JSON:decode(sends[1]).result)
+            local refused = JSON:decode(sends[2])
+            assert.are.same({ "The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Color Label"
+                .. " Warnings: view not restored", "none" }, { refused.error, refused.effect })
+        end)
+
         it("answers with an error for the request when its result cannot be encoded", function()
-            local binds, sends = {}, {}
-            installStubs(nil, nil, {
-                runTask = true, stopLoopOnSleep = true, cleanups = {},
-                capturedBinds = binds, sends = sends,
-            })
-            package.loaded.JSON = nil
+            local binds, sends, state = serving()
             package.loaded.HandlerSearch = {
                 searchPhotos = function() return { score = 0 / 0 } end,
             }
-            local mod = loadInfoProvider()
-            mod.startServer()
-            local state = _G.LightroomMCP_State
-            state.sendConnected = true
+
             binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"e2","action":"search_photos"}')
 
             assert.are.equal(1, #sends)
@@ -592,14 +676,7 @@ describe("stale-connection follow-up fixes (PR #151 re-review)", function()
     end)
 
     it("keeps a request counted in-flight until sendResponse actually completes, not just until the handler returns", function()
-        package.loaded.JSON = nil -- exercise the real encoder/decoder, not the empty stub
-        local binds = {}
-        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds })
-        local mod = loadInfoProvider()
-
-        mod.startServer()
-        local state = _G.LightroomMCP_State
-        state.sendConnected = true
+        local binds, _, state = serving()
         state.responseSocket = {
             send = function()
                 -- If inFlightRequests were decremented right after the
@@ -705,13 +782,6 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
     it("ping handler is a pure liveness no-op returning pong=true", function()
         local mod = loadInfoProvider()
         assert.are.same({ pong = true }, mod.handlePing({}))
-    end)
-
-    it("derives the soft/hard thresholds from the heartbeat interval", function()
-        local mod = loadInfoProvider()
-        assert.are.equal(30, mod.HEARTBEAT_INTERVAL_SECONDS)
-        assert.are.equal(90, mod.STALE_RECONNECT_SECONDS)
-        assert.are.equal(120, mod.STALE_RESTART_HARD_CAP_SECONDS)
     end)
 
     describe("logBindFailure", function()
@@ -949,15 +1019,8 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     end)
 
     it("queues no dispatch task for a message that arrives during quit", function()
-        local binds, asyncTasks = {}, {}
-        installStubs(nil, asyncTasks, {
-            runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds,
-        })
-        package.loaded.JSON = nil
-        local mod = loadInfoProvider()
-
-        mod.startServer()
-        local state = _G.LightroomMCP_State
+        local asyncTasks = {}
+        local binds, _, state = serving(nil, asyncTasks)
         state.shuttingDown = true
         binds[1].onMessage(nil, requestFor(state, "ping"))
 
@@ -965,22 +1028,15 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     end)
 
     it("does not run a handler whose dispatch task was queued before quit", function()
-        local binds, asyncTasks = {}, {}
+        local asyncTasks = {}
         local handlerCalls = 0
-        installStubs(nil, asyncTasks, {
-            runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds,
-        })
-        package.loaded.JSON = nil
+        local binds, _, state = serving(nil, asyncTasks)
         package.loaded.HandlerSearch = {
             searchPhotos = function()
                 handlerCalls = handlerCalls + 1
                 return { photos = {} }
             end,
         }
-        local mod = loadInfoProvider()
-
-        mod.startServer()
-        local state = _G.LightroomMCP_State
         binds[1].onMessage(nil, requestFor(state, "search_photos"))
         state.shuttingDown = true
         asyncTasks[1]()
@@ -989,22 +1045,14 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     end)
 
     it("drops the response of a handler that finished after quit began", function()
-        local binds, sent = {}, {}
-        installStubs(nil, nil, {
-            runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds,
-        })
-        package.loaded.JSON = nil
+        local sent = {}
+        local binds, _, state = serving()
         package.loaded.HandlerSearch = {
             searchPhotos = function()
-                _G.LightroomMCP_State.shuttingDown = true
+                state.shuttingDown = true
                 return { photos = {} }
             end,
         }
-        local mod = loadInfoProvider()
-
-        mod.startServer()
-        local state = _G.LightroomMCP_State
-        state.sendConnected = true
         state.responseSocket = { send = function() table.insert(sent, true) end }
 
         binds[1].onMessage(nil, requestFor(state, "search_photos"))
@@ -1013,22 +1061,15 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     end)
 
     it("stops waiting for the send socket as soon as quit begins", function()
-        local binds = {}
         local waitSleeps = 0
         local waiting = false
-        installStubs(nil, nil, {
-            runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds,
-            onSleep = function(state)
+        local binds, _, state = serving({
+            onSleep = function(current)
                 if not waiting then return end
                 waitSleeps = waitSleeps + 1
-                if waitSleeps == 2 then state.shuttingDown = true end
+                if waitSleeps == 2 then current.shuttingDown = true end
             end,
         })
-        package.loaded.JSON = nil
-        local mod = loadInfoProvider()
-
-        mod.startServer()
-        local state = _G.LightroomMCP_State
         state.sendConnected = false
         waiting = true
 

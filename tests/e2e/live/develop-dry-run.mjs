@@ -17,10 +17,10 @@ const originals = new Map();
 let failure;
 try {
   for (const id of [source_id, ...target_ids]) {
-    const metadata = await tool("get_photo_metadata", { photo_id: id, sections: ["developSettings"] });
+    const { settings } = await session.developSettings(id, ["Exposure2012", "Contrast2012"]);
     originals.set(id, {
-      Exposure2012: metadata.developSettings.exposure,
-      Contrast2012: metadata.developSettings.contrast,
+      Exposure2012: settings.Exposure2012,
+      Contrast2012: settings.Contrast2012,
     });
   }
   await tool("set_develop_settings", { photo_id: source_id, settings: { Exposure2012: 0.5, Contrast2012: 10 } });

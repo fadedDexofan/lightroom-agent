@@ -16,7 +16,8 @@ import os from "node:os";
 import path from "node:path";
 import { LineBuffer } from "./line-buffer.js";
 import type { CallOptions, ToolProgress } from "./dispatcher.js";
-import type { ToolResponse } from "./tool-handler.js";
+import { isReadOnlyTool } from "./tool-contracts.js";
+import { finishLost, refusedResponse, toolResponse, type ToolResponse } from "./tool-result.js";
 
 export type ToolCaller = (name: string, args: unknown, options?: CallOptions) => Promise<ToolResponse>;
 
@@ -91,16 +92,16 @@ function parseRequest(line: string): BrokerRequest | null {
   return { id: req.id, auth: req.auth, name: req.name, args: req.args, reportProgress: req.reportProgress === true };
 }
 
-function errorResponse(text: string): ToolResponse {
-  return { content: [{ type: "text", text }], isError: true };
+function lostResponse(name: string, text: string): ToolResponse {
+  return toolResponse(finishLost(isReadOnlyTool(name), text, true));
 }
 
-function replyFrame(reply: BrokerReply): string {
+function replyFrame(reply: BrokerReply, name: string): string {
   const frame = JSON.stringify(reply);
   if (Buffer.byteLength(frame) < MAX_FRAME_BYTES) return frame;
   return JSON.stringify({
     id: reply.id,
-    result: errorResponse("The result is too large to return; request fewer items with limit and offset."),
+    result: lostResponse(name, "The result is too large to return; request fewer items with limit and offset."),
   } satisfies BrokerReply);
 }
 
@@ -202,7 +203,7 @@ export class BrokerServer {
       return;
     }
     if (!authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), req.auth)) {
-      this.reply(sock, req.id, errorResponse("Rejected by the Lightroom MCP bridge: token mismatch."));
+      this.reply(sock, req.id, req.name, refusedResponse("Rejected by the Lightroom MCP bridge: token mismatch."));
       return;
     }
     if (calls.has(req.id)) return;
@@ -223,16 +224,16 @@ export class BrokerServer {
       throw err;
     }
     calls.delete(req.id);
-    this.reply(sock, req.id, result, () => this.callDone());
+    this.reply(sock, req.id, req.name, result, () => this.callDone());
   }
 
-  private reply(sock: net.Socket, id: number, result: ToolResponse, sent: () => void = () => {}): void {
+  private reply(sock: net.Socket, id: number, name: string, result: ToolResponse, sent: () => void = () => {}): void {
     if (sock.destroyed) {
       sent();
       return;
     }
     const reply: BrokerReply = { id, result };
-    sock.write(replyFrame(reply) + "\n", () => sent());
+    sock.write(replyFrame(reply, name) + "\n", () => sent());
   }
 
   private callDone(): void {
@@ -309,7 +310,7 @@ export class BrokerClient {
   private sock: net.Socket | null = null;
   private nonce = "";
   private nextId = 0;
-  private readonly pending = new Map<number, { resolve: (resp: ToolResponse) => void; options?: CallOptions; cleanup: () => void }>();
+  private readonly pending = new Map<number, { name: string; resolve: (resp: ToolResponse) => void; options?: CallOptions; cleanup: () => void }>();
 
   constructor(private readonly opts: BrokerClientOptions) {}
 
@@ -351,7 +352,7 @@ export class BrokerClient {
     sock.on("error", () => {});
     sock.on("close", () => {
       this.sock = null;
-      for (const pending of this.pending.values()) { pending.cleanup(); pending.resolve(errorResponse(OWNER_LOST_MESSAGE)); }
+      for (const pending of this.pending.values()) { pending.cleanup(); pending.resolve(lostResponse(pending.name, OWNER_LOST_MESSAGE)); }
       this.pending.clear();
       this.opts.onClose?.();
     });
@@ -381,9 +382,9 @@ export class BrokerClient {
   }
 
   callTool(name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> {
-    if (options?.signal?.aborted) return Promise.resolve(errorResponse("Request cancelled"));
+    if (options?.signal?.aborted) return Promise.resolve(refusedResponse("Request cancelled"));
     const sock = this.sock;
-    if (!sock) return Promise.resolve(errorResponse(OWNER_LOST_MESSAGE));
+    if (!sock) return Promise.resolve(refusedResponse(OWNER_LOST_MESSAGE));
     const id = this.nextId++;
     const req: BrokerRequest = {
       id,
@@ -396,7 +397,7 @@ export class BrokerClient {
       const cancel = () => {
         if (this.pending.has(id)) sock.write(JSON.stringify({ cancelFor: id, auth: req.auth }) + "\n");
       };
-      this.pending.set(id, { resolve, options, cleanup: () => options?.signal?.removeEventListener("abort", cancel) });
+      this.pending.set(id, { name, resolve, options, cleanup: () => options?.signal?.removeEventListener("abort", cancel) });
       options?.signal?.addEventListener("abort", cancel, { once: true });
       sock.write(JSON.stringify(req) + "\n");
     });

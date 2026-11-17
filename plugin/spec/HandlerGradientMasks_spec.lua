@@ -6,98 +6,10 @@ local linearComponent = Store.linearComponent
 local radialComponent = Store.radialComponent
 local correction = Store.correction
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 local function point(x, y) return { x = x, y = y } end
 
 local function setup(opts)
-    opts = opts or {}
-    local photos, stores, storeOf = {}, {}, {}
-    for _, spec in ipairs(opts.photos or { { id = "1" } }) do
-        local photo = helper.fakePhoto({
-            id = spec.id, path = "/" .. spec.id .. ".jpg", orientation = spec.orientation or "AB",
-            dimensions = not spec.noDimensions and (spec.dimensions or { width = 3000, height = 2000 }) or nil,
-        })
-        stores[spec.id] = Store.attach(photo, spec)
-        storeOf[photo] = stores[spec.id]
-        photos[#photos + 1] = photo
-    end
-    local active = photos[1]
-    local module = opts.startModule or "library"
-    local calls = { modules = {}, getAllMasks = 0, stopTracking = {} }
-    local catalog = helper.fakeCatalog({ photos = photos })
-    for _, spec in ipairs(opts.photos or { { id = "1" } }) do
-        Store.trackGates(stores[spec.id], catalog)
-    end
-    catalog.getTargetPhoto = function() return active end
-    local recordSelection = catalog.setSelectedPhotos
-    catalog.setSelectedPhotos = function(self, photo, selected)
-        recordSelection(self, photo, selected)
-        active = photo
-    end
-    catalog.kAllPhotos = "all photographs"
-    catalog.getActiveSources = function() return { "folder" } end
-    catalog.setActiveSources = function() end
-
-    local selectedMask
-    local controller = {
-        getAllMasks = function()
-            calls.getAllMasks = calls.getAllMasks + 1
-            if opts.hideNewMasks then return {} end
-            return Store.maskListOf(storeOf[active].entries)
-        end,
-        selectMask = function(id) selectedMask = id end,
-        getSelectedMask = function() return selectedMask end,
-        getRange = function(name)
-            if opts.narrowRange then return -0.5, 0.5 end
-            if name == "local_Exposure" then return -4, 4 end
-            return -100, 100
-        end,
-        getValue = function(name)
-            if opts.wrongAdjustment then return 0 end
-            for _, entry in ipairs(storeOf[active].entries) do
-                if entry.CorrectionID == selectedMask then
-                    if name == "local_Exposure" then return (entry.LocalExposure2012 or 0) * 4 end
-                    if name == "local_Contrast" then return (entry.LocalContrast2012 or 0) * 100 end
-                end
-            end
-            return 0
-        end,
-        selectMaskTool = function() end,
-        stopTracking = function(commit) calls.stopTracking[#calls.stopTracking + 1] = commit end,
-    }
-    if opts.withoutMaskApi then controller = {} end
-
-    helper.admitMaskWrites(opts.maskWrites)
-
-    helper.installImport({
-        LrApplication = {
-            activeCatalog = function() return catalog end,
-            versionTable = function() return opts.version or { major = 15, minor = 6 } end,
-        },
-        LrApplicationView = {
-            getCurrentModuleName = function() return module end,
-            switchToModule = function(name)
-                module = name
-                calls.modules[#calls.modules + 1] = name
-            end,
-        },
-        LrDevelopController = controller,
-        LrSelection = { selectNone = function() active = nil end },
-        LrTasks = { pcall = pcall, sleep = function() end },
-        LrLogger = helper.defaultLrLogger(),
-    })
-    for _, name in ipairs({
-        "HandlerGradientMasks", "GuardedMaskWrite", "GradientGeometry", "DevelopSession", "Log",
-        "MaskCreationAdjustments", "MaskSelection", "LocalSliders",
-    }) do
-        package.loaded[name] = nil
-    end
-    return require 'HandlerGradientMasks', stores, calls, catalog
+    return Store.guardedHandler("HandlerGradientMasks", { "GradientGeometry" }, opts)
 end
 
 local function linearRequest(overrides)
@@ -124,50 +36,25 @@ local function existingGradients()
 end
 
 describe("HandlerGradientMasks.createGradientMask", function()
-    it("writes requested adjustments with the geometry in one Develop session", function()
-        local Handler, stores, calls = setup()
-        local result = Handler.createGradientMask(radialRequest({ adjustments = { exposure = 1, contrast = -25 } }))
-        assert.is_true(result.success)
-        assert.are.equal(1, #stores["1"].writes)
-        assert.are.equal(0.25, stores["1"].entries[1].LocalExposure2012)
-        assert.are.equal(-0.25, stores["1"].entries[1].LocalContrast2012)
-        assert.is_nil(stores["1"].entries[1].LocalTemperature)
-        assert.are.same({ "develop", "library" }, calls.modules)
-    end)
-
-    it("rejects empty, unknown, out-of-range and existing-mask adjustments before writes", function()
-        for _, adjustments in ipairs({ {}, { unknown = 1 }, { exposure = 5 }, { exposure = 0 / 0 } }) do
-            local Handler, stores = setup()
-            assert.matches("adjust", errorOf(function()
-                Handler.createGradientMask(radialRequest({ adjustments = adjustments }))
-            end))
-            assert.are.equal(0, #stores["1"].writes)
-        end
-        local Handler, stores = setup()
-        assert.matches("mask_id", errorOf(function()
-            Handler.createGradientMask(radialRequest({ mask_id = "existing", adjustments = { exposure = 1 } }))
-        end))
-        assert.are.equal(0, #stores["1"].writes)
-    end)
-
-    it("restores all previous masks when the SDK adjustment read-back differs", function()
+    it("writes the requested adjustments into the new mask, and restores all previous masks when the SDK read-back differs", function()
         local previous = { correction("Existing", { Store.linearComponent({ MaskID = "C1T1" }) },
             { CorrectionID = "C1" }) }
         local Handler, stores = setup({ wrongAdjustment = true, photos = { { id = "1", entries = previous } } })
-        assert.matches("restored", errorOf(function()
-            Handler.createGradientMask(radialRequest({ adjustments = { exposure = 1 } }))
+        assert.matches("restored", helper.refusalOf(function()
+            Handler.createGradientMask(radialRequest({ adjustments = { local_Exposure = 1 } }))
         end))
+        local written = stores["1"].writes[1]
+        assert.are.equal(0.25, written[#written].LocalExposure2012)
         assert.are.same(previous, stores["1"].entries)
         assert.are.equal(2, #stores["1"].writes)
     end)
 
-    it("rejects a narrower live slider range before writing", function()
+    it("writes a value the schema accepts whatever range Lightroom reports for the slider", function()
         local Handler, stores = setup({ narrowRange = true })
-        assert.matches("slider range", errorOf(function()
-            Handler.createGradientMask(radialRequest({ adjustments = { exposure = 1 } }))
-        end))
-        assert.are.same({}, stores["1"].entries)
-        assert.are.equal(0, #stores["1"].writes)
+
+        Handler.createGradientMask(radialRequest({ adjustments = { local_Exposure = 1 } }))
+
+        assert.are.equal(0.25, stores["1"].entries[1].LocalExposure2012)
     end)
 
     it("commits an edit pending on the photo open in Develop before it writes the mask", function()
@@ -198,7 +85,6 @@ describe("HandlerGradientMasks.createGradientMask", function()
         assert.are.equal("Mask/Gradient", component.What)
         assert.are.equal(0.2, component.FullY)
         assert.are.equal(0.6, component.ZeroY)
-        assert.is_true(result.success)
         assert.are.equal("1", result.photo_id)
         assert.are.equal("C1", result.mask_id)
         assert.are.equal("C1T1", result.tool_id)
@@ -270,40 +156,37 @@ describe("HandlerGradientMasks.createGradientMask", function()
         assert.is_true(calls.getAllMasks >= 1)
     end)
 
-    it("accepts a numeric photo id and a file path", function()
+    it("accepts a numeric photo id and a file path and answers with the photo's own id", function()
         local Handler = setup({ photos = { { id = "7" } } })
 
         assert.are.equal("7", Handler.createGradientMask(linearRequest({ photo_id = 7 })).photo_id)
-        assert.are.equal("/7.jpg", Handler.createGradientMask(linearRequest({ photo_id = "/7.jpg" })).photo_id)
+        assert.are.equal("7", Handler.createGradientMask(linearRequest({ photo_id = "/7.jpg" })).photo_id)
     end)
 
-    it("rejects coordinates outside the image before reading, writing or opening Develop", function()
+    it("rejects a degenerate linear gradient before reading, writing or opening Develop", function()
         local Handler, stores, calls = setup()
 
-        local message = errorOf(function()
-            Handler.createGradientMask(linearRequest({ ["end"] = point(0.5, 1.2) }))
+        local message = helper.refusalOf(function()
+            Handler.createGradientMask(linearRequest({ ["end"] = point(0.5, 0.2) }))
         end)
 
-        assert.is_truthy(message:find("end.y is outside the image", 1, true))
+        assert.is_truthy(message:find("same point", 1, true))
         assert.are.equal(0, #stores["1"].writes)
         assert.are.equal(0, stores["1"].reads)
         assert.are.equal(0, #calls.modules)
     end)
 
-    it("requires a photo id and a known photo", function()
+    it("answers an unknown photo with not_found before opening Develop", function()
         local Handler, _, calls = setup()
 
-        assert.is_truthy(errorOf(function() Handler.createGradientMask(linearRequest({ photo_id = "" })) end)
-            :find("photo_id is required", 1, true))
-        assert.is_truthy(errorOf(function() Handler.createGradientMask(linearRequest({ photo_id = "404" })) end)
-            :find("Photo not found: 404", 1, true))
+        assert.are.equal("404", helper.notFoundOf(function() Handler.createGradientMask(linearRequest({ photo_id = "404" })) end))
         assert.are.equal(0, #calls.modules)
     end)
 
     it("fails for an unknown mask id without writing or opening Develop", function()
         local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
-        local message = errorOf(function() Handler.createGradientMask(linearRequest({ mask_id = "C9" })) end)
+        local message = helper.refusalOf(function() Handler.createGradientMask(linearRequest({ mask_id = "C9" })) end)
 
         assert.is_truthy(message:find("Mask not found on this photo: C9", 1, true))
         assert.are.equal(0, #stores["1"].writes)
@@ -313,7 +196,7 @@ describe("HandlerGradientMasks.createGradientMask", function()
     it("refuses on an uncertified Lightroom, leaving the photo and the view alone", function()
         local Handler, stores, calls = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
 
-        local message = errorOf(function() Handler.createGradientMask(linearRequest()) end)
+        local message = helper.refusalOf(function() Handler.createGradientMask(linearRequest()) end)
 
         assert.is_truthy(message:find("is not certified", 1, true))
         assert.are.equal(0, #stores["1"].writes)
@@ -325,7 +208,7 @@ describe("HandlerGradientMasks.createGradientMask", function()
         entries[1].CorrectionMasks[1].FullYY = 1
         local Handler, stores, calls = setup({ photos = { { id = "1", entries = entries } } })
 
-        local message = errorOf(function() Handler.createGradientMask(linearRequest()) end)
+        local message = helper.refusalOf(function() Handler.createGradientMask(linearRequest()) end)
 
         assert.is_truthy(message:find("unexpected field FullYY", 1, true))
         assert.are.equal(0, #stores["1"].writes)
@@ -335,9 +218,9 @@ describe("HandlerGradientMasks.createGradientMask", function()
     it("names the minimum Lightroom version when the mask API is missing", function()
         local Handler, stores, calls = setup({ withoutMaskApi = true })
 
-        local message = errorOf(function() Handler.createGradientMask(linearRequest()) end)
+        local message = helper.refusalOf(function() Handler.createGradientMask(linearRequest()) end)
 
-        assert.is_truthy(message:find("create_gradient_mask needs Lightroom Classic 11 or later", 1, true))
+        assert.is_truthy(message:find("^create_gradient_mask needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
         assert.are.equal(0, #stores["1"].writes)
         assert.are.equal(0, #calls.modules)
     end)
@@ -354,7 +237,7 @@ describe("HandlerGradientMasks.createGradientMask", function()
             } },
         })
 
-        local message = errorOf(function() Handler.createGradientMask(linearRequest()) end)
+        local message = helper.refusalOf(function() Handler.createGradientMask(linearRequest()) end)
 
         assert.is_truthy(message:find("previous masks were restored", 1, true))
         assert.are.equal(2, #stores["1"].writes)
@@ -373,7 +256,7 @@ describe("HandlerGradientMasks.createGradientMask", function()
             } },
         })
 
-        local message = errorOf(function() Handler.createGradientMask(linearRequest()) end)
+        local message = helper.refusalOf(function() Handler.createGradientMask(linearRequest()) end)
 
         assert.is_truthy(message:find("count changed from 1 to 0", 1, true))
         assert.are.equal(0, #stores["1"].entries)
@@ -382,7 +265,7 @@ describe("HandlerGradientMasks.createGradientMask", function()
     it("restores the previous masks when Lightroom's mask list does not show the new tool", function()
         local Handler, stores, calls = setup({ hideNewMasks = true })
 
-        local message = errorOf(function() Handler.createGradientMask(linearRequest()) end)
+        local message = helper.refusalOf(function() Handler.createGradientMask(linearRequest()) end)
 
         assert.is_truthy(message:find("Lightroom's mask list has no gradient tool C1T1 in mask C1", 1, true))
         assert.are.equal(2, #stores["1"].writes)
@@ -471,37 +354,24 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         assert.is_true(math.abs(result.geometry.height - 0.2) < 1e-5)
     end)
 
-    it("refuses a rotated radial when Lightroom reports no photo size, before anything is written", function()
-        local Handler, stores = setup({ photos = { { id = "1", noDimensions = true } } })
+    it("refuses a gradient when Lightroom reports no photo size, before anything is written", function()
+        for _, request in ipairs({ radialRequest(), linearRequest() }) do
+            local Handler, stores = setup({ photos = { { id = "1", noDimensions = true } } })
 
-        local message = errorOf(function()
-            Handler.createGradientMask(radialRequest({ rotation = 30 }))
-        end)
+            local message = helper.refusalOf(function() Handler.createGradientMask(request) end)
 
-        assert.is_truthy(message:find("size", 1, true))
-        assert.are.equal(0, #stores["1"].writes)
+            assert.is_truthy(message:find("pixel size", 1, true))
+            assert.are.equal(0, #stores["1"].writes)
+        end
     end)
 
-    it("places an unrotated radial without needing the photo size", function()
-        local Handler, stores = setup({ photos = { { id = "1", noDimensions = true } } })
-
-        local result = Handler.createGradientMask(radialRequest())
-
-        assert.is_true(result.success)
-        assert.are.equal(1, #stores["1"].writes)
-    end)
-
-    it("rejects out-of-image coordinates and degenerate gradients without writing", function()
+    it("rejects a degenerate gradient without writing", function()
         local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
-        local outside = errorOf(function()
-            Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T1", start = point(-1, 0) })
-        end)
-        local degenerate = errorOf(function()
+        local degenerate = helper.refusalOf(function()
             Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T1", ["end"] = point(0.5, 0.2) })
         end)
 
-        assert.is_truthy(outside:find("start.x is outside the image", 1, true))
         assert.is_truthy(degenerate:find("same point", 1, true))
         assert.are.equal(0, #stores["1"].writes)
         assert.are.equal(0, #calls.modules)
@@ -516,10 +386,10 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         }
         local Handler, stores, calls = setup({ photos = { { id = "1", entries = entries } } })
 
-        local unknown = errorOf(function()
+        local unknown = helper.refusalOf(function()
             Handler.updateGradientMask({ photo_id = "1", tool_id = "NOPE", feather = 5 })
         end)
-        local brush = errorOf(function()
+        local brush = helper.refusalOf(function()
             Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T3", start = point(0, 0) })
         end)
 
@@ -532,7 +402,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
     it("rejects a field of the other shape", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
-        local message = errorOf(function()
+        local message = helper.refusalOf(function()
             Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T1", feather = 5 })
         end)
 
@@ -552,7 +422,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
             } },
         })
 
-        local message = errorOf(function()
+        local message = helper.refusalOf(function()
             Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T1", ["end"] = point(0.9, 0.9) })
         end)
 
@@ -681,7 +551,7 @@ describe("HandlerGradientMasks in the stored frame of a rotated photo", function
             assert.is_true(math.abs(0.3 - result.geometry.width) < 1e-5)
             assert.is_true(math.abs(0.5 - result.geometry.height) < 1e-5)
             local component = stores["1"].writes[2][1].CorrectionMasks[1]
-            assert.are.equal(radial.angle > 0 and 45 or -45, component.Angle)
+            assert.are.equal(45, math.abs(component.Angle))
         end)
     end
 
@@ -797,10 +667,96 @@ describe("HandlerGradientMasks in the stored frame of a rotated photo", function
     it("refuses a photo whose orientation it cannot map, writing nothing", function()
         local Handler, stores, calls = setup({ photos = { { id = "1", orientation = "ZZ" } } })
 
-        local message = errorOf(function() Handler.createGradientMask(displayedVertical()) end)
+        local message = helper.refusalOf(function() Handler.createGradientMask(displayedVertical()) end)
 
         assert.is_truthy(message:find("cannot map", 1, true))
         assert.are.equal(0, #stores["1"].writes)
         assert.are.equal(0, #calls.modules)
+    end)
+end)
+
+describe("gradients on a cropped and straightened photo", function()
+    local SESSION_A_CROP = { CropLeft = 0.15, CropTop = 0.1, CropRight = 0.92, CropBottom = 0.9, CropAngle = 8 }
+
+    local function croppedPhoto(extra)
+        local settings = {}
+        for key, value in pairs(SESSION_A_CROP) do settings[key] = value end
+        for key, value in pairs(extra or {}) do settings[key] = value end
+        return { id = "1", dimensions = { width = 1500, height = 1000 }, settings = settings }
+    end
+
+    it("stores a radial where Lightroom 16.0 rendered the disc seen at that displayed point", function()
+        local Handler, stores = setup({ photos = { croppedPhoto() } })
+
+        local result = Handler.createGradientMask(radialRequest({
+            center = point(0.6255, 0.3057), width = 0.12, height = 0.12,
+        }))
+
+        local component = stores["1"].writes[1][1].CorrectionMasks[1]
+        assert.is_true(math.abs((component.Left + component.Right) / 2 - 0.6503) < 0.001)
+        assert.is_true(math.abs((component.Top + component.Bottom) / 2 - 0.4005) < 0.001)
+        assert.is_true(math.abs(result.geometry.center.x - 0.6255) < 1e-5)
+        assert.is_true(math.abs(result.geometry.center.y - 0.3057) < 1e-5)
+    end)
+
+    it("turns a displayed horizontal linear gradient by the crop angle in the stored frame", function()
+        local Handler, stores = setup({ photos = { croppedPhoto() } })
+
+        local result = Handler.createGradientMask(linearRequest({ start = point(0.381, 0.5), ["end"] = point(0.612, 0.5) }))
+
+        local component = stores["1"].writes[1][1].CorrectionMasks[1]
+        local degrees = math.deg(math.atan((component.ZeroY - component.FullY) * 1000,
+            (component.ZeroX - component.FullX) * 1500))
+        assert.is_true(math.abs(degrees - 8) < 0.01)
+        assert.is_true(math.abs(result.geometry.start.y - 0.5) < 1e-5)
+        assert.is_true(math.abs(result.geometry["end"].y - 0.5) < 1e-5)
+    end)
+
+    it("keeps the pixel size of a displayed radial and turns it by the crop angle", function()
+        local Handler, stores = setup({ photos = { croppedPhoto() } })
+
+        local result = Handler.createGradientMask(radialRequest({
+            center = point(0.5, 0.5), width = 0.2, height = 0.1, rotation = 30,
+        }))
+
+        local component = stores["1"].writes[1][1].CorrectionMasks[1]
+        local _, stored = require('GradientGeometry').geometryOf(component, 1.5)
+        local displayedWidth = 1155 * math.cos(math.rad(8)) + 800 * math.sin(math.rad(8))
+        local displayedHeight = -1155 * math.sin(math.rad(8)) + 800 * math.cos(math.rad(8))
+        assert.is_true(math.abs(stored.rotation - 38) < 1e-4)
+        assert.is_true(math.abs(stored.width * 1500 - 0.2 * displayedWidth) < 0.01)
+        assert.is_true(math.abs(stored.height * 1000 - 0.1 * displayedHeight) < 0.01)
+        assert.is_true(math.abs(result.geometry.rotation - 30) < 1e-4)
+        assert.is_true(math.abs(result.geometry.width - 0.2) < 1e-5)
+        assert.is_true(math.abs(result.geometry.height - 0.1) < 1e-5)
+    end)
+
+    for _, warp in ipairs({
+        { key = "PerspectiveUpright", value = 4 },
+        { key = "PerspectiveVertical", value = -30 },
+        { key = "LensManualDistortionAmount", value = 60 },
+    }) do
+        it("writes and warns that " .. warp.key .. " moves the mask away from the preview position", function()
+            local Handler, stores = setup({ photos = { croppedPhoto({ [warp.key] = warp.value }) } })
+            local context = helper.requestContext()
+
+            Handler.createGradientMask(radialRequest(), context)
+
+            assert.are.equal(1, #stores["1"].writes)
+            assert.are.equal(1, #context.warnings)
+            assert.is_truthy(context.warnings[1]:find(warp.key, 1, true))
+            assert.is_truthy(context.warnings[1]:find("0.05", 1, true))
+        end)
+    end
+
+    it("does not warn for a lens profile alone or for Transform at its neutral values", function()
+        local Handler = setup({ photos = { croppedPhoto({
+            LensProfileEnable = 1, PerspectiveUpright = 0, PerspectiveScale = 100, PerspectiveVertical = 0,
+        }) } })
+        local context = helper.requestContext()
+
+        Handler.createGradientMask(radialRequest(), context)
+
+        assert.are.same({}, context.warnings)
     end)
 end)

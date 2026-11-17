@@ -1,22 +1,18 @@
 local LrApplication = import 'LrApplication'
 
+local Contract = require 'Contract'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 local PhotoSummary = require 'PhotoSummary'
+local Reply = require 'Reply'
 
 local SelectionHandler = {}
 
 function SelectionHandler.getSelectedPhotos(args)
-    args = args or {}
     local catalog = LrApplication.activeCatalog()
 
-    -- floor: the tool schema permits any number, and a fractional offset would
-    -- make the page loop index matches[i] with a non-integer key (always nil)
-    -- and crash the row builder.
-    local limit = math.floor(tonumber(args.limit) or 100)
-    if limit < 0 then limit = 0 end
-    local offset = math.floor(tonumber(args.offset) or 0)
-    if offset < 0 then offset = 0 end
+    local limit = args.limit or Contract.DEFAULT_PAGE_LIMIT
+    local offset = args.offset or 0
 
     -- Acquire the target set OUTSIDE withReadAccessDo. getTargetPhotos() reads
     -- the live view selection, which yields to the UI thread; called from
@@ -45,41 +41,25 @@ end
 -- the raw TCP probe but never from an MCP client, which must not be able to
 -- reorder the user's filmstrip. Lets the e2e playbook stage the selection that
 -- get_selected_photos reads back, instead of a human clicking in Lightroom.
-function SelectionHandler.setSelection(args)
-    args = args or {}
+function SelectionHandler.setSelection(args, context)
     local ids = args.photo_ids
     if type(ids) ~= "table" or ids[1] == nil then
         error("photo_ids is required")
     end
 
     local catalog = LrApplication.activeCatalog()
-    local resolved = PhotoLookup.resolveMany(catalog, ids)
-
+    local entries, missing = PhotoLookup.resolveDistinct(catalog, ids)
     local photos = {}
-    local missing = {}
-    local seen = {}
-    local selectedCount = 0
-    local missingCount = 0
-    for _, entry in ipairs(resolved) do
-        if entry.photo then
-            if not seen[entry.photo] then
-                seen[entry.photo] = true
-                selectedCount = selectedCount + 1
-                photos[selectedCount] = entry.photo
-            end
-        else
-            missingCount = missingCount + 1
-            missing[missingCount] = tostring(entry.id)
-        end
-    end
+    for i, entry in ipairs(entries) do photos[i] = entry.photo end
+    local selectedCount = #photos
 
     if selectedCount == 0 then
-        error("No photos matched photo_ids")
+        return Reply.parts({ not_found = missing })
     end
 
     -- Yields to the UI thread, so it must stay OUTSIDE withReadAccessDo for the
     -- same reason getTargetPhotos does (#134/#124). First arg becomes active.
-    Log.info(string.format("setSelection: selecting %d (missing %d)", selectedCount, missingCount))
+    Log.info(string.format("setSelection: selecting %d (missing %d)", selectedCount, #missing))
     catalog:setSelectedPhotos(photos[1], photos)
 
     -- Lightroom ignores photos outside the current view source and leaves the
@@ -96,19 +76,20 @@ function SelectionHandler.setSelection(args)
         end
     end
 
-    local result = {
-        selected = actualCount,
-        requested = selectedCount,
-        active = photos[1].localIdentifier,
-        missing = missing,
-    }
     if actualCount < selectedCount then
-        result.warning = string.format(
+        context:warn(string.format(
             "Lightroom selected %d of %d photos: the rest are not in the current view source. "
             .. "Switch Lightroom to a source that contains them, such as All Photographs.",
-            actualCount, selectedCount)
+            actualCount, selectedCount))
     end
-    return result
+    return Reply.parts({
+        data = {
+            selected = actualCount,
+            requested = selectedCount,
+            active_photo_id = tostring(photos[1].localIdentifier),
+        },
+        not_found = #missing > 0 and missing or nil,
+    })
 end
 
 return SelectionHandler

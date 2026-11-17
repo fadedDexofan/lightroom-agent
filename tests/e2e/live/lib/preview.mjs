@@ -48,7 +48,7 @@ export function decodeJpegBase64(base64) {
   }
 }
 
-export async function fetchPixels(session, photoId, size = 512) {
+export async function fetchPixels(session, photoId, size = 864) {
   const answer = await session.tool("get_photo_preview", { photo_id: photoId, size });
   if (answer.isError || !answer.image) throw new Error(`get_photo_preview: ${answer.text}`);
   return decodeJpegBase64(answer.image.data);
@@ -64,7 +64,7 @@ export function describeSizes(before, after) {
   return { before: `${before.w}x${before.h}`, after: `${after.w}x${after.h}` };
 }
 
-export async function fetchStablePixels(session, photoId, { size = 512, tries = 8, pauseMs = 1500 } = {}) {
+export async function fetchStablePixels(session, photoId, { size = 864, tries = 8, pauseMs = 1500 } = {}) {
   let previous = null;
   for (let attempt = 0; attempt < tries; attempt++) {
     const current = await fetchPixels(session, photoId, size);
@@ -82,7 +82,7 @@ export async function fetchStablePixels(session, photoId, { size = 512, tries = 
   throw new Error(`preview of ${photoId} did not stabilise in ${tries} fetches`);
 }
 
-export async function measureChange(session, photoId, applyChange, { size = 512, settleMs = SETTLE_MS } = {}) {
+export async function measureChange(session, photoId, applyChange, { size = 864, settleMs = SETTLE_MS } = {}) {
   const before = await fetchStablePixels(session, photoId, { size });
   await applyChange();
   await sleep(settleMs);
@@ -171,4 +171,70 @@ export function intersectionOverUnion(before, after, inside, { threshold = 0.04,
     }
   }
   return union === 0 ? 0 : intersection / union;
+}
+
+export function changeCentroid(before, after, threshold = 0.04) {
+  let sx = 0;
+  let sy = 0;
+  let count = 0;
+  for (let y = 0; y < after.h; y++) {
+    for (let x = 0; x < after.w; x++) {
+      const fx = (x + 0.5) / after.w;
+      const fy = (y + 0.5) / after.h;
+      if (after.L[y * after.w + x] - before.L[nearestIndex(before, fx, fy)] > threshold) {
+        sx += fx;
+        sy += fy;
+        count++;
+      }
+    }
+  }
+  return count === 0 ? null : { x: sx / count, y: sy / count, count };
+}
+
+const COLOR_MATCH_DISTANCE = 0.12;
+
+export function colorCentroid(pixels, color, distance = COLOR_MATCH_DISTANCE) {
+  const [r, g, b] = color.map((value) => value / 255);
+  let sx = 0;
+  let sy = 0;
+  let count = 0;
+  for (let y = 0; y < pixels.h; y++) {
+    for (let x = 0; x < pixels.w; x++) {
+      const i = y * pixels.w + x;
+      if (Math.hypot(pixels.R[i] - r, pixels.G[i] - g, pixels.B[i] - b) <= distance) {
+        sx += (x + 0.5) / pixels.w;
+        sy += (y + 0.5) / pixels.h;
+        count++;
+      }
+    }
+  }
+  return count === 0 ? null : { x: sx / count, y: sy / count, count };
+}
+
+export function meanChroma(pixels) {
+  let sum = 0;
+  for (let i = 0; i < pixels.R.length; i++) {
+    sum += Math.max(pixels.R[i], pixels.G[i], pixels.B[i]) - Math.min(pixels.R[i], pixels.G[i], pixels.B[i]);
+  }
+  return sum / pixels.R.length;
+}
+
+export function alternationRate(pixels) {
+  const side = (i) => pixels.L[i] > 0.5;
+  let alternating = 0;
+  let pairs = 0;
+  for (let y = 0; y < pixels.h; y++) {
+    for (let x = 0; x < pixels.w; x++) {
+      const i = y * pixels.w + x;
+      if (x + 1 < pixels.w) {
+        pairs++;
+        if (side(i) !== side(i + 1)) alternating++;
+      }
+      if (y + 1 < pixels.h) {
+        pairs++;
+        if (side(i) !== side(i + pixels.w)) alternating++;
+      }
+    }
+  }
+  return pairs === 0 ? 0 : alternating / pairs;
 }

@@ -116,20 +116,35 @@ export class McpSession {
     const startedAt = Date.now();
     const result = await this.rpc("tools/call", { name, arguments: args }, timeoutMs, { signal, onProgress, progressToken });
     const text = result?.content?.find((block) => block.type === "text")?.text ?? "";
-    const image = result?.content?.find((block) => block.type === "image") ?? null;
-    let data;
+    const images = (result?.content ?? []).filter((block) => block.type === "image");
+    let envelope;
     try {
-      data = JSON.parse(text);
+      envelope = JSON.parse(text);
     } catch {
-      data = text;
+      envelope = { outcome: "failed", error: text };
     }
-    return { isError: Boolean(result?.isError), text, data, image, ms: Date.now() - startedAt };
+    return {
+      isError: Boolean(result?.isError), text, envelope, outcome: envelope.outcome, data: envelope.data,
+      image: images[0] ?? null, images, ms: Date.now() - startedAt,
+    };
   }
 
   async toolOrThrow(name, args = {}, options = {}) {
     const answer = await this.tool(name, args, options);
     if (answer.isError) throw new Error(`${name}: ${answer.text}`);
     return answer;
+  }
+
+  async photoMetadata(photoId) {
+    const { data } = await this.toolOrThrow("get_photo_metadata", { photo_ids: [photoId] });
+    if (!data.photos?.[0]) throw new Error(`get_photo_metadata: photo ${photoId} not found`);
+    return data.photos[0];
+  }
+
+  async developSettings(photoId, keys) {
+    const { data } = await this.toolOrThrow("get_develop_settings", { photo_ids: [photoId], keys });
+    if (!data.photos?.[0]) throw new Error(`get_develop_settings: photo ${photoId} not found`);
+    return data.photos[0];
   }
 
   async stop() {

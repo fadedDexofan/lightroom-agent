@@ -1,46 +1,18 @@
 local LrApplication = import 'LrApplication'
 
+local Contract = require 'Contract'
 local Log = require 'Log'
+local PhotoStack = require 'PhotoStack'
 local PhotoSummary = require 'PhotoSummary'
 
 local SearchHandler = {}
-local FLAGS = { pick = 1, reject = -1, none = 0 }
-local LABELS = { red = 1, yellow = 2, green = 3, blue = 4, purple = 5, none = "none" }
-local FILE_TYPES = { DNG = true, RAW = true, JPG = true, TIFF = true, PNG = true,
-    PSD = true, VIDEO = true, PSB = true, AVIF = true, JXL = true }
+local FLAGS, LABELS = {}, {}
+for _, flag in ipairs(Contract.PHOTO_FLAGS) do FLAGS[flag.name] = flag.pickStatus end
+for _, label in ipairs(Contract.COLOR_LABELS) do LABELS[label.name] = label.labelColor end
 
-local function enumValue(value, values, name)
-    if type(value) ~= "string" or values[value] == nil then
-        error(name .. " has an unsupported value", 0)
-    end
-    return values[value]
-end
-
-local function parseDate(value, name)
-    if type(value) ~= "string" then
-        error(name .. " must be a string in YYYY-MM-DD format", 0)
-    end
-
+local function timestampOf(value)
     local year, month, day = value:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
-    if not year then
-        error(name .. " must use YYYY-MM-DD format", 0)
-    end
-
-    year = tonumber(year)
-    month = tonumber(month)
-    day = tonumber(day)
-
-    if month < 1 or month > 12 then
-        error(name .. " must use a valid calendar date", 0)
-    end
-
-    local timestamp = os.time({ year = year, month = month, day = day, hour = 12 })
-    local normalized = os.date("*t", timestamp)
-    if normalized.year ~= year or normalized.month ~= month or normalized.day ~= day then
-        error(name .. " must use a valid calendar date", 0)
-    end
-
-    return value, timestamp
+    return os.time({ year = tonumber(year), month = tonumber(month), day = tonumber(day), hour = 12 })
 end
 
 local function addDays(timestamp, days)
@@ -65,58 +37,39 @@ local function buildSearchDesc(args)
     end
 
     if args.start_date and args.end_date then
-        local startDate, startTimestamp = parseDate(args.start_date, "start_date")
-        local endDate, endTimestamp = parseDate(args.end_date, "end_date")
-        if startTimestamp > endTimestamp then
-            error("start_date must be on or before end_date", 0)
-        end
         table.insert(desc, {
             criteria = "captureTime",
             operation = "in",
-            value = startDate,
-            value2 = endDate,
+            value = args.start_date,
+            value2 = args.end_date,
         })
     elseif args.start_date then
-        local _, startTimestamp = parseDate(args.start_date, "start_date")
-        table.insert(desc, { criteria = "captureTime", operation = ">", value = addDays(startTimestamp, -1) })
+        table.insert(desc, { criteria = "captureTime", operation = ">", value = addDays(timestampOf(args.start_date), -1) })
     elseif args.end_date then
-        local _, endTimestamp = parseDate(args.end_date, "end_date")
-        table.insert(desc, { criteria = "captureTime", operation = "<", value = addDays(endTimestamp, 1) })
+        table.insert(desc, { criteria = "captureTime", operation = "<", value = addDays(timestampOf(args.end_date), 1) })
     end
 
     for _, field in ipairs({ "camera", "lens", "folder" }) do
         if args[field] ~= nil then
-            if type(args[field]) ~= "string" or not args[field]:find("%S") then
-                error(field .. " must be a non-empty string", 0)
-            end
             table.insert(desc, { criteria = field, operation = field == "folder" and "all" or "==", value = args[field] })
         end
     end
     if args.iso ~= nil then
-        if type(args.iso) ~= "number" or args.iso ~= args.iso or args.iso <= 0 or args.iso == math.huge then
-            error("iso must be a positive finite number", 0)
-        end
         table.insert(desc, { criteria = "isoSpeedRating", operation = "==", value = args.iso })
     end
     if args.focal_length ~= nil then
-        if type(args.focal_length) ~= "number" or args.focal_length ~= args.focal_length
-            or args.focal_length <= 0 or args.focal_length == math.huge then
-            error("focal_length must be a positive finite number", 0)
-        end
         table.insert(desc, { criteria = "focalLength", operation = "==", value = args.focal_length })
     end
     if args.flag ~= nil then
-        table.insert(desc, { criteria = "pick", operation = "==", value = enumValue(args.flag, FLAGS, "flag") })
+        table.insert(desc, { criteria = "pick", operation = "==", value = FLAGS[args.flag] })
     end
     if args.color_label ~= nil then
-        table.insert(desc, { criteria = "labelColor", operation = "==", value = enumValue(args.color_label, LABELS, "color_label") })
+        table.insert(desc, { criteria = "labelColor", operation = "==", value = LABELS[args.color_label] })
     end
     if args.edited ~= nil then
-        if type(args.edited) ~= "boolean" then error("edited must be a boolean", 0) end
         table.insert(desc, { criteria = "hasAdjustments", operation = args.edited and "isTrue" or "isFalse", value = args.edited })
     end
     if args.file_type ~= nil then
-        enumValue(args.file_type, FILE_TYPES, "file_type")
         table.insert(desc, { criteria = "fileFormat", operation = "==", value = args.file_type })
     end
 
@@ -125,18 +78,13 @@ end
 
 SearchHandler.buildSearchDesc = buildSearchDesc
 
-function SearchHandler.searchPhotos(args)
+function SearchHandler.searchPhotos(args, context)
     local catalog = LrApplication.activeCatalog()
     local searchDesc = buildSearchDesc(args)
     local hasFilters = #searchDesc > 0
 
-    -- floor: the tool schema permits any number, and a fractional offset would
-    -- make the page loop index matches[i] with a non-integer key (always nil)
-    -- and crash the row builder.
-    local limit = math.floor(tonumber(args.limit) or 100)
-    if limit < 0 then limit = 0 end
-    local offset = math.floor(tonumber(args.offset) or 0)
-    if offset < 0 then offset = 0 end
+    local limit = args.limit or Contract.DEFAULT_PAGE_LIMIT
+    local offset = args.offset or 0
 
     -- Run the catalog query OUTSIDE withReadAccessDo. findPhotos() runs an
     -- async catalog search that yields; called from inside the read gate on
@@ -159,17 +107,26 @@ function SearchHandler.searchPhotos(args)
     Log.info(string.format("Search matched %d photos, returning %d (offset=%d, limit=%d)",
         total, #results, offset, limit))
 
-    local response = {
+    local collapsedTops = {}
+    for _, row in ipairs(results) do
+        if PhotoStack.isCollapsedTop(row.stack) then collapsedTops[#collapsedTops + 1] = row.photo_id end
+    end
+    if #collapsedTops > 0 then
+        context:warn("Lightroom does not search the hidden photos of a collapsed stack; these rows are the tops of"
+            .. " collapsed stacks whose other photos may match too: " .. table.concat(collapsedTops, ", ")
+            .. ". get_photo_metadata of a top photo lists its stack's member_photo_ids, which other tools"
+            .. " accept by id; or expand the stacks in Lightroom and search again.")
+    end
+
+    if not hasFilters then
+        context:warn("No filters applied — scanned full catalog. Provide filename, keywords, rating, or date filters to narrow results and improve performance.")
+    end
+
+    return {
         count = total,
         photos = results,
         has_more = (offset + #results) < total,
     }
-
-    if not hasFilters then
-        response.warning = "No filters applied — scanned full catalog. Provide filename, keywords, rating, or date filters to narrow results and improve performance."
-    end
-
-    return response
 end
 
 return SearchHandler

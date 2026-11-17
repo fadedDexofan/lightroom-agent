@@ -7,8 +7,7 @@ local PhotoLookup = require 'PhotoLookup'
 local HandlerMaskAdmission = {}
 
 local function photoAdmission(catalog, photoId)
-    local photo = PhotoLookup.resolveOne(catalog, photoId)
-    if not photo then error("Photo not found: " .. tostring(photoId), 0) end
+    local photo = PhotoLookup.requireOne(catalog, photoId)
     local state = GuardedMaskWrite.inspect(catalog, photo)
     local decision = MaskWriteAdmission.decide(catalog, state.process_version)
     local result = {
@@ -26,11 +25,7 @@ local function photoAdmission(catalog, photoId)
 end
 
 function HandlerMaskAdmission.get(args)
-    args = args or {}
     local photoId = args.photo_id
-    if photoId ~= nil and type(photoId) ~= "string" and type(photoId) ~= "number" then
-        error("photo_id must be a photo ID or file path", 0)
-    end
     local catalog = LrApplication.activeCatalog()
     local status = MaskWriteAdmission.status(catalog)
     local result = {

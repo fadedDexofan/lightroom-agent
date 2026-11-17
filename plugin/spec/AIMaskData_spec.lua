@@ -35,16 +35,16 @@ describe("AIMaskData", function()
         assert.are.equal(settings, AIMaskData.withoutComputedData(settings))
     end)
 
-    it("calls a correction computed only when every AI mask carries its digest", function()
-        assert.is_true(AIMaskData.correctionIsComputed(
-            { CorrectionMasks = { { What = "Mask/Image", MaskDigest = "a" } } }))
-        assert.is_false(AIMaskData.correctionIsComputed(
-            { CorrectionMasks = { { What = "Mask/Image" } } }))
-        assert.is_false(AIMaskData.correctionIsComputed(
-            { CorrectionMasks = { { What = "Mask/Image", MaskDigest = "a" }, { What = "Mask/Image" } } }))
-        assert.is_false(AIMaskData.correctionIsComputed(
-            { CorrectionMasks = { { What = "Mask/Gradient" } } }))
-        assert.is_false(AIMaskData.correctionIsComputed(nil))
-        assert.is_false(AIMaskData.correctionIsComputed({}))
+    it("calls a correction computed only when every AI mask carries its digest, failed on an error reason and none without AI masks", function()
+        local function state(components) return AIMaskData.computeState({ CorrectionMasks = components }) end
+        assert.are.equal("computed", state({ { What = "Mask/Image", MaskDigest = "a" } }))
+        assert.are.equal("computed", state({ { What = "Mask/Image", MaskDigest = "a", ErrorReason = 0 } }))
+        assert.are.equal("pending", state({ { What = "Mask/Image" } }))
+        assert.are.equal("pending", state({ { What = "Mask/Image", MaskDigest = "" } }))
+        assert.are.equal("pending", state({ { What = "Mask/Image", MaskDigest = "a" }, { What = "Mask/Image" } }))
+        assert.are.equal("failed", state({ { What = "Mask/Image", MaskDigest = "a", ErrorReason = 3 } }))
+        assert.are.equal("none", state({ { What = "Mask/Gradient" } }))
+        assert.are.equal("pending", AIMaskData.computeState(nil))
+        assert.are.equal("pending", AIMaskData.computeState({}))
     end)
 end)

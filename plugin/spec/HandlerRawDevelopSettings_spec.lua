@@ -25,98 +25,109 @@ local MASKS = {
     },
 }
 
-local function setup(settings, photoId)
-    local readInsideGate
-    local photo = helper.fakePhoto({ id = photoId or "7", path = "/7.cr2", developSettings = settings })
-    local catalog = helper.fakeCatalog({ photos = { photo } })
-    local read = photo.getDevelopSettings
-    photo.getDevelopSettings = function(self)
-        readInsideGate = catalog.isInsideReadAccess()
-        return read(self)
+local function setup(settingsById)
+    local inside = {}
+    local photos = {}
+    local catalog
+    for id, settings in pairs(settingsById) do
+        local photo = helper.fakePhoto({ id = id, path = "/" .. id .. ".cr2", developSettings = settings })
+        local read = photo.getDevelopSettings
+        photo.getDevelopSettings = function(self)
+            inside[#inside + 1] = catalog.isInsideReadAccess()
+            return read(self)
+        end
+        photos[#photos + 1] = photo
     end
+    catalog = helper.fakeCatalog({ photos = photos })
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerRawDevelopSettings = nil
     package.loaded.JSON = nil
-    return require 'HandlerRawDevelopSettings', function() return readInsideGate end
-end
-
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
+    return require 'HandlerRawDevelopSettings', inside
 end
 
 describe("HandlerRawDevelopSettings.get", function()
-    it("lists top-level keys with their type and table size, without values, inside the read gate", function()
-        local Handler, readInsideGate = setup({
+    it("lists one photo's top-level keys with their type and table size, without values, inside the read gate", function()
+        local Handler, inside = setup({ ["7"] = {
             ProcessVersion = "15.4", Exposure2012 = 0.5, AutoGrayscaleMix = true, MaskGroupBasedCorrections = MASKS,
-        })
+        } })
 
-        local r = Handler.get({ photo_id = "7" })
+        local reply = Handler.get({ photo_ids = { "7" } }, helper.requestContext())
 
-        assert.are.equal("7", r.photo_id)
-        assert.are.equal(4, r.count)
-        assert.are.same({
+        assert.are.same({ { photo_id = "7", keys = {
             { name = "AutoGrayscaleMix", type = "boolean" },
             { name = "Exposure2012", type = "number" },
             { name = "MaskGroupBasedCorrections", type = "table", count = 1 },
             { name = "ProcessVersion", type = "string" },
-        }, r.keys)
-        assert.is_nil(r.settings)
-        assert.is_true(readInsideGate())
+        } } }, reply.data.photos)
+        assert.are.same({ true }, inside)
     end)
 
-    it("returns requested keys unrenamed, MaskGroupBasedCorrections whole, and lists missing keys", function()
-        local Handler = setup({ ProcessVersion = "15.4", MaskGroupBasedCorrections = MASKS })
+    it("returns each photo's requested keys unrenamed and lists per photo the names it does not carry", function()
+        local Handler = setup({
+            ["7"] = { ProcessVersion = "15.4", MaskGroupBasedCorrections = MASKS },
+            ["8"] = { ProcessVersion = "15.4", DepthMapInfo = { 1 } },
+        })
 
-        local r = Handler.get({ photo_id = "7", keys = { "ProcessVersion", "MaskGroupBasedCorrections", "DepthMapInfo" } })
+        local reply = Handler.get({ photo_ids = { "7", "/8.cr2", "404" },
+            keys = { "ProcessVersion", "MaskGroupBasedCorrections", "DepthMapInfo" } }, helper.requestContext())
 
-        assert.are.equal("15.4", r.settings.ProcessVersion)
-        assert.are.same(MASKS, r.settings.MaskGroupBasedCorrections)
-        assert.are.same({ "DepthMapInfo" }, r.missing)
+        local first, second = reply.data.photos[1], reply.data.photos[2]
+        assert.are.equal("7", first.photo_id)
+        assert.are.same(MASKS, first.settings.MaskGroupBasedCorrections)
+        assert.are.same({ "DepthMapInfo" }, first.absent)
+        assert.are.equal("8", second.photo_id)
+        assert.are.same({ 1 }, second.settings.DepthMapInfo)
+        assert.are.same({ "MaskGroupBasedCorrections" }, second.absent)
+        assert.are.same({ "404" }, reply.not_found)
         local JSON = require 'JSON'
-        assert.are.same(MASKS, JSON:decode(JSON:encode(r)).settings.MaskGroupBasedCorrections)
+        assert.are.same(MASKS, JSON:decode(JSON:encode(reply.data)).photos[1].settings.MaskGroupBasedCorrections)
     end)
 
     it("marks values JSON cannot carry instead of failing or dropping them", function()
         local fn = function() end
-        local Handler = setup({
+        local Handler = setup({ ["7"] = {
             Gapped = { 1, nil, 3 },
             Mixed = { 10, label = "x" },
             NotANumber = 0 / 0,
             Infinite = { level = math.huge },
             Callable = fn,
-        })
+        } })
 
-        local r = Handler.get({ photo_id = "7", keys = { "Gapped", "Mixed", "NotANumber", "Infinite", "Callable" } })
+        local settings = Handler.get({ photo_ids = { "7" }, keys = { "Gapped", "Mixed", "NotANumber", "Infinite", "Callable" } },
+            helper.requestContext()).data.photos[1].settings
 
-        assert.are.same({ ["$lua"] = "table", entries = { { 1, 1 }, { 3, 3 } } }, r.settings.Gapped)
-        assert.are.same({ ["$lua"] = "table", entries = { { 1, 10 }, { "label", "x" } } }, r.settings.Mixed)
-        assert.are.equal("number", r.settings.NotANumber["$lua"])
-        assert.are.same({ level = { ["$lua"] = "number", value = tostring(math.huge) } }, r.settings.Infinite)
-        assert.are.same({ ["$lua"] = "function", value = tostring(fn) }, r.settings.Callable)
-        assert.is_true(pcall(function() return require('JSON'):encode(r) end))
+        assert.are.same({ ["$lua"] = "table", entries = { { 1, 1 }, { 3, 3 } } }, settings.Gapped)
+        assert.are.same({ ["$lua"] = "table", entries = { { 1, 10 }, { "label", "x" } } }, settings.Mixed)
+        assert.are.equal("number", settings.NotANumber["$lua"])
+        assert.are.same({ level = { ["$lua"] = "number", value = tostring(math.huge) } }, settings.Infinite)
+        assert.are.same({ ["$lua"] = "function", value = tostring(fn) }, settings.Callable)
+        assert.is_true(pcall(function() return require('JSON'):encode(settings) end))
     end)
 
-    it("refuses a reply over the size limit and names the way out", function()
-        local Handler = setup({ Big = string.rep("x", 1000001) })
+    it("leaves the photos that no longer fit the reply size remaining, and fails a photo too big alone", function()
+        local half = string.rep("x", 600000)
+        local Handler = setup({ ["7"] = { Big = half }, ["8"] = { Big = half }, ["9"] = { Big = "small" },
+            ["10"] = { Big = string.rep("x", 1000001) } })
 
-        local message = errorOf(function() Handler.get({ photo_id = "7", keys = { "Big" } }) end)
+        local reply = Handler.get({ photo_ids = { "7", "8", "9" }, keys = { "Big" } }, helper.requestContext())
+        assert.are.same({ "7" }, { reply.data.photos[1].photo_id })
+        assert.are.equal(1, #reply.data.photos)
+        assert.are.same({ "8", "9" }, reply.remaining)
 
-        assert.truthy(message:find("request fewer keys", 1, true))
+        local alone = Handler.get({ photo_ids = { "10" }, keys = { "Big" } }, helper.requestContext())
+        assert.is_nil(alone.data)
+        assert.are.equal("10", alone.failed[1].photo_id)
+        assert.truthy(alone.failed[1].reason:find("request fewer keys", 1, true))
     end)
 
-    it("validates its arguments and names an unknown photo", function()
-        local Handler = setup({})
-
-        assert.truthy(errorOf(function() Handler.get({}) end):find("photo_id is required", 1, true))
-        for _, keys in ipairs({ {}, { "" }, { 5 }, { "A", "A" }, "A" }) do
-            assert.truthy(errorOf(function() Handler.get({ photo_id = "7", keys = keys }) end)
-                :find("keys must be", 1, true))
-        end
-        assert.truthy(errorOf(function() Handler.get({ photo_id = "99" }) end):find("Photo not found: 99", 1, true))
+    it("leaves the photos past the request's time remaining", function()
+        local Handler = setup({ ["7"] = { A = 1 }, ["8"] = { A = 2 } })
+        local reply = Handler.get({ photo_ids = { "7", "8" }, keys = { "A" } },
+            helper.requestContext(nil, { isCanceled = function() return true end }))
+        assert.is_nil(reply.data)
+        assert.are.same({ "7", "8" }, reply.remaining)
     end)
 end)

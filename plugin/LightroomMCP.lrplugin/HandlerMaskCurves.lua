@@ -1,6 +1,10 @@
+local LrApplication = import 'LrApplication'
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local Contract = require 'Contract'
+local Reply = require 'Reply'
+local PhotoLookup = require 'PhotoLookup'
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
 local MaskCurves = require 'MaskCurves'
@@ -17,8 +21,6 @@ local CONTROLLER_FUNCTIONS = { "setValue", "getValue" }
 
 local function requireCurveSupport(toolName)
     MaskSelection.requireControllerFunctions(toolName, CONTROLLER_FUNCTIONS, MaskCurves.MINIMUM_VERSION_LABEL)
-    MaskSelection.requireVersionAtLeast(toolName, MaskCurves.MINIMUM_MAJOR, MaskCurves.MINIMUM_MINOR,
-        MaskCurves.MINIMUM_VERSION_LABEL)
 end
 
 local function readCurve(channel)
@@ -32,49 +34,68 @@ local function unavailableMessage(channelNames, maskId, photoId)
         table.concat(channelNames, ", "), maskId, photoId, MaskCurves.MINIMUM_VERSION_LABEL)
 end
 
-local function writeAndConfirm(channel, wanted)
-    for _ = 1, WRITE_ATTEMPTS do
+local function notKept(channel)
+    return string.format("Lightroom did not keep the %s curve", channel.name)
+end
+
+local function writtenNames(written)
+    local names = {}
+    for _, entry in ipairs(written) do
+        names[#names + 1] = entry.channel.name
+    end
+    return table.concat(names, ", ")
+end
+
+local function writeAndConfirm(entry, wanted, maskId, written)
+    local channel = entry.channel
+    for attempt = 1, WRITE_ATTEMPTS do
+        if not MaskSelection.isSelected(maskId) then return false, MaskSelection.SELECTION_MOVED end
+        if attempt == 1 then written[#written + 1] = entry end
         local ok, err = LrTasks.pcall(LrDevelopController.setValue, channel.parameter, MaskCurves.copy(wanted))
         if not ok then
-            error(string.format("Lightroom rejected the %s curve: %s", channel.name, tostring(err)), 0)
+            return false, string.format("Lightroom rejected the %s curve: %s", channel.name, tostring(err))
         end
         local confirmed = DevelopSession.waitFor(function()
             return MaskCurves.same(readCurve(channel), wanted)
         end, WRITE_CONFIRM_TIMEOUT_SECONDS)
         if confirmed then return true end
     end
-    return false
+    return false, notKept(channel)
 end
 
-local function restoreCurves(written)
+local function namesOrNothing(names)
+    return #names > 0 and table.concat(names, ", ") or "nothing"
+end
+
+local function stopAfterRestore(problem, written, maskId)
+    if #written == 0 then Reply.refuse(problem .. "; no curve had been written yet") end
+    local restored, unconfirmed = {}, {}
     for index = #written, 1, -1 do
         local entry = written[index]
+        if not MaskSelection.isSelected(maskId) then
+            local notRestored = {}
+            for pending = 1, index do notRestored[pending] = written[pending].channel.name end
+            for _, name in ipairs(unconfirmed) do notRestored[#notRestored + 1] = name end
+            error(string.format("%s; mask %s is no longer selected; restored: %s; not restored: %s; read the mask"
+                .. " before retrying", problem, maskId, namesOrNothing(restored), namesOrNothing(notRestored)), 0)
+        end
         LrTasks.pcall(LrDevelopController.setValue, entry.channel.parameter, MaskCurves.copy(entry.before))
+        local back = DevelopSession.waitFor(function()
+            return MaskCurves.same(readCurve(entry.channel), entry.before)
+        end, WRITE_CONFIRM_TIMEOUT_SECONDS)
+        table.insert(back and restored or unconfirmed, 1, entry.channel.name)
     end
-end
-
-local function describeRestored(written)
-    if #written == 0 then return "no curve had been written yet" end
-    local names = {}
-    for _, entry in ipairs(written) do
-        names[#names + 1] = entry.channel.name
+    if #unconfirmed > 0 then
+        error(string.format("%s; could not confirm restoring %s; read the mask before retrying",
+            problem, table.concat(unconfirmed, ", ")), 0)
     end
-    return "restored: " .. table.concat(names, ", ")
-end
-
-local function failedWrite(channel, written)
-    restoreCurves(written)
-    error(string.format("Lightroom did not keep the %s curve; %s", channel.name, describeRestored(written)), 0)
+    Reply.refuse(problem .. "; restored: " .. writtenNames(written))
 end
 
 local function failedCommit(written)
-    local names = {}
-    for _, entry in ipairs(written) do
-        names[#names + 1] = entry.channel.name
-    end
     error(string.format("Lightroom changed the curves but had not saved them to the photo's settings after %d s,"
         .. " so a mask change made now could be undone by the late save; written: %s",
-        MaskSettle.COMMIT_TIMEOUT_SECONDS, table.concat(names, ", ")), 0)
+        Contract.MASK_SAVE_WAIT_SECONDS, writtenNames(written)), 0)
 end
 
 local function applyToSelectedMask(catalog, photo, photoId, maskId, requested)
@@ -88,7 +109,7 @@ local function applyToSelectedMask(catalog, photo, photoId, maskId, requested)
         before[entry.channel.name] = current
     end
     if #unreadable > 0 then
-        error(unavailableMessage(unreadable, maskId, photoId) .. "; nothing was written", 0)
+        Reply.refuse(unavailableMessage(unreadable, maskId, photoId) .. "; nothing was written")
     end
 
     local changed, unchanged, written = {}, {}, {}
@@ -97,10 +118,9 @@ local function applyToSelectedMask(catalog, photo, photoId, maskId, requested)
         if MaskCurves.same(before[channel.name], wanted) then
             unchanged[#unchanged + 1] = channel.name
         else
-            written[#written + 1] = { channel = channel, before = before[channel.name] }
-            if not writeAndConfirm(channel, wanted) then
-                failedWrite(channel, written)
-            end
+            local kept, problem = writeAndConfirm({ channel = channel, before = before[channel.name] }, wanted, maskId,
+                written)
+            if not kept then stopAfterRestore(problem, written, maskId) end
             changed[#changed + 1] = { channel = channel.name, from = before[channel.name], to = wanted }
         end
     end
@@ -108,14 +128,11 @@ local function applyToSelectedMask(catalog, photo, photoId, maskId, requested)
     if #changed > 0 then
         DevelopSession.flushPendingEdits()
         LrTasks.sleep(WRITE_PERSIST_SETTLE_SECONDS)
+        if not MaskSelection.isSelected(maskId) then stopAfterRestore(MaskSelection.SELECTION_MOVED, written, maskId) end
         for _, entry in ipairs(requested) do
             if not MaskCurves.same(readCurve(entry.channel), entry.points) then
-                failedWrite(entry.channel, written)
+                stopAfterRestore(notKept(entry.channel), written, maskId)
             end
-        end
-        if MaskSelection.readSelectedMask() ~= maskId then
-            restoreCurves(written)
-            error("Another mask became selected while writing; " .. describeRestored(written), 0)
         end
         if not MaskSettle.waitForCommit(catalog, photo, maskId, storedBefore) then
             failedCommit(written)
@@ -148,14 +165,16 @@ local function readAllCurves(photoId, maskId)
     return { curves = curves, unavailable = unavailable }
 end
 
-function MaskCurvesHandler.setMaskCurves(args)
-    local photoId, maskId = MaskSelection.requireTarget(args)
-    local requested = MaskCurves.requireCurves(args.curves)
+function MaskCurvesHandler.setMaskCurves(args, context)
+    local maskId = args.mask_id
+    local requested = MaskCurves.requested(args.curves)
     requireCurveSupport("set_mask_curves")
-    local catalog, photo = MaskSelection.resolvePhoto(photoId)
+    local catalog = LrApplication.activeCatalog()
+    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photoId = tostring(photo.localIdentifier)
 
-    local outcome = DevelopSession.withPhoto("set_mask_curves", catalog, photo, function()
-        return MaskSelection.withMaskSelected(photoId, maskId, function()
+    local outcome = DevelopSession.withPhoto(context, catalog, photo, function()
+        return MaskSelection.withMaskSelected(catalog, photo, maskId, function()
             return applyToSelectedMask(catalog, photo, photoId, maskId, requested)
         end)
     end)
@@ -164,7 +183,6 @@ function MaskCurvesHandler.setMaskCurves(args)
         maskId, photoId, #outcome.changed, #outcome.unchanged))
 
     return {
-        success = true,
         photo_id = photoId,
         mask_id = maskId,
         curves = outcome.curves,

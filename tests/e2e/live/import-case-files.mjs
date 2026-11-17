@@ -58,23 +58,23 @@ try {
   assert.match(single.text, /differs only in case from .*A\.jpg/);
 
   const folder = await importFrom(path.join(root, "one"));
-  assert.equal(folder.isError, false, folder.text);
+  assert.equal(folder.outcome, "partial", folder.text);
   assert.equal(folder.data.imported, 0);
   assert.equal(folder.data.already_in_catalog, 1);
-  assert.equal(folder.data.failed.length, 1);
-  assert.equal(folder.data.failed[0].path, path.join(root, "one", "a.jpg"));
-  assert.match(folder.data.failed[0].error, /differs only in case from .*A\.jpg/);
+  assert.equal(folder.envelope.failed.length, 1);
+  assert.equal(folder.envelope.failed[0].path, path.join(root, "one", "a.jpg"));
+  assert.match(folder.envelope.failed[0].reason, /differs only in case from .*A\.jpg/);
 
   fs.mkdirSync(path.join(root, "two"));
   fs.copyFileSync(source, path.join(root, "two", "B.jpg"));
   fs.copyFileSync(source, path.join(root, "two", "b.jpg"));
   const fresh = await importFrom(path.join(root, "two"));
-  assert.equal(fresh.isError, false, fresh.text);
+  assert.equal(fresh.outcome, "partial", fresh.text);
   assert.equal(fresh.data.imported, 1);
-  assert.equal(fresh.data.failed.length, 1);
+  assert.equal(fresh.envelope.failed.length, 1);
 
   const again = await importFrom(path.join(root, "two"));
-  assert.equal(again.isError, false, again.text);
+  assert.equal(again.outcome, "partial", again.text);
   assert.equal(again.data.imported, 0);
 
   fs.mkdirSync(path.join(root, "dest"));

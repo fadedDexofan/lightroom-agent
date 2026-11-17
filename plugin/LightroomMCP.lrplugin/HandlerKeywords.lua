@@ -1,7 +1,10 @@
 local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
+local Contract = require 'Contract'
 local KeywordTree = require 'KeywordTree'
+local Reply = require 'Reply'
 local Log = require 'Log'
 
 local KeywordsHandler = {}
@@ -13,33 +16,21 @@ local KeywordsHandler = {}
 -- keywords whose name or a synonym contains the text, and `paths_only` returns
 -- bare path strings instead of one object per keyword.
 function KeywordsHandler.listKeywords(args)
-    args = args or {}
     local catalog = LrApplication.activeCatalog()
 
-    local limit = math.floor(tonumber(args.limit) or 100)
-    if limit < 0 then limit = 0 end
-    local offset = math.floor(tonumber(args.offset) or 0)
-    if offset < 0 then offset = 0 end
+    local limit = args.limit or Contract.DEFAULT_PAGE_LIMIT
+    local offset = args.offset or 0
 
     local parentParts = nil
     if args.parent ~= nil then
-        if type(args.parent) ~= "string" or args.parent:match("^%s*$") then
-            error("parent must be a keyword path")
-        end
         parentParts = KeywordTree.split(args.parent)
     end
 
     local query = nil
     if args.query ~= nil then
-        if type(args.query) ~= "string" or args.query:match("^%s*$") then
-            error("query must be a non-empty string")
-        end
         query = KeywordTree.fold(args.query)
     end
 
-    if args.paths_only ~= nil and type(args.paths_only) ~= "boolean" then
-        error("paths_only must be a boolean")
-    end
     local pathsOnly = args.paths_only == true
 
     local function matches(name, synonyms)
@@ -59,7 +50,7 @@ function KeywordsHandler.listKeywords(args)
         if parentParts then
             root = KeywordTree.resolve(catalog, parentParts)
             if not root then
-                error("Keyword not found: " .. KeywordTree.join(parentParts))
+                Reply.refuse("Keyword not found: " .. KeywordTree.join(parentParts))
             end
         end
 
@@ -77,7 +68,7 @@ function KeywordsHandler.listKeywords(args)
                         path = path,
                         name = name,
                         synonyms = synonyms,
-                        includeOnExport = attributes.includeOnExport,
+                        include_on_export = attributes.includeOnExport,
                     })
                 end
             end
@@ -98,18 +89,8 @@ end
 -- and its parent, children and synonyms are unchanged. A plain name must match
 -- exactly one keyword; a "Parent|Child" path addresses it directly.
 function KeywordsHandler.renameKeyword(args)
-    if type(args.keyword) ~= "string" or args.keyword:match("^%s*$") then
-        error("keyword is required")
-    end
-    if type(args.new_name) ~= "string" or args.new_name:match("^%s*$") then
-        error("new_name is required")
-    end
-
     -- Trimmed like a level of a path, so the keyword is found again by name.
     local newName = KeywordTree.trim(args.new_name)
-    if KeywordTree.isPath(newName) then
-        error("new_name must be a single keyword name, not a path: " .. newName)
-    end
 
     local parts = nil
     local oldName = nil
@@ -126,19 +107,19 @@ function KeywordsHandler.renameKeyword(args)
         if parts then
             local resolved = KeywordTree.resolve(catalog, parts)
             if not resolved then
-                error("Keyword not found: " .. KeywordTree.join(parts))
+                Reply.refuse("Keyword not found: " .. KeywordTree.join(parts))
             end
             return resolved
         end
         local matches = KeywordTree.findByName(catalog, oldName)
         if #matches == 0 then
-            error("Keyword not found: " .. oldName)
+            Reply.refuse("Keyword not found: " .. oldName)
         elseif #matches > 1 then
             local found = {}
             for _, match in ipairs(matches) do
                 table.insert(found, match.path)
             end
-            error("Keyword is ambiguous, give its path: " .. oldName
+            Reply.refuse("Keyword is ambiguous, give its path: " .. oldName
                 .. " (" .. table.concat(found, ", ") .. ")")
         end
         return matches[1].keyword
@@ -147,12 +128,12 @@ function KeywordsHandler.renameKeyword(args)
     catalog:withReadAccessDo(function() keyword = findKeyword() end)
     photoCount = #(keyword:getPhotos() or {})
 
-    catalog:withWriteAccessDo("Rename Keyword", function()
+    CatalogWrite.run(catalog, "Rename Keyword", function()
         keyword = findKeyword()
 
         local currentName = keyword:getName()
         if currentName == newName then
-            error("Keyword is already named '" .. newName .. "'")
+            Reply.refuse("Keyword is already named '" .. newName .. "'")
         end
 
         -- Lightroom matches names ignoring case, so a sibling "callie" would
@@ -160,7 +141,7 @@ function KeywordsHandler.renameKeyword(args)
         local parent = keyword:getParent()
         local clash = KeywordTree.findChild(catalog, parent, newName)
         if clash and clash ~= keyword then
-            error("A keyword named '" .. clash:getName() .. "' already exists at "
+            Reply.refuse("A keyword named '" .. clash:getName() .. "' already exists at "
                 .. KeywordTree.pathOf(clash) .. "; rename cannot merge keywords")
         end
 
@@ -192,7 +173,7 @@ function KeywordsHandler.renameKeyword(args)
         -- cannot yield, so withWriteAccessDo fails inside it with "must be
         -- called from within an LrTask".
         local ok, err = LrTasks.pcall(function()
-            catalog:withWriteAccessDo("Rename Keyword", function()
+            CatalogWrite.run(catalog, "Rename Keyword", function()
                 if not keyword:setAttributes({ keywordName = newName }) then
                     error("Lightroom refused the final rename to '" .. newName .. "'")
                 end
@@ -200,14 +181,13 @@ function KeywordsHandler.renameKeyword(args)
         end)
         if not ok then
             error(string.format("Keyword '%s' was left named '%s' while changing its case: %s",
-                oldPath, tempName, tostring(err)))
+                oldPath, tempName, Reply.messageOf(err)))
         end
     end
 
     Log.info(string.format("Renamed keyword %s to %s (%d photos)", oldPath, newPath, photoCount))
 
     return {
-        success = true,
         old_path = oldPath,
         new_path = newPath,
         photo_count = photoCount,

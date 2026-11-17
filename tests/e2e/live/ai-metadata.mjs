@@ -10,7 +10,7 @@ const photoIds = [requireFixtureId(marker, "orient_1"), requireFixtureId(marker,
 async function standardMetadata() {
   const values = [];
   for (const photo_id of photoIds) {
-    const { data } = await session.toolOrThrow("get_photo_metadata", { photo_id });
+    const data = await session.photoMetadata(photo_id);
     values.push({ keywords: data.keywords ?? [], title: data.title ?? null, caption: data.caption ?? null });
   }
   return values;
@@ -31,9 +31,9 @@ try {
   }
 
   assert.ok(marker.aiMetadataCheck, "run the write phase before verify or clear");
-  const { data: stored } = await session.toolOrThrow("get_ai_metadata", { photo_ids: photoIds });
+  const { data: stored, envelope } = await session.toolOrThrow("get_ai_metadata", { photo_ids: photoIds });
   assert.equal(stored.photos.length, 2);
-  assert.deepEqual(stored.missing, []);
+  assert.equal(envelope.not_found, undefined);
   for (const photo of stored.photos) {
     assert.equal(photo.score, 72);
     assert.equal(photo.reason, "eyes closed");

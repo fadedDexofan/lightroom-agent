@@ -2,11 +2,7 @@ local LrUndo = import 'LrUndo'
 
 local HandlerUndo = {}
 
-function HandlerUndo.undoLastStep(params)
-    if type(params) ~= "table" or params.confirm ~= true then
-        error("confirm must be true: Lightroom undo history is shared with user actions")
-    end
-
+function HandlerUndo.undoLastStep()
     local undone = false
     if LrUndo.canUndo() then
         LrUndo.undo()

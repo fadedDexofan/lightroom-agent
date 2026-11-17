@@ -1,6 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, afterEach } from '@jest/globals';
 import net from 'node:net';
 import { PluginSocket } from '../src/plugin-socket.js';
+
+function listenOnFreePort(target: net.Server): Promise<number> {
+  return new Promise((resolve) => {
+    target.listen(0, '127.0.0.1', () => {
+      const addr = target.address();
+      resolve(typeof addr === 'object' && addr ? addr.port : 0);
+    });
+  });
+}
 
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
@@ -31,10 +40,6 @@ describe('PluginSocket', () => {
   let serverConn: net.Socket | null = null;
   let socket: PluginSocket | null = null;
 
-  beforeEach(async () => {
-    port = await freePort();
-  });
-
   afterEach(async () => {
     socket?.stop();
     socket = null;
@@ -47,6 +52,7 @@ describe('PluginSocket', () => {
   });
 
   it('reports not connected before plugin listens', async () => {
+    port = await freePort();
     socket = new PluginSocket({ port, label: 'test', reconnectDelayMs: 50, log: () => {} });
     socket.connect();
     expect(socket.isConnected()).toBe(false);
@@ -54,6 +60,7 @@ describe('PluginSocket', () => {
   });
 
   it('connects once plugin starts listening, sends newline-framed messages', async () => {
+    port = await freePort();
     socket = new PluginSocket({ port, label: 'test', reconnectDelayMs: 50, log: () => {} });
     socket.connect();
 
@@ -83,6 +90,13 @@ describe('PluginSocket', () => {
 
   it('parses incoming newline-delimited lines including split chunks', async () => {
     const lines: string[] = [];
+    server = net.createServer((conn) => {
+      serverConn = conn;
+      // Send across two chunks split mid-message
+      conn.write('{"id":"1","resu');
+      setTimeout(() => conn.write('lt":42}\n{"id":"2","result":"x"}\n'), 20);
+    });
+    port = await listenOnFreePort(server);
     socket = new PluginSocket({
       port,
       label: 'test',
@@ -90,14 +104,6 @@ describe('PluginSocket', () => {
       onLine: (line) => lines.push(line),
       log: () => {},
     });
-
-    server = net.createServer((conn) => {
-      serverConn = conn;
-      // Send across two chunks split mid-message
-      conn.write('{"id":"1","resu');
-      setTimeout(() => conn.write('lt":42}\n{"id":"2","result":"x"}\n'), 20);
-    });
-    await new Promise<void>((resolve) => server!.listen(port, '127.0.0.1', () => resolve()));
     socket.connect();
 
     await waitFor(() => lines.length >= 2);
@@ -114,7 +120,7 @@ describe('PluginSocket', () => {
         setTimeout(() => conn.destroy(), 30);
       }
     });
-    await new Promise<void>((resolve) => server!.listen(port, '127.0.0.1', () => resolve()));
+    port = await listenOnFreePort(server);
 
     socket = new PluginSocket({ port, label: 'test', reconnectDelayMs: 50, log: () => {} });
     socket.connect();
@@ -138,7 +144,7 @@ describe('PluginSocket', () => {
         }
       });
     });
-    await new Promise<void>((resolve) => server!.listen(port, '127.0.0.1', () => resolve()));
+    port = await listenOnFreePort(server);
 
     socket = new PluginSocket({
       port,
@@ -165,7 +171,7 @@ describe('PluginSocket', () => {
       connectionCount++;
       conn.destroy();
     });
-    await new Promise<void>((resolve) => server!.listen(port, '127.0.0.1', () => resolve()));
+    port = await listenOnFreePort(server);
 
     socket = new PluginSocket({ port, label: 'test', reconnectDelayMs: 50, log: () => {} });
     socket.connect();

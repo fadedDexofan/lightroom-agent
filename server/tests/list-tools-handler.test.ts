@@ -3,172 +3,34 @@ import { Ajv } from 'ajv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { validateToolArgs } from '../src/validate-args.js';
-import { TOOL_DEFINITIONS, listToolsHandler, publishedInputSchema } from '../src/list-tools-handler.js';
+import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
+import { manifestTools } from '../src/manifest-tools.js';
+import { PLUGIN_ACTIONS, TOOL_CONTRACTS } from '../src/tool-contracts.js';
 import {
-  DEVELOP_SETTING_KEYS,
-  LOCAL_ADJUSTMENT_KEYS,
-  MASK_CURVE_CHANNELS,
-  POINT_CURVE_SETTING_KEYS,
-  TOOL_CONTRACTS,
-} from '../src/tool-contracts.js';
-
-const EXPECTED_TOOL_NAMES = [
-  'search_photos',
-  'get_selected_photos',
-  'get_photo_metadata',
-  'summarize_develop_settings',
-  'get_photo_preview',
-  'get_photo_previews',
-  'get_photo_stats',
-  'find_duplicate_groups',
-  'set_gps',
-  'set_location',
-  'set_metadata',
-  'set_ai_metadata',
-  'get_ai_metadata',
-  'list_folders',
-  'get_folder_photos',
-  'list_collections',
-  'create_collection',
-  'create_smart_collection',
-  'add_to_collection',
-  'get_collection_photos',
-  'remove_from_collection',
-  'delete_collection',
-  'set_keywords',
-  'remove_keyword_subtree',
-  'list_keywords',
-  'rename_keyword',
-  'set_rating_and_flag',
-  'undo_last_step',
-  'remove_photos_from_catalog',
-  'set_color_label',
-  'import_photos',
-  'export_photos',
-  'export_photo_metadata',
-  'list_export_presets',
-  'list_develop_presets',
-  'get_develop_preset',
-  'compare_develop_presets',
-  'create_develop_preset',
-  'export_develop_preset',
-  'apply_develop_preset',
-  'copy_develop_settings',
-  'match_photo_style',
-  'set_develop_settings',
-  'get_lens_blur',
-  'get_raw_develop_settings',
-  'set_lens_blur',
-  'set_process_version',
-  'list_develop_snapshots',
-  'create_virtual_copies',
-  'create_develop_snapshot',
-  'apply_develop_snapshot',
-  'delete_develop_snapshot',
-  'reset_develop_adjustments',
-  'apply_denoise',
-  'apply_auto_adjustments',
-  'list_masks',
-  'get_mask_write_admission',
-  'list_spots',
-  'update_spot',
-  'delete_spot',
-  'create_gradient_mask',
-  'update_gradient_mask',
-  'create_brush_mask',
-  'add_brush_strokes',
-  'create_range_mask',
-  'delete_masks',
-  'set_mask_adjustments',
-  'get_mask',
-  'invert_mask',
-  'create_mask',
-  'create_mask_batch',
-  'set_mask_curves',
-  'edit_mask_point_colors',
-  'combine_mask',
-] as const;
+  MASK_CURVE_CHANNEL_NAMES,
+  MASK_TYPE_NAMES,
+} from '../src/lightroom-tables.js';
+import { DEVELOP_KEYS, LOCAL_KEYS, developKeyNamesSchema, developSettingsSchema, localAdjustmentsSchema, type DevelopKey } from '../src/develop-keys.js';
 
 describe('TOOL_DEFINITIONS', () => {
-  it('get_photo_preview describes named uses and approximate token costs', () => {
+  it('get_photo_preview describes named sizes, the returned edge and how token cost grows', () => {
     const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'get_photo_preview');
     const sizeSchema = tool?.inputSchema.properties?.size as { description: string };
     const guidance = `${tool?.description} ${sizeSchema.description}`;
-    expect(guidance).toMatch(/cull.*culling.*650 tokens/);
-    expect(guidance).toMatch(/detail.*details.*2\.5k tokens/);
-    expect(guidance).toContain('earlier Claude estimates');
-    expect(guidance).toContain('width/height/bytes');
+    expect(guidance).toMatch(/cull is 864.*review 1728.*default cull/);
+    expect(guidance).toMatch(/cull is for choosing among frames, review for a whole-frame look/);
+    expect(guidance).toContain('Judge critical sharpness with get_photo_detail, not with a preview');
+    expect(guidance).toContain('width x height / 750');
+    expect(guidance).toContain('width/height/bytes are actual');
+    expect(guidance).toContain('scaled_by_server');
     expect(guidance).toContain('each turn in history');
-    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
-    for (const size of ['cull', 'detail', 64, 1024, 2048]) {
-      expect(validate({ photo_id: 914, size })).toBe(true);
-    }
-    for (const size of ['huge', 5000]) {
-      expect(validate({ photo_id: 914, size })).toBe(false);
-    }
   });
-
-  it('contains exactly 74 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(74);
-  });
-
-  it('replaces the separate rating and flag tools', () => {
-    const names = TOOL_DEFINITIONS.map(tool => tool.name);
-    expect(names).toContain('set_rating_and_flag');
-    expect(names).not.toContain('set_rating');
-    expect(names).not.toContain('set_flag');
-  });
-
-  it.each(['set_rating_and_flag', 'get_photo_metadata', 'create_gradient_mask', 'create_brush_mask', 'create_range_mask'])(
-    'publishes %s without root unions rejected by Claude Code', name => {
-      const schema = TOOL_DEFINITIONS.find(tool => tool.name === name)!.inputSchema;
-      expect(schema.type).toBe('object');
-      expect(schema).not.toHaveProperty('anyOf');
-      expect(schema).not.toHaveProperty('oneOf');
-      expect(schema).not.toHaveProperty('allOf');
-    },
-  );
 
   it('tool names are unique', () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it('replaces three mask readers with one smaller definition', () => {
-    const names = TOOL_DEFINITIONS.map((tool) => tool.name);
-    for (const removed of ['get_mask_adjustments', 'get_mask_curves', 'get_mask_point_colors']) {
-      expect(names).not.toContain(removed);
-    }
-    const combined = TOOL_DEFINITIONS.find((tool) => tool.name === 'get_mask');
-    expect(combined).toBeDefined();
-    expect(JSON.stringify(combined).length).toBeLessThan(2193);
-  });
-
-  it.each(EXPECTED_TOOL_NAMES)('"%s" is present', (name) => {
-    expect(TOOL_DEFINITIONS.some((t) => t.name === name)).toBe(true);
-  });
-
-  it('every tool has name, description, and inputSchema', () => {
-    for (const tool of TOOL_DEFINITIONS) {
-      expect(typeof tool.name).toBe('string');
-      expect(typeof tool.description).toBe('string');
-      expect(tool.inputSchema).toBeDefined();
-      expect(tool.inputSchema.type).toBe('object');
-    }
-  });
-
-  it('is generated from tool contracts', () => {
-    expect(TOOL_DEFINITIONS).toEqual(
-      TOOL_CONTRACTS.map(({ name, title, annotations, description, inputSchema, alwaysLoad }) => ({
-        name,
-        title,
-        annotations,
-        description,
-        inputSchema: publishedInputSchema(inputSchema),
-        ...(alwaysLoad ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
-      })),
-    );
-  });
 
   it('rejects unknown top-level arguments for every tool', () => {
     for (const tool of TOOL_DEFINITIONS) {
@@ -177,48 +39,31 @@ describe('TOOL_DEFINITIONS', () => {
   });
 });
 
-describe('published schema compatibility', () => {
-  it('projects only root combinators without mutating private or nested schemas', () => {
-    const nested = Object.freeze({ oneOf: [{ type: 'number' }, { type: 'string' }] });
-    const privateSchema = Object.freeze({
-      type: 'object' as const,
-      additionalProperties: false,
-      properties: Object.freeze({ value: nested }),
-      required: ['value'],
-      oneOf: [{ required: ['value'] }],
-      anyOf: [{ required: ['value'] }],
-      allOf: [{ required: ['value'] }],
-    });
-    const before = JSON.stringify(privateSchema);
-    expect(publishedInputSchema(privateSchema)).toEqual({
-      type: 'object', additionalProperties: false,
-      properties: { value: nested }, required: ['value'],
-    });
-    expect(JSON.stringify(privateSchema)).toBe(before);
-    expect(publishedInputSchema(privateSchema)).not.toBe(privateSchema);
-    expect(publishedInputSchema(privateSchema).properties).toBe(privateSchema.properties);
-    expect(publishedInputSchema(privateSchema)).toEqual(publishedInputSchema(privateSchema));
+describe('published schema', () => {
+  it('is the schema the server enforces, with no root combinator', () => {
+    for (const [index, contract] of TOOL_CONTRACTS.entries()) {
+      const published = TOOL_DEFINITIONS.find((tool) => tool.name === contract.name)!.inputSchema;
+      expect(published).toBe(contract.inputSchema);
+      for (const keyword of ['oneOf', 'anyOf', 'allOf']) expect(published).not.toHaveProperty(keyword);
+      expect(TOOL_DEFINITIONS[index].name).toBe(contract.name);
+    }
   });
 
-  it('preserves every contract field except public root combinators', () => {
-    for (const [index, contract] of TOOL_CONTRACTS.entries()) {
-      const original = JSON.stringify(contract.inputSchema);
-      const published = TOOL_DEFINITIONS[index].inputSchema;
-      expect(published).not.toHaveProperty('oneOf');
-      expect(published).not.toHaveProperty('anyOf');
-      expect(published).not.toHaveProperty('allOf');
-      const expected = { ...contract.inputSchema };
-      delete expected.oneOf;
-      delete expected.anyOf;
-      delete expected.allOf;
-      expect(published).toEqual(expected);
-      expect(published.properties).toBe(contract.inputSchema.properties);
-      expect(JSON.stringify(contract.inputSchema)).toBe(original);
+  it('states every argument rule in the published description', () => {
+    const withRules = TOOL_CONTRACTS.filter((contract) => contract.rules?.length);
+    expect(withRules.map((contract) => contract.name)).toEqual(expect.arrayContaining([
+      'set_rating_and_flag', 'set_ai_metadata', 'create_smart_collection', 'export_photos',
+      'get_develop_preset', 'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments',
+      'create_gradient_mask', 'create_brush_mask', 'create_range_mask', 'create_mask',
+      'get_photo_preview', 'delete_masks',
+    ]));
+    for (const contract of withRules) {
+      const description = TOOL_DEFINITIONS.find((tool) => tool.name === contract.name)!.description;
+      for (const rule of contract.rules!) expect(description).toContain(rule.text);
     }
-    for (const name of ['set_ai_metadata', 'create_smart_collection', 'get_develop_preset',
-      'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments', 'export_photos']) {
-      expect(TOOL_CONTRACTS.find(tool => tool.name === name)!.inputSchema).toHaveProperty('anyOf');
-    }
+  });
+
+  it('keeps nested selector unions inside compare_develop_presets', () => {
     const validate = new Ajv({ strict: false }).compile(
       TOOL_DEFINITIONS.find(tool => tool.name === 'compare_develop_presets')!.inputSchema);
     expect(validate({ base: {}, candidate: { preset_uuid: 'uuid' } })).toBe(false);
@@ -230,11 +75,6 @@ describe('listToolsHandler', () => {
   it('returns { tools: TOOL_DEFINITIONS }', () => {
     const result = listToolsHandler(new Set(['core', 'develop', 'masks']));
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
-  });
-
-  it('keeps repeated tool lists byte-identical and in contract order', () => {
-    expect(JSON.stringify(listToolsHandler(new Set(['core', 'develop', 'masks'])))).toBe(JSON.stringify(listToolsHandler(new Set(['core', 'develop', 'masks']))));
-    expect(listToolsHandler(new Set(['core', 'develop', 'masks'])).tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
   });
 
   it.each(TOOL_DEFINITIONS.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => [tool.name, tool.description] as const))(
@@ -263,190 +103,90 @@ describe('photo list schemas', () => {
   });
 });
 
-describe('tool required fields', () => {
-  function toolRequired(name: string): string[] | undefined {
-    return TOOL_DEFINITIONS.find((t) => t.name === name)?.inputSchema.required as string[] | undefined;
-  }
-
-  it.each<[string, string[]]>([
-    ['get_photo_preview', ['photo_id']],
-    ['set_gps', ['photo_ids', 'latitude', 'longitude']],
-    ['set_location', ['photo_ids']],
-    ['set_metadata', ['photo_ids']],
-    ['create_collection', ['name']],
-    ['add_to_collection', ['collection_name', 'photo_ids']],
-    ['get_collection_photos', ['collection_name']],
-    ['remove_from_collection', ['collection_name', 'photo_ids']],
-    ['delete_collection', ['collection_name']],
-    ['set_keywords', ['photo_ids']],
-    ['set_rating_and_flag', ['photo_ids']],
-    ['undo_last_step', ['confirm']],
-    ['set_color_label', ['photo_ids', 'label']],
-    ['rename_keyword', ['keyword', 'new_name']],
-    ['import_photos', ['source_path']],
-    ['export_photos', ['photo_ids']],
-    ['export_photo_metadata', ['destination']],
-    ['compare_develop_presets', ['base', 'candidate']],
-    ['create_develop_preset', ['photo_id', 'preset_name', 'settings']],
-    ['export_develop_preset', ['destination_dir']],
-    ['apply_develop_preset', ['photo_ids']],
-    ['copy_develop_settings', ['source_id', 'target_ids']],
-    ['match_photo_style', ['reference_id', 'target_ids']],
-    ['set_develop_settings', ['photo_id', 'settings']],
-    ['get_lens_blur', ['photo_id']],
-    ['get_raw_develop_settings', ['photo_id']],
-    ['set_lens_blur', ['photo_id']],
-    ['set_process_version', ['photo_ids', 'version', 'confirm']],
-    ['list_develop_snapshots', ['photo_id']],
-    ['create_develop_snapshot', ['photo_id', 'name']],
-    ['create_virtual_copies', ['photo_ids']],
-    ['apply_develop_snapshot', ['photo_id', 'snapshot_id']],
-    ['delete_develop_snapshot', ['photo_id', 'snapshot_id']],
-    ['reset_develop_adjustments', ['photo_ids', 'confirm']],
-    ['apply_denoise', ['photo_ids', 'amount']],
-    ['apply_auto_adjustments', ['photo_ids']],
-    ['list_masks', ['photo_id']],
-    ['create_gradient_mask', ['photo_id', 'shape']],
-    ['update_gradient_mask', ['photo_id', 'tool_id']],
-    ['create_brush_mask', ['photo_id', 'strokes']],
-    ['add_brush_strokes', ['photo_id', 'tool_id', 'strokes']],
-    ['create_range_mask', ['photo_id', 'type']],
-    ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
-    ['get_mask', ['photo_id', 'mask_id']],
-    ['invert_mask', ['photo_id', 'mask_id', 'mode']],
-    ['create_mask', ['photo_id', 'type']],
-    ['create_mask_batch', ['photo_ids', 'type']],
-    ['set_mask_curves', ['photo_id', 'mask_id', 'curves']],
-    ['edit_mask_point_colors', ['photo_id', 'mask_id', 'action']],
-    ['combine_mask', ['photo_id', 'mask_id', 'operation', 'type']],
-  ])('%s requires %j', (name, required) => {
-    expect(toolRequired(name)).toEqual(required);
-  });
-
-  it.each([
-    'search_photos',
-    'get_selected_photos',
-    'list_collections',
-    'list_keywords',
-    'list_export_presets',
-    'list_develop_presets',
-    'get_develop_preset',
-    'delete_masks',
-  ])(
-    '%s has no required fields',
-    (name) => {
-      expect(toolRequired(name)).toBeUndefined();
-    },
-  );
-});
-
-describe('delete_masks schema', () => {
-  it('keeps root selector unions private for client compatibility', () => {
-    const schema = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!.inputSchema;
-    for (const keyword of ['oneOf', 'anyOf', 'allOf']) expect(schema).not.toHaveProperty(keyword);
-    expect(schema.additionalProperties).toBe(false);
-    expect(schema.properties).toHaveProperty('photo_id');
-    expect(schema.properties).toHaveProperty('photo_ids');
-  });
-
-  it('is smaller than the two deletion definitions it replaces', () => {
-    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!;
-    expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(936);
-    expect(JSON.stringify(tool).length).toBeLessThan(1887);
-    expect(TOOL_DEFINITIONS.some(tool => tool.name === 'delete_empty_masks')).toBe(false);
-  });
-});
-
-describe('set_keywords schema', () => {
-  it('caps add/remove keyword arrays', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_keywords');
-    const properties = tool?.inputSchema.properties as Record<string, { maxItems?: number }>;
-
-    expect(properties.add_keywords.maxItems).toBe(1000);
-    expect(properties.remove_keywords.maxItems).toBe(1000);
-  });
-
-  it('offers create_missing as an optional boolean', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_keywords');
-    const properties = tool?.inputSchema.properties as Record<string, { type?: string }>;
-
-    expect(properties.create_missing.type).toBe('boolean');
-    expect(tool?.inputSchema.required).toEqual(['photo_ids']);
-  });
-});
-
-describe('photo array schema', () => {
-  it.each([
-    ['add_to_collection', 'photo_ids'],
-    ['remove_from_collection', 'photo_ids'],
-    ['set_gps', 'photo_ids'],
-    ['set_location', 'photo_ids'],
-    ['set_metadata', 'photo_ids'],
-    ['set_keywords', 'photo_ids'],
-    ['set_rating_and_flag', 'photo_ids'],
-    ['set_color_label', 'photo_ids'],
-    ['export_photos', 'photo_ids'],
-    ['export_photo_metadata', 'photo_ids'],
-    ['apply_develop_preset', 'photo_ids'],
-    ['copy_develop_settings', 'target_ids'],
-    ['match_photo_style', 'target_ids'],
-    ['delete_masks', 'photo_ids'],
-  ])('%s.%s requires 1-1000 ids', (toolName, propertyName) => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
-    const properties = tool?.inputSchema.properties as Record<
-      string,
-      { minItems?: number; maxItems?: number }
-    >;
-
-    expect(properties[propertyName].minItems).toBe(1);
-    expect(properties[propertyName].maxItems).toBe(1000);
-  });
-});
-
 describe('develop setting schema', () => {
-  function parseLuaDevelopSettingKeys(): string[] {
-    const pluginPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'HandlerDevelop.lua');
-    const source = fs.readFileSync(pluginPath, 'utf8');
-    const match = source.match(/local ALLOWED_DEVELOP_SETTING_KEYS = \{([\s\S]*?)\n\}/);
-    if (!match) {
-      throw new Error('ALLOWED_DEVELOP_SETTING_KEYS table not found');
+  const sample = (key: DevelopKey): unknown => {
+    switch (key.kind) {
+      case 'number': return key.range === 'photo' ? 1 : key.range[0];
+      case 'enum': return key.values[0];
+      case 'boolean': return true;
+      case 'text': return 'Linear';
+      case 'curve': return [0, 0, 255, 255];
     }
+  };
+  const settable = (settings: Record<string, unknown>) =>
+    validateToolArgs('set_develop_settings', { photo_id: 914, settings }) === null;
 
-    return [...match[1].matchAll(/^\s*"([^"]+)",/gm)].map((entry) => entry[1]);
-  }
-
-  it('publishes one key list and curve schema within the size budget', () => {
-    const names = ['set_develop_settings', 'copy_develop_settings', 'create_develop_preset'];
-    const tools = TOOL_DEFINITIONS.filter(t => names.includes(t.name));
-    const definitions = tools.map(({ name, description, inputSchema }) =>
-      JSON.stringify({ name, description, inputSchema })).join('');
-    const schemas = tools.map(t => JSON.stringify(t.inputSchema)).join('');
-    expect(definitions.length).toBeLessThanOrEqual(7000);
-    for (const key of DEVELOP_SETTING_KEYS) {
-      expect(schemas.split(JSON.stringify(key)).length - 1).toBe(1);
-    }
-    expect(schemas.split('Flat input/output pairs').length - 1).toBe(1);
-    expect(schemas).not.toMatch(/"\$(?:ref|defs)"/);
+  it('accepts a valid value of every key and every key in the copy and capture lists', () => {
+    for (const key of DEVELOP_KEYS) expect([key.name, settable({ [key.name]: sample(key) })]).toEqual([key.name, true]);
+    const names = DEVELOP_KEYS.map((key) => key.name);
+    const copyable = DEVELOP_KEYS.filter((key) => key.writtenBy === undefined).map((key) => key.name);
+    expect(validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: copyable })).toBeNull();
+    expect(validateToolArgs('create_develop_preset', { photo_id: 914, preset_name: 'p', settings: names })).toBeNull();
   });
 
-  it('accepts mixed valid settings and copy keys', () => {
-    expect(validateToolArgs('set_develop_settings', {
-      photo_id: 914,
-      settings: { Exposure2012: 0.5, WhiteBalance: 'As Shot',
-        ToneCurvePV2012: [0, 0, 64, 48, 192, 210, 255, 255] },
-    })).toBeNull();
-    expect(validateToolArgs('copy_develop_settings', {
-      source_id: 914, target_ids: [915], settings: ['Exposure2012'], dry_run: true,
-    })).toBeNull();
-    for (const key of DEVELOP_SETTING_KEYS) {
-      expect(validateToolArgs('set_develop_settings', {
-        photo_id: 914, settings: { [key]: POINT_CURVE_SETTING_KEYS.includes(
-          key as typeof POINT_CURVE_SETTING_KEYS[number]) ? [0, 0, 255, 255] : 1 },
-      })).toBeNull();
-    }
+  it.each([
+    ['number', 'Exposure2012', 0.5, '0.5'],
+    ['enum', 'WhiteBalance', 'As Shot', 'Sunny'],
+    ['boolean', 'ConvertToGrayscale', false, 1],
+    ['text', 'ToneCurveName2012', 'Linear', 1],
+    ['curve', 'ToneCurvePV2012', [0, 0, 64, 48, 192, 210, 255, 255], [0, 0, 255]],
+  ])('checks a %s key by its kind', (_kind, key, valid, invalid) => {
+    expect(settable({ [key]: valid })).toBe(true);
+    expect(settable({ [key]: invalid })).toBe(false);
   });
 
-  it('rejects malformed point curve payloads before dispatch', () => {
+  it('names each Glow style as Lightroom 16.0 labels it', () => {
+    const settings = developSettingsSchema().properties as Record<string, { description?: string }>;
+    expect(settings.GlowStyle.description).toBe('0 diffusion, 1 bloom, 2 halation, 3 motion, 4 streak');
+  });
+
+  it('refuses a number outside the range Lightroom keeps before anything is written', () => {
+    expect(settable({ Exposure2012: 5 })).toBe(true);
+    expect(settable({ Exposure2012: 6 })).toBe(false);
+    expect(settable({ Exposure2012: -5.01 })).toBe(false);
+    expect(settable({ Contrast2012: 150 })).toBe(false);
+    expect(settable({ Shadows2012: -130 })).toBe(false);
+    expect(settable({ PerspectiveUpright: 5 })).toBe(false);
+    expect(settable({ PerspectiveUpright: 6 })).toBe(false);
+    expect(settable({ LensProfileEnable: 0.5 })).toBe(false);
+  });
+
+  it.each([
+    ['DefringePurpleAmount', 20, 21], ['DefringeGreenHueLo', 50, 51], ['DefringePurpleHueHi', 40, 39],
+    ['AutoLateralCA', 1, 0.5], ['SplitToningShadowHue', 360, 361], ['ColorGradeMidtoneSat', 100, 101],
+    ['ColorGradeBlending', 0, -1], ['Glow', 100, 101], ['GlowStyle', 4, 5], ['GlowDirection', -180, -181],
+    ['ReshapeAmount', 100, 101], ['PerspectiveUpright', 3, 5],
+  ])('accepts %s at %s and refuses %s', (key, valid, invalid) => {
+    expect(settable({ [key]: valid })).toBe(true);
+    expect(settable({ [key]: invalid })).toBe(false);
+  });
+
+  it('marks only the keys whose range depends on the photo', () => {
+    const photo = new Set(DEVELOP_KEYS.flatMap((key) => ('photo' in key && key.photo ? [key.name] : [])));
+    expect(photo.has('ReshapeAmount')).toBe(true);
+    expect(photo.has('PerspectiveUpright')).toBe(true);
+    expect(photo.has('SplitToningShadowHue') || photo.has('Glow') || photo.has('ColorGradeGlobalHue')).toBe(false);
+  });
+
+  it('publishes each numeric range in the schema and leaves photo-dependent ranges to Lightroom', () => {
+    const properties = developSettingsSchema().properties as Record<string, { minimum?: number; maximum?: number; description?: string }>;
+    expect(properties.Exposure2012).toMatchObject({ minimum: -5, maximum: 5 });
+    expect(properties.Contrast2012).toMatchObject({ minimum: -100, maximum: 100 });
+    expect(properties.Temperature.minimum).toBeUndefined();
+    expect(properties.Temperature.description).toContain('depends on the photo');
+    expect(settable({ Temperature: 50000, Tint: -150 })).toBe(true);
+  });
+
+  it('makes a key added to the table settable, copyable and capturable with no other edit', () => {
+    const keys: DevelopKey[] = [...DEVELOP_KEYS, { name: 'FixtureAmount', kind: 'number', range: [0, 10], precision: 1 }];
+    const ajv = new Ajv({ strict: false });
+    expect(ajv.compile(developSettingsSchema(keys))({ FixtureAmount: 4 })).toBe(true);
+    expect(ajv.compile(developSettingsSchema(keys))({ FixtureAmount: 11 })).toBe(false);
+    expect(ajv.compile({ type: 'array', items: developKeyNamesSchema(keys) })(['FixtureAmount'])).toBe(true);
+    expect(ajv.compile({ type: 'array', items: developKeyNamesSchema() })(['FixtureAmount'])).toBe(false);
+  });
+
+  it('rejects malformed develop settings and point curve payloads before dispatch', () => {
     const check = (curve: unknown[]) => validateToolArgs('set_develop_settings',
       { photo_id: '1', settings: { ToneCurvePV2012: curve } }) === null;
 
@@ -458,122 +198,72 @@ describe('develop setting schema', () => {
     expect(check([0, 0, 128, -1, 255, 255])).toBe(false);
     expect(check([0, 0])).toBe(false);
     expect(check(Array.from({ length: 66 }, () => 0))).toBe(false);
-  });
-
-  it('undo_last_step requires literal confirm true', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'undo_last_step');
-    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
-    expect(validate({ confirm: true })).toBe(true);
-    for (const args of [{}, { confirm: false }, { confirm: 'true' }, { confirm: 1 }]) {
-      expect(validate(args)).toBe(false);
-    }
-  });
-
-  it('accepts the numeric photo ids the catalog hands back', () => {
-    const ajv = new Ajv({ strict: false });
-    const validateFor = (name: string) =>
-      ajv.compile(TOOL_DEFINITIONS.find((t) => t.name === name)!.inputSchema);
-
-    expect(validateFor('get_photo_metadata')({ photo_id: 914 })).toBe(true);
-    expect(validateFor('get_photo_metadata')({ photo_id: '914' })).toBe(true);
-    expect(validateFor('set_rating_and_flag')({ photo_ids: [914, '/a.jpg'], rating: 3 })).toBe(true);
-    expect(validateFor('set_develop_settings')({
-      photo_id: 914,
-      settings: { Exposure2012: 0.5 },
-    })).toBe(true);
-    expect(validateFor('copy_develop_settings')({ source_id: 914, target_ids: [915] })).toBe(true);
-
-    expect(validateFor('get_photo_metadata')({ photo_id: '' })).toBe(false);
-    expect(validateFor('set_rating_and_flag')({ photo_ids: [], rating: 3 })).toBe(false);
-    expect(validateFor('set_rating_and_flag')({ photo_ids: [true], rating: 3 })).toBe(false);
+    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: 1 } })).toContain('ToneCurvePV2012');
+    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { Exposure2012: [0, 0, 255, 255] } })).toContain('Exposure2012');
+    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { NotAKey: 1 } })).toContain('NotAKey');
+    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: {} })).toContain('settings');
+    expect(validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: ['NotAKey'] })).toContain('settings');
+    expect(validateToolArgs('create_develop_preset', { photo_id: 914, preset_name: 'test', settings: ['NotAKey'] })).toContain('settings');
   });
 
   it('requires explicit allowlisted keys when creating a preset checkpoint', () => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === 'create_develop_preset');
-    const properties = tool?.inputSchema.properties as Record<
-      string,
-      { items?: { enum?: readonly string[] }; minItems?: number; uniqueItems?: boolean }
-    >;
+    const properties = tool?.inputSchema.properties as Record<string, { items?: { enum?: readonly string[] } }>;
+    const args = { photo_id: 914, preset_name: 'checkpoint' };
 
-    expect(properties.settings.items?.enum).toBeUndefined();
-    expect(properties.settings.minItems).toBe(1);
-    expect(properties.settings.uniqueItems).toBe(true);
+    expect(properties.settings.items?.enum).toEqual(DEVELOP_KEYS.map((key) => key.name));
+    expect(validateToolArgs('create_develop_preset', { ...args, settings: ['Exposure2012'] })).toBeNull();
+    expect(validateToolArgs('create_develop_preset', { ...args, settings: [] })).toContain('settings must NOT have fewer than 1 items');
+    expect(validateToolArgs('create_develop_preset', { ...args, settings: ['Exposure2012', 'Exposure2012'] })).toContain('settings must NOT have duplicate items');
   });
 
-  it('matches Lua develop setting allowlist', () => {
-    expect(parseLuaDevelopSettingKeys()).toEqual(DEVELOP_SETTING_KEYS);
-  });
-
-  it('reads back every settable key in get_photo_metadata', () => {
-    const metadataPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'HandlerMetadata.lua');
-    const source = fs
-      .readFileSync(metadataPath, 'utf8')
-      .split(/\r?\n/)
-      .filter((line) => !line.trim().startsWith('--'))
-      .join('\n');
-    const groupTable = source.match(/local SDK_DEVELOP_GROUPS = \{([\s\S]*?)\n\}\n/);
-    if (!groupTable) {
-      throw new Error('SDK_DEVELOP_GROUPS table not found');
-    }
-
-    const groupKeys = [...groupTable[1].matchAll(/"([A-Z]\w+)"/g)].map((entry) => entry[1]);
-    const fieldKeys = [...source.matchAll(/=\s*developSettings\.(\w+)/g)].map((entry) => entry[1]);
-
-    expect(new Set(groupKeys).size).toBe(groupKeys.length);
-    expect([...groupKeys, ...fieldKeys].sort()).toEqual([...DEVELOP_SETTING_KEYS].sort());
-  });
 });
 
-/**
- * Lua DISPATCH entries that exist for e2e setup only: reachable from the raw TCP
- * probe, deliberately absent from TOOL_CONTRACTS so no MCP client can call them.
- */
-const TEST_ONLY_ACTIONS: Record<string, string> = {
-  set_selection: 'HandlerSelection.setSelection',
-};
-
 describe('local adjustment schema', () => {
-  it('matches the slider table the Lua handler validates against', () => {
-    const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'LocalSliders.lua');
-    const luaNames = [...fs.readFileSync(luaPath, 'utf8').matchAll(/"(local_\w+)"/g)].map((m) => m[1]);
+  const creations: [string, Record<string, unknown>][] = [
+    ['create_mask', { photo_id: 1, type: 'sky' }],
+    ['create_mask_batch', { photo_ids: [1], type: 'sky' }],
+    ['create_gradient_mask', { photo_id: 1, shape: 'linear', start: { x: 0.5, y: 0 }, end: { x: 0.5, y: 0.5 } }],
+    ['create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 0.5, y: 0.5 }] }] }],
+    ['create_range_mask', { photo_id: 1, type: 'luminance', luminance: { min: 0.2, max: 0.6 } }],
+  ];
 
-    expect(luaNames).toEqual([...LOCAL_ADJUSTMENT_KEYS]);
+  it('offers every local slider with its range to set_mask_adjustments and every creation tool', () => {
+    for (const name of ['set_mask_adjustments', ...creations.map(([tool]) => tool)]) {
+      const contract = TOOL_CONTRACTS.find((c) => c.name === name);
+      const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, { minimum?: number; maximum?: number }> }>;
+
+      expect(Object.keys(properties.adjustments.properties ?? {})).toEqual(LOCAL_KEYS.map((key) => key.name));
+      expect(properties.adjustments.properties?.local_Exposure).toMatchObject({ minimum: -4, maximum: 4 });
+      expect(properties.adjustments.properties?.local_colorgradeMidtoneHue).toMatchObject({ minimum: 0, maximum: 360 });
+    }
   });
 
-  it('offers every slider as a number property of set_mask_adjustments', () => {
-    const contract = TOOL_CONTRACTS.find((c) => c.name === 'set_mask_adjustments');
-    const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>;
+  it.each(creations)('%s takes local_* sliders and refuses the old creation names', (tool, args) => {
+    expect(validateToolArgs(tool, { ...args, adjustments: { local_Exposure: 1, local_glow: 25 } })).toBeNull();
+    expect(validateToolArgs(tool, { ...args, adjustments: { exposure: 1 } })).not.toBeNull();
+    expect(validateToolArgs(tool, { ...args, adjustments: { local_colorgradeMidtoneHue: 361 } })).not.toBeNull();
+  });
 
-    expect(Object.keys(properties.adjustments.properties ?? {})).toEqual([...LOCAL_ADJUSTMENT_KEYS]);
+  it('publishes a new local slider from its one table entry', () => {
+    const fixture = { name: 'local_Fixture', range: [-10, 10], tolerance: 0.5, stored: 'LocalFixture', scale: 100 } as const;
+
+    const schema = localAdjustmentsSchema([...LOCAL_KEYS, fixture]) as { properties: Record<string, unknown> };
+
+    expect(schema.properties.local_Fixture).toEqual({ type: 'number', minimum: -10, maximum: 10 });
   });
 });
 
 describe('mask curve schema', () => {
-  it('matches the channel table the Lua handler writes through', () => {
-    const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'MaskCurves.lua');
-    const luaChannels = [...fs.readFileSync(luaPath, 'utf8').matchAll(/name = "(\w+)", parameter = "local_\w+curve"/g)]
-      .map((m) => m[1]);
-
-    expect(luaChannels).toEqual([...MASK_CURVE_CHANNELS]);
-  });
-
   it('offers every channel as a property of set_mask_curves', () => {
     const contract = TOOL_CONTRACTS.find((c) => c.name === 'set_mask_curves');
     const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>;
 
-    expect(Object.keys(properties.curves.properties ?? {})).toEqual([...MASK_CURVE_CHANNELS]);
+    expect(Object.keys(properties.curves.properties ?? {})).toEqual([...MASK_CURVE_CHANNEL_NAMES]);
   });
 });
 
 describe('AI mask types', () => {
-  it('replaces two AI entry points with one smaller create_mask definition', () => {
-    const create = TOOL_DEFINITIONS.find((tool) => tool.name === 'create_mask');
-    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).not.toContain('create_people_mask');
-    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).not.toContain('create_landscape_mask');
-    expect(JSON.stringify(create).length).toBeLessThan(4997);
-    expect(JSON.stringify(create?.inputSchema).length).toBeLessThan(2872);
-  });
-
   function typeEnumOf(toolName: string): string[] {
     const contract = TOOL_CONTRACTS.find((c) => c.name === toolName);
     const properties = contract?.inputSchema.properties as Record<string, { enum?: string[] }>;
@@ -581,91 +271,35 @@ describe('AI mask types', () => {
   }
 
   it('keeps original SDK types on batch/combine and adds guarded AI types only to create_mask', () => {
-    const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'MaskTypes.lua');
-    const source = fs.readFileSync(luaPath, 'utf8');
-    const namesBlock = source.match(/MaskTypes\.NAMES = \{([^}]*)\}/)?.[1] ?? '';
-    const luaNames = [...namesBlock.matchAll(/"(\w+)"/g)].map((m) => m[1]);
-
-    expect(luaNames.length).toBeGreaterThan(0);
-    expect(typeEnumOf('create_mask_batch')).toEqual(luaNames);
-    expect(typeEnumOf('create_mask')).toEqual([...luaNames, 'people', 'landscape']);
-    expect(typeEnumOf('combine_mask')).toEqual(luaNames);
-  });
-
-  it('publishes the People parts and Landscape categories accepted by the guarded Lua path', () => {
-    const source = fs.readFileSync(path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'AiMaskParts.lua'), 'utf8');
-    const contract = TOOL_CONTRACTS.find((tool) => tool.name === 'create_mask');
-    const properties = contract?.inputSchema.properties as Record<string, { items: { enum: string[] } }>;
-    for (const [field, table] of [['parts', 'PEOPLE_PARTS'], ['categories', 'LANDSCAPE_CATEGORIES']]) {
-      const block = source.match(new RegExp(`local ${table} = \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
-      const names = [...block.matchAll(/name = "(\w+)"/g)].map((match) => match[1]);
-      expect(names.length).toBeGreaterThan(0);
-      expect(properties[field].items.enum).toEqual(names);
-    }
+    expect(typeEnumOf('create_mask_batch')).toEqual(MASK_TYPE_NAMES);
+    expect(typeEnumOf('create_mask')).toEqual([...MASK_TYPE_NAMES, 'people', 'landscape']);
+    expect(typeEnumOf('combine_mask')).toEqual(MASK_TYPE_NAMES);
   });
 });
 
-describe('tool contracts vs mcpb manifest', () => {
-  function readManifestTools(): Array<{ name: string; description: string }> {
+describe('mcpb manifest tools', () => {
+  it('are generated from the contract, one per tool with its first sentence; run npm run build after changing a contract', () => {
     const manifestPath = path.resolve(process.cwd(), '..', 'mcpb', 'manifest.json');
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
-      tools: Array<{ name: string; description: string }>;
-    };
-    return manifest.tools;
-  }
-
-  it('lists exactly the contract tool names', () => {
-    const manifestNames = readManifestTools().map((tool) => tool.name).sort();
-    const contractNames = TOOL_CONTRACTS.map((contract) => contract.name).sort();
-
-    expect(manifestNames).toEqual(contractNames);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as { tools: unknown };
+    expect(manifest.tools).toEqual(manifestTools());
   });
 
-  it('gives every manifest tool a description', () => {
-    for (const tool of readManifestTools()) {
-      expect(tool.description.trim()).not.toBe('');
-    }
+  it('describe each tool by the start of its own description', () => {
+    const tools = manifestTools();
+    expect(tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((contract) => contract.name));
+    const crop = tools.find((tool) => tool.name === 'set_crop');
+    expect(TOOL_CONTRACTS.find((contract) => contract.name === 'set_crop')?.description.startsWith(crop?.description ?? '?')).toBe(true);
+    expect(crop?.description).toMatch(/[.!?]$/);
   });
 });
 
-describe('tool contracts vs Lua dispatch', () => {
-  function parseLuaDispatch(): Record<string, string> {
-    const pluginPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'PluginInfoProvider.lua');
-    const source = fs.readFileSync(pluginPath, 'utf8');
-    const match = source.match(/local DISPATCH = \{([\s\S]*?)\n\}/);
-    if (!match) {
-      throw new Error('DISPATCH table not found');
-    }
-
-    return Object.fromEntries(
-      [...match[1].matchAll(/^\s*([a-z_]+)\s*=\s*([A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*)\s*,/gm)]
-        .map((entry) => [entry[1], entry[2]]),
-    );
-  }
-
-  it('matches manifest names and handler targets', () => {
-    const dispatch = parseLuaDispatch();
-    const manifest = Object.fromEntries(
-      TOOL_CONTRACTS.map((contract) => [contract.name, contract.luaHandler]),
-    );
-
-    for (const action of Object.keys(TEST_ONLY_ACTIONS)) {
-      delete dispatch[action];
-    }
-
-    expect(dispatch).toEqual(manifest);
-  });
-
-  it('keeps test-only actions off the MCP tool surface', () => {
-    const dispatch = parseLuaDispatch();
-
-    for (const [action, luaHandler] of Object.entries(TEST_ONLY_ACTIONS)) {
-      expect(dispatch[action]).toBe(luaHandler);
-      expect(TOOL_CONTRACTS.some((contract) => contract.name === action)).toBe(false);
+describe('plug-in actions outside the tool surface', () => {
+  it('keeps internal plug-in actions off the MCP tool surface', () => {
+    for (const action of PLUGIN_ACTIONS) {
+      expect(TOOL_CONTRACTS.some((contract) => contract.name === action.name)).toBe(false);
     }
   });
 });
-
 
 describe('set_color_label schema', () => {
   const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_color_label')!;
@@ -686,11 +320,6 @@ describe('create_smart_collection schema', () => {
   const search = TOOL_DEFINITIONS.find((tool) => tool.name === 'search_photos')!;
   const validate = new Ajv({ strict: false }).compile(smart.inputSchema);
 
-  it('create_smart_collection rejects a name without a filter', () => {
-    expect(validateToolArgs('create_smart_collection', { name: 'x' })).not.toBeNull();
-    expect(validateToolArgs('create_smart_collection', { name: 'x', parent: 'Trips / 2026' })).not.toBeNull();
-  });
-
   it('shares every search filter definition without pagination', () => {
     const { limit, offset, include_path, ...filters } = search.inputSchema.properties!;
     const { name, parent, ...savedFilters } = smart.inputSchema.properties!;
@@ -702,13 +331,9 @@ describe('create_smart_collection schema', () => {
     expect(savedFilters).toEqual(filters);
   });
 
-  it.each([
-    [{ rating: 0 }, true], [{ edited: false }, true], [{ focal_length: 35 }, true],
-    [{ iso: 0 }, false], [{ focal_length: -1 }, false], [{ camera: ' ' }, false],
-    [{ flag: 'invalid' }, false], [{ keywords: [] }, false], [{ rating: 6 }, false],
-    [{ limit: 10 }, false],
-  ])('validates filter %j', (filter, valid) => {
-    expect(validate({ name: 'Review', ...filter })).toBe(valid);
+  it('saves filters without pagination', () => {
+    expect(validate({ name: 'Review', rating: 0 })).toBe(true);
+    expect(validate({ name: 'Review', limit: 10 })).toBe(false);
   });
 });
 
@@ -719,7 +344,6 @@ describe('keyword subtree description', () => {
     expect(tool?.description).toContain('catalog_wide=true');
     expect(tool?.description).toContain('Keyword nodes stay in the catalog');
     expect(tool?.description).toContain('list_keywords');
-    expect(tool?.inputSchema.required).toEqual(['parent']);
   });
 });
 
@@ -732,5 +356,17 @@ describe('Remove spot contracts', () => {
     expect(validate({ photo_id: '1', index: 1, params: { opacity: 0.6 } })).toBe(false);
     expect(validate({ photo_id: '1', index: 1, params: { Opacity: 2 } })).toBe(false);
     expect(validate({ photo_id: '1', index: 1.5, params: { Opacity: 0.6 } })).toBe(false);
+  });
+});
+
+describe('Develop-driving reads', () => {
+  it('say in their published description that they drive Develop and may commit a pending slider change', () => {
+    const reads = TOOL_CONTRACTS.filter((contract) => contract.develop === 'drives' && contract.annotations.readOnlyHint);
+    expect(reads.map((contract) => contract.name).sort()).toEqual(['describe_develop_keys', 'get_lens_blur', 'get_mask', 'list_masks', 'list_spots']);
+    for (const contract of reads) {
+      const description = TOOL_DEFINITIONS.find((tool) => tool.name === contract.name)!.description;
+      expect(description).toContain('Opens the photo in Develop');
+      expect(description).toContain('commits any slider change');
+    }
   });
 });

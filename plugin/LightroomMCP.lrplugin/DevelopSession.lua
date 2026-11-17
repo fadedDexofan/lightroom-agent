@@ -4,6 +4,7 @@ local LrSelection = import 'LrSelection'
 local LrTasks = import 'LrTasks'
 
 local Log = require 'Log'
+local Reply = require 'Reply'
 
 local DevelopSession = {}
 
@@ -51,7 +52,7 @@ local function selectAndWait(catalog, photo, selection)
         function() catalog:setSelectedPhotos(photo, selection) end)
 end
 
-local function selectionMatches(catalog, photo, selection)
+function DevelopSession.selectionMatches(catalog, photo, selection)
     if catalog:getTargetPhoto() ~= photo then return false end
     local expected = {}
     for _, selected in ipairs(selection or { photo }) do expected[selected] = true end
@@ -62,10 +63,11 @@ local function selectionMatches(catalog, photo, selection)
     return next(expected) == nil
 end
 
-local function restoreSelectionAndWait(catalog, photo, selection)
+function DevelopSession.selectExactly(catalog, photo, selection, timeoutSeconds, intervalSeconds)
     return retryUntil(
-        function() return selectionMatches(catalog, photo, selection) end,
-        function() catalog:setSelectedPhotos(photo, selection) end)
+        function() return DevelopSession.selectionMatches(catalog, photo, selection) end,
+        function() catalog:setSelectedPhotos(photo, selection) end,
+        timeoutSeconds, intervalSeconds)
 end
 
 local function selectNoneAndWait(catalog)
@@ -76,13 +78,23 @@ local function selectNoneAndWait(catalog)
     end, function() LrSelection.selectNone() end)
 end
 
-function DevelopSession.activate(catalog, photo, state)
-    if selectAndWait(catalog, photo, { photo }) then return true end
+local function withAllPhotosFallback(catalog, state, select)
+    if select() then return true end
     if state.switchedSource then return false end
     state.switchedSource = true
     local ok = LrTasks.pcall(function() catalog:setActiveSources({ catalog.kAllPhotos }) end)
     if not ok then return false end
-    return selectAndWait(catalog, photo, { photo })
+    return select()
+end
+
+function DevelopSession.activate(catalog, photo, state)
+    return withAllPhotosFallback(catalog, state, function() return selectAndWait(catalog, photo, { photo }) end)
+end
+
+function DevelopSession.selectAlone(catalog, photo, state)
+    return withAllPhotosFallback(catalog, state, function()
+        return DevelopSession.selectExactly(catalog, photo, { photo })
+    end)
 end
 
 local function captureView(catalog)
@@ -96,17 +108,26 @@ local function captureView(catalog)
 end
 
 local function restoreView(catalog, view, state)
+    local problems = {}
     if view.module ~= LrApplicationView.getCurrentModuleName() then
         LrTasks.pcall(function() LrApplicationView.switchToModule(view.module) end)
+        if view.module ~= LrApplicationView.getCurrentModuleName() then
+            problems[#problems + 1] = "the " .. tostring(view.module) .. " module was not reopened"
+        end
     end
     if state.switchedSource and view.sources then
-        LrTasks.pcall(function() catalog:setActiveSources(view.sources) end)
+        if not LrTasks.pcall(function() catalog:setActiveSources(view.sources) end) then
+            problems[#problems + 1] = "the previous source was not reopened"
+        end
     end
     if view.active then
-        LrTasks.pcall(function() restoreSelectionAndWait(catalog, view.active, view.selection) end)
+        local ok, restored = LrTasks.pcall(DevelopSession.selectExactly, catalog, view.active, view.selection)
+        if not (ok and restored) then problems[#problems + 1] = "the previous selection was not restored" end
     else
-        LrTasks.pcall(function() selectNoneAndWait(catalog) end)
+        local ok, cleared = LrTasks.pcall(selectNoneAndWait, catalog)
+        if not (ok and cleared) then problems[#problems + 1] = "the selection was not cleared" end
     end
+    return problems
 end
 
 local function developModuleShowing()
@@ -118,11 +139,11 @@ function DevelopSession.openDevelop(isReady)
         LrApplicationView.switchToModule("develop")
     end
     if not DevelopSession.waitFor(isReady or developModuleShowing, SELECT_TIMEOUT_SECONDS) then
-        error("Develop module did not open")
+        Reply.refuse("Develop module did not open")
     end
 end
 
-local function runBody(toolName, catalog, restore, body)
+local function runBody(context, catalog, restore, body)
     local state = {}
     local view
     local ok, result = LrTasks.pcall(function()
@@ -130,28 +151,31 @@ local function runBody(toolName, catalog, restore, body)
         return body(state)
     end)
     if view then
-        local restored, restoreError = LrTasks.pcall(restoreView, catalog, view, state)
-        if not restored then
-            Log.warn(string.format("%s could not restore the Develop view: %s", toolName, tostring(restoreError)))
+        local restored, problems = LrTasks.pcall(restoreView, catalog, view, state)
+        if not restored then problems = { tostring(problems) } end
+        if #problems > 0 then
+            local warning = context.title .. " could not restore the view: " .. table.concat(problems, "; ")
+            Log.warn(warning)
+            context:warn(warning)
         end
     end
     if not ok then error(result, 0) end
     return result
 end
 
-function DevelopSession.run(toolName, catalog, restore, body)
+function DevelopSession.run(context, catalog, restore, body)
     if runningTool then
-        error(runningTool .. " is already running; wait for it to finish, then call again")
+        Reply.refuse(runningTool .. " is already running; wait for it to finish, then call again")
     end
-    runningTool = toolName
-    local ok, result = LrTasks.pcall(runBody, toolName, catalog, restore, body)
+    runningTool = context.title
+    local ok, result = LrTasks.pcall(runBody, context, catalog, restore, body)
     runningTool = nil
     if not ok then error(result, 0) end
     return result
 end
 
-function DevelopSession.restoringView(toolName, catalog, body)
-    return runBody(toolName, catalog, true, body)
+function DevelopSession.restoringView(context, catalog, body)
+    return runBody(context, catalog, true, body)
 end
 
 function DevelopSession.flushPendingEdits()
@@ -164,29 +188,34 @@ function DevelopSession.openPhoto(catalog, photo, state)
     local alreadyShowingPhoto = developModuleShowing() and catalog:getTargetPhoto() == photo
     DevelopSession.openDevelop()
     if not DevelopSession.activate(catalog, photo, state) then
-        error("Could not open photo " .. tostring(photo.localIdentifier) .. " in Develop")
+        Reply.refuse("Could not open photo " .. tostring(photo.localIdentifier) .. " in Develop")
     end
     if alreadyShowingPhoto then DevelopSession.flushPendingEdits() end
     LrTasks.sleep(PHOTO_SETTLE_SECONDS)
     if catalog:getTargetPhoto() ~= photo then
-        error("Another photo became active in Develop while opening photo "
+        Reply.refuse("Another photo became active in Develop while opening photo "
             .. tostring(photo.localIdentifier))
     end
 end
 
-function DevelopSession.withPhoto(toolName, catalog, photo, fn)
-    return DevelopSession.run(toolName, catalog, true, function(state)
+function DevelopSession.withPhoto(context, catalog, photo, fn)
+    return DevelopSession.run(context, catalog, true, function(state)
         DevelopSession.openPhoto(catalog, photo, state)
         return fn()
     end)
 end
 
-function DevelopSession.requireMaskApi(toolName)
-    for _, name in ipairs(MASK_API_FUNCTIONS) do
+function DevelopSession.requireControllerFunctions(toolName, names, minimumVersion)
+    for _, name in ipairs(names) do
         if type(LrDevelopController[name]) ~= "function" then
-            error(toolName .. " needs " .. MASK_API_MINIMUM_VERSION .. " or later")
+            Reply.refuse(string.format("%s needs LrDevelopController.%s, which this Lightroom does not offer%s",
+                toolName, name, minimumVersion and " (" .. minimumVersion .. " or later has it)" or ""))
         end
     end
+end
+
+function DevelopSession.requireMaskApi(toolName)
+    DevelopSession.requireControllerFunctions(toolName, MASK_API_FUNCTIONS, MASK_API_MINIMUM_VERSION)
 end
 
 return DevelopSession

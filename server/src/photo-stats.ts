@@ -1,22 +1,22 @@
-import jpeg from "jpeg-js";
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
+import { jpegOf, previewBatch, reasonOf } from "./preview-item.js";
+import { areaAverage, decodeJpeg } from "./rendered-image.js";
+import type { Input, PluginReply } from "./tool-result.js";
 
 const BINS = 64;
+const STATS_PREVIEW_SIZE = 512;
 const LONG_EDGE = 512;
 const rounded = (value: number) => Math.round(value * 1e6) / 1e6;
 
-export function photoStats(encoded: string) {
-  const image = jpeg.decode(Buffer.from(encoded, "base64"), {
-    useTArray: true, formatAsRGBA: false, maxResolutionInMP: 16, maxMemoryUsageInMB: 128,
-  });
-  const { width, height, data } = image;
+export function photoStats(encoded: Buffer) {
+  const { width, height, data } = decodeJpeg(encoded);
   const luma = new Float64Array(width * height);
   const histogram = Array<number>(BINS).fill(0);
   let shadows = 0, highlights = 0, sum = 0;
   for (let i = 0; i < luma.length; i++) {
-    const value = 0.2126 * data[i * 3] + 0.7152 * data[i * 3 + 1] + 0.0722 * data[i * 3 + 2];
+    const value = 0.2126 * data[i * 4] + 0.7152 * data[i * 4 + 1] + 0.0722 * data[i * 4 + 2];
     luma[i] = value;
-    histogram[Math.min(BINS - 1, Math.floor(value / 4))]++;
+    histogram[(value / 4) | 0]++;
     if (value <= 1) shadows++;
     if (value >= 254) highlights++;
     sum += value;
@@ -24,21 +24,7 @@ export function photoStats(encoded: string) {
   const scale = LONG_EDGE / Math.max(width, height);
   const targetWidth = Math.max(3, Math.round(width * scale));
   const targetHeight = Math.max(3, Math.round(height * scale));
-  const resized = new Float64Array(targetWidth * targetHeight);
-  const dx = width / targetWidth, dy = height / targetHeight;
-  for (let y = 0; y < targetHeight; y++) {
-    for (let x = 0; x < targetWidth; x++) {
-      let total = 0;
-      for (let sy = Math.floor(y * dy); sy < Math.ceil((y + 1) * dy); sy++) {
-        const wy = Math.min(sy + 1, (y + 1) * dy) - Math.max(sy, y * dy);
-        for (let sx = Math.floor(x * dx); sx < Math.ceil((x + 1) * dx); sx++) {
-          const wx = Math.min(sx + 1, (x + 1) * dx) - Math.max(sx, x * dx);
-          total += luma[Math.min(height - 1, sy) * width + Math.min(width - 1, sx)] * wx * wy;
-        }
-      }
-      resized[y * targetWidth + x] = total / (dx * dy);
-    }
-  }
+  const resized = areaAverage(width, height, targetWidth, targetHeight, (pixel) => luma[pixel]);
   let laplacianSum = 0, squares = 0, count = 0;
   for (let y = 1; y < targetHeight - 1; y++) {
     for (let x = 1; x < targetWidth - 1; x++) {
@@ -62,24 +48,24 @@ export function photoStats(encoded: string) {
 
 export async function getPhotoStats(
   dispatcher: Pick<Dispatcher, "call">,
-  photoIds: (string | number)[],
+  photoIds: Input[],
+  budgetMs: number,
   options?: CallOptions,
-) {
-  const results = [];
-  for (const photoId of photoIds) {
-    if (options?.signal?.aborted) throw new Error("Request cancelled");
-    try {
-      const response = await dispatcher.call("get_photo_stats", { photo_ids: [photoId] }, undefined, options);
-      if (response.error) throw new Error(response.error);
-      const preview = response.result as { image?: { data?: unknown; mime_type?: unknown } } | undefined;
-      if (preview?.image?.mime_type !== "image/jpeg" || typeof preview.image.data !== "string") {
-        throw new Error("Plugin returned no JPEG preview");
+): Promise<PluginReply> {
+  const results: ({ photo_id: string } & ReturnType<typeof photoStats>)[] = [];
+  const batch = await previewBatch(dispatcher, photoIds, { action: "render_preview", size: STATS_PREVIEW_SIZE, budgetMs }, options,
+    (preview, fail) => {
+      try {
+        results.push({ photo_id: preview.photo_id, ...photoStats(jpegOf(preview)) });
+      } catch (error) {
+        fail({ photo_id: preview.photo_id, reason: reasonOf(error) });
       }
-      results.push({ photo_id: photoId, ...photoStats(preview.image.data) });
-    } catch (error) {
-      if (options?.signal?.aborted) throw new Error("Request cancelled");
-      results.push({ photo_id: photoId, error: error instanceof Error ? error.message : String(error) });
-    }
-  }
-  return { results };
+    });
+  return {
+    result: {
+      ...(results.length ? { data: { results } } : {}),
+      failed: batch.failed, not_found: batch.notFound, remaining: batch.remaining,
+      ...(batch.warnings.length ? { warnings: batch.warnings } : {}),
+    },
+  };
 }

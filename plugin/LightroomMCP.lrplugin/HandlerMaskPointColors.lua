@@ -1,10 +1,13 @@
+local LrApplication = import 'LrApplication'
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local PhotoLookup = require 'PhotoLookup'
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
 local MaskPointColors = require 'MaskPointColors'
 local MaskSelection = require 'MaskSelection'
+local Reply = require 'Reply'
 
 local MaskPointColorsHandler = {}
 
@@ -17,10 +20,6 @@ local POLL_SECONDS = 0.1
 local UPDATE_ATTEMPTS = 2
 local PERSIST_SETTLE_SECONDS = 0.5
 
-local ACTIONS = { "add", "update", "delete", "clear" }
-local ACTION_LOOKUP = {}
-for _, action in ipairs(ACTIONS) do ACTION_LOOKUP[action] = true end
-
 local EDIT_CONTROLLER_FUNCTIONS = {
     "getValue",
     "getSelectedPointColorSwatchIndex",
@@ -32,40 +31,6 @@ local EDIT_CONTROLLER_FUNCTIONS = {
 
 local function requireSupport(toolName, functionNames)
     MaskSelection.requireControllerFunctions(toolName, functionNames, MaskPointColors.MINIMUM_VERSION_LABEL)
-    MaskSelection.requireVersionAtLeast(toolName, MaskPointColors.MINIMUM_MAJOR, MaskPointColors.MINIMUM_MINOR,
-        MaskPointColors.MINIMUM_VERSION_LABEL)
-end
-
-local function requireIndex(value, action)
-    if type(value) ~= "number" or value ~= math.floor(value) or value < 1
-        or value > MaskPointColors.MAX_SWATCHES then
-        error(string.format("index is required for %s: a whole number from 1 to %d", action,
-            MaskPointColors.MAX_SWATCHES))
-    end
-    return value
-end
-
-local function requireRequest(args)
-    local action = args.action
-    if type(action) ~= "string" or not ACTION_LOOKUP[action] then
-        error("action is required: one of " .. table.concat(ACTIONS, ", "))
-    end
-    local request = { action = action }
-    if action == "add" then
-        MaskPointColors.requireSwatch(args.swatch, "swatch", true)
-        request.swatch = args.swatch
-        if args.index ~= nil then error("index is not used by add") end
-    elseif action == "update" then
-        MaskPointColors.requireSwatch(args.swatch, "swatch", false)
-        request.swatch = args.swatch
-        request.index = requireIndex(args.index, action)
-    elseif action == "delete" then
-        request.index = requireIndex(args.index, action)
-        if args.swatch ~= nil then error("swatch is not used by delete") end
-    else
-        if args.index ~= nil or args.swatch ~= nil then error("clear takes no index or swatch") end
-    end
-    return request
 end
 
 local function readSwatches()
@@ -127,16 +92,11 @@ local function listHolds(actual, expected)
     return true
 end
 
-local function confirmPersisted(expected, maskId, what, restoreLost)
+local function confirmPersisted(expected, maskId, what, stopAfterLost)
     LrTasks.sleep(PERSIST_SETTLE_SECONDS)
-    local stillSelected = MaskSelection.readSelectedMask() == maskId
+    local stillSelected = MaskSelection.isSelected(maskId)
     if not listHolds(readSwatches(), expected) then
-        if restoreLost and stillSelected then
-            if restoreLost() then
-                error("Lightroom did not keep " .. what .. "; the original values were restored", 0)
-            end
-            error("Lightroom did not keep " .. what .. "; the original values could not be restored", 0)
-        end
+        if stopAfterLost then stopAfterLost("Lightroom did not keep " .. what) end
         error("Lightroom did not keep " .. what, 0)
     end
     if not stillSelected then
@@ -160,16 +120,23 @@ end
 local function addSwatch(request, maskId)
     local before = readSwatches()
     if #before >= MaskPointColors.MAX_SWATCHES then
-        error(string.format("Mask %s already holds %d Point Color swatches, the most Lightroom allows",
+        Reply.refuse(string.format("Mask %s already holds %d Point Color swatches, the most Lightroom allows",
             maskId, MaskPointColors.MAX_SWATCHES))
     end
     local previousIndex = readSelectedIndex()
+    MaskSelection.refuseUnlessSelected(maskId)
     callController("the new Point Color swatch", "addPointColorSwatch", request.swatch, FOR_MASKING)
     if not waitForCount(#before + 1) then
         local existing = findNewIndex(before, request.swatch)
         if existing then
-            error(string.format("Mask %s already has a swatch with that source color at index %d; nothing was added",
-                maskId, existing), 0)
+            local now = readSwatches()
+            restoreSelection(previousIndex, #now)
+            if listHolds(now, before) then
+                Reply.refuse(string.format("Mask %s already has a swatch with that source color at index %d; nothing"
+                    .. " was added", maskId, existing))
+            end
+            error(string.format("Mask %s already has a swatch with that source color at index %d, and Lightroom"
+                .. " changed the swatches while adding it; read the mask before retrying", maskId, existing), 0)
         end
         error("Lightroom did not add the Point Color swatch to mask " .. maskId, 0)
     end
@@ -177,10 +144,20 @@ local function addSwatch(request, maskId)
     local after = readSwatches()
     local index = findNewIndex(after, request.swatch)
     if index == nil or not MaskPointColors.holds(after[index], request.swatch) then
-        if index then
-            LrTasks.pcall(LrDevelopController.deletePointColorSwatch, false, index, FOR_MASKING)
+        if not MaskSelection.isSelected(maskId) then
+            error("Lightroom did not keep the Point Color swatch values, and another mask became selected, so the new"
+                .. " swatch was not removed; read the mask before retrying", 0)
         end
-        error("Lightroom did not keep the Point Color swatch values; the new swatch was removed", 0)
+        local removed = index ~= nil
+            and LrTasks.pcall(LrDevelopController.deletePointColorSwatch, false, index, FOR_MASKING)
+            and waitForCount(#before)
+            and listHolds(readSwatches(), before)
+        if removed then
+            restoreSelection(previousIndex, #before)
+            Reply.refuse("Lightroom did not keep the Point Color swatch values; the new swatch was removed")
+        end
+        error("Lightroom did not keep the Point Color swatch values, and the new swatch could not be confirmed"
+            .. " removed; read the mask before retrying", 0)
     end
 
     local expected = copyList(before)
@@ -201,11 +178,23 @@ local function restoreSwatch(index, original, count)
     end, CHANGE_TIMEOUT_SECONDS)
 end
 
+local function stopAfterUpdateLost(problem, maskId, index, before, previousIndex)
+    if not MaskSelection.isSelected(maskId) then
+        error(problem .. "; another mask became selected, so the swatch was not restored; read the mask before"
+            .. " retrying", 0)
+    end
+    if restoreSwatch(index, before[index], #before) and listHolds(readSwatches(), before) then
+        restoreSelection(previousIndex, #before)
+        Reply.refuse(problem .. "; the original values were restored")
+    end
+    error(problem .. "; the original values could not be restored; read the mask before retrying", 0)
+end
+
 local function updateSwatch(request, maskId)
     local before = readSwatches()
     local index = request.index
     if index > #before then
-        error(string.format("No swatch at index %d on mask %s (the mask has %d)", index, maskId, #before))
+        Reply.refuse(string.format("No swatch at index %d on mask %s (the mask has %d)", index, maskId, #before))
     end
     local previousIndex = readSelectedIndex()
     if not selectSwatchAndWait(index) then
@@ -220,7 +209,11 @@ local function updateSwatch(request, maskId)
     end
 
     local kept = false
-    for _ = 1, UPDATE_ATTEMPTS do
+    for attempt = 1, UPDATE_ATTEMPTS do
+        if not MaskSelection.isSelected(maskId) then
+            if attempt == 1 then Reply.refuse(MaskSelection.movedBeforeWriting(maskId)) end
+            break
+        end
         callController("the Point Color swatch update", "updateSelectedPointColorSwatch",
             MaskPointColors.copySwatch(merged), FOR_MASKING)
         kept = DevelopSession.waitFor(function()
@@ -229,17 +222,13 @@ local function updateSwatch(request, maskId)
         end, CHANGE_TIMEOUT_SECONDS)
         if kept then break end
     end
-    if not kept then
-        local restored = restoreSwatch(index, original, #before)
-        error(string.format("Lightroom did not keep the update of swatch %d; the original values %s", index,
-            restored and "were restored" or "could not be restored"), 0)
-    end
+    local what = string.format("the update of swatch %d", index)
+    local function stopAfterLost(problem) stopAfterUpdateLost(problem, maskId, index, before, previousIndex) end
+    if not kept then stopAfterLost("Lightroom did not keep " .. what) end
 
     local expected = copyList(before)
     expected[index] = merged
-    confirmPersisted(expected, maskId, string.format("the update of swatch %d", index), function()
-        return restoreSwatch(index, original, #before)
-    end)
+    confirmPersisted(expected, maskId, what, stopAfterLost)
     restoreSelection(previousIndex, #before)
     return { index = index, changed = true }
 end
@@ -248,9 +237,10 @@ local function deleteSwatch(request, maskId)
     local before = readSwatches()
     local index = request.index
     if index > #before then
-        error(string.format("No swatch at index %d on mask %s (the mask has %d)", index, maskId, #before))
+        Reply.refuse(string.format("No swatch at index %d on mask %s (the mask has %d)", index, maskId, #before))
     end
     local previousIndex = readSelectedIndex()
+    MaskSelection.refuseUnlessSelected(maskId)
     callController("the Point Color swatch deletion", "deletePointColorSwatch", false, index, FOR_MASKING)
     if not waitForCount(#before - 1) then
         error(string.format("Lightroom did not delete swatch %d of mask %s", index, maskId), 0)
@@ -268,6 +258,7 @@ end
 local function clearSwatches(_, maskId)
     local before = readSwatches()
     if #before == 0 then return { changed = false } end
+    MaskSelection.refuseUnlessSelected(maskId)
     callController("clearing the Point Color swatches", "deletePointColorSwatch", true, 1, FOR_MASKING)
     if not waitForCount(0) then
         error("Lightroom did not clear the Point Color swatches of mask " .. maskId, 0)
@@ -283,14 +274,16 @@ local EDIT = {
     clear = clearSwatches,
 }
 
-function MaskPointColorsHandler.editMaskPointColors(args)
-    local photoId, maskId = MaskSelection.requireTarget(args)
-    local request = requireRequest(args)
+function MaskPointColorsHandler.editMaskPointColors(args, context)
+    local maskId = args.mask_id
+    local request = { action = args.action, swatch = args.swatch, index = args.index }
     requireSupport("edit_mask_point_colors", EDIT_CONTROLLER_FUNCTIONS)
-    local catalog, photo = MaskSelection.resolvePhoto(photoId)
+    local catalog = LrApplication.activeCatalog()
+    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photoId = tostring(photo.localIdentifier)
 
-    local outcome = DevelopSession.withPhoto("edit_mask_point_colors", catalog, photo, function()
-        return MaskSelection.withMaskSelected(photoId, maskId, function()
+    local outcome = DevelopSession.withPhoto(context, catalog, photo, function()
+        return MaskSelection.withMaskSelected(catalog, photo, maskId, function()
             local result = EDIT[request.action](request, maskId)
             result.swatches = MaskPointColors.indexed(readSwatches())
             return result
@@ -301,7 +294,6 @@ function MaskPointColorsHandler.editMaskPointColors(args)
         request.action, maskId, photoId, #outcome.swatches))
 
     return {
-        success = true,
         photo_id = photoId,
         mask_id = maskId,
         action = request.action,

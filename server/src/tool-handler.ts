@@ -1,72 +1,15 @@
-import { PluginTimeoutError, type CallOptions, type Dispatcher } from "./dispatcher.js";
+import { PluginNotSentError, PluginTimeoutError, type CallOptions, type Dispatcher } from "./dispatcher.js";
+import { DevelopQueue } from "./develop-queue.js";
 import { TOOL_CONTRACTS } from "./tool-contracts.js";
+import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
+import { finishLost, finishReply, refusedResponse, toolResponse, unknownToolResponse, type PluginReply, type ToolResponse } from "./tool-result.js";
 import { validateToolArgs } from "./validate-args.js";
-import { findDuplicateGroups, type DuplicateGroupArgs } from "./duplicate-groups.js";
-import { getPhotoStats } from "./photo-stats.js";
-import { cropPreview, regionRenderArgs, type PreviewArgs } from "./preview-region.js";
-import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 export interface ToolHandlerDeps {
   dispatcher: Pick<Dispatcher, "call">;
   isReady: () => boolean;
   notReadyMessage?: () => string;
   settleReadiness?: () => Promise<void>;
-}
-
-interface TextBlock {
-  type: "text";
-  text: string;
-}
-
-interface ImageBlock {
-  type: "image";
-  data: string;
-  mimeType: string;
-}
-
-export interface ToolResponse {
-  // The first block is always text, so callers can read content[0].text.
-  content: [TextBlock, ...(TextBlock | ImageBlock)[]];
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
-interface ImagePayload {
-  image: { data: string; mime_type: string };
-  [key: string]: unknown;
-}
-
-function isImagePayload(result: unknown): result is ImagePayload {
-  if (typeof result !== "object" || result === null || !("image" in result)) return false;
-  const { image } = result;
-  return typeof image === "object" && image !== null
-    && "data" in image && typeof image.data === "string"
-    && "mime_type" in image && typeof image.mime_type === "string";
-}
-
-// A plugin result carrying `image` (get_photo_preview) becomes an MCP image
-// block. The rest of the result still comes first as JSON text, as for every
-// other tool, without the base64 data repeated in it.
-function successContent(result: unknown): ToolResponse["content"] {
-  if (typeof result === "object" && result !== null && "previews" in result
-    && Array.isArray(result.previews)) {
-    const images: Array<ToolResponse["content"][number]> = [];
-    const previews = result.previews.map((preview: unknown) => {
-      if (!isImagePayload(preview)) return preview;
-      const { image, ...rest } = preview;
-      images.push({ type: "image", data: image.data, mimeType: image.mime_type });
-      return { ...rest, image_index: images.length };
-    });
-    return [{ type: "text", text: JSON.stringify({ ...result, previews }) }, ...images];
-  }
-  if (isImagePayload(result)) {
-    const { image, ...rest } = result;
-    return [
-      { type: "text", text: JSON.stringify(rest) },
-      { type: "image", data: image.data, mimeType: image.mime_type },
-    ];
-  }
-  return [{ type: "text", text: JSON.stringify(result) }];
 }
 
 export const NOT_CONNECTED_MESSAGE =
@@ -79,64 +22,38 @@ export const NOT_CONNECTED_DETAILS =
   "in Plug-in Manager.";
 
 export function createCallToolHandler(deps: ToolHandlerDeps) {
+  const queue = new DevelopQueue();
   return async (name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> => {
+    const contract = CONTRACTS.get(name);
+    if (!contract) return unknownToolResponse(name);
     const invalid = validateToolArgs(name, args);
-    if (invalid) {
-      return {
-        content: [{ type: "text", text: invalid }],
-        isError: true,
-      };
-    }
+    if (invalid) return refusedResponse(invalid);
 
     await deps.settleReadiness?.();
 
-    if (!deps.isReady()) {
-      return {
-        content: [{ type: "text", text: deps.notReadyMessage?.() ?? NOT_CONNECTED_MESSAGE }],
-        isError: true,
-      };
-    }
+    if (!deps.isReady()) return refusedResponse(deps.notReadyMessage?.() ?? NOT_CONNECTED_MESSAGE);
 
+    const readOnly = contract.annotations.readOnlyHint === true;
+    const { run } = contract;
+    const budgetMs = TIMEOUT_MS_BY_DURATION[contract.duration ?? "quick"];
+    const invoke = async (left: number): Promise<PluginReply> => "server" in run
+      ? await run.server(args, deps.dispatcher, left, options)
+      : await deps.dispatcher.call(name, args, left, options) as PluginReply;
     try {
-      if (name === "get_photo_preview") {
-        const previewArgs = args as { photo_id: number | string; size?: number | keyof typeof PREVIEW_SIZES };
-        if (typeof previewArgs.size === "string") {
-          args = { ...previewArgs, size: PREVIEW_SIZES[previewArgs.size] };
-        }
-      }
-      if (name === "find_duplicate_groups") {
-        return { content: successContent(await findDuplicateGroups(deps.dispatcher, args as DuplicateGroupArgs, options)) };
-      }
-      if (name === "get_photo_stats") {
-        const { photo_ids } = args as { photo_ids: (string | number)[] };
-        return { content: successContent(await getPhotoStats(deps.dispatcher, photo_ids, options)) };
-      }
-      const region = name === "get_photo_preview" ? (args as PreviewArgs).region : undefined;
-      const params = region ? regionRenderArgs(args as PreviewArgs) : args;
-      const resp = options
-        ? await deps.dispatcher.call(name, params, undefined, options)
-        : await deps.dispatcher.call(name, params);
-      if (resp.error) {
-        return {
-          content: [{ type: "text", text: `Error: ${resp.error}` }],
-          isError: true,
-        };
-      }
-      if (region && options?.signal?.aborted) throw new Error("Request cancelled");
-      return { content: successContent(region ? cropPreview(resp.result, region) : resp.result) };
-    } catch (e) {
-      return {
-        content: [{ type: "text", text: failureText(name, e) }],
-        isError: true,
-      };
+      if (!contract.develop) return toolResponse(finishReply(readOnly, await invoke(budgetMs)));
+      const turn = await queue.run(name, budgetMs, options?.signal, invoke);
+      if (!turn.ran) return refusedResponse(turn.reason);
+      return toolResponse(finishReply(readOnly, turn.value));
+    } catch (error) {
+      return toolResponse(finishLost(readOnly, failureText(name, readOnly, error), !(error instanceof PluginNotSentError)));
     }
   };
 }
 
-const READ_ONLY_TOOLS = new Set(TOOL_CONTRACTS.filter((tool) => tool.annotations.readOnlyHint).map((tool) => tool.name));
+const CONTRACTS = new Map(TOOL_CONTRACTS.map((contract) => [contract.name, contract]));
 
-function failureText(name: string, error: unknown): string {
-  if (error instanceof PluginTimeoutError && !READ_ONLY_TOOLS.has(name)) {
+function failureText(name: string, readOnly: boolean, error: unknown): string {
+  if (error instanceof PluginTimeoutError && !readOnly) {
     return `Lightroom did not answer within ${error.timeoutMs / 1000}s, so the result of ${name} is unknown:`
       + " it may have been applied or may still be running. Read the current state before retrying.";
   }

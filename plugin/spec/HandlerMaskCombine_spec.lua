@@ -1,11 +1,5 @@
 local helper = require 'spec_helper'
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 local function tool(id, toolType, subtype)
     return { ID = id, Name = toolType .. " " .. id, Type = toolType, Subtype = subtype, Hidden = false, Inverted = false }
 end
@@ -43,7 +37,7 @@ local function setup(opts)
     opts = opts or {}
     local masks = opts.masks or twoMasks()
     local settingsGroups = {}
-    for index = 1, opts.settingsMaskCount or #masks do settingsGroups[index] = { CorrectionID = tostring(index) } end
+    for index = 1, #masks do settingsGroups[index] = { CorrectionID = tostring(index) } end
     local photo = helper.fakePhoto({
         id = "10",
         path = "/10.jpg",
@@ -88,6 +82,10 @@ local function setup(opts)
             target.Tools[1].Inverted = true
         elseif behavior == "alert" then
             blocked = true
+        elseif behavior == "addsMask" then
+            masks[#masks + 1] = mask("m-new", {})
+        elseif behavior == "savesMask" then
+            settingsGroups[#settingsGroups + 1] = { CorrectionID = "orphan" }
         end
     end
 
@@ -110,7 +108,10 @@ local function setup(opts)
             tool_ = name
             calls.tools[#calls.tools + 1] = name
         end,
-        getSelectedTool = function() return tool_ end,
+        getSelectedTool = function()
+            if opts.pointColorSubtool and tool_ == "masking" then return "local_point_color" end
+            return tool_
+        end,
     }
     for operation, functionName in pairs(SDK_FUNCTION_OF_OPERATION) do
         controller[functionName] = function(toolType, subtype)
@@ -166,6 +167,7 @@ local function setup(opts)
     })
     package.loaded.HandlerMaskCombine = nil
     package.loaded.DevelopSession = nil
+    package.loaded.MaskSelection = nil
     package.loaded.MaskTypes = nil
     local Handler = require 'HandlerMaskCombine'
     local state = {
@@ -191,7 +193,6 @@ describe("HandlerMaskCombine.combineMask", function()
 
                 local r = Handler.combineMask(args({ operation = operation, type = typeName }))
 
-                assert.is_true(r.success)
                 assert.are.equal(operation, r.operation)
                 assert.are.equal(typeName, r.type)
                 assert.are.equal(1, #calls.combined)
@@ -258,14 +259,20 @@ describe("HandlerMaskCombine.combineMask", function()
         assert.are.same({ "develop", "library" }, calls.modules)
     end)
 
-    it("leaves the Masking tool open when it was already open", function()
-        local Handler, calls, _, _, state = setup({ startTool = "masking", startSelected = "m-1" })
+    for _, pointColorSubtool in ipairs({ false, true }) do
+        it("leaves the Masking tool open when it was already open (local Point Color subtool: "
+            .. tostring(pointColorSubtool) .. ")", function()
+            local Handler, calls, _, _, state = setup({
+                startTool = "masking", startSelected = "m-1", pointColorSubtool = pointColorSubtool,
+            })
 
-        Handler.combineMask(args())
+            local r = Handler.combineMask(args())
 
-        assert.are.equal("masking", state.tool())
-        assert.are.same({ "masking" }, calls.tools)
-    end)
+            assert.are.equal("new-tool", r.tool_id)
+            assert.are.equal("masking", state.tool())
+            assert.are.same({}, calls.tools)
+        end)
+    end
 
     it("waits for a slow detection before reporting the component", function()
         local Handler = setup({ behavior = "delayed", pollsBeforeAppear = 25 })
@@ -296,47 +303,40 @@ describe("HandlerMaskCombine.combineMask", function()
         assert.are.equal("10", Handler.combineMask(args({ photo_id = 10 })).photo_id)
 
         local PathHandler = setup({})
-        assert.is_true(PathHandler.combineMask(args({ photo_id = "/10.jpg" })).success)
+        assert.are.equal("10", PathHandler.combineMask(args({ photo_id = "/10.jpg" })).photo_id)
     end)
 end)
 
 describe("HandlerMaskCombine.combineMask when nothing changes", function()
-    it("returns an error before changing anything for an unknown mask id", function()
-        local Handler, calls, masks = setup({})
+    it("refuses an unknown mask id with nothing changed and the previous tool restored", function()
+        local Handler, calls, masks, _, state = setup({})
         local before = fingerprint(masks)
 
-        local err = errorOf(function() Handler.combineMask(args({ mask_id = "nope" })) end)
+        local err = helper.refusalOf(function() Handler.combineMask(args({ mask_id = "nope" })) end)
 
         assert.truthy(err:find("Mask not found on photo 10: nope", 1, true))
         assert.are.equal(0, #calls.combined)
         assert.are.equal(0, #calls.selectMask)
-        assert.are.same({}, calls.tools)
+        assert.are.same({ "masking", "loupe" }, calls.tools)
         assert.are.equal(before, fingerprint(masks))
+        assert.are.equal("library", state.module())
     end)
 
     it("returns an error for a photo without masks", function()
         local Handler, calls = setup({ masks = {} })
 
-        local err = errorOf(function() Handler.combineMask(args()) end)
+        local err = helper.refusalOf(function() Handler.combineMask(args()) end)
 
         assert.truthy(err:find("Mask not found on photo 10: m-1", 1, true))
         assert.are.equal(0, #calls.combined)
     end)
 
-    it("restores the module after an unknown mask id", function()
-        local Handler, _, _, _, state = setup({})
-
-        errorOf(function() Handler.combineMask(args({ mask_id = "nope" })) end)
-
-        assert.are.equal("library", state.module())
-    end)
-
     it("fails without calling Lightroom when the masks cannot be read", function()
         local Handler, calls = setup({ neverReady = true })
 
-        local err = errorOf(function() Handler.combineMask(args()) end)
+        local err = helper.refusalOf(function() Handler.combineMask(args()) end)
 
-        assert.truthy(err:find("could not read the masks of photo 10", 1, true))
+        assert.truthy(err:find("Develop lists 0 of the 2 masks in photo 10's saved settings", 1, true))
         assert.truthy(err:find("nothing was changed", 1, true))
         assert.are.equal(0, #calls.combined)
     end)
@@ -345,18 +345,18 @@ describe("HandlerMaskCombine.combineMask when nothing changes", function()
         local Handler, calls, masks = setup({ selectIgnored = true, startSelected = "m-2" })
         local before = fingerprint(masks)
 
-        local err = errorOf(function() Handler.combineMask(args()) end)
+        local err = helper.refusalOf(function() Handler.combineMask(args()) end)
 
         assert.truthy(err:find("Could not select mask m-1 on photo 10", 1, true))
         assert.are.equal(0, #calls.combined)
         assert.are.equal(before, fingerprint(masks))
     end)
 
-    it("reports nothing found, tells the caller to dismiss the alert and leaves the mask unchanged", function()
+    it("refuses when nothing was found and the mask reads unchanged, telling the caller to dismiss the alert", function()
         local Handler, calls, masks, _, state = setup({ behavior = "nothing", startTool = "crop" })
         local before = fingerprint(masks)
 
-        local err = errorOf(function() Handler.combineMask(args({ operation = "subtract", type = "sky" })) end)
+        local err = helper.refusalOf(function() Handler.combineMask(args({ operation = "subtract", type = "sky" })) end)
 
         assert.truthy(err:find("Lightroom found no sky to subtract from mask m-1 on photo 10", 1, true))
         assert.truthy(err:find("No sky detected", 1, true))
@@ -368,10 +368,26 @@ describe("HandlerMaskCombine.combineMask when nothing changes", function()
         assert.are.equal("library", state.module())
     end)
 
-    it("says to check the mask afterwards when the alert hides every mask", function()
+    for _, case in ipairs({
+        { behavior = "addsMask", says = "Lightroom changed the photo's other masks, so check the masks with list_masks" },
+        { behavior = "savesMask", says = "Develop lists fewer masks than photo 10's saved settings hold, so whether"
+            .. " mask m-1 changed is unknown: check mask m-1 with list_masks afterwards" },
+    }) do
+        it("answers unknown when nothing was added to the mask but the photo's masks changed (" .. case.behavior .. ")",
+            function()
+                local Handler = setup({ behavior = case.behavior })
+
+                local err = helper.unknownOf(function() Handler.combineMask(args({ type = "sky" })) end)
+
+                assert.truthy(err:find("Lightroom found no sky to add to mask m-1", 1, true), err)
+                assert.truthy(err:find(case.says, 1, true), err)
+            end)
+    end
+
+    it("answers unknown and says to check the mask afterwards when the alert hides every mask", function()
         local Handler = setup({ behavior = "alert" })
 
-        local err = errorOf(function() Handler.combineMask(args({ type = "background" })) end)
+        local err = helper.unknownOf(function() Handler.combineMask(args({ type = "background" })) end)
 
         assert.truthy(err:find("Lightroom found no background to add to mask m-1", 1, true))
         assert.truthy(err:find("click OK in Lightroom", 1, true))
@@ -381,7 +397,7 @@ describe("HandlerMaskCombine.combineMask when nothing changes", function()
     it("reports a mask that changed without gaining a component", function()
         local Handler = setup({ behavior = "tamper" })
 
-        local err = errorOf(function() Handler.combineMask(args({ operation = "intersect" })) end)
+        local err = helper.unknownOf(function() Handler.combineMask(args({ operation = "intersect" })) end)
 
         assert.truthy(err:find("changed mask m-1 on photo 10 without adding a sky component (intersect)", 1, true))
     end)
@@ -389,7 +405,7 @@ describe("HandlerMaskCombine.combineMask when nothing changes", function()
     it("reports more than one new component instead of guessing which is the right one", function()
         local Handler = setup({ behavior = "double" })
 
-        local err = errorOf(function() Handler.combineMask(args()) end)
+        local err = helper.unknownOf(function() Handler.combineMask(args()) end)
 
         assert.truthy(err:find("added 2 components to mask m-1", 1, true))
     end)
@@ -397,7 +413,7 @@ describe("HandlerMaskCombine.combineMask when nothing changes", function()
     it("reports an SDK call that throws", function()
         local Handler, _, _, _, state = setup({ combineThrows = "boom", startTool = "crop" })
 
-        local err = errorOf(function() Handler.combineMask(args({ operation = "subtract" })) end)
+        local err = helper.unknownOf(function() Handler.combineMask(args({ operation = "subtract" })) end)
 
         assert.truthy(err:find("Lightroom could not run subtractFromCurrentMask on mask m-1", 1, true))
         assert.truthy(err:find("boom", 1, true))
@@ -407,40 +423,10 @@ describe("HandlerMaskCombine.combineMask when nothing changes", function()
 end)
 
 describe("HandlerMaskCombine.combineMask arguments", function()
-    it("requires a photo id, a mask id, an operation and a type", function()
-        local Handler = setup({})
-
-        assert.truthy(errorOf(function() Handler.combineMask(args({ photo_id = "" })) end)
-            :find("photo_id is required", 1, true))
-        assert.truthy(errorOf(function() Handler.combineMask(args({ mask_id = "" })) end)
-            :find("mask_id is required", 1, true))
-        assert.truthy(errorOf(function() Handler.combineMask(args({ mask_id = 5 })) end)
-            :find("mask_id is required", 1, true))
-        assert.truthy(errorOf(function() Handler.combineMask(args({ operation = "invert" })) end)
-            :find("operation must be one of: add, subtract, intersect", 1, true))
-        assert.truthy(errorOf(function() Handler.combineMask(args({ operation = false })) end)
-            :find("operation must be one of", 1, true))
-        assert.truthy(errorOf(function() Handler.combineMask(args({ type = "people" })) end)
-            :find("type must be one of: subject, sky, background", 1, true))
-        assert.truthy(errorOf(function() Handler.combineMask(args({ type = 3 })) end)
-            :find("type must be one of", 1, true))
-    end)
-
-    it("rejects bad arguments before Develop is touched", function()
-        local Handler, calls = setup({})
-
-        errorOf(function() Handler.combineMask(args({ operation = "invert" })) end)
-
-        assert.are.equal(0, #calls.modules)
-        assert.are.equal(0, #calls.combined)
-    end)
-
     it("names the photo id when the photo is unknown and never touches Develop", function()
         local Handler, calls = setup({})
 
-        local err = errorOf(function() Handler.combineMask(args({ photo_id = "404" })) end)
-
-        assert.truthy(err:find("Photo not found: 404", 1, true))
+        assert.are.equal("404", helper.notFoundOf(function() Handler.combineMask(args({ photo_id = "404" })) end))
         assert.are.equal(0, #calls.modules)
     end)
 
@@ -448,9 +434,10 @@ describe("HandlerMaskCombine.combineMask arguments", function()
         for operation, functionName in pairs(SDK_FUNCTION_OF_OPERATION) do
             local Handler, calls = setup({ withoutFunctions = { functionName } })
 
-            local err = errorOf(function() Handler.combineMask(args({ operation = operation })) end)
+            local refusal = helper.refusalOf(function() Handler.combineMask(args({ operation = operation })) end)
 
-            assert.truthy(err:find("combine_mask needs Lightroom Classic 11 or later", 1, true))
+            assert.are.equal("combine_mask needs LrDevelopController." .. functionName
+                .. ", which this Lightroom does not offer (Lightroom Classic 11 or later has it)", refusal)
             assert.are.equal(0, #calls.modules)
         end
     end)
@@ -458,14 +445,14 @@ describe("HandlerMaskCombine.combineMask arguments", function()
     it("does not need the other operations' SDK functions", function()
         local Handler = setup({ withoutFunctions = { "subtractFromCurrentMask", "intersectWithCurrentMask" } })
 
-        assert.is_true(Handler.combineMask(args({ operation = "add" })).success)
+        assert.truthy(Handler.combineMask(args({ operation = "add" })).photo_id)
     end)
 
     it("names the older mask API requirement when mask reading is missing", function()
         local Handler = setup({ withoutFunctions = { "getAllMasks" } })
 
-        local err = errorOf(function() Handler.combineMask(args()) end)
+        local err = helper.refusalOf(function() Handler.combineMask(args()) end)
 
-        assert.truthy(err:find("combine_mask needs Lightroom Classic 11 or later", 1, true))
+        assert.truthy(err:find("^combine_mask needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
     end)
 end)

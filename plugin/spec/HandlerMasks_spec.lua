@@ -1,11 +1,5 @@
 local helper = require 'spec_helper'
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 local function tool(id, type, subtype, inverted)
     return { ID = id, Name = type .. " " .. id, Type = type, Subtype = subtype, Hidden = false, Inverted = inverted }
 end
@@ -19,7 +13,7 @@ local function maskErrorWhenSavedMasksAreHidden(setupFn)
     local handler = setupFn({
         photos = { { id = "1", masks = {}, developSettings = { MaskGroupBasedCorrections = { entry } } } },
     })
-    return errorOf(function() handler.listMasks({ photo_id = "1" }) end)
+    return helper.refusalOf(function() handler.listMasks({ photo_id = "1" }) end)
 end
 
 local function setup(opts)
@@ -27,6 +21,7 @@ local function setup(opts)
     for _, spec in ipairs(opts.photos) do
         local p = helper.fakePhoto({
             id = spec.id, path = "/" .. spec.id .. ".jpg", developSettings = spec.developSettings,
+            orientation = spec.orientation or "AB", dimensions = { width = 3000, height = 2000 },
         })
         photos[#photos + 1] = p
         masksOf[p] = spec.masks
@@ -109,6 +104,7 @@ local function setup(opts)
     })
     package.loaded.HandlerMasks = nil
     package.loaded.DevelopSession = nil
+    package.loaded.MaskSelection = nil
     Handler = require 'HandlerMasks'
     return Handler, calls, catalog
 end
@@ -135,7 +131,6 @@ describe("HandlerMasks.listMasks", function()
 
         local r = Handler.listMasks({ photo_id = "11" })
 
-        assert.is_true(r.success)
         assert.are.equal("11", r.photo_id)
         assert.are.equal(2, r.count)
         assert.are.same({
@@ -200,6 +195,35 @@ describe("HandlerMasks.listMasks", function()
         assert.is_nil(tools[3].range)
     end)
 
+    it("reports a colour sample pin in the displayed frame of a cropped, rotated photo", function()
+        local Handler = setup({
+            photos = { {
+                id = "1",
+                orientation = "DA",
+                masks = { mask("m-1", "Mask 1", false, { tool("t-color", "rangeMask", "color", false) }) },
+                developSettings = {
+                    CropLeft = 0.1, CropTop = 0.1, CropRight = 0.8, CropBottom = 0.7, CropAngle = 0,
+                    MaskGroupBasedCorrections = { {
+                        What = "Correction",
+                        CorrectionID = "m-1",
+                        CorrectionMasks = { {
+                            What = "Mask/RangeMask",
+                            MaskID = "t-color",
+                            CorrectionRangeMask = {
+                                Type = 1, ColorAmount = 0.5, PointModels = { "0.5 0.5 0.5 0.800000 0.100000 0" },
+                            },
+                        } },
+                    } },
+                },
+            } },
+        })
+
+        local sample = Handler.listMasks({ photo_id = "1" }).masks[1].tools[1].range.sample
+
+        assert.is_true(math.abs(sample.x) < 1e-6)
+        assert.is_true(math.abs(sample.y) < 1e-6)
+    end)
+
     it("still lists the masks when the stored ranges cannot be read", function()
         local Handler = setup({
             photos = { {
@@ -209,10 +233,14 @@ describe("HandlerMasks.listMasks", function()
             } },
         })
 
-        local r = Handler.listMasks({ photo_id = "1" })
+        local context = helper.requestContext(nil, { title = "list_masks" })
+
+        local r = Handler.listMasks({ photo_id = "1" }, context)
 
         assert.are.equal(1, r.count)
         assert.is_nil(r.masks[1].tools[1].range)
+        assert.are.equal(1, #context.warnings)
+        assert.truthy(context.warnings[1]:find("stored ranges of photo 1 could not be read", 1, true), context.warnings[1])
     end)
 
     it("returns an empty list for a photo without masks", function()
@@ -221,7 +249,6 @@ describe("HandlerMasks.listMasks", function()
 
             local r = Handler.listMasks({ photo_id = "1" })
 
-            assert.is_true(r.success)
             assert.are.equal(0, r.count)
             assert.are.same({}, r.masks)
         end
@@ -237,28 +264,16 @@ describe("HandlerMasks.listMasks", function()
     it("names the photo id when the photo is unknown and never touches Develop", function()
         local Handler, calls = setup({ photos = { { id = "1" } } })
 
-        local err = errorOf(function() Handler.listMasks({ photo_id = "404" }) end)
-
-        assert.truthy(err:find("Photo not found: 404", 1, true))
+        assert.are.equal("404", helper.notFoundOf(function() Handler.listMasks({ photo_id = "404" }) end))
         assert.are.equal(0, #calls.modules)
-    end)
-
-    it("requires a photo id", function()
-        local Handler = setup({ photos = { { id = "1" } } })
-
-        for _, bad in ipairs({ "", true }) do
-            assert.truthy(errorOf(function() Handler.listMasks({ photo_id = bad }) end)
-                :find("photo_id is required", 1, true))
-        end
-        assert.truthy(errorOf(function() Handler.listMasks({}) end):find("photo_id is required", 1, true))
     end)
 
     it("names the minimum Lightroom version when the mask API is missing", function()
         local Handler, calls = setup({ photos = { { id = "1" } }, withoutMaskApi = true })
 
-        local err = errorOf(function() Handler.listMasks({ photo_id = "1" }) end)
+        local err = helper.refusalOf(function() Handler.listMasks({ photo_id = "1" }) end)
 
-        assert.truthy(err:find("list_masks needs Lightroom Classic 11 or later", 1, true))
+        assert.truthy(err:find("^list_masks needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
         assert.are.equal(0, #calls.modules)
     end)
 
@@ -289,9 +304,8 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "1" }, { id = "2", outsideSource = true, masks = {} } },
         })
 
-        local r = Handler.listMasks({ photo_id = "2" })
+        Handler.listMasks({ photo_id = "2" })
 
-        assert.is_true(r.success)
         assert.are.same({ "all photographs", "folder" }, calls.sources)
         assert.are.same({ "develop", "library" }, calls.modules)
         assert.are.same({ "2", "1" }, calls.selections)
@@ -313,7 +327,7 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "1" }, { id = "2", readError = "unsupported photo" } },
         })
 
-        local err = errorOf(function() Handler.listMasks({ photo_id = "2" }) end)
+        local err = helper.refusalOf(function() Handler.listMasks({ photo_id = "2" }) end)
 
         assert.truthy(err:find("could not read the masks of photo 2", 1, true))
         assert.truthy(err:find("unsupported photo", 1, true))
@@ -327,7 +341,7 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "1", masks = {} } },
             onGetAllMasks = function(handler)
                 if nested == nil then
-                    nested = errorOf(function() handler.listMasks({ photo_id = "1" }) end)
+                    nested = helper.refusalOf(function() handler.listMasks({ photo_id = "1" }) end)
                 end
             end,
         })
@@ -340,7 +354,7 @@ describe("HandlerMasks.listMasks", function()
     it("errors with the field names when a mask has no id", function()
         local Handler = setup({ photos = { { id = "1", masks = { { label = "x", Tools = {} } } } } })
 
-        local err = errorOf(function() Handler.listMasks({ photo_id = "1" }) end)
+        local err = helper.unknownOf(function() Handler.listMasks({ photo_id = "1" }) end)
 
         assert.truthy(err:find("mask without an id for photo 1", 1, true))
         assert.truthy(err:find("Tools, label", 1, true))
@@ -351,7 +365,7 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "1", masks = { { ID = "m", Tools = { { Type = "brush" } } } } } },
         })
 
-        local err = errorOf(function() Handler.listMasks({ photo_id = "1" }) end)
+        local err = helper.unknownOf(function() Handler.listMasks({ photo_id = "1" }) end)
 
         assert.truthy(err:find("mask tool without an id for photo 1", 1, true))
         assert.truthy(err:find("(fields: Type)", 1, true))
@@ -437,6 +451,6 @@ describe("HandlerMasks.listMasks", function()
         local message = maskErrorWhenSavedMasksAreHidden(function(opts)
             return (setup(opts))
         end)
-        assert.truthy(message:find("saved settings hold 1", 1, true), message)
+        assert.truthy(message:find("Develop lists 0 of the 1 masks in photo 1's saved settings", 1, true), message)
     end)
 end)

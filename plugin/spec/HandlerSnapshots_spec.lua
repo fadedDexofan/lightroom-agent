@@ -16,8 +16,8 @@ describe('develop snapshots', function()
             end,
             waitFor = function(predicate) return predicate() end,
         }
-        photo = helper.fakePhoto({ localIdentifier = '1' })
-        other = helper.fakePhoto({ localIdentifier = '2' })
+        photo = helper.fakePhoto({ localIdentifier = '1', path = '/1.jpg' })
+        other = helper.fakePhoto({ localIdentifier = '2', path = '/2.jpg' })
         local serial = 0
         local writing, createdInGate = false, false
         photo.getDevelopSnapshots = function()
@@ -59,69 +59,69 @@ describe('develop snapshots', function()
             return result
         end
         helper.installImport({ LrApplication = { activeCatalog = function() return catalog end } })
+        package.loaded.PhotoLookup = nil
         package.loaded.HandlerSnapshots = nil
         handler = require 'HandlerSnapshots'
     end)
     after_each(function() package.loaded.DevelopSession = originalSession end)
 
-    it('lists an empty photo and returns created ids and names', function()
-        assert.same({}, handler.list({ photo_id = '1' }).snapshots)
-        local result = handler.create({ photo_id = '1', name = 'before' })
-        assert.same({ id = 'snapshot-1', name = 'before' }, result.snapshot)
-        assert.same({ result.snapshot }, handler.list({ photo_id = '1' }).snapshots)
+    it('lists an empty photo and returns created ids and names under the resolved photo id', function()
+        local listed = handler.list({ photo_id = '/1.jpg' })
+        assert.same({ photo_id = '1', snapshots = {} }, listed)
+        local result = handler.create({ photo_id = '/1.jpg', name = 'before' })
+        assert.same({ photo_id = '1', snapshot = { id = 'snapshot-1', name = 'before' } }, result)
+        assert.same({ result.snapshot }, handler.list({ photo_id = 1 }).snapshots)
     end)
 
-    it('rejects duplicate names unless replacement is requested', function()
+    it('refuses duplicate names unless replacement is requested', function()
         local first = handler.create({ photo_id = '1', name = 'before' }).snapshot
-        assert.has_error(function() handler.create({ photo_id = '1', name = 'before' }) end)
+        assert.equals('Snapshot name already exists: before',
+            helper.refusalOf(function() handler.create({ photo_id = '1', name = 'before' }) end))
         assert.same({ first }, handler.list({ photo_id = '1' }).snapshots)
         assert.is_nil(calls.replaced)
         assert.same(first, handler.create({ photo_id = '1', name = 'before', replace = true }).snapshot)
         assert.equals(first.id, calls.replaced)
     end)
 
-    it('applies and deletes only the requested snapshot', function()
+    it('applies and deletes only the requested snapshot, answering with the resolved photo id', function()
         local first = handler.create({ photo_id = '1', name = 'a' }).snapshot
         local second = handler.create({ photo_id = '1', name = 'b' }).snapshot
-        handler.apply({ photo_id = '1', snapshot_id = first.id })
+        assert.same({ photo_id = '1', snapshot_id = first.id },
+            handler.apply({ photo_id = '/1.jpg', snapshot_id = first.id }))
         assert.equals(first.id, calls.applied)
-        handler.delete({ photo_id = '1', snapshot_id = first.id })
+        assert.same({ photo_id = '1', snapshot_id = first.id },
+            handler.delete({ photo_id = '/1.jpg', snapshot_id = first.id }))
         assert.equals('global-1', calls.deleted)
         assert.same({ second }, handler.list({ photo_id = '1' }).snapshots)
     end)
 
-    it('reports a deletion that Lightroom silently ignores', function()
+    it('answers unknown when Lightroom silently ignores a deletion', function()
         local first = handler.create({ photo_id = '1', name = 'a' }).snapshot
         photo.deleteDevelopSnapshot = function() end
-        assert.has_error(function() handler.delete({ photo_id = '1', snapshot_id = first.id }) end)
+        assert.matches('Lightroom did not delete snapshot',
+            helper.unknownOf(function() handler.delete({ photo_id = '1', snapshot_id = first.id }) end), 1, true)
         assert.same({ first }, handler.list({ photo_id = '1' }).snapshots)
     end)
 
     for _, action in ipairs({ 'apply', 'delete' }) do
-        it('rejects unknown and foreign snapshot ids for ' .. action, function()
+        it('refuses unknown and foreign snapshot ids for ' .. action, function()
             local first = handler.create({ photo_id = '1', name = 'a' }).snapshot
-            assert.has_error(function() handler[action]({ photo_id = '1', snapshot_id = 'missing' }) end)
-            assert.has_error(function() handler[action]({ photo_id = '2', snapshot_id = first.id }) end)
+            assert.equals('Snapshot not found on this photo: missing',
+                helper.refusalOf(function() handler[action]({ photo_id = '1', snapshot_id = 'missing' }) end))
+            assert.equals('Snapshot not found on this photo: ' .. first.id,
+                helper.refusalOf(function() handler[action]({ photo_id = '2', snapshot_id = first.id }) end))
             assert.same({}, calls)
             assert.same({ first }, handler.list({ photo_id = '1' }).snapshots)
         end)
     end
 
-    it('rejects unknown photos for every operation', function()
+    it('answers an unknown photo as not found for every operation', function()
         for _, action in ipairs({ 'create', 'list', 'apply', 'delete' }) do
-            assert.has_error(function()
-                handler[action]({ photo_id = 'missing', name = 'a', snapshot_id = 'missing' })
-            end)
+            assert.equals('999', helper.notFoundOf(function()
+                handler[action]({ photo_id = '999', name = 'a', snapshot_id = 'missing' })
+            end))
         end
         assert.same({}, state)
         assert.same({}, calls)
-    end)
-
-    it('rejects malformed names and replacement flags', function()
-        for _, name in ipairs({ '', '  ', false, 4 }) do
-            assert.has_error(function() handler.create({ photo_id = '1', name = name }) end)
-        end
-        assert.has_error(function() handler.create({ photo_id = '1', name = 'a', replace = 'yes' }) end)
-        assert.same({}, state)
     end)
 end)

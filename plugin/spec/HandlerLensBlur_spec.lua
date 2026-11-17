@@ -2,7 +2,7 @@ local helper = require 'spec_helper'
 
 local function setup(opts)
     opts = opts or {}
-    local photos = { helper.fakePhoto({ id = '1' }), helper.fakePhoto({ id = '2' }) }
+    local photos = { helper.fakePhoto({ id = '1', path = '/1.dng' }), helper.fakePhoto({ id = '2', path = '/2.dng' }) }
     local catalog = helper.fakeCatalog({ photos = photos })
     local active, selection, module = photos[2], { photos[2] }, 'library'
     local sources = { 'collection' }
@@ -68,7 +68,6 @@ local function setup(opts)
         },
         LrSelection = { selectNone = function() active, selection = nil, {} end },
         LrTasks = { pcall = pcall, sleep = function(seconds)
-            if opts.stealPhoto then active = photos[2] end
             if pendingActive ~= nil then
                 activationWait = activationWait - seconds
                 if activationWait <= 0 then
@@ -79,6 +78,7 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.DevelopSession = nil
+    package.loaded.PhotoLookup = nil
     package.loaded.HandlerLensBlur = nil
     return {
         Handler = require 'HandlerLensBlur', values = values,
@@ -88,18 +88,14 @@ local function setup(opts)
     }
 end
 
-local function failure(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 describe('HandlerLensBlur', function()
     it('enables an inactive photo before saving Amount50 and restores the view', function()
         local ctx = setup()
 
-        local result = ctx.Handler.set({ photo_id = '1', amount = 50 })
+        local result = ctx.Handler.set({ photo_id = '/1.dng', amount = 50 })
 
+        assert.are.equal('1', result.photo_id)
+        assert.is_nil(result.success)
         assert.is_true(result.active)
         assert.are.equal(50, result.amount)
         assert.are.equal(50, ctx.saved().BlurAmount)
@@ -122,7 +118,7 @@ describe('HandlerLensBlur', function()
     it('stops before Amount when activation never becomes ready', function()
         local ctx = setup({ activationDelay = 30 })
 
-        local err = failure(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
+        local err = helper.unknownOf(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
 
         assert.matches('did not finish changing LensBlurActive', err, 1, true)
         assert.are.equal(1, ctx.writes())
@@ -133,8 +129,9 @@ describe('HandlerLensBlur', function()
     it('reads an uninitialized photo as off without writing', function()
         local ctx = setup({ values = {} })
 
-        local result = ctx.Handler.get({ photo_id = '1' })
+        local result = ctx.Handler.get({ photo_id = '/1.dng' })
 
+        assert.are.equal('1', result.photo_id)
         assert.is_false(result.active)
         assert.is_nil(result.amount)
         assert.are.same({ 'amount', 'cat_eye', 'highlights_boost', 'focal_range', 'bokeh' }, result.unavailable)
@@ -175,25 +172,23 @@ describe('HandlerLensBlur', function()
         assert.are.equal(50, ctx.saved().BlurAmount)
     end)
 
-    it('rejects an amount outside the runtime range before enabling or writing anything', function()
+    it('writes a value the schema admits without asking Lightroom for a range', function()
         local ctx = setup({ amountMax = 40 })
 
-        local err = failure(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
+        ctx.Handler.set({ photo_id = '1', amount = 50 })
 
-        assert.matches('range 0 to 40', err, 1, true)
-        assert.are.equal(0, ctx.writes())
-        assert.is_false(ctx.values.LensBlurActive)
+        assert.are.equal(50, ctx.saved().BlurAmount)
     end)
 
     for _, case in ipairs({ { '5.0', 'Version 1' }, { '5.7', 'Version 2' },
         { 5.0, 'Version 1' }, { 5.7, 'Version 2' } }) do
         local storedProcess = case[1]
         for _, operation in ipairs({ 'get', 'set' }) do
-            it(operation .. ' rejects stored legacy process ' .. tostring(storedProcess) .. ' without normalizing settings', function()
+            it(operation .. ' refuses stored legacy process ' .. tostring(storedProcess) .. ' without normalizing settings', function()
                 local ctx = setup({ storedProcess = storedProcess, process = case[2], normalizeDevelop = true })
                 local before = ctx.settings()
 
-                local err = failure(function()
+                local err = helper.refusalOf(function()
                     ctx.Handler[operation]({ photo_id = '1', amount = 50 })
                 end)
 
@@ -207,10 +202,10 @@ describe('HandlerLensBlur', function()
     end
 
     for _, version in ipairs({ 'Version 1', 'Version 2' }) do
-        it('rejects ' .. version .. ' without writing', function()
+        it('refuses ' .. version .. ' without writing', function()
             local ctx = setup({ process = version })
 
-            local err = failure(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
+            local err = helper.refusalOf(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
 
             assert.matches(version, err, 1, true)
             assert.are.equal(0, ctx.writes())
@@ -218,22 +213,10 @@ describe('HandlerLensBlur', function()
         end)
     end
 
-    for _, args in ipairs({ { bokeh = 'Square' }, { focal_range = { near = 30, far = 10 } },
-        { amount = 0 / 0 }, { active = 1 }, {} }) do
-        it('rejects malformed controls without writing', function()
-            local ctx = setup()
-            args.photo_id = '1'
-
-            failure(function() ctx.Handler.set(args) end)
-
-            assert.are.equal(0, ctx.writes())
-        end)
-    end
-
     it('stops when the controller accepts a value but never saves it', function()
         local ctx = setup({ ignoreSave = true })
 
-        local err = failure(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
+        local err = helper.unknownOf(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
 
         assert.matches('did not save LensBlurActive', err, 1, true)
         assert.are.equal(35, ctx.saved().BlurAmount)
@@ -243,7 +226,7 @@ describe('HandlerLensBlur', function()
     it('stops later adjustments when Amount readback differs from saved settings', function()
         local ctx = setup({ ignoreAmountSave = true })
 
-        local err = failure(function() ctx.Handler.set({ photo_id = '1', amount = 50, cat_eye = 20 }) end)
+        local err = helper.unknownOf(function() ctx.Handler.set({ photo_id = '1', amount = 50, cat_eye = 20 }) end)
 
         assert.matches('did not save LensBlurAmount', err, 1, true)
         assert.are.equal(50, ctx.values.LensBlurAmount)
@@ -260,12 +243,18 @@ describe('HandlerLensBlur', function()
         assert.are.equal(0, ctx.writes())
     end)
 
-    it('rejects Lightroom below13.3 without writing', function()
+    it('refuses Lightroom below13.3 without writing', function()
         local ctx = setup({ version = { major = 13, minor = 2 } })
 
-        local err = failure(function() ctx.Handler.get({ photo_id = '1' }) end)
+        local err = helper.refusalOf(function() ctx.Handler.get({ photo_id = '1' }) end)
 
         assert.matches('13.3', err, 1, true)
+        assert.are.equal(0, ctx.writes())
+    end)
+
+    it('answers an unknown photo as not found without writing', function()
+        local ctx = setup()
+        assert.are.equal('999', helper.notFoundOf(function() ctx.Handler.set({ photo_id = '999', amount = 50 }) end))
         assert.are.equal(0, ctx.writes())
     end)
 end)

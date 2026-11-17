@@ -28,7 +28,7 @@ try {
     assert.ok(!page.has_more || page.photos.length > 0);
   } while (page.has_more);
   const ids = Object.values(marker.fixtures).map((fixture) => String(fixture.id)).sort();
-  assert.deepEqual(photos.map((photo) => String(photo.id)).sort(), ids);
+  assert.deepEqual(photos.map((photo) => String(photo.photo_id)).sort(), ids);
   assert.equal(images.photo_count, ids.length);
   const batchIds = marker.batch?.ids ?? [];
   assert.ok(batchIds.length >= 200, "import the 200-photo batch before measuring folder counts");

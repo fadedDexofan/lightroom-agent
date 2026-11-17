@@ -11,7 +11,8 @@ Detect available tools at runtime because main can differ from the installed rel
 The integration adds the missing feedback loop:
 
 - `get_selected_photos`: identify representatives selected in Lightroom.
-- `get_photo_metadata`: read EXIF for one `photo_id` or up to 100 `photo_ids`. Batch results contain `photos` in request order and `missing` identifiers; repeated identifiers return repeated entries. Pass `sections: ["developSettings"]` to read every Develop key supported by `set_develop_settings` for each photo. Single-photo results keep their existing shape.
+- `get_photo_metadata`: read EXIF for 1 to 100 `photo_ids`. Results contain `photos` in request order and `not_found` identifiers; repeated identifiers return repeated entries.
+- `get_develop_settings`: read Develop values by the SDK names `set_develop_settings` writes, for 1 to 100 `photo_ids` with `keys`.
 - `get_photo_preview`: inspect a Lightroom-rendered preview without exporting a file.
 - `set_develop_settings`: apply bounded global/HSL/detail settings.
 - `create_develop_snapshot`, `list_develop_snapshots`, `apply_develop_snapshot`, and `delete_develop_snapshot`: save and restore a photo's Develop state and manage its snapshots.
@@ -22,7 +23,7 @@ The integration adds the missing feedback loop:
 - `create_develop_preset`: capture explicit settings from a representative as a plugin-managed checkpoint.
 - `export_develop_preset`: copy an exportable backing file without overwriting.
 - `apply_denoise`: apply AI Denoise on Lightroom Classic 15+.
-- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, and `delete_masks`: inspect and manage local masks. Call `delete_masks` with only `photo_ids` to remove empty masks in bulk without opening Develop; use `photo_id` and exactly one of `mask_ids`, `tool_ids` or `all` for targeted deletion.
+- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, `delete_masks` and `delete_empty_masks`: inspect and manage local masks. Call `delete_empty_masks` with `photo_ids` to remove empty masks in bulk without opening Develop; call `delete_masks` with `photo_id` and exactly one of `mask_ids`, `tool_ids` or `all` for targeted deletion.
 - `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask` with `type: "people"` or `type: "landscape"`: create or edit mask geometry and AI parts on supported Lightroom versions.
 - `get_mask`, `set_mask_adjustments`, `set_mask_curves`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color. `get_mask` reads all three in one session; pass `kinds: ["adjustments"]`, `["curves"]` or `["point_colors"]` to read only selected kinds.
 
@@ -34,8 +35,8 @@ This improves setting selection. It does not by itself create a canonical preset
 - `create_virtual_copies` and `reset_develop_adjustments` need the develop toolset. `reset_develop_adjustments` removes all Develop edits, including crop and masks. `undo_last_step` undoes one shared history step that may belong to the user or another plug-in.
 - Adobe's SDK creates plugin-managed presets that are hidden from the Develop panel. Use versioned names and export/import the accepted file, or create a visible canonical preset through Lightroom's UI.
 - A preset can be exported only when Lightroom exposes a backing file. Built-in presets can lack one, and the backing format is determined by Lightroom.
-- Global develop-setting allowlists do not expose Profile, Color Grading, Calibration, or global Point Color. Local Point Color is available through the mask tools above.
-- Global develop-setting schemas do not enforce Lightroom-specific numeric ranges. Apply the bounds in the v2 workflow or fallback generator.
+- Global develop settings do not expose Profile, Calibration, or global Point Color. Local Point Color is available through the mask tools above.
+- `set_develop_settings` publishes each key's range in its schema and refuses an out-of-range value before writing; after the write it reads the values back and lists any Lightroom stored differently as `adjusted`.
 - `copy_develop_settings` without an explicit field list copies the full source settings. Always provide the intended field list for cluster work.
 
 ## Safe closed-loop sequence

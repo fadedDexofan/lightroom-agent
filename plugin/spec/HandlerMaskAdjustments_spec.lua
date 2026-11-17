@@ -1,177 +1,70 @@
 local helper = require 'spec_helper'
-
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
+local Develop = require 'fake_mask_develop'
 
 local function setup(opts)
     opts = opts or {}
-    local photos, valuesOf = {}, {}
-    for _, spec in ipairs(opts.photos) do
-        local p = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".jpg" })
-        photos[#photos + 1] = p
-        valuesOf[p] = spec.masks or {}
-    end
-    local active = photos[1]
-    local module = opts.startModule or "library"
-    local storedOf, pendingCommits, sleepsSeen = {}, {}, 0
-    local function storeFields(photo, maskId)
-        storedOf[photo] = storedOf[photo] or {}
-        local fields = {}
-        for name, value in pairs(valuesOf[photo][maskId]) do fields["Local" .. name] = value end
-        storedOf[photo][maskId] = fields
-    end
-    for _, photo in ipairs(photos) do
-        for maskId in pairs(valuesOf[photo]) do storeFields(photo, maskId) end
-        photo.getDevelopSettings = function()
-            local entries = {}
-            for maskId, fields in pairs(storedOf[photo] or {}) do
-                local entry = { What = "Correction", CorrectionID = maskId }
-                for key, value in pairs(fields) do entry[key] = value end
-                entries[#entries + 1] = entry
-            end
-            if opts.maskMissingFromStore then entries = {} end
-            return { MaskGroupBasedCorrections = entries }
-        end
-    end
-    local selectedMaskOf = {}
-    for index, spec in ipairs(opts.photos) do
-        selectedMaskOf[photos[index]] = spec.selectedMask
-    end
-    local calls = {
-        setValue = {},
-        selectMask = {},
-        modules = {},
-        selections = {},
-        goToMasking = 0,
-        stopTracking = {},
-    }
-    local controller
-
-    local function currentValues()
-        local selected = selectedMaskOf[active]
-        return selected and valuesOf[active][selected] or nil
-    end
-
-    controller = {
-        getAllMasks = function()
-            if module ~= "develop" then error("Develop module is not active") end
-            local masks = {}
-            for _, id in ipairs(opts.maskOrder or {}) do
-                if valuesOf[active][id] then masks[#masks + 1] = { ID = id, Name = id, Tools = {} } end
-            end
-            if #masks == 0 then
-                for id in pairs(valuesOf[active]) do masks[#masks + 1] = { ID = id, Name = id, Tools = {} } end
-            end
-            table.sort(masks, function(a, b) return a.ID < b.ID end)
-            return masks
+    local unreadable, reverts = {}, {}
+    for name in pairs(opts.unreadable or {}) do unreadable[name] = true end
+    local ctx = Develop.build({
+        photos = opts.photos,
+        version = false,
+        rejectSet = opts.rejectSet,
+        ignoreSet = opts.ignoreSet,
+        neverCommit = opts.neverCommit,
+        commitLagSleeps = opts.commitLagSleeps,
+        handler = "HandlerMaskAdjustments",
+        modules = { "HandlerMaskAdjustments", "DevelopSession", "LocalSliders", "MaskSelection" },
+        onSleep = function()
+            for _, revert in ipairs(reverts) do revert() end
+            reverts = {}
         end,
-        goToMasking = function() calls.goToMasking = calls.goToMasking + 1 end,
-        selectMaskTool = function() end,
-        selectMask = function(id)
-            calls.selectMask[#calls.selectMask + 1] = id
-            if valuesOf[active][id] and not opts.selectIgnored then selectedMaskOf[active] = id end
-        end,
-        getSelectedMask = function()
-            if calls.goToMasking == 0 then error("masking tool is not open") end
-            return selectedMaskOf[active]
-        end,
-        getRange = function(name)
-            local range = opts.ranges and opts.ranges[name]
-            if range then return range[1], range[2] end
-            error("no range")
-        end,
-        getValue = function(name)
-            local values = currentValues()
-            if not values then error("no mask selected") end
-            if opts.unreadable and opts.unreadable[name] then return nil end
-            return values[name]
-        end,
-        setValue = function(name, value)
-            calls.setValue[#calls.setValue + 1] = { name, value }
-            local values = currentValues()
-            if not values then error("no mask selected") end
-            if opts.rejectSet and opts.rejectSet[name] then error(opts.rejectSet[name]) end
-            if opts.ignoreSet and opts.ignoreSet[name] then return end
-            if opts.roundSet then value = math.floor(value + 0.5) end
-            values[name] = value
-            local commit = { photo = active, maskId = selectedMaskOf[active], dueAt = sleepsSeen + (opts.commitLagSleeps or 0) }
-            if not opts.neverCommit then
-                if commit.dueAt <= sleepsSeen then
-                    storeFields(commit.photo, commit.maskId)
-                else
-                    pendingCommits[#pendingCommits + 1] = commit
+        extend = function(controller, built)
+            built.module = opts.startModule or built.module
+            local listMasks, getValue, setValue = controller.getAllMasks, controller.getValue, controller.setValue
+            if opts.listedEmpty then
+                controller.getAllMasks = function()
+                    listMasks()
+                    return {}
                 end
             end
-            if opts.revertAfterSettle and opts.revertAfterSettle[name] then
-                opts.revertQueue = opts.revertQueue or {}
-                opts.revertQueue[#opts.revertQueue + 1] = function() values[name] = opts.revertAfterSettle[name] end
+            if opts.selectIgnored then
+                controller.selectMask = function(id) built.calls.selectMask[#built.calls.selectMask + 1] = id end
             end
-            if opts.stealSelectionOnSet then selectedMaskOf[active] = opts.stealSelectionOnSet end
-        end,
-    }
-    controller.stopTracking = function(commit)
-        calls.stopTracking[#calls.stopTracking + 1] = commit
-        for _, pending in ipairs(pendingCommits) do storeFields(pending.photo, pending.maskId) end
-        pendingCommits = {}
-    end
-    if opts.withoutStopTracking then controller.stopTracking = nil end
-    if opts.withoutSetValue then controller.setValue = nil end
-    if opts.withoutMaskApi then
-        controller.getAllMasks, controller.selectMask, controller.selectMaskTool = nil, nil, nil
-    end
-
-    local sources = { "folder" }
-    local catalog = helper.fakeCatalog({ photos = photos })
-    catalog.setSelectedPhotos = function(_, photo)
-        active = photo
-        calls.selections[#calls.selections + 1] = photo.localIdentifier
-    end
-    catalog.getTargetPhoto = function() return active end
-    catalog.getTargetPhotos = function() return { active } end
-    catalog.kAllPhotos = "all photographs"
-    catalog.getActiveSources = function() return sources end
-    catalog.setActiveSources = function(_, newSources) sources = newSources end
-
-    helper.admitMaskWrites(opts.maskWrites)
-
-    helper.installImport({
-        LrApplication = { activeCatalog = function() return catalog end },
-        LrApplicationView = {
-            getCurrentModuleName = function() return module end,
-            switchToModule = function(name)
-                module = name
-                calls.modules[#calls.modules + 1] = name
-            end,
-        },
-        LrDevelopController = controller,
-        LrSelection = { selectNone = function() active = nil end },
-        LrTasks = {
-            pcall = pcall,
-            sleep = function()
-                sleepsSeen = sleepsSeen + 1
-                local stillPending = {}
-                for _, commit in ipairs(pendingCommits) do
-                    if commit.dueAt <= sleepsSeen then
-                        storeFields(commit.photo, commit.maskId)
-                    else
-                        stillPending[#stillPending + 1] = commit
-                    end
+            if opts.ranges then
+                controller.getRange = function(name)
+                    local range = opts.ranges[name]
+                    if range then return range[1], range[2] end
+                    error("no range")
                 end
-                pendingCommits = stillPending
-                for _, revert in ipairs(opts.revertQueue or {}) do revert() end
-                opts.revertQueue = nil
-            end,
-        },
-        LrLogger = helper.defaultLrLogger(),
+            end
+            controller.getValue = function(name)
+                local value = getValue(name)
+                if unreadable[name] then return nil end
+                return value
+            end
+            controller.setValue = function(name, value)
+                if opts.roundSet then value = math.floor(value + 0.5) end
+                setValue(name, value)
+                if opts.unreadableAfterSet and opts.unreadableAfterSet[name] then unreadable[name] = true end
+                local values = built.currentValues()
+                if opts.revertAfterSettle and opts.revertAfterSettle[name] then
+                    reverts[#reverts + 1] = function() values[name] = opts.revertAfterSettle[name] end
+                end
+                if opts.stealSelectionOnSet then built.selectedMaskOf[built.active] = opts.stealSelectionOnSet end
+            end
+            if opts.withoutStopTracking then controller.stopTracking = nil end
+            if opts.withoutSetValue then controller.setValue = nil end
+            if opts.withoutMaskApi then
+                controller.getAllMasks, controller.selectMask, controller.selectMaskTool = nil, nil, nil
+            end
+            if opts.maskMissingFromStore then
+                for _, photo in ipairs(built.photos) do
+                    photo.getDevelopSettings = function() return { MaskGroupBasedCorrections = {} } end
+                end
+            end
+        end,
     })
-    for _, name in ipairs({ "HandlerMaskAdjustments", "DevelopSession", "LocalSliders", "MaskSettle", "GuardedMaskWrite" }) do
-        package.loaded[name] = nil
-    end
-    local Handler = require 'HandlerMaskAdjustments'
-    return Handler, calls, catalog, valuesOf, photos, selectedMaskOf
+    return ctx.Handler, ctx.calls, ctx.catalog, ctx.valuesOf, ctx.photos, ctx.selectedMaskOf
 end
 
 local function twoMasks()
@@ -193,9 +86,8 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
             photo_id = "1",
             mask_id = "mask-a",
             adjustments = { local_Exposure = 1.25, local_Shadows = -15 },
-        })
+        }).data
 
-        assert.is_true(r.success)
         assert.are.equal("1", r.photo_id)
         assert.are.equal("mask-a", r.mask_id)
         assert.are.same({ local_Exposure = 1.25, local_Shadows = -15 }, r.adjustments)
@@ -229,7 +121,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
             photo_id = "1",
             mask_id = "mask-a",
             adjustments = { local_Exposure = 0.5, local_Contrast = 10 },
-        })
+        }).data
 
         assert.are.same({}, r.changed)
         assert.are.same({ "local_Exposure", "local_Contrast" }, r.unchanged)
@@ -259,103 +151,28 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
     it("accepts a numeric photo id and a file path", function()
         local Handler = setup(everyPhotoAndMask(twoMasks()))
 
-        local byNumber = Handler.setMaskAdjustments({ photo_id = 1, mask_id = "mask-a", adjustments = { local_Contrast = 10 } })
-        local byPath = Handler.setMaskAdjustments({ photo_id = "/1.jpg", mask_id = "mask-a", adjustments = { local_Contrast = 10 } })
+        local byNumber = Handler.setMaskAdjustments({ photo_id = 1, mask_id = "mask-a", adjustments = { local_Contrast = 10 } }).data
+        local byPath = Handler.setMaskAdjustments({ photo_id = "/1.jpg", mask_id = "mask-a", adjustments = { local_Contrast = 10 } }).data
 
         assert.are.equal("1", byNumber.photo_id)
-        assert.is_true(byPath.success)
+        assert.are.equal("1", byPath.photo_id)
     end)
 
-    it("rejects an out-of-range value naming the slider and its range, writing nothing", function()
-        local Handler, calls = setup(everyPhotoAndMask(twoMasks()))
-
-        local err = errorOf(function()
-            Handler.setMaskAdjustments({
-                photo_id = "1",
-                mask_id = "mask-a",
-                adjustments = { local_Contrast = 30, local_Exposure = 9 },
-            })
-        end)
-
-        assert.truthy(err:find("local_Exposure 9 is outside its range -4 to 4", 1, true))
-        assert.is_nil(err:find("local_Contrast", 1, true))
-        assert.are.equal(0, #calls.setValue)
-    end)
-
-    it("lists every out-of-range slider in one error", function()
-        local Handler, calls = setup(everyPhotoAndMask(twoMasks()))
-
-        local err = errorOf(function()
-            Handler.setMaskAdjustments({
-                photo_id = "1",
-                mask_id = "mask-a",
-                adjustments = { local_Contrast = 101, local_Shadows = -100.5 },
-            })
-        end)
-
-        assert.truthy(err:find("local_Contrast 101 is outside its range -100 to 100", 1, true))
-        assert.truthy(err:find("local_Shadows -100.5 is outside its range -100 to 100", 1, true))
-        assert.are.equal(0, #calls.setValue)
-    end)
-
-    it("accepts the range ends", function()
-        local Handler = setup(everyPhotoAndMask(twoMasks()))
-
-        local r = Handler.setMaskAdjustments({
-            photo_id = "1",
-            mask_id = "mask-a",
-            adjustments = { local_Exposure = -4, local_Contrast = 100 },
-        })
-
-        assert.are.same({ local_Exposure = -4, local_Contrast = 100 }, r.adjustments)
-    end)
-
-    it("prefers the range Lightroom reports for the slider", function()
-        local Handler, calls = setup({
+    it("writes a value the schema accepts whatever range Lightroom reports for the slider", function()
+        local Handler = setup({
             photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
             ranges = { local_Contrast = { -50, 50 } },
         })
 
-        local err = errorOf(function()
-            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = 60 } })
-        end)
+        local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = 60 } })
 
-        assert.truthy(err:find("local_Contrast 60 is outside its range -50 to 50", 1, true))
-        assert.are.equal(0, #calls.setValue)
-    end)
-
-    it("rejects an unknown slider, a non-number and missing arguments before touching Develop", function()
-        local Handler, calls = setup(everyPhotoAndMask(twoMasks()))
-        local function call(args)
-            return errorOf(function() Handler.setMaskAdjustments(args) end)
-        end
-
-        assert.truthy(call({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Bogus = 1 } })
-            :find("Unknown mask adjustment local_Bogus", 1, true))
-        assert.truthy(call({ photo_id = "1", mask_id = "mask-a", adjustments = { Exposure2012 = 1 } })
-            :find("valid sliders: local_Exposure", 1, true))
-        assert.truthy(call({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = "5" } })
-            :find("local_Contrast must be a number", 1, true))
-        assert.truthy(call({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = 0 / 0 } })
-            :find("local_Contrast must be a number", 1, true))
-        assert.truthy(call({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = math.huge } })
-            :find("local_Contrast must be a number", 1, true))
-        assert.truthy(call({ photo_id = "1", mask_id = "mask-a", adjustments = {} })
-            :find("adjustments is required", 1, true))
-        assert.truthy(call({ photo_id = "1", mask_id = "mask-a" }):find("adjustments is required", 1, true))
-        assert.truthy(call({ mask_id = "mask-a", adjustments = { local_Tint = 1 } })
-            :find("photo_id is required", 1, true))
-        assert.truthy(call({ photo_id = "1", adjustments = { local_Tint = 1 } })
-            :find("mask_id is required", 1, true))
-        assert.truthy(call({ photo_id = "1", mask_id = 5, adjustments = { local_Tint = 1 } })
-            :find("mask_id is required", 1, true))
-        assert.are.equal(0, #calls.modules)
+        assert.are.same({ { slider = "local_Contrast", from = 10, to = 60 } }, r.data.changed)
     end)
 
     it("names the unknown mask, changes no mask and restores the view", function()
         local Handler, calls, _, valuesOf, photos = setup(everyPhotoAndMask(twoMasks()))
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             Handler.setMaskAdjustments({ photo_id = "1", mask_id = "nope", adjustments = { local_Contrast = 1 } })
         end)
 
@@ -370,7 +187,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
     it("reports a photo without masks as having no such mask", function()
         local Handler, calls = setup({ photos = { { id = "1", masks = {} } } })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             Handler.setMaskAdjustments({ photo_id = "1", mask_id = "m", adjustments = { local_Contrast = 1 } })
         end)
 
@@ -378,14 +195,24 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         assert.are.equal(0, #calls.setValue)
     end)
 
+    it("says Develop has not listed the saved masks instead of reporting the mask missing", function()
+        local Handler, calls = setup({ photos = { { id = "1", masks = { m = { Contrast = 0 } } } }, listedEmpty = true })
+
+        local err = helper.refusalOf(function()
+            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "m", adjustments = { local_Contrast = 1 } })
+        end)
+
+        assert.truthy(err:find("Develop lists 0 of the 1 masks in photo 1's saved settings", 1, true))
+        assert.is_nil(err:find("Mask not found", 1, true))
+        assert.are.equal(0, #calls.setValue)
+    end)
+
     it("names the photo when it is unknown and never touches Develop", function()
         local Handler, calls = setup(everyPhotoAndMask(twoMasks()))
 
-        local err = errorOf(function()
+        assert.are.equal("404", helper.notFoundOf(function()
             Handler.setMaskAdjustments({ photo_id = "404", mask_id = "mask-a", adjustments = { local_Tint = 1 } })
-        end)
-
-        assert.truthy(err:find("Photo not found: 404", 1, true))
+        end))
         assert.are.equal(0, #calls.modules)
     end)
 
@@ -395,7 +222,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
             selectIgnored = true,
         })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = 1 } })
         end)
 
@@ -410,7 +237,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
             unreadable = { local_Shadows = true },
         })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             Handler.setMaskAdjustments({
                 photo_id = "1",
                 mask_id = "mask-a",
@@ -432,68 +259,70 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
             photo_id = "1",
             mask_id = "mask-a",
             adjustments = { local_Contrast = 12.4 },
-        })
+        }).data
 
         assert.are.same({ local_Contrast = 12 }, r.adjustments)
         assert.are.equal(12, r.changed[1].to)
     end)
 
-    it("retries a write Lightroom ignored once, then fails naming the slider", function()
+    it("retries a write Lightroom ignored once, then answers partial with the sliders already written", function()
         local Handler, calls = setup({
             photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
             ignoreSet = { local_Contrast = true },
         })
 
-        local err = errorOf(function()
-            Handler.setMaskAdjustments({
-                photo_id = "1",
-                mask_id = "mask-a",
-                adjustments = { local_Exposure = 2, local_Contrast = 40 },
-            })
-        end)
-
-        assert.truthy(err:find("Lightroom did not keep local_Contrast 40 (reads 10)", 1, true))
-        assert.truthy(err:find("already written: local_Exposure", 1, true))
-        assert.are.equal(3, #calls.setValue)
-        assert.are.same({ "develop", "library" }, calls.modules)
-    end)
-
-    it("fails when Lightroom drops a change after showing it", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
-            revertAfterSettle = { local_Contrast = 10 },
-        })
-
-        local err = errorOf(function()
-            Handler.setMaskAdjustments({
-                photo_id = "1",
-                mask_id = "mask-a",
-                adjustments = { local_Contrast = 40 },
-            })
-        end)
-
-        assert.truthy(err:find("Lightroom did not keep local_Contrast 40 (reads 10)", 1, true))
-    end)
-
-    it("waits until Lightroom has saved the sliders to the photo's settings before returning", function()
-        local Handler, _, _, _, photos = setup({
-            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
-            commitLagSleeps = 12,
-        })
-
-        local r = Handler.setMaskAdjustments({
+        local reply = Handler.setMaskAdjustments({
             photo_id = "1",
             mask_id = "mask-a",
             adjustments = { local_Exposure = 2, local_Contrast = 40 },
         })
 
-        assert.is_true(r.success)
-        local stored = photos[1]:getDevelopSettings().MaskGroupBasedCorrections
-        local savedExposure
-        for _, entry in ipairs(stored) do
-            if entry.CorrectionID == "mask-a" then savedExposure = entry["Locallocal_Exposure"] end
-        end
-        assert.are.equal(2, savedExposure)
+        assert.truthy(reply.problem:find("Lightroom did not keep local_Contrast 40 (reads 10)", 1, true))
+        assert.are.same({ { slider = "local_Exposure", from = 0.5, to = 2 } }, reply.data.changed)
+        assert.are.equal("1", reply.data.photo_id)
+        assert.are.equal(3, #calls.setValue)
+        assert.are.same({ "develop", "library" }, calls.modules)
+    end)
+
+    it("refuses with no effect when the first slider Lightroom ignores is still at its old value", function()
+        local Handler = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            ignoreSet = { local_Contrast = true },
+        })
+
+        assert.matches("nothing was written", helper.refusalOf(function()
+            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = 40 } })
+        end), 1, true)
+    end)
+
+    it("reports a problem, not a refusal, when the slider cannot be read after the write", function()
+        local Handler = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            unreadableAfterSet = { local_Contrast = true },
+        })
+
+        local reply = Handler.setMaskAdjustments({
+            photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = 9 },
+        })
+
+        assert.truthy(reply.problem:find("Lightroom did not keep local_Contrast 9 (reads nothing)", 1, true))
+        assert.is_nil(reply.data.adjustments.local_Contrast)
+    end)
+
+    it("answers partial, naming the change Lightroom dropped after showing it", function()
+        local Handler = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            revertAfterSettle = { local_Contrast = 10 },
+        })
+
+        local reply = Handler.setMaskAdjustments({
+            photo_id = "1",
+            mask_id = "mask-a",
+            adjustments = { local_Contrast = 40 },
+        })
+
+        assert.truthy(reply.problem:find("Lightroom did not keep local_Contrast 40 (reads 10)", 1, true))
+        assert.are.equal(10, reply.data.adjustments.local_Contrast)
     end)
 
     it("commits the sliders to the photo with a forced flush instead of waiting for Lightroom's own timer", function()
@@ -502,27 +331,32 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
             commitLagSleeps = 100000,
         })
 
-        local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
+        Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
 
-        assert.is_true(r.success)
         assert.are.same({ true }, calls.stopTracking)
         local savedExposure
         for _, entry in ipairs(photos[1]:getDevelopSettings().MaskGroupBasedCorrections) do
-            if entry.CorrectionID == "mask-a" then savedExposure = entry["Locallocal_Exposure"] end
+            if entry.CorrectionID == "mask-a" then savedExposure = entry["Stored_local_Exposure"] end
         end
         assert.are.equal(2, savedExposure)
     end)
 
     it("works on a Lightroom without stopTracking by waiting for the save", function()
-        local Handler = setup({
+        local Handler, _, _, _, photos = setup({
             photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
             commitLagSleeps = 12,
             withoutStopTracking = true,
         })
 
-        local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
+        local reply = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
 
-        assert.is_true(r.success)
+        assert.is_nil(reply.unknown)
+        assert.is_nil(reply.problem)
+        local savedExposure
+        for _, entry in ipairs(photos[1]:getDevelopSettings().MaskGroupBasedCorrections) do
+            if entry.CorrectionID == "mask-a" then savedExposure = entry["Stored_local_Exposure"] end
+        end
+        assert.are.equal(2, savedExposure)
     end)
 
     it("flushes edits pending on a photo already open in Develop before touching it", function()
@@ -556,88 +390,145 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
             neverCommit = true,
         })
 
-        local r = Handler.setMaskAdjustments({
+        local reply = Handler.setMaskAdjustments({
             photo_id = "1",
             mask_id = "mask-a",
             adjustments = { local_Exposure = 0.5 },
         })
 
-        assert.are.same({}, r.changed)
+        assert.is_nil(reply.unknown)
+        assert.is_nil(reply.problem)
+        assert.are.same({}, reply.data.changed)
     end)
 
-    it("fails naming the late save when Lightroom never saves the sliders", function()
+    it("answers unknown naming the late save when Lightroom never saves the sliders", function()
         local Handler = setup({
             photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
             neverCommit = true,
         })
 
-        local err = errorOf(function()
-            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
-        end)
+        local reply = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
 
-        assert.truthy(err:find("had not saved them to the photo's settings after 8 s", 1, true))
-        assert.truthy(err:find("already written: local_Exposure", 1, true))
+        assert.truthy(reply.unknown[1].reason:find("had not saved them to the photo's settings after 8 s", 1, true))
+        assert.are.equal("1", reply.unknown[1].photo_id)
+        assert.are.equal("local_Exposure", reply.data.changed[1].slider)
     end)
 
-    it("fails when the mask is absent from the photo's saved settings", function()
+    it("answers unknown when the mask is absent from the photo's saved settings", function()
         local Handler = setup({
             photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
             maskMissingFromStore = true,
         })
 
-        local err = errorOf(function()
-            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
-        end)
+        local reply = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
 
-        assert.truthy(err:find("had not saved them", 1, true))
+        assert.truthy(reply.unknown[1].reason:find("had not saved them", 1, true))
     end)
 
-    it("surfaces the error when Lightroom rejects a write", function()
+    it("refuses with nothing written when Lightroom rejects the first slider and it keeps its old value", function()
         local Handler = setup({
             photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
             rejectSet = { local_Contrast = "slider is disabled" },
         })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = 40 } })
         end)
 
-        assert.truthy(err:find("Lightroom rejected local_Contrast 40", 1, true))
-        assert.truthy(err:find("slider is disabled", 1, true))
+        assert.truthy(err:find("Lightroom rejected local_Contrast 40: ", 1, true), err)
+        assert.truthy(err:find("slider is disabled; nothing was written", 1, true), err)
     end)
 
-    it("fails when another mask became selected while writing", function()
+    it("answers partial with the sliders already written when Lightroom rejects a later slider", function()
         local Handler = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            rejectSet = { local_Contrast = "slider is disabled" },
+        })
+
+        local reply = Handler.setMaskAdjustments({
+            photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2, local_Contrast = 40 },
+        })
+
+        assert.truthy(reply.problem:find("Lightroom rejected local_Contrast 40: ", 1, true), reply.problem)
+        assert.truthy(reply.problem:find("slider is disabled", 1, true), reply.problem)
+        assert.are.same({ { slider = "local_Exposure", from = 0.5, to = 2 } }, reply.data.changed)
+    end)
+
+    it("answers unknown naming the written slider and leaves the mask selected meanwhile unchanged", function()
+        local Handler, calls, _, valuesOf, photos = setup({
             photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
             stealSelectionOnSet = "mask-b",
         })
 
-        local err = errorOf(function()
+        local reply = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
+
+        assert.are.same({ local_Exposure = -1, local_Contrast = -30, local_Shadows = 5 }, valuesOf[photos[1]]["mask-b"])
+        assert.are.equal(1, #calls.setValue)
+        assert.are.same({ { photo_id = "1", reason = "Another mask became selected while writing mask mask-a; written:"
+            .. " local_Exposure; read the mask before retrying" } }, reply.unknown)
+        assert.is_nil(reply.data.adjustments)
+    end)
+
+    it("refuses with nothing written when another mask became selected before the first write", function()
+        local Handler, calls, _, valuesOf, photos, selectedMaskOf = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+        })
+        local readSlider = package.loaded.MaskSelection.readSlider
+        package.loaded.MaskSelection.readSlider = function(name)
+            local value = readSlider(name)
+            selectedMaskOf[photos[1]] = "mask-b"
+            return value
+        end
+
+        local err = helper.refusalOf(function()
             Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
         end)
 
-        assert.truthy(err:find("Another mask became selected while writing", 1, true))
+        assert.are.equal("Another mask became selected before mask mask-a was written; nothing was written", err)
+        assert.are.equal(0, #calls.setValue)
+        assert.are.same({ local_Exposure = -1, local_Contrast = -30, local_Shadows = 5 }, valuesOf[photos[1]]["mask-b"])
+    end)
+
+    it("answers unknown, not partial, when another mask became selected before the read-back", function()
+        local Handler, _, _, valuesOf, photos, selectedMaskOf = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+        })
+        local flush = package.loaded.DevelopSession.flushPendingEdits
+        package.loaded.DevelopSession.flushPendingEdits = function(...)
+            flush(...)
+            selectedMaskOf[photos[1]] = "mask-b"
+        end
+
+        local reply = Handler.setMaskAdjustments({
+            photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2, local_Contrast = 40 },
+        })
+
+        assert.is_nil(reply.problem)
+        assert.are.same({ { photo_id = "1", reason = "Another mask became selected while writing mask mask-a; written:"
+            .. " local_Exposure, local_Contrast; read the mask before retrying" } }, reply.unknown)
+        assert.are.same({ local_Exposure = -1, local_Contrast = -30, local_Shadows = 5 }, valuesOf[photos[1]]["mask-b"])
     end)
 
     it("names the minimum Lightroom version when the mask API is missing", function()
         local Handler, calls = setup({ photos = { { id = "1" } }, withoutMaskApi = true })
 
-        local err = errorOf(function()
+        local err = helper.refusalOf(function()
             Handler.setMaskAdjustments({ photo_id = "1", mask_id = "m", adjustments = { local_Tint = 1 } })
         end)
 
-        assert.truthy(err:find("set_mask_adjustments needs Lightroom Classic 11 or later", 1, true))
+        assert.truthy(err:find("^set_mask_adjustments needs LrDevelopController%.%a+, which this Lightroom does not offer %(Lightroom Classic 11 or later has it%)$"))
         assert.are.equal(0, #calls.modules)
     end)
 
     it("names the minimum Lightroom version when setValue is missing", function()
         local Handler = setup({ photos = { { id = "1" } }, withoutSetValue = true })
 
-        local err = errorOf(function()
+        local refusal = helper.refusalOf(function()
             Handler.setMaskAdjustments({ photo_id = "1", mask_id = "m", adjustments = { local_Tint = 1 } })
         end)
 
-        assert.truthy(err:find("needs Lightroom Classic 11 or later", 1, true))
+        assert.are.equal("set_mask_adjustments needs LrDevelopController.setValue, which this Lightroom does not offer"
+            .. " (Lightroom Classic 11 or later has it)", refusal)
     end)
 
     it("opens no catalog gate", function()
@@ -652,84 +543,19 @@ end)
 
 
 describe("Local Color Grading and Glow sliders", function()
-    local GRADING_RANGES = {
-        local_colorgradeShadowHue = { 0, 360 },
-        local_colorgradeShadowSat = { 0, 100 },
-        local_colorgradeShadowLum = { -100, 100 },
-        local_colorgradeMidtoneHue = { 0, 360 },
-        local_colorgradeMidtoneSat = { 0, 100 },
-        local_colorgradeMidtoneLum = { -100, 100 },
-        local_colorgradeHighlightHue = { 0, 360 },
-        local_colorgradeHighlightSat = { 0, 100 },
-        local_colorgradeHighlightLum = { -100, 100 },
-        local_colorgradeGlobalHue = { 0, 360 },
-        local_colorgradeGlobalSat = { 0, 100 },
-        local_colorgradeGlobalLum = { -100, 100 },
-        local_colorgradeBlending = { 0, 100 },
-        local_colorgradeBalance = { -100, 100 },
-        local_glow = { -100, 100 },
+    local GRADING_SLIDERS = {
+        "local_colorgradeShadowHue", "local_colorgradeShadowSat", "local_colorgradeShadowLum",
+        "local_colorgradeMidtoneHue", "local_colorgradeMidtoneSat", "local_colorgradeMidtoneLum",
+        "local_colorgradeHighlightHue", "local_colorgradeHighlightSat", "local_colorgradeHighlightLum",
+        "local_colorgradeGlobalHue", "local_colorgradeGlobalSat", "local_colorgradeGlobalLum",
+        "local_colorgradeBlending", "local_colorgradeBalance", "local_glow",
     }
 
     local function gradedMask()
         local values = {}
-        for name in pairs(GRADING_RANGES) do values[name] = 10 end
+        for _, name in ipairs(GRADING_SLIDERS) do values[name] = 10 end
         return { photos = { { id = "1", masks = { ["mask-a"] = values }, selectedMask = "mask-a" } } }
     end
-
-    local function rangeEnds(index)
-        local wanted = {}
-        for name, range in pairs(GRADING_RANGES) do wanted[name] = range[index] end
-        return wanted
-    end
-
-    it("accepts each slider at both ends of its range", function()
-        for index = 1, 2 do
-            local Handler = setup(gradedMask())
-            local wanted = rangeEnds(index)
-
-            local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = wanted })
-
-            assert.are.same(wanted, r.adjustments)
-        end
-    end)
-
-    it("rejects values outside the ranges, naming each range, and writes nothing", function()
-        local Handler, calls = setup(gradedMask())
-
-        local err = errorOf(function()
-            Handler.setMaskAdjustments({
-                photo_id = "1",
-                mask_id = "mask-a",
-                adjustments = {
-                    local_colorgradeShadowHue = 361,
-                    local_colorgradeMidtoneSat = -1,
-                    local_colorgradeBlending = 101,
-                    local_colorgradeBalance = -101,
-                    local_glow = 100.5,
-                },
-            })
-        end)
-
-        assert.truthy(err:find("local_colorgradeShadowHue 361 is outside its range 0 to 360", 1, true))
-        assert.truthy(err:find("local_colorgradeMidtoneSat -1 is outside its range 0 to 100", 1, true))
-        assert.truthy(err:find("local_colorgradeBlending 101 is outside its range 0 to 100", 1, true))
-        assert.truthy(err:find("local_colorgradeBalance -101 is outside its range -100 to 100", 1, true))
-        assert.truthy(err:find("local_glow 100.5 is outside its range -100 to 100", 1, true))
-        assert.are.equal(0, #calls.setValue)
-    end)
-
-    it("refuses the names Lightroom does not resolve, whatever their case", function()
-        local Handler, calls = setup(gradedMask())
-
-        for _, name in ipairs({ "local_ColorGradeShadowHue", "local_colorGradeShadowHue", "local_Glow",
-            "local_GlowStyle" }) do
-            local err = errorOf(function()
-                Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { [name] = 1 } })
-            end)
-            assert.truthy(err:find("Unknown mask adjustment " .. name, 1, true))
-        end
-        assert.are.equal(0, #calls.setValue)
-    end)
 
     it("reads the written values back with the other sliders of the selected mask", function()
         local Handler = setup(gradedMask())
@@ -748,7 +574,7 @@ describe("Local Color Grading and Glow sliders", function()
 end)
 
 describe("LocalSliders", function()
-    it("lists unique local_ names with an ordered fallback range", function()
+    it("lists unique local_ names with the stored field Lightroom writes", function()
         local LocalSliders = require 'LocalSliders'
         local seen = {}
 
@@ -756,10 +582,22 @@ describe("LocalSliders", function()
             assert.truthy(slider.name:match("^local_%a+$"))
             assert.is_nil(seen[slider.name])
             seen[slider.name] = true
-            assert.is_true(slider.fallbackMin < slider.fallbackMax)
             assert.is_true(slider.tolerance > 0)
-            assert.are.equal(slider, LocalSliders.byName[slider.name])
+            assert.truthy(slider.stored:match("^Local%w+$"))
+            assert.is_true(slider.scale > 0)
+            assert.are.equal(slider, LocalSliders.byStored[slider.stored])
         end
-        assert.are.equal(#LocalSliders.list, #LocalSliders.names())
+    end)
+end)
+
+describe("a local slider added to the table", function()
+    it("is settable and read back by set_mask_adjustments", function()
+        helper.withFixtureSlider(function()
+            local Handler = setup({ photos = { { id = "1", masks = { ["mask-a"] = { local_Fixture = 0 } }, selectedMask = "mask-a" } } })
+
+            local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Fixture = 5 } }).data
+
+            assert.are.equal(5, r.adjustments.local_Fixture)
+        end)
     end)
 end)

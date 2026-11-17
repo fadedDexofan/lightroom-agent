@@ -26,6 +26,7 @@ import os from "node:os";
 import { once } from "node:events";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireThrowawayCatalog } from "./live/lib/catalog-guard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -33,6 +34,7 @@ const SERVER_BIN = path.join(REPO_ROOT, "server", "dist", "index.js");
 
 const args = process.argv.slice(2);
 const mode = args[0] ?? "read";
+const MUTATING_MODES = new Set(["write", "develop", "export", "preset-roundtrip", "all"]);
 
 class McpClient {
   constructor() {
@@ -148,13 +150,13 @@ class McpClient {
   async callTool(name, toolArgs) {
     const result = await this._rpc("tools/call", { name, arguments: toolArgs ?? {} });
     const text = result?.content?.[0]?.text ?? "";
-    let parsed;
+    let envelope;
     try {
-      parsed = JSON.parse(text);
+      envelope = JSON.parse(text);
     } catch {
-      parsed = text;
+      envelope = { outcome: "failed", error: text };
     }
-    return { isError: !!result.isError, text, parsed };
+    return { isError: !!result.isError, text, envelope, parsed: envelope.data };
   }
 
   async stop() {
@@ -281,6 +283,7 @@ async function main() {
     return;
   }
 
+  if (MUTATING_MODES.has(mode)) requireThrowawayCatalog();
   const c = new McpClient();
   await c.start();
 
@@ -305,7 +308,7 @@ async function main() {
       let lastError = "";
       for (const key of candidateKeys) {
         const r = await c.callTool("create_develop_preset", {
-          photo_id: String(ctx.firstPhoto.id),
+          photo_id: ctx.firstPhoto.photo_id,
           preset_name: checkpointName,
           settings: [key],
         });
@@ -366,11 +369,6 @@ async function main() {
   }
 
   if (mode === "read" || mode === "all") {
-    await run("tools/list returns 74 tools", async () => {
-      const tools = await c.listTools();
-      checkEq("tool count", tools.tools.length, 74);
-    });
-
     await run("list_collections smoke", async () => {
       const r = await c.callTool("list_collections", { limit: 5 });
       checkTrue("not error", !r.isError, r.text);
@@ -402,21 +400,17 @@ async function main() {
 
     await run("get_photo_metadata for first photo", async () => {
       if (!ctx.firstPhoto) throw new Error("no photo to test against");
-      const r = await c.callTool("get_photo_metadata", {
-        photo_id: String(ctx.firstPhoto.id),
-        sections: ["developSettings"],
-      });
+      const r = await c.callTool("get_photo_metadata", { photo_ids: [ctx.firstPhoto.photo_id] });
       checkTrue("not error", !r.isError, r.text);
-      checkTrue("has filename", typeof r.parsed.filename === "string");
-      checkTrue("has developSettings", typeof r.parsed.developSettings === "object");
-      return `${r.parsed.filename}`;
+      checkTrue("has filename", typeof r.parsed.photos[0].filename === "string");
+      return `${r.parsed.photos[0].filename}`;
     });
 
     await run("get_photo_metadata by file path", async () => {
       if (!ctx.firstPhoto) throw new Error("no photo to test against");
-      const r = await c.callTool("get_photo_metadata", { photo_id: ctx.firstPhoto.path });
+      const r = await c.callTool("get_photo_metadata", { photo_ids: [ctx.firstPhoto.path] });
       checkTrue("not error", !r.isError, r.text);
-      checkEq("path roundtrip", r.parsed.path, ctx.firstPhoto.path);
+      checkEq("path roundtrip", r.parsed.photos[0].path, ctx.firstPhoto.path);
     });
 
     await run("list_export_presets", async () => {
@@ -471,7 +465,7 @@ async function main() {
     await run(`create_collection "${collectionName}"`, async () => {
       const r = await c.callTool("create_collection", { name: collectionName });
       checkTrue("not error", !r.isError, r.text);
-      checkEq("success", r.parsed.success, true);
+      checkEq("path", r.parsed.path, collectionName);
     });
 
     await run("list_collections includes new collection", async () => {
@@ -490,7 +484,7 @@ async function main() {
       await run("add_to_collection (first photo)", async () => {
         const r = await c.callTool("add_to_collection", {
           collection_name: collectionName,
-          photo_ids: [String(ctx.firstPhoto.id)],
+          photo_ids: [ctx.firstPhoto.photo_id],
         });
         checkTrue("not error", !r.isError, r.text);
         checkEq("added", r.parsed.added, 1);
@@ -499,7 +493,7 @@ async function main() {
       const originalRating = ctx.firstPhoto.rating ?? 0;
       await run("set_rating_and_flag to 3", async () => {
         const r = await c.callTool("set_rating_and_flag", {
-          photo_ids: [String(ctx.firstPhoto.id)],
+          photo_ids: [ctx.firstPhoto.photo_id],
           rating: 3,
         });
         checkTrue("not error", !r.isError, r.text);
@@ -508,14 +502,14 @@ async function main() {
 
       await run("get_photo_metadata reflects rating=3", async () => {
         const r = await c.callTool("get_photo_metadata", {
-          photo_id: String(ctx.firstPhoto.id),
+          photo_ids: [ctx.firstPhoto.photo_id],
         });
-        checkEq("rating", r.parsed.rating, 3);
+        checkEq("rating", r.parsed.photos[0].rating, 3);
       });
 
       await run(`set_rating_and_flag restore to ${originalRating}`, async () => {
         const r = await c.callTool("set_rating_and_flag", {
-          photo_ids: [String(ctx.firstPhoto.id)],
+          photo_ids: [ctx.firstPhoto.photo_id],
           rating: originalRating,
         });
         checkTrue("not error", !r.isError, r.text);
@@ -524,7 +518,7 @@ async function main() {
       const tag = `mcp_e2e_${Date.now()}`;
       await run(`set_keywords add "${tag}"`, async () => {
         const r = await c.callTool("set_keywords", {
-          photo_ids: [String(ctx.firstPhoto.id)],
+          photo_ids: [ctx.firstPhoto.photo_id],
           add_keywords: [tag],
         });
         checkTrue("not error", !r.isError, r.text);
@@ -533,14 +527,14 @@ async function main() {
 
       await run("get_photo_metadata shows new keyword", async () => {
         const r = await c.callTool("get_photo_metadata", {
-          photo_id: String(ctx.firstPhoto.id),
+          photo_ids: [ctx.firstPhoto.photo_id],
         });
-        checkTrue("keyword present", r.parsed.keywords.includes(tag), JSON.stringify(r.parsed.keywords));
+        checkTrue("keyword present", r.parsed.photos[0].keywords.includes(tag), JSON.stringify(r.parsed.photos[0].keywords));
       });
 
       await run(`set_keywords remove "${tag}"`, async () => {
         const r = await c.callTool("set_keywords", {
-          photo_ids: [String(ctx.firstPhoto.id)],
+          photo_ids: [ctx.firstPhoto.photo_id],
           remove_keywords: [tag],
         });
         checkTrue("not error", !r.isError, r.text);
@@ -548,12 +542,12 @@ async function main() {
 
       await run("get_photo_metadata no longer shows keyword", async () => {
         const r = await c.callTool("get_photo_metadata", {
-          photo_id: String(ctx.firstPhoto.id),
+          photo_ids: [ctx.firstPhoto.photo_id],
         });
         // Lua's JSON serializes an empty {} as object, not array. Treat
         // both as "no keywords match the tag we just removed".
-        const kws = Array.isArray(r.parsed.keywords) ? r.parsed.keywords : [];
-        checkTrue("keyword gone", !kws.includes(tag), JSON.stringify(r.parsed.keywords));
+        const kws = Array.isArray(r.parsed.photos[0].keywords) ? r.parsed.photos[0].keywords : [];
+        checkTrue("keyword gone", !kws.includes(tag), JSON.stringify(r.parsed.photos[0].keywords));
       });
     } else {
       console.log("⚠ skipping photo-mutation tests — catalog appears empty");
@@ -574,18 +568,17 @@ async function main() {
     if (ctx.firstPhoto) {
       await run("set_develop_settings Exposure2012=0.5 then 0.0", async () => {
         const r1 = await c.callTool("set_develop_settings", {
-          photo_id: String(ctx.firstPhoto.id),
+          photo_id: ctx.firstPhoto.photo_id,
           settings: { Exposure2012: 0.5 },
         });
         checkTrue("first not error", !r1.isError, r1.text);
-        const meta = await c.callTool("get_photo_metadata", {
-          photo_id: String(ctx.firstPhoto.id),
-          sections: ["developSettings"],
+        const meta = await c.callTool("get_develop_settings", {
+          photo_ids: [ctx.firstPhoto.photo_id], keys: ["Exposure2012"],
         });
-        checkTrue("exposure ~0.5", Math.abs((meta.parsed.developSettings.exposure ?? 0) - 0.5) < 1e-6,
-          `got ${meta.parsed.developSettings.exposure}`);
+        const exposure = meta.parsed.photos[0].settings.Exposure2012;
+        checkTrue("exposure ~0.5", Math.abs((exposure ?? 0) - 0.5) < 1e-6, `got ${exposure}`);
         const r2 = await c.callTool("set_develop_settings", {
-          photo_id: String(ctx.firstPhoto.id),
+          photo_id: ctx.firstPhoto.photo_id,
           settings: { Exposure2012: 0.0 },
         });
         checkTrue("restore not error", !r2.isError, r2.text);
@@ -595,7 +588,7 @@ async function main() {
         await run(`apply_develop_preset "${ctx.firstPreset.name}"`, async () => {
           const selector = exactPresetSelector(ctx.firstPreset, ctx.presets);
           const r = await c.callTool("apply_develop_preset", {
-            photo_ids: [String(ctx.firstPhoto.id)],
+            photo_ids: [ctx.firstPhoto.photo_id],
             ...selector,
           });
           checkTrue("not error", !r.isError, r.text);
@@ -614,28 +607,25 @@ async function main() {
 
       await run("copy_develop_settings (whitelist Contrast2012)", async () => {
         await c.callTool("set_develop_settings", {
-          photo_id: String(src.id),
+          photo_id: src.photo_id,
           settings: { Contrast2012: 42 },
         });
         const cp = await c.callTool("copy_develop_settings", {
-          source_id: String(src.id),
-          target_ids: [String(dst.id)],
+          source_id: src.photo_id,
+          target_ids: [dst.photo_id],
           settings: ["Contrast2012"],
         });
         checkTrue("not error", !cp.isError, cp.text);
         checkEq("copied", cp.parsed.copied, 1);
-        const dstMeta = await c.callTool("get_photo_metadata", {
-          photo_id: String(dst.id),
-          sections: ["developSettings"],
-        });
-        checkEq("dst contrast", dstMeta.parsed.developSettings.contrast, 42);
+        const dstMeta = await c.callTool("get_develop_settings", { photo_ids: [dst.photo_id], keys: ["Contrast2012"] });
+        checkEq("dst contrast", dstMeta.parsed.photos[0].settings.Contrast2012, 42);
         // restore source
         await c.callTool("set_develop_settings", {
-          photo_id: String(src.id),
+          photo_id: src.photo_id,
           settings: { Contrast2012: 0 },
         });
         await c.callTool("set_develop_settings", {
-          photo_id: String(dst.id),
+          photo_id: dst.photo_id,
           settings: { Contrast2012: 0 },
         });
       });
@@ -656,7 +646,7 @@ async function main() {
       fs.mkdirSync(dest, { recursive: true });
       await run(`export_photos JPEG @1024 → ${dest}`, async () => {
         const r = await c.callTool("export_photos", {
-          photo_ids: [String(photo.id)],
+          photo_ids: [photo.photo_id],
           destination: dest,
           format: "jpeg",
           quality: 80,
@@ -664,7 +654,7 @@ async function main() {
           height: 1024,
         });
         checkTrue("not error", !r.isError, r.text);
-        checkEq("exported count", r.parsed.exported, 1);
+        checkEq("exported count", r.parsed.files.length, 1);
         // Search recursively in case LR put it in a subfolder, AND search
         // the photo's source folder (in case destinationType was ignored).
         const allInDest = execFileSync("find", [dest, "-type", "f"], { encoding: "utf8" }).trim();
@@ -694,8 +684,8 @@ async function main() {
       const a = await c.callTool("search_photos", { limit: 5, offset: 0 });
       const b = await c.callTool("search_photos", { limit: 5, offset: 5 });
       checkEq("count stable", a.parsed.count, b.parsed.count);
-      const aIds = new Set(a.parsed.photos.map((p) => String(p.id)));
-      const bIds = b.parsed.photos.map((p) => String(p.id));
+      const aIds = new Set(a.parsed.photos.map((p) => p.photo_id));
+      const bIds = b.parsed.photos.map((p) => p.photo_id);
       const overlap = bIds.filter((id) => aIds.has(id));
       checkEq("no overlap", overlap.length, 0);
       if (a.parsed.count > 5) checkEq("page 1 has_more", a.parsed.has_more, true);
@@ -720,9 +710,9 @@ async function main() {
       checkEq("isError", r.isError, true);
     });
 
-    await run("get_photo_metadata bad id returns isError", async () => {
-      const r = await c.callTool("get_photo_metadata", { photo_id: "not-a-real-id-99999" });
-      checkEq("isError", r.isError, true);
+    await run("get_photo_metadata reports a bad id as not_found", async () => {
+      const r = await c.callTool("get_photo_metadata", { photo_ids: ["/nonexistent/lrmcp-e2e.jpg"] });
+      checkEq("not_found", JSON.stringify(r.envelope.not_found), JSON.stringify(["/nonexistent/lrmcp-e2e.jpg"]));
     });
 
     await run("set_rating_and_flag out-of-range returns isError", async () => {

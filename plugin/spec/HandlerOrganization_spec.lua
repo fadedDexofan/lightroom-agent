@@ -17,6 +17,16 @@ local function setup(opts)
 end
 
 describe("HandlerOrganization.setRatingAndFlag rating path", function()
+    it("refuses when the catalog stays busy with another write", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 0 })
+        local _, Handler = setup({ photos = { p1 }, writeAccessAborts = function() return true end })
+
+        assert.are.equal(helper.catalogBusy("Set Rating and Flag"), helper.refusalOf(function()
+            Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = 4 })
+        end))
+        assert.are.equal(0, p1:getRawMetadata("rating"))
+    end)
+
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 0 })
         local catalog, Handler = setup({ photos = { p1 } })
@@ -33,24 +43,9 @@ describe("HandlerOrganization.setRatingAndFlag rating path", function()
 
         local r = Handler.setRatingAndFlag({ photo_ids = { "1", "2" }, rating = 4 })
 
-        assert.is_true(r.success)
-        assert.are.equal(2, r.updated)
-        assert.is_nil(r.rating)
-        assert.is_nil(r.message)
+        assert.are.equal(2, r.data.updated)
         assert.are.equal(4, p1.getRawMetadata(p1, "rating"))
         assert.are.equal(4, p2.getRawMetadata(p2, "rating"))
-    end)
-
-    it("validates rating range", function()
-        local _, Handler = setup({})
-        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = 6 }) end)
-        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = -1 }) end)
-    end)
-
-    it("requires photo_ids and rating", function()
-        local _, Handler = setup({})
-        assert.has_error(function() Handler.setRatingAndFlag({ rating = 3 }) end)
-        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" } }) end)
     end)
 
     it("reports unknown photos instead of claiming a silent success", function()
@@ -59,17 +54,10 @@ describe("HandlerOrganization.setRatingAndFlag rating path", function()
 
         local r = Handler.setRatingAndFlag({ photo_ids = { "1", "missing" }, rating = 2 })
 
-        assert.are.equal(1, r.updated)
-        assert.are.same({ "missing" }, r.missing)
-        assert.is_nil(r.message)
+        assert.are.equal(1, r.data.updated)
+        assert.are.same({ "missing" }, r.not_found)
     end)
 
-    it("rejects a rating that is not a number", function()
-        local _, Handler = setup({})
-        assert.has_error(
-            function() Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = "3" }) end,
-            "rating must be a number between 0 and 5")
-    end)
 end)
 
 describe("HandlerOrganization.setRatingAndFlag flag path", function()
@@ -88,9 +76,7 @@ describe("HandlerOrganization.setRatingAndFlag flag path", function()
         local _, Handler = setup({ photos = { p1, p2 } })
 
         local r = Handler.setRatingAndFlag({ photo_ids = { "1", "2" }, flag = "reject" })
-        assert.is_true(r.success)
-        assert.are.equal(2, r.updated)
-        assert.is_nil(r.flag)
+        assert.are.equal(2, r.data.updated)
         assert.are.equal(-1, p1:getRawMetadata("pickStatus"))
         assert.are.equal(-1, p2:getRawMetadata("pickStatus"))
 
@@ -101,31 +87,14 @@ describe("HandlerOrganization.setRatingAndFlag flag path", function()
         assert.are.equal(0, p1:getRawMetadata("pickStatus"))
     end)
 
-    it("requires photo_ids and a known flag before scanning", function()
-        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 1 })
-        local catalog, Handler = setup({ photos = { p1 } })
-
-        assert.has_error(function() Handler.setRatingAndFlag({ flag = "pick" }) end, "photo_ids is required")
-        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" } }) end,
-            "rating or flag is required")
-        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" }, flag = "rejected" }) end,
-            "flag must be one of: pick, reject, none")
-        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" }, flag = 1 }) end,
-            "flag must be one of: pick, reject, none")
-
-        assert.are.equal(0, catalog.getQueryCount())
-        assert.are.equal(1, p1:getRawMetadata("pickStatus"))
-    end)
-
     it("reports unknown photos instead of claiming a silent success", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 0 })
         local _, Handler = setup({ photos = { p1 } })
 
         local r = Handler.setRatingAndFlag({ photo_ids = { "1", "missing" }, flag = "pick" })
 
-        assert.are.equal(1, r.updated)
-        assert.are.same({ "missing" }, r.missing)
-        assert.is_nil(r.message)
+        assert.are.equal(1, r.data.updated)
+        assert.are.same({ "missing" }, r.not_found)
     end)
 end)
 
@@ -139,7 +108,7 @@ describe("HandlerOrganization.setRatingAndFlag combined path", function()
             photo_ids = { "1", "/b.jpg", "missing", "1" }, rating = 3, flag = "pick",
         })
 
-        assert.are.same({ success = true, updated = 3, missing = { "missing" } }, result)
+        assert.are.same({ data = { updated = 2 }, not_found = { "missing" } }, result)
         assert.are.equal(1, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideWriteAccess())
         for _, photo in ipairs({ p1, p2 }) do
@@ -163,22 +132,6 @@ describe("HandlerOrganization.setRatingAndFlag combined path", function()
         assert.are.equal(0, photo:getRawMetadata("pickStatus"))
     end)
 
-    it("rejects an invalid field before resolving or writing the other valid field", function()
-        for _, fields in ipairs({
-            {}, { rating = 3, flag = "invalid" }, { rating = 6, flag = "pick" },
-            { rating = "3", flag = "pick" }, { rating = false, flag = "pick" },
-            { rating = 3, flag = false },
-        }) do
-            local photo = helper.fakePhoto({ id = "1", rating = 5, pickStatus = -1 })
-            local catalog, Handler = setup({ photos = { photo } })
-            fields.photo_ids = { "1" }
-            assert.has_error(function() Handler.setRatingAndFlag(fields) end)
-            assert.are.equal(0, catalog.getQueryCount())
-            assert.are.equal(0, catalog.getWriteAccessCount())
-            assert.are.equal(5, photo:getRawMetadata("rating"))
-            assert.are.equal(-1, photo:getRawMetadata("pickStatus"))
-        end
-    end)
 end)
 
 describe("HandlerOrganization.setColorLabel", function()
@@ -197,10 +150,7 @@ describe("HandlerOrganization.setColorLabel", function()
         local _, Handler = setup({ photos = { p1, p2 } })
 
         local r = Handler.setColorLabel({ photo_ids = { "1", "2" }, label = "red" })
-        assert.is_true(r.success)
-        assert.are.equal(2, r.updated)
-        assert.is_nil(r.label)
-        assert.is_nil(r.message)
+        assert.are.equal(2, r.data.updated)
         assert.are.equal("red", p1:getRawMetadata("colorNameForLabel"))
         assert.are.equal("red", p2:getRawMetadata("colorNameForLabel"))
 
@@ -211,42 +161,53 @@ describe("HandlerOrganization.setColorLabel", function()
         assert.are.equal("none", p1:getRawMetadata("colorNameForLabel"))
     end)
 
-    it("requires photo_ids and a known label before scanning", function()
-        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", colorNameForLabel = "red" })
-        local catalog, Handler = setup({ photos = { p1 } })
-
-        assert.has_error(function() Handler.setColorLabel({ label = "red" }) end, "photo_ids is required")
-        assert.has_error(function() Handler.setColorLabel({ photo_ids = { "1" } }) end,
-            "label must be one of: red, yellow, green, blue, purple, none")
-        assert.has_error(function() Handler.setColorLabel({ photo_ids = { "1" }, label = "pink" }) end,
-            "label must be one of: red, yellow, green, blue, purple, none")
-        assert.has_error(function() Handler.setColorLabel({ photo_ids = { "1" }, label = 1 }) end,
-            "label must be one of: red, yellow, green, blue, purple, none")
-
-        assert.are.equal(0, catalog.getQueryCount())
-        assert.are.equal("red", p1:getRawMetadata("colorNameForLabel"))
-    end)
-
     it("reports unknown photos instead of claiming a silent success", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", colorNameForLabel = "none" })
         local catalog, Handler = setup({ photos = { p1 } })
 
         local r = Handler.setColorLabel({ photo_ids = { "1", "missing" }, label = "red" })
 
-        assert.are.equal(1, r.updated)
-        assert.are.same({ "missing" }, r.missing)
+        assert.are.equal(1, r.data.updated)
+        assert.are.same({ "missing" }, r.not_found)
         assert.is_false(catalog.getQueriedInsideWriteAccess())
-        assert.is_nil(r.message)
     end)
 end)
 
 describe("HandlerOrganization.setKeywords", function()
+    it("answers unknown, naming the keywords it created, when the catalog stays busy before tagging", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local _, Handler = setup({ photos = { p1 }, writeAccessAborts = function(name) return name == "Set Keywords" end })
+
+        local message = helper.unknownOf(function()
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places|Paris" } })
+        end)
+
+        assert.are.equal(helper.catalogBusy("Set Keywords", "the keywords Places, Places|Paris were created"), message)
+    end)
+
+    it("answers unknown, naming the level it created, when the catalog stays busy before the next level", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local createGates = 0
+        local catalog, Handler = setup({ photos = { p1 }, writeAccessAborts = function(name)
+            if name ~= "Create Keywords" then return false end
+            createGates = createGates + 1
+            return createGates == 2
+        end })
+
+        local message = helper.unknownOf(function()
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B" } })
+        end)
+
+        assert.are.equal(helper.catalogBusy("Create Keywords", "the keywords A were created"), message)
+        assert.are.equal(1, #catalog.getCreatedKeywords())
+    end)
+
     it("reports unknown ids", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler = setup({ photos = { p1 } })
         local r = Handler.setKeywords({ photo_ids = { "1", "999" }, add_keywords = { "summer" } })
-        assert.are.equal(1, r.updated)
-        assert.are.same({ "999" }, r.missing)
+        assert.are.equal(1, r.data.updated)
+        assert.are.same({ "999" }, r.not_found)
     end)
 
     it("creates no keyword when no photo matched", function()
@@ -258,8 +219,8 @@ describe("HandlerOrganization.setKeywords", function()
             return create(...)
         end
         local r = Handler.setKeywords({ photo_ids = { "999" }, add_keywords = { "summer" } })
-        assert.are.equal(0, r.updated)
-        assert.are.same({ "999" }, r.missing)
+        assert.is_nil(r.data)
+        assert.are.same({ "999" }, r.not_found)
         assert.are.equal(0, created)
     end)
 
@@ -277,10 +238,8 @@ describe("HandlerOrganization.setKeywords", function()
         local catalog, Handler = setup({ photos = { p1 } })
 
         local r = Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "summer", "beach" } })
-        assert.is_nil(r.message)
 
-        assert.is_true(r.success)
-        assert.are.equal(1, r.updated)
+        assert.are.equal(1, r.data.updated)
         assert.are.equal(2, #catalog.getCreatedKeywords())
     end)
 
@@ -291,19 +250,6 @@ describe("HandlerOrganization.setKeywords", function()
         Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "summer", "summer" } })
 
         assert.are.equal(1, #catalog.getCreatedKeywords())
-    end)
-
-    it("removes existing keywords by name match", function()
-        local existing = { getName = function() return "old" end }
-        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = { existing } })
-        local _, Handler = setup({ photos = { p1 } })
-
-        Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "old" } })
-
-        -- removeKeyword captures into __removedKeywords on the photo's meta.
-        -- We can't introspect easily, but we know the call didn't error and updated=1.
-        local r = Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "missing" } })
-        assert.are.equal(1, r.updated)
     end)
 
     -- Catalog tree used by the hierarchy specs:
@@ -343,7 +289,7 @@ describe("HandlerOrganization.setKeywords", function()
 
         local r = Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places|Europe|Paris" } })
 
-        assert.are.equal(1, r.updated)
+        assert.are.equal(1, r.data.updated)
         assert.are.same({ t.paris }, added(p1))
         assert.are.equal(0, #catalog.getCreatedKeywords())
     end)
@@ -456,9 +402,8 @@ describe("HandlerOrganization.setKeywords", function()
         p1.addKeyword = function() error("write failed") end
         local catalog, Handler = setup({ photos = { p1 } })
 
-        assert.has_error(function()
-            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B" } })
-        end)
+        assert.are.equal("write failed",
+            helper.unknownOf(function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B" } }) end))
         -- The levels were committed before the photo write; they stay, empty.
         assert.are.equal(2, #catalog.getCreatedKeywords())
     end)
@@ -467,9 +412,9 @@ describe("HandlerOrganization.setKeywords", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
         local catalog, Handler = setup({ photos = { p1 } })
 
-        assert.has_error(function()
+        assert.are.equal("Invalid keyword path (empty level): Places||Paris", helper.refusalOf(function()
             Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places||Paris" } })
-        end, "Invalid keyword path (empty level): Places||Paris")
+        end))
         assert.are.equal(0, catalog.getWriteAccessCount())
     end)
 
@@ -510,14 +455,14 @@ describe("HandlerOrganization.setKeywords", function()
             local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
             local catalog, Handler = setup({ photos = { p1 }, keywords = t.top })
 
-            assert.has_error(function()
+            assert.are.equal("Keywords not resolved (create_missing is false): not found: Places|Asia; "
+                .. "not found: winter; ambiguous: portrait (Orientation|portrait, Type|portrait)", helper.refusalOf(function()
                 Handler.setKeywords({
                     photo_ids = { "1" },
                     add_keywords = { "summer", "Places|Asia", "winter", "portrait" },
                     create_missing = false,
                 })
-            end, "Keywords not resolved (create_missing is false): not found: Places|Asia; "
-                .. "not found: winter; ambiguous: portrait (Orientation|portrait, Type|portrait)")
+            end))
 
             assert.are.equal(0, catalog.getWriteAccessCount())
             assert.are.equal(0, catalog.getQueryCount())
@@ -611,9 +556,8 @@ describe("HandlerOrganization.setKeywords", function()
             p1.addKeyword = function() error("write failed") end
             local _, Handler = setup({ photos = { p1, p2 }, keywords = top })
 
-            assert.has_error(function()
-                Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } })
-            end)
+            assert.are.equal("write failed",
+                helper.unknownOf(function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } }) end))
             Handler.setKeywords({ photo_ids = { "2" }, add_keywords = { "k20" } })
             Handler.setKeywords({ photo_ids = { "2" }, add_keywords = { "k19" } })
 
@@ -655,13 +599,6 @@ describe("HandlerOrganization.setKeywords", function()
         end)
     end)
 
-    it("rejects a create_missing that is not a boolean", function()
-        local _, Handler = setup({})
-        assert.has_error(function()
-            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "a" }, create_missing = "no" })
-        end, "create_missing must be a boolean")
-    end)
-
     it("removes by path only the keyword at that place", function()
         local t = tree()
         local p1 = helper.fakePhoto({
@@ -696,9 +633,9 @@ describe("HandlerOrganization.setKeywords", function()
         assert.are.equal(1, #created)
         assert.are.equal("summer", created[1]:getName())
         assert.are.same({ created[1] }, added(p1))
-        assert.has_error(function()
+        assert.are.equal("Invalid keyword (empty): '  '", helper.refusalOf(function()
             Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "  " } })
-        end, "Invalid keyword (empty): '  '")
+        end))
     end)
 
     it("removes by path ignoring case", function()
@@ -724,34 +661,6 @@ describe("HandlerOrganization.setKeywords", function()
         assert.are.same({ t.orientationPortrait, t.typePortrait }, removed(p1))
     end)
 
-    it("requires photo_ids", function()
-        local _, Handler = setup({})
-        assert.has_error(function() Handler.setKeywords({}) end)
-        assert.has_error(function() Handler.setKeywords({ photo_ids = {} }) end)
-    end)
-
-    it("rejects a call with neither add_keywords nor remove_keywords", function()
-        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
-        local _, Handler = setup({ photos = { p1 } })
-
-        assert.has_error(
-            function() Handler.setKeywords({ photo_ids = { "1" } }) end,
-            "add_keywords or remove_keywords is required")
-        assert.has_error(
-            function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = {} }) end,
-            "add_keywords or remove_keywords is required")
-    end)
-
-    it("limits keyword batch size", function()
-        local _, Handler = setup({})
-        local keywords = {}
-        for i = 1, 1001 do
-            table.insert(keywords, "kw" .. i)
-        end
-
-        assert.has_error(function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = keywords }) end)
-        assert.has_error(function() Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = keywords }) end)
-    end)
 end)
 
 
@@ -796,13 +705,12 @@ describe("HandlerOrganization.removeKeywordSubtree", function()
         local catalog, Handler, photo, other, parent, outside, paris = fixture()
 
         local result = Handler.removeKeywordSubtree({ parent = "ai keywords", photo_ids = { "1", "1", "missing" } })
-        assert.is_nil(result.message)
 
         assert.are.same({ outside, paris }, photo:getRawMetadata('keywords'))
         assert.are.equal(1, #other:getRawMetadata('keywords'))
-        assert.are.equal(1, result.updated)
-        assert.are.equal(3, result.removed)
-        assert.are.same({ "missing" }, result.missing)
+        assert.are.equal(1, result.data.updated)
+        assert.are.equal(3, result.data.removed)
+        assert.are.same({ "missing" }, result.not_found)
         assert.are.equal(parent, KeywordTree.resolve(catalog, { "AI Keywords" }))
         assert.is_not_nil(KeywordTree.resolve(catalog, { "AI Keywords", "Sea", "Wave" }))
         assert.is_false(catalog.getQueriedInsideReadAccess())
@@ -817,37 +725,47 @@ describe("HandlerOrganization.removeKeywordSubtree", function()
 
         assert.are.same({ outside, paris }, photo:getRawMetadata('keywords'))
         assert.are.same({}, other:getRawMetadata('keywords'))
-        assert.are.equal(2, result.updated)
-        assert.are.equal(4, result.removed)
-        assert.are.equal(0, repeated.updated)
-        assert.are.equal(0, repeated.removed)
+        assert.are.equal(2, result.data.updated)
+        assert.are.equal(4, result.data.removed)
+        assert.are.equal(0, repeated.data.updated)
+        assert.are.equal(0, repeated.data.removed)
     end)
 
     it("rejects unknown parents before changing photos", function()
         local _, Handler, photo = fixture()
 
-        assert.has_error(function()
+        assert.are.equal("Keyword parent not found: Unknown|Parent", helper.refusalOf(function()
             Handler.removeKeywordSubtree({ parent = "Unknown|Parent", photo_ids = { "1" } })
-        end, "Keyword parent not found: Unknown|Parent")
+        end))
 
         assert.are.equal(5, #photo:getRawMetadata('keywords'))
     end)
 
+    it("refuses a malformed path without changes", function()
+        local _, Handler, photo = fixture()
+
+        assert.are.equal("Invalid keyword path (empty level): AI Keywords||Sea", helper.refusalOf(function()
+            Handler.removeKeywordSubtree({ parent = "AI Keywords||Sea", photo_ids = { "1" } })
+        end))
+
+        assert.are.equal(5, #photo:getRawMetadata('keywords'))
+    end)
+end)
+
+describe("HandlerOrganization writes when no photo_id is known", function()
     for _, case in ipairs({
-        { name = "missing scope", args = { parent = "AI Keywords" } },
-        { name = "false catalog scope", args = { parent = "AI Keywords", catalog_wide = false } },
-        { name = "empty photo scope", args = { parent = "AI Keywords", photo_ids = {} } },
-        { name = "conflicting scopes", args = { parent = "AI Keywords", photo_ids = { "1" }, catalog_wide = true } },
-        { name = "nonboolean scope", args = { parent = "AI Keywords", catalog_wide = "true" } },
-        { name = "empty parent", args = { parent = " ", photo_ids = { "1" } } },
-        { name = "malformed path", args = { parent = "AI Keywords||Sea", photo_ids = { "1" } } },
+        { "setRatingAndFlag", { rating = 2 } },
+        { "setColorLabel", { label = "red" } },
+        { "setKeywords", { add_keywords = { "summer" } } },
     }) do
-        it("rejects " .. case.name .. " without changes", function()
-            local _, Handler, photo = fixture()
-
-            assert.has_error(function() Handler.removeKeywordSubtree(case.args) end)
-
-            assert.are.equal(5, #photo:getRawMetadata('keywords'))
+        it(case[1] .. " answers with not_found and no data, writing nothing", function()
+            local catalog, Handler = setup({ photos = {} })
+            local args = case[2]
+            args.photo_ids = { "404", "/gone.jpg" }
+            local reply = Handler[case[1]](args)
+            assert.is_nil(reply.data)
+            assert.are.same({ "404", "/gone.jpg" }, reply.not_found)
+            assert.are.equal(0, catalog.getWriteAccessCount())
         end)
     end
 end)

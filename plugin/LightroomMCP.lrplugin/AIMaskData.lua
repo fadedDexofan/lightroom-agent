@@ -61,17 +61,20 @@ function AIMaskData.withoutComputedData(settings)
     return stripped
 end
 
-function AIMaskData.correctionIsComputed(correction)
+function AIMaskData.computeState(correction)
     local components = type(correction) == "table" and correction.CorrectionMasks
-    if type(components) ~= "table" then return false end
-    local sawAIMask = false
+    if type(components) ~= "table" then return "pending" end
+    local sawAIMask, allComputed = false, true
     for _, component in ipairs(components) do
         if type(component) == "table" and component.What == AIMaskData.KIND then
             sawAIMask = true
-            if component[AIMaskData.COMPUTATION_MARKER_KEY] == nil then return false end
+            if type(component.ErrorReason) == "number" and component.ErrorReason ~= 0 then return "failed" end
+            local digest = component[AIMaskData.COMPUTATION_MARKER_KEY]
+            if type(digest) ~= "string" or digest == "" then allComputed = false end
         end
     end
-    return sawAIMask
+    if not sawAIMask then return "none" end
+    return allComputed and "computed" or "pending"
 end
 
 return AIMaskData

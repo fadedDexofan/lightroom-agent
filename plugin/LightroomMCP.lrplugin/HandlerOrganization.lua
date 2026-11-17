@@ -1,25 +1,22 @@
 local LrApplication = import 'LrApplication'
 
+local CatalogWrite = require 'CatalogWrite'
+local Contract = require 'Contract'
 local KeywordTree = require 'KeywordTree'
 local PhotoLookup = require 'PhotoLookup'
+local PhotoWrites = require 'PhotoWrites'
 local Log = require 'Log'
+local Reply = require 'Reply'
 
 local OrganizationHandler = {}
-local MAX_KEYWORDS_PER_REQUEST = 1000
 
 -- Set while a setKeywords call runs; still set at the next call's start when
 -- the last one failed part-way.
 local keywordCallFailed = false
 
-local function validateKeywordLimit(keywords, fieldName)
-    if keywords and #keywords > MAX_KEYWORDS_PER_REQUEST then
-        error(fieldName .. " must contain at most " .. MAX_KEYWORDS_PER_REQUEST .. " keywords")
-    end
-end
-
 -- Splits the requested keywords into plain names and hierarchy paths.
 -- A string containing "|" is a parent-first path ("Places|Europe|Paris");
--- anything else is a plain name, handled exactly as before paths existed.
+-- anything else is a plain name.
 local function parseKeywordList(keywords)
     local entries = {}
     local seen = {}
@@ -36,7 +33,7 @@ local function parseKeywordList(keywords)
             -- again by name.
             local name = KeywordTree.trim(kw)
             if name == "" then
-                error("Invalid keyword (empty): '" .. kw .. "'")
+                Reply.refuse("Invalid keyword (empty): '" .. kw .. "'")
             end
             entry = { name = name, key = name }
             -- Exact: a plain-name remove matches exact case, so "Paris" and
@@ -78,11 +75,17 @@ local function findUnresolvable(catalog, addEntries)
     return problems
 end
 
+local function createdText(created)
+    if #created == 0 then return nil end
+    return "the keywords " .. table.concat(created, ", ") .. " were created"
+end
+
 -- Creates every missing level of `pathsToEnsure` (lists of names). Lightroom
 -- rejects a parent created earlier in the same write transaction ("bad
 -- argument #2 to 'format'"), so each depth gets its own transaction, run after
 -- the level above it is committed and visible to getChildren().
 local function createMissingLevels(catalog, pathsToEnsure)
+    local created = {}
     local function prefixOf(parts, depth)
         local prefix = {}
         for i = 1, depth do
@@ -124,7 +127,9 @@ local function createMissingLevels(catalog, pathsToEnsure)
                             existing = KeywordTree.findTopLevel(catalog, parts[depth])
                         end
                         if not existing then
-                            table.insert(missing, { parent = parent, name = parts[depth] })
+                            table.insert(missing, {
+                                parent = parent, name = parts[depth], path = KeywordTree.join(prefixOf(parts, depth)),
+                            })
                         end
                     end
                 end
@@ -132,41 +137,25 @@ local function createMissingLevels(catalog, pathsToEnsure)
         end)
 
         if #missing > 0 then
-            catalog:withWriteAccessDo("Create Keywords", function()
+            CatalogWrite.run(catalog, "Create Keywords", function()
                 for _, level in ipairs(missing) do
                     catalog:createKeyword(level.name, {}, true, level.parent, true)
                 end
-            end)
+            end, createdText(created))
+            for _, level in ipairs(missing) do created[#created + 1] = level.path end
             -- The cached top-level index has not seen what was just created.
             if depth == 1 then KeywordTree.forgetTopIndex() end
         end
     end
+    return created
 end
 
 function OrganizationHandler.setKeywords(args)
-    if not args.photo_ids or #args.photo_ids == 0 then
-        error("photo_ids is required")
-    end
-    validateKeywordLimit(args.add_keywords, "add_keywords")
-    validateKeywordLimit(args.remove_keywords, "remove_keywords")
 
-    -- Neither list means there is nothing to do; reporting "Updated keywords
-    -- for 1 photos" for that claimed work that never happened.
-    local hasAdds = args.add_keywords ~= nil and args.add_keywords[1] ~= nil
-    local hasRemoves = args.remove_keywords ~= nil and args.remove_keywords[1] ~= nil
-    if not hasAdds and not hasRemoves then
-        error("add_keywords or remove_keywords is required")
-    end
-
-    if args.create_missing ~= nil and type(args.create_missing) ~= "boolean" then
-        error("create_missing must be a boolean")
-    end
-    -- Default true: a plain name that does not exist yet is created, as it
-    -- always was.
+    -- Default true: a plain name that does not exist yet is created.
     local createMissing = args.create_missing ~= false
 
     local catalog = LrApplication.activeCatalog()
-    local updatedCount = 0
 
     -- A call that failed part-way may have changed keywords behind the cached
     -- top-level index.
@@ -195,31 +184,28 @@ function OrganizationHandler.setKeywords(args)
             problems = findUnresolvable(catalog, addEntries)
         end)
         if #problems > 0 then
-            error("Keywords not resolved (create_missing is false): "
+            Reply.refuse("Keywords not resolved (create_missing is false): "
                 .. table.concat(problems, "; "))
         end
     end
 
-    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
-    local missingIds = {}
-    for _, entry in ipairs(resolved) do
-        if not entry.photo then missingIds[#missingIds + 1] = tostring(entry.id) end
-    end
-    if #missingIds == #resolved then
+    local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
+    if #entries == 0 then
         keywordCallFailed = false
-        return { success = true, updated = 0, missing = missingIds }
+        return Reply.parts({ not_found = notFound })
     end
 
-    -- A plain name is created at the top level, as it always was.
+    -- A plain name is created at the top level.
+    local created = {}
     if createMissing and #addEntries > 0 then
         local pathsToEnsure = {}
         for _, entry in ipairs(addEntries) do
             table.insert(pathsToEnsure, entry.parts or { entry.name })
         end
-        createMissingLevels(catalog, pathsToEnsure)
+        created = createMissingLevels(catalog, pathsToEnsure)
     end
 
-    catalog:withWriteAccessDo("Set Keywords", function()
+    CatalogWrite.run(catalog, "Set Keywords", function()
         local keywordObjs = {}
         local seenKeywords = {}
         for _, entry in ipairs(addEntries) do
@@ -251,59 +237,39 @@ function OrganizationHandler.setKeywords(args)
             end
         end
 
-        for _, entry in ipairs(resolved) do
+        for _, entry in ipairs(entries) do
             local photo = entry.photo
-            if photo then
-                for _, kwObj in ipairs(keywordObjs) do
-                    photo:addKeyword(kwObj)
-                end
+            for _, kwObj in ipairs(keywordObjs) do
+                photo:addKeyword(kwObj)
+            end
 
-                if next(removeNames) or hasRemovePaths then
-                    local existingKeywords = photo:getRawMetadata('keywords')
-                    if existingKeywords then
-                        for _, kw in ipairs(existingKeywords) do
-                            -- A plain name removes every keyword so named; a
-                            -- path removes only the keyword at that place.
-                            local byPath = hasRemovePaths
-                                and removePaths[KeywordTree.fold(KeywordTree.pathOf(kw))]
-                            if removeNames[kw:getName()] or byPath then
-                                photo:removeKeyword(kw)
-                            end
+            if next(removeNames) or hasRemovePaths then
+                local existingKeywords = photo:getRawMetadata('keywords')
+                if existingKeywords then
+                    for _, kw in ipairs(existingKeywords) do
+                        -- A plain name removes every keyword so named; a
+                        -- path removes only the keyword at that place.
+                        local byPath = hasRemovePaths
+                            and removePaths[KeywordTree.fold(KeywordTree.pathOf(kw))]
+                        if removeNames[kw:getName()] or byPath then
+                            photo:removeKeyword(kw)
                         end
                     end
                 end
-
-                updatedCount = updatedCount + 1
             end
         end
-    end)
+    end, createdText(created))
 
     keywordCallFailed = false
-    Log.info(string.format("Updated keywords for %d photos", updatedCount))
+    Log.info(string.format("Updated keywords for %d photos", #entries))
 
-    return {
-        success = true,
-        updated = updatedCount,
-        missing = missingIds,
-    }
+    return Reply.parts({ data = { updated = #entries }, not_found = notFound })
 end
 
 function OrganizationHandler.removeKeywordSubtree(args)
-    if type(args.parent) ~= "string" or KeywordTree.trim(args.parent) == "" then
-        error("parent is required")
-    end
-    if args.catalog_wide ~= nil and type(args.catalog_wide) ~= "boolean" then
-        error("catalog_wide must be a boolean")
-    end
-    if args.catalog_wide == true then
-        if args.photo_ids ~= nil then error("Use photo_ids or catalog_wide, not both") end
-    elseif type(args.photo_ids) ~= "table" or #args.photo_ids == 0 then
-        error("photo_ids or catalog_wide=true is required")
-    end
-
     local catalog = LrApplication.activeCatalog()
     local parent = KeywordTree.resolve(catalog, KeywordTree.split(args.parent))
-    if not parent then error("Keyword parent not found: " .. args.parent) end
+    if not parent then Reply.refuse("Keyword parent not found: " .. args.parent) end
     local keywords = { parent }
     local subtree = { [parent] = true }
     KeywordTree.walk(catalog, parent, function(keyword)
@@ -311,7 +277,7 @@ function OrganizationHandler.removeKeywordSubtree(args)
         subtree[keyword] = true
     end)
 
-    local resolved = {}
+    local photos, notFound = {}, {}
     if args.catalog_wide == true then
         -- Keyword photo queries can yield: collect before opening either gate.
         local seen = {}
@@ -319,140 +285,56 @@ function OrganizationHandler.removeKeywordSubtree(args)
             for _, photo in ipairs(keyword:getPhotos()) do
                 if not seen[photo] then
                     seen[photo] = true
-                    resolved[#resolved + 1] = { photo = photo }
+                    photos[#photos + 1] = photo
                 end
             end
         end
     else
-        resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+        local entries
+        entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
+        if #entries == 0 then return Reply.parts({ not_found = notFound }) end
+        for i, entry in ipairs(entries) do photos[i] = entry.photo end
     end
 
     local updated, removed = 0, 0
-    local missing, seen = {}, {}
-    catalog:withWriteAccessDo("Remove Keyword Subtree", function()
-        for _, entry in ipairs(resolved) do
-            local photo = entry.photo
-            if not photo then
-                missing[#missing + 1] = tostring(entry.id)
-            elseif not seen[photo] then
-                seen[photo] = true
-                local changed = false
-                for _, keyword in ipairs(photo:getRawMetadata('keywords') or {}) do
-                    if subtree[keyword] then
-                        photo:removeKeyword(keyword)
-                        removed = removed + 1
-                        changed = true
-                    end
+    CatalogWrite.run(catalog, "Remove Keyword Subtree", function()
+        for _, photo in ipairs(photos) do
+            local changed = false
+            for _, keyword in ipairs(photo:getRawMetadata('keywords') or {}) do
+                if subtree[keyword] then
+                    photo:removeKeyword(keyword)
+                    removed = removed + 1
+                    changed = true
                 end
-                if changed then updated = updated + 1 end
             end
+            if changed then updated = updated + 1 end
         end
     end)
-    return {
-        success = true,
-        updated = updated,
-        removed = removed,
-        missing = missing,
-    }
+    return Reply.parts({ data = { updated = updated, removed = removed }, not_found = notFound })
 end
 
-local PICK_STATUS = { pick = 1, none = 0, reject = -1 }
+local PICK_STATUS = {}
+for _, flag in ipairs(Contract.PHOTO_FLAGS) do PICK_STATUS[flag.name] = flag.pickStatus end
 
 function OrganizationHandler.setRatingAndFlag(args)
-    if not args.photo_ids or #args.photo_ids == 0 then
-        error("photo_ids is required")
-    end
-
     local hasRating = args.rating ~= nil
     local hasFlag = args.flag ~= nil
-    if not hasRating and not hasFlag then
-        error("rating or flag is required")
-    end
-
-    if hasRating and type(args.rating) ~= "number" then
-        error("rating must be a number between 0 and 5")
-    end
-
-    if hasRating and (args.rating < 0 or args.rating > 5 or args.rating ~= args.rating) then
-        error("rating must be between 0 and 5")
-    end
-
-    local pickStatus = hasFlag and type(args.flag) == "string" and PICK_STATUS[args.flag] or nil
-    if hasFlag and pickStatus == nil then
-        error("flag must be one of: pick, reject, none")
-    end
-
-    local catalog = LrApplication.activeCatalog()
-    local updatedCount = 0
-    local missingIds = {}
-    local missingCount = 0
+    local pickStatus = hasFlag and PICK_STATUS[args.flag] or nil
 
     -- LrSDK rejects literal 0 on the rating field; nil means "no rating".
     local ratingValue = args.rating
     if ratingValue == 0 then ratingValue = nil end
 
-    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
-
-    catalog:withWriteAccessDo("Set Rating and Flag", function()
-        for _, entry in ipairs(resolved) do
-            if entry.photo then
-                if hasRating then entry.photo:setRawMetadata('rating', ratingValue) end
-                if hasFlag then entry.photo:setRawMetadata('pickStatus', pickStatus) end
-                updatedCount = updatedCount + 1
-            else
-                missingCount = missingCount + 1
-                missingIds[missingCount] = tostring(entry.id)
-            end
-        end
-    end)
-
-    Log.info(string.format("Set rating/flag for %d photos", updatedCount))
-
-    return {
-        success = true,
-        updated = updatedCount,
-        missing = missingIds,
-    }
+    return PhotoWrites.each(LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Rating and Flag", write = function(photo)
+        if hasRating then photo:setRawMetadata('rating', ratingValue) end
+        if hasFlag then photo:setRawMetadata('pickStatus', pickStatus) end
+    end })
 end
 
-local COLOR_LABELS = { red = true, yellow = true, green = true, blue = true, purple = true, none = true }
-
 function OrganizationHandler.setColorLabel(args)
-    if not args.photo_ids or #args.photo_ids == 0 then
-        error("photo_ids is required")
-    end
-
-    local validLabel = type(args.label) == "string" and COLOR_LABELS[args.label]
-    if not validLabel then
-        error("label must be one of: red, yellow, green, blue, purple, none")
-    end
-
-    local catalog = LrApplication.activeCatalog()
-    local updatedCount = 0
-    local missingIds = {}
-    local missingCount = 0
-
-    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
-
-    catalog:withWriteAccessDo("Set Color Label", function()
-        for _, entry in ipairs(resolved) do
-            if entry.photo then
-                entry.photo:setRawMetadata('colorNameForLabel', args.label)
-                updatedCount = updatedCount + 1
-            else
-                missingCount = missingCount + 1
-                missingIds[missingCount] = tostring(entry.id)
-            end
-        end
-    end)
-
-    Log.info(string.format("Set color label to %s for %d photos", args.label, updatedCount))
-
-    return {
-        success = true,
-        updated = updatedCount,
-        missing = missingIds,
-    }
+    return PhotoWrites.each(LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Color Label", write = function(photo)
+        photo:setRawMetadata('colorNameForLabel', args.label)
+    end })
 end
 
 return OrganizationHandler

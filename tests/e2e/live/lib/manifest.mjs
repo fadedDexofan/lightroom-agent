@@ -28,6 +28,7 @@ export function validateManifest(manifest) {
   }
   for (const supplied of manifest.supplied ?? []) {
     if (!/^LRMCP_LIVE_[A-Z_]+$/.test(supplied.envVar ?? "")) problems.push(`${supplied.key}: envVar must look like LRMCP_LIVE_NAME`);
+    if (supplied.sha256 !== undefined && !SHA256_PATTERN.test(supplied.sha256)) problems.push(`${supplied.key}: sha256 must be 64 lowercase hex characters`);
   }
   return problems;
 }
@@ -74,9 +75,12 @@ export async function downloadSample(
 }
 
 export function resolveSuppliedFiles(manifest, environment = process.env) {
-  return (manifest.supplied ?? []).map((supplied) => {
+  return Promise.all((manifest.supplied ?? []).map(async (supplied) => {
     const value = environment[supplied.envVar];
     if (!value) return { ...supplied, status: "not-set" };
-    return { ...supplied, status: fs.existsSync(value) ? "present" : "missing-file", filePath: value };
-  });
+    if (!fs.existsSync(value)) return { ...supplied, status: "missing-file", filePath: value };
+    if (supplied.sha256 === undefined) return { ...supplied, status: "present", filePath: value };
+    const actual = await sha256File(value);
+    return { ...supplied, status: actual === supplied.sha256 ? "present" : "mismatch", filePath: value, actual };
+  }));
 }

@@ -66,6 +66,18 @@ local function convert(value, depth)
     return { [MARKER] = "table", entries = out }
 end
 
+function JsonValue.equal(left, right)
+    if type(left) ~= type(right) then return false end
+    if type(left) ~= "table" then return left == right end
+    for key, value in pairs(left) do
+        if not JsonValue.equal(value, right[key]) then return false end
+    end
+    for key in pairs(right) do
+        if left[key] == nil then return false end
+    end
+    return true
+end
+
 function JsonValue.of(value)
     return convert(value, 1)
 end

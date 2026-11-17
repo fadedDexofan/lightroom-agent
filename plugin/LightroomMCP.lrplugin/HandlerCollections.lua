@@ -1,6 +1,10 @@
 local LrApplication = import 'LrApplication'
+local LrTasks = import 'LrTasks'
 
+local CatalogWrite = require 'CatalogWrite'
+local Contract = require 'Contract'
 local PhotoLookup = require 'PhotoLookup'
+local Reply = require 'Reply'
 local Log = require 'Log'
 local PhotoSummary = require 'PhotoSummary'
 local SearchHandler = require 'HandlerSearch'
@@ -8,20 +12,18 @@ local SearchHandler = require 'HandlerSearch'
 local CollectionsHandler = {}
 
 function CollectionsHandler.listCollections(args)
-    args = args or {}
     local catalog = LrApplication.activeCatalog()
     local all = {}
 
-    local limit = math.max(0, math.floor(tonumber(args.limit) or 100))
-    local offset = math.max(0, math.floor(tonumber(args.offset) or 0))
+    local limit = args.limit or Contract.DEFAULT_PAGE_LIMIT
+    local offset = args.offset or 0
 
     catalog:withReadAccessDo(function()
         for _, collection in ipairs(catalog:getChildCollections()) do
             table.insert(all, {
                 collection = collection,
                 name = collection:getName(),
-                type = collection:type(),
-                isSmartCollection = collection:isSmartCollection(),
+                is_smart = collection:isSmartCollection(),
             })
         end
 
@@ -30,8 +32,7 @@ function CollectionsHandler.listCollections(args)
                 table.insert(all, {
                     collection = coll,
                     name = prefix .. coll:getName(),
-                    type = coll:type(),
-                    isSmartCollection = coll:isSmartCollection(),
+                    is_smart = coll:isSmartCollection(),
                 })
             end
             for _, childSet in ipairs(collSet:getChildCollectionSets()) do
@@ -49,7 +50,7 @@ function CollectionsHandler.listCollections(args)
     local slice = {}
     for i = offset + 1, last do
         local entry = all[i]
-        entry.photoCount = #(entry.collection:getPhotos() or {})
+        entry.photo_count = #(entry.collection:getPhotos() or {})
         entry.collection = nil
         table.insert(slice, entry)
     end
@@ -72,12 +73,12 @@ local function splitSetPath(path)
         local first, last = rest:find(" / ", 1, true)
         local name = first and rest:sub(1, first - 1) or rest
         if name:match("^%s*$") then
-            error("parent contains an empty collection set name: " .. path)
+            Reply.refuse("parent contains an empty collection set name: " .. path)
         end
         -- Edge spaces or slashes come from a malformed separator ("A /",
         -- "A / /B"); the set would exist but its path could not be read back.
         if name:match("^[%s/]") or name:match("[%s/]$") then
-            error(string.format(
+            Reply.refuse(string.format(
                 "parent has a malformed collection set name '%s'; separate sets with ' / ': %s",
                 name, path))
         end
@@ -102,18 +103,12 @@ local function findNamed(items, name)
 end
 
 local function createCollection(args, searchDesc)
-    if type(args.name) ~= "string" or args.name:match("^%s*$") then
-        error("name is required")
-    end
-    if args.parent ~= nil and type(args.parent) ~= "string" then
-        error("parent must be a collection set path")
-    end
-
     local catalog = LrApplication.activeCatalog()
     local collectionName = args.name
     local setNames = args.parent and splitSetPath(args.parent) or {}
     local parentSet = nil
     local existingLevels = 0
+    local problem = nil
 
     -- Existing sets are reused under their stored names: asking Lightroom to
     -- create "trips" beside "Trips" fails with "name is not unique".
@@ -125,8 +120,7 @@ local function createCollection(args, searchDesc)
                 local found = findNamed(sets, setName)
                 if not found then
                     if findNamed(collections, setName) then
-                        error(string.format("parent '%s' names a collection, not a collection set",
-                            setName))
+                        problem = string.format("parent '%s' names a collection, not a collection set", setName)
                     end
                     break
                 end
@@ -138,6 +132,7 @@ local function createCollection(args, searchDesc)
             end
         end)
     end
+    if problem then Reply.refuse(problem) end
 
     local parentPath = table.concat(setNames, " / ")
     local path = setNames[1] and (parentPath .. " / " .. collectionName) or collectionName
@@ -146,33 +141,42 @@ local function createCollection(args, searchDesc)
     -- created it ("Can't get collection information after creating collection
     -- inside the same withWriteAccessDo function"), so the collection goes in
     -- a second gate, where the new set can be read.
+    local createdSets = nil
     if existingLevels < #setNames then
-        catalog:withWriteAccessDo("Create Collection Sets", function()
+        local created, setsError = LrTasks.pcall(CatalogWrite.run, catalog, "Create Collection Sets", function()
             for i = existingLevels + 1, #setNames do
                 local set = catalog:createCollectionSet(setNames[i], parentSet, true)
                 -- A name clash returns nil instead of raising; the failed gate
                 -- rolls back the sets created before it.
                 if not set then
-                    error("Lightroom did not create collection set: " .. setNames[i])
+                    problem = "Lightroom did not create collection set: " .. setNames[i]
+                    error(problem, 0)
                 end
                 parentSet = set
             end
         end)
+        if not created then
+            if problem then Reply.refuse(problem) end
+            error(setsError, 0)
+        end
+        createdSets = "the collection sets " .. table.concat(setNames, " / ", existingLevels + 1) .. " were created"
     end
 
-    catalog:withWriteAccessDo("Create Collection", function()
+    CatalogWrite.run(catalog, "Create Collection", function()
         -- Checked inside the gate that creates, so a concurrent create cannot
         -- slip in between. A same-named collection would also make
         -- add_to_collection's bare-name lookup ambiguous.
         local collections = parentSet and parentSet:getChildCollections() or catalog:getChildCollections()
         local sets = parentSet and parentSet:getChildCollectionSets() or catalog:getChildCollectionSets()
         if findNamed(collections, collectionName) then
-            error("Collection already exists: " .. path)
+            problem = "Collection already exists: " .. path
+            return
         end
         local clash = findNamed(sets, collectionName)
         if clash then
-            error(string.format("A collection set named '%s' already exists %s",
-                clash:getName(), parentSet and ("in " .. parentPath) or "at the top level"))
+            problem = string.format("A collection set named '%s' already exists %s",
+                clash:getName(), parentSet and ("in " .. parentPath) or "at the top level")
+            return
         end
 
         local created
@@ -182,15 +186,17 @@ local function createCollection(args, searchDesc)
             created = catalog:createCollection(collectionName, parentSet, false)
         end
         if not created then
-            error("Lightroom did not create collection: " .. path)
+            if not createdSets then
+                problem = "Lightroom did not create collection: " .. path
+                return
+            end
+            error("Lightroom did not create collection: " .. path .. "; " .. createdSets, 0)
         end
         Log.info("Created collection: " .. path)
-    end)
+    end, createdSets)
+    if problem then Reply.refuse(problem) end
 
-    return {
-        success = true,
-        path = path,
-    }
+    return { path = path }
 end
 
 function CollectionsHandler.createCollection(args)
@@ -198,11 +204,7 @@ function CollectionsHandler.createCollection(args)
 end
 
 function CollectionsHandler.createSmartCollection(args)
-    local searchDesc = SearchHandler.buildSearchDesc(args)
-    if #searchDesc == 0 then
-        error("At least one search filter is required")
-    end
-    return createCollection(args, searchDesc)
+    return createCollection(args, SearchHandler.buildSearchDesc(args))
 end
 
 -- Match the paths returned by listCollections, then bare names of nested
@@ -246,29 +248,27 @@ end
 local function findOneCollection(catalog, name)
     local matches = findAllCollections(catalog, name)
     if #matches == 0 then
-        error("Collection not found: " .. name)
+        Reply.refuse("Collection not found: " .. name)
     end
     if #matches > 1 then
-        error(string.format("%d collections are named '%s'; use a collection path", #matches, name))
+        Reply.refuse(string.format("%d collections are named '%s'; use a collection path", #matches, name))
     end
     return matches[1]
 end
 
-CollectionsHandler.findOneCollection = findOneCollection
+local function findOneRegularCollection(catalog, name)
+    local collection = findOneCollection(catalog, name)
+    if collection:isSmartCollection() then
+        Reply.refuse("Cannot add or remove photos in a smart collection: " .. name)
+    end
+    return collection
+end
+
+CollectionsHandler.findOneRegularCollection = findOneRegularCollection
 
 function CollectionsHandler.addToCollection(args)
-    if not args.collection_name then
-        error("collection_name is required")
-    end
-
-    if not args.photo_ids or #args.photo_ids == 0 then
-        error("photo_ids is required")
-    end
 
     local catalog = LrApplication.activeCatalog()
-    local addedCount = 0
-    local missingIds = {}
-    local missingCount = 0
 
     -- Reject an unknown collection BEFORE resolving ids. Resolution scans the
     -- whole catalog and costs tens of seconds on a large library; spending that
@@ -276,28 +276,29 @@ function CollectionsHandler.addToCollection(args)
     -- timeout, so the caller got no answer at all instead of "Collection not
     -- found".
     catalog:withReadAccessDo(function()
-        findOneCollection(catalog, args.collection_name)
+        findOneRegularCollection(catalog, args.collection_name)
     end)
 
-    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+    local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
+    if #entries == 0 then return Reply.parts({ not_found = notFound }) end
+    local addedCount = 0
+    local alreadyInCollection = {}
 
-    catalog:withWriteAccessDo("Add Photos to Collection", function()
+    CatalogWrite.run(catalog, "Add Photos to Collection", function()
         -- Looked up again rather than carried across gates: the check above
         -- only proved the name resolved then, and the write gate is what makes
         -- the result safe to act on.
-        local targetCollection = findOneCollection(catalog, args.collection_name)
-
-        -- Find and add photos
+        local targetCollection = findOneRegularCollection(catalog, args.collection_name)
+        local members = {}
+        for _, photo in ipairs(targetCollection:getPhotos()) do members[photo] = true end
         local photosToAdd = {}
-        for _, entry in ipairs(resolved) do
-            if entry.photo then
-                table.insert(photosToAdd, entry.photo)
+        for _, entry in ipairs(entries) do
+            if members[entry.photo] then
+                alreadyInCollection[#alreadyInCollection + 1] = tostring(entry.photo.localIdentifier)
             else
-                missingCount = missingCount + 1
-                missingIds[missingCount] = tostring(entry.id)
+                photosToAdd[#photosToAdd + 1] = entry.photo
             end
         end
-
         if #photosToAdd > 0 then
             targetCollection:addPhotos(photosToAdd)
             addedCount = #photosToAdd
@@ -306,64 +307,30 @@ function CollectionsHandler.addToCollection(args)
 
     Log.info(string.format("Added %d photos to collection: %s", addedCount, args.collection_name))
 
-    -- Unresolvable ids used to vanish into a "success" with added=0, leaving the
-    -- caller no way to tell a typo'd id from an empty add.
-    return {
-        success = true,
-        added = addedCount,
-        missing = missingIds,
-    }
+    return Reply.parts({
+        data = { added = addedCount, already_in_collection = alreadyInCollection },
+        not_found = notFound,
+    })
 end
 
 -- Removes photos from a collection only; they stay in the catalog.
 function CollectionsHandler.removeFromCollection(args)
-    if not args.collection_name then
-        error("collection_name is required")
-    end
-
-    if not args.photo_ids or #args.photo_ids == 0 then
-        error("photo_ids is required")
-    end
 
     local catalog = LrApplication.activeCatalog()
     local removedCount = 0
-    local notInCollection = 0
-    local missingIds = {}
-    local missingCount = 0
+    local notInCollection = {}
 
     -- Checked before resolving ids, as add_to_collection does: resolution scans
     -- the catalog, too slow to spend on a typo'd name.
-    local problem = nil
     catalog:withReadAccessDo(function()
-        local matches = findAllCollections(catalog, args.collection_name)
-        if #matches == 0 then
-            problem = "Collection not found: " .. args.collection_name
-        elseif #matches > 1 then
-            problem = string.format("%d collections are named '%s'; use a collection path",
-                #matches, args.collection_name)
-        elseif matches[1]:isSmartCollection() then
-            problem = "Cannot remove photos from a smart collection: " .. args.collection_name
-        end
+        findOneRegularCollection(catalog, args.collection_name)
     end)
-    if problem then
-        error(problem)
-    end
 
-    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+    local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
+    if #entries == 0 then return Reply.parts({ not_found = notFound }) end
 
-    catalog:withWriteAccessDo("Remove Photos from Collection", function()
-        local matches = findAllCollections(catalog, args.collection_name)
-        if #matches == 0 then
-            error("Collection not found: " .. args.collection_name)
-        end
-        if #matches > 1 then
-            error(string.format("%d collections are named '%s'; use a collection path",
-                #matches, args.collection_name))
-        end
-        local targetCollection = matches[1]
-        if targetCollection:isSmartCollection() then
-            error("Cannot remove photos from a smart collection: " .. args.collection_name)
-        end
+    CatalogWrite.run(catalog, "Remove Photos from Collection", function()
+        local targetCollection = findOneRegularCollection(catalog, args.collection_name)
 
         local members = {}
         for _, photo in ipairs(targetCollection:getPhotos()) do
@@ -373,18 +340,11 @@ function CollectionsHandler.removeFromCollection(args)
         -- Only members count as removed, so `removed` says what changed rather
         -- than echoing how many ids were sent.
         local photosToRemove = {}
-        local selected = {}
-        for _, entry in ipairs(resolved) do
-            if not entry.photo then
-                missingCount = missingCount + 1
-                missingIds[missingCount] = tostring(entry.id)
-            elseif members[entry.photo] then
-                if not selected[entry.photo] then
-                    table.insert(photosToRemove, entry.photo)
-                    selected[entry.photo] = true
-                end
+        for _, entry in ipairs(entries) do
+            if members[entry.photo] then
+                photosToRemove[#photosToRemove + 1] = entry.photo
             else
-                notInCollection = notInCollection + 1
+                notInCollection[#notInCollection + 1] = tostring(entry.photo.localIdentifier)
             end
         end
 
@@ -396,47 +356,25 @@ function CollectionsHandler.removeFromCollection(args)
 
     Log.info(string.format("Removed %d photos from collection: %s", removedCount, args.collection_name))
 
-    return {
-        success = true,
-        removed = removedCount,
-        not_in_collection = notInCollection,
-        missing = missingIds,
-    }
+    return Reply.parts({
+        data = { removed = removedCount, not_in_collection = notInCollection },
+        not_found = notFound,
+    })
 end
 
 -- Returns a page of a collection's photos, regular or smart, in the shape
 -- search_photos uses.
 function CollectionsHandler.getCollectionPhotos(args)
-    args = args or {}
-    if type(args.collection_name) ~= "string" or args.collection_name == "" then
-        error("collection_name is required")
-    end
 
-    -- floor: a fractional offset would index photos[i] with a non-integer key
-    -- (always nil) and crash the row builder.
-    local limit = math.floor(tonumber(args.limit) or 100)
-    if limit < 0 then limit = 0 end
-    local offset = math.floor(tonumber(args.offset) or 0)
-    if offset < 0 then offset = 0 end
+    local limit = args.limit or Contract.DEFAULT_PAGE_LIMIT
+    local offset = args.offset or 0
 
     local catalog = LrApplication.activeCatalog()
 
-    local collection = nil
-    local problem = nil
+    local collection
     catalog:withReadAccessDo(function()
-        local matches = findAllCollections(catalog, args.collection_name)
-        if #matches == 0 then
-            problem = "Collection not found: " .. args.collection_name
-        elseif #matches > 1 then
-            problem = string.format("%d collections are named '%s'; use a collection path",
-                #matches, args.collection_name)
-        else
-            collection = matches[1]
-        end
+        collection = findOneCollection(catalog, args.collection_name)
     end)
-    if problem then
-        error(problem)
-    end
 
     -- OUTSIDE withReadAccessDo: a smart collection's getPhotos() runs a
     -- catalog search, and a query that yields inside the read gate deadlocks
@@ -459,9 +397,6 @@ end
 
 -- Deletes the collection itself; its photos stay in the catalog.
 function CollectionsHandler.deleteCollection(args)
-    if type(args.collection_name) ~= "string" or args.collection_name == "" then
-        error("collection_name is required")
-    end
 
     local catalog = LrApplication.activeCatalog()
     local found
@@ -470,18 +405,14 @@ function CollectionsHandler.deleteCollection(args)
     end)
     local photoCount = #(found:getPhotos() or {})
 
-    catalog:withWriteAccessDo("Delete Collection", function()
+    CatalogWrite.run(catalog, "Delete Collection", function()
         findOneCollection(catalog, args.collection_name):delete()
     end)
 
     Log.info(string.format("Deleted collection: %s (%d photos, still in the catalog)",
         args.collection_name, photoCount))
 
-    return {
-        success = true,
-        photo_count = photoCount,
-        message = "Photos stay in the catalog.",
-    }
+    return { photo_count = photoCount }
 end
 
 return CollectionsHandler

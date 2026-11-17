@@ -25,7 +25,7 @@ describe('startHeartbeat', () => {
     };
     let generation = 1;
     const errors: Error[] = [];
-    startHeartbeat(dispatcher, 30_000, (err) => errors.push(err), () => {}, () => generation);
+    startHeartbeat(dispatcher, 30_000, 10_000, (err) => errors.push(err), () => {}, () => generation);
 
     jest.advanceTimersByTime(30_000);
     generation = 2;
@@ -38,18 +38,18 @@ describe('startHeartbeat', () => {
 
   it('does not ping before the interval elapses', () => {
     const dispatcher = okDispatcher();
-    startHeartbeat(dispatcher, 30_000);
+    startHeartbeat(dispatcher, 30_000, 10_000);
 
     expect(dispatcher.call).not.toHaveBeenCalled();
   });
 
-  it('pings once per interval with action "ping" and empty params', () => {
+  it('pings once per interval with action "ping", empty params and its own timeout', () => {
     const dispatcher = okDispatcher();
-    startHeartbeat(dispatcher, 30_000);
+    startHeartbeat(dispatcher, 30_000, 10_000);
 
     jest.advanceTimersByTime(30_000);
     expect(dispatcher.call).toHaveBeenCalledTimes(1);
-    expect(dispatcher.call).toHaveBeenCalledWith('ping', {});
+    expect(dispatcher.call).toHaveBeenCalledWith('ping', {}, 10_000);
 
     jest.advanceTimersByTime(30_000);
     expect(dispatcher.call).toHaveBeenCalledTimes(2);
@@ -62,7 +62,7 @@ describe('startHeartbeat', () => {
     const failure = new Error('timeout');
     const dispatcher = failingDispatcher(failure);
     const onError = jest.fn();
-    startHeartbeat(dispatcher, 30_000, onError);
+    startHeartbeat(dispatcher, 30_000, 10_000, onError);
 
     expect(() => jest.advanceTimersByTime(30_000)).not.toThrow();
     // Let the rejected promise's .catch handler run before asserting.
@@ -76,7 +76,7 @@ describe('startHeartbeat', () => {
     const failure = new Error('socket dropped');
     const dispatcher = failingDispatcher(failure);
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    startHeartbeat(dispatcher, 30_000);
+    startHeartbeat(dispatcher, 30_000, 10_000);
 
     jest.advanceTimersByTime(30_000);
     await Promise.resolve();
@@ -88,7 +88,7 @@ describe('startHeartbeat', () => {
 
   it('stops pinging once the returned timer is cleared', () => {
     const dispatcher = okDispatcher();
-    const timer = startHeartbeat(dispatcher, 30_000);
+    const timer = startHeartbeat(dispatcher, 30_000, 10_000);
     clearInterval(timer);
 
     jest.advanceTimersByTime(120_000);

@@ -8,6 +8,7 @@ import { Dispatcher } from "./dispatcher.js";
 import { readToken, tokenFilePath } from "./token.js";
 import { requestPort, responsePort } from "./ports.js";
 import { parseToolsets, type Toolset } from "./toolsets.js";
+import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
 import { parseReadOnly } from "./read-only.js";
 import { createMcpServer } from "./create-server.js";
 import { createToolAccess } from "./tool-access.js";
@@ -31,10 +32,6 @@ import {
   lightroomModulesDir,
 } from "./install-plugin.js";
 
-const REQUEST_TIMEOUT_MS = 30_000;
-// Batch export/import render files and can run for minutes; the default
-// timeout would report a spurious failure mid-export. See issue #128.
-const LONG_RUNNING_TIMEOUT_MS = 300_000;
 // Keep this interval in sync with HEARTBEAT_INTERVAL_SECONDS in
 // PluginInfoProvider.lua. See heartbeat.ts for what this drives.
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -55,24 +52,7 @@ const PLUGIN_RESTARTED_MESSAGE =
   "The Lightroom plug-in restarted during this call, so its result is unknown. Check the catalog before retrying.";
 const PLUGIN_CONNECTION_LOST_MESSAGE =
   "The connection to the Lightroom plug-in was lost during this call, so its result is unknown. Check the catalog before retrying.";
-const ACTION_TIMEOUTS_MS: Record<string, number> = {
-  get_photo_previews: 30_000,
-  export_photos: LONG_RUNNING_TIMEOUT_MS,
-  export_photo_metadata: LONG_RUNNING_TIMEOUT_MS,
-  import_photos: LONG_RUNNING_TIMEOUT_MS,
-  set_process_version: LONG_RUNNING_TIMEOUT_MS,
-  set_lens_blur: LONG_RUNNING_TIMEOUT_MS,
-  apply_denoise: LONG_RUNNING_TIMEOUT_MS,
-  reset_develop_adjustments: LONG_RUNNING_TIMEOUT_MS,
-  create_virtual_copies: LONG_RUNNING_TIMEOUT_MS,
-  apply_auto_adjustments: LONG_RUNNING_TIMEOUT_MS,
-  create_mask: LONG_RUNNING_TIMEOUT_MS,
-  create_mask_batch: LONG_RUNNING_TIMEOUT_MS,
-  combine_mask: LONG_RUNNING_TIMEOUT_MS,
-  remove_photos_from_catalog: LONG_RUNNING_TIMEOUT_MS,
-  ping: PING_TIMEOUT_MS,
-};
-const SHUTDOWN_GRACE_MS = Math.max(REQUEST_TIMEOUT_MS, ...Object.values(ACTION_TIMEOUTS_MS)) + 5_000;
+const SHUTDOWN_GRACE_MS = Math.max(...Object.values(TIMEOUT_MS_BY_DURATION)) + 5_000;
 const SHUTDOWN_EXIT_MARGIN_MS = 1_000;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -209,8 +189,6 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   const dispatcher = new Dispatcher({
     send: (line) => requestSocket.send(line),
     getToken: () => readToken(),
-    timeoutMs: REQUEST_TIMEOUT_MS,
-    actionTimeoutsMs: ACTION_TIMEOUTS_MS,
   });
   const liveness = new PluginLiveness();
   let recoveryTimer: NodeJS.Timeout | null = null;
@@ -295,6 +273,7 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   const heartbeat = startHeartbeat(
     dispatcher,
     HEARTBEAT_INTERVAL_MS,
+    PING_TIMEOUT_MS,
     (err) => {
       console.error(`[heartbeat] ping failed: ${err.message}`);
       // A ping that fails because the socket is down is an ordinary disconnect,

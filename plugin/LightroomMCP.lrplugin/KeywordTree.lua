@@ -6,6 +6,8 @@
 -- name and a string containing it is unambiguously a path.
 local LrStringUtils = import 'LrStringUtils'
 
+local Reply = require 'Reply'
+
 local KeywordTree = {}
 
 KeywordTree.SEPARATOR = "|"
@@ -32,7 +34,7 @@ function KeywordTree.split(path)
     for segment in (path .. KeywordTree.SEPARATOR):gmatch("(.-)|") do
         local name = trim(segment)
         if name == "" then
-            error("Invalid keyword path (empty level): " .. path)
+            Reply.refuse("Invalid keyword path (empty level): " .. path)
         end
         parts[#parts + 1] = name
     end

@@ -1,4 +1,5 @@
 import { describe, it, expect, jest } from '@jest/globals';
+import { envelopeOf } from './helpers/envelope.js';
 import { PluginLiveness, SHADOW_BRIDGE_MESSAGE } from '../src/plugin-liveness.js';
 import { probePlugin, type HeartbeatDispatcher } from '../src/heartbeat.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
@@ -121,7 +122,7 @@ describe('probePlugin', () => {
       call: jest.fn(() => Promise.reject(new Error('Plugin response timeout (10s)'))),
     };
 
-    await expect(probePlugin(dispatcher)).resolves.toBe(false);
+    await expect(probePlugin(dispatcher, 5_000)).resolves.toBe(false);
   });
 });
 
@@ -138,7 +139,7 @@ describe('tool handler readiness message', () => {
     const res = await handler('get_selected_photos', {});
 
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toBe(SHADOW_BRIDGE_MESSAGE);
+    expect(envelopeOf(res)).toEqual({ outcome: 'failed', error: SHADOW_BRIDGE_MESSAGE });
     expect(dispatcher.call).not.toHaveBeenCalled();
   });
 
@@ -161,15 +162,7 @@ describe('tool handler readiness message', () => {
     const res = await pending;
 
     expect(res.isError).toBe(true);
-    expect(res.content[0].text).toBe(SHADOW_BRIDGE_MESSAGE);
+    expect(envelopeOf(res)).toEqual({ outcome: 'failed', error: SHADOW_BRIDGE_MESSAGE });
     expect(call).not.toHaveBeenCalled();
-  });
-
-  it('falls back to the not-connected message when no reason is supplied', async () => {
-    const handler = createCallToolHandler({ dispatcher, isReady: () => false });
-
-    const res = await handler('get_selected_photos', {});
-
-    expect(res.content[0].text).toContain("click 'Start Server'");
   });
 });

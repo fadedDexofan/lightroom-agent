@@ -23,7 +23,7 @@ try {
   const ids = found.data.photos
     .filter((photo) => /^batch_\d{3}\.jpg$/.test(photo.filename))
     .sort((a, b) => a.filename.localeCompare(b.filename))
-    .map((photo) => photo.id);
+    .map((photo) => photo.photo_id);
   writeCatalogMarker(catalogPath, { ...marker, batch: { ids, directory: imagesDirectory } });
   console.log(`${ids.length} batch photos recorded in the catalog marker`);
 } finally {

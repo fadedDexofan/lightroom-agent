@@ -1,6 +1,9 @@
+local PhotoMarks = require 'PhotoMarks'
+local PhotoStack = require 'PhotoStack'
+
 local PhotoSummary = {}
 
-local RAW_KEYS = { 'path', 'rating' }
+local RAW_KEYS = PhotoStack.withRawKeys(PhotoMarks.withRawKeys({ 'path' }))
 local FORMATTED_KEYS = { 'fileName', 'dateTimeOriginal' }
 
 function PhotoSummary.rows(catalog, photos, includePath)
@@ -11,11 +14,15 @@ function PhotoSummary.rows(catalog, photos, includePath)
     for i, photo in ipairs(photos) do
         local r = raw[photo] or {}
         local f = formatted[photo] or {}
+        local marks = PhotoMarks.of(r)
         rows[i] = {
-            id = photo.localIdentifier,
+            photo_id = tostring(photo.localIdentifier),
             filename = f.fileName,
-            rating = r.rating,
-            dateTimeOriginal = f.dateTimeOriginal,
+            rating = marks.rating,
+            flag = marks.flag,
+            color_label = marks.color_label,
+            date_time_original = f.dateTimeOriginal,
+            stack = PhotoStack.of(r),
         }
         if includePath then rows[i].path = r.path end
     end

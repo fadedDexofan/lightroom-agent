@@ -6,5 +6,5 @@ if (!catalogPath) {
   console.error("usage: reopen-catalog.mjs <path to the .lrcat file>");
   process.exit(2);
 }
-await reopenWithCatalog(catalogPath);
-console.log(`Lightroom reopened with ${catalogPath}`);
+const { launches } = await reopenWithCatalog(catalogPath);
+console.log(`Lightroom reopened with ${catalogPath} (launches: ${launches})`);

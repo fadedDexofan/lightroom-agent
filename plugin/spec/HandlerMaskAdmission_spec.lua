@@ -35,7 +35,7 @@ local function setup(opts)
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
     })
-    for _, name in ipairs({ "HandlerMaskAdmission", "GuardedMaskWrite", "MaskWriteAdmission", "PluginFiles", "PhotoLookup", "Log" }) do
+    for _, name in ipairs({ "HandlerMaskAdmission", "GuardedMaskWrite", "MaskWriteAdmission", "RunningLightroom", "PluginFiles", "PhotoLookup", "Log" }) do
         package.loaded[name] = nil
     end
     return require 'HandlerMaskAdmission', state
@@ -89,9 +89,9 @@ describe("HandlerMaskAdmission.get", function()
         assert.is_truthy(photo.reason:find("process version (11.0)", 1, true))
     end)
 
-    it("refuses an unknown photo", function()
+    it("answers an unknown photo as not found", function()
         local Handler = setup()
 
-        assert.has_error(function() Handler.get({ photo_id = "99" }) end, "Photo not found: 99")
+        assert.are.equal("99", helper.notFoundOf(function() Handler.get({ photo_id = "99" }) end))
     end)
 end)

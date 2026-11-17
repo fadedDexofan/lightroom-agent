@@ -35,11 +35,12 @@ async function waitFor(
   }
 }
 
+const CALL_TIMEOUT_MS = 5_000;
+
 async function startHarness(options?: {
   rebindDelayMs?: number;
   exclusivePort?: boolean;
   handler?: (action: string, params: unknown) => unknown | Promise<unknown>;
-  dispatcherTimeoutMs?: number;
 }): Promise<Harness> {
   const plugin = new FakePlugin({
     token: TOKEN,
@@ -67,7 +68,6 @@ async function startHarness(options?: {
   const dispatcher = new Dispatcher({
     send: (line) => request.send(line),
     getToken: () => TOKEN,
-    timeoutMs: options?.dispatcherTimeoutMs ?? 5_000,
     log: () => {},
   });
 
@@ -105,9 +105,9 @@ describe("plugin rebind cycle (issue #110)", () => {
       // After startHarness resolves, the fake plugin has already triggered a
       // rebind from the request-connect handler. The server's response socket
       // must reconnect to the freshly-bound listener before this call returns.
-      const resp = await harness.dispatcher.call("list_collections", { limit: 5 });
+      const resp = await harness.dispatcher.call("list_collections", { limit: 5 }, CALL_TIMEOUT_MS);
       expect(resp.error).toBeUndefined();
-      expect(resp.result).toEqual({
+      expect((resp.result as { data: unknown }).data).toEqual({
         echoed: "list_collections",
         count: 0,
         has_more: false,
@@ -121,9 +121,9 @@ describe("plugin rebind cycle (issue #110)", () => {
     async () => {
       harness = await startHarness();
       for (let i = 0; i < 5; i++) {
-        const resp = await harness.dispatcher.call("ping", { i });
+        const resp = await harness.dispatcher.call("ping", { i }, CALL_TIMEOUT_MS);
         expect(resp.error).toBeUndefined();
-        expect((resp.result as { echoed: string }).echoed).toBe("ping");
+        expect((resp.result as { data: { echoed: string } }).data.echoed).toBe("ping");
       }
     },
     20_000,
@@ -137,7 +137,7 @@ describe("plugin rebind cycle (issue #110)", () => {
       // hold the listen socket in a closing state across this window —
       // exposes any race in the server's reconnect path.
       harness = await startHarness({ rebindDelayMs: 200 });
-      const resp = await harness.dispatcher.call("list_collections", {});
+      const resp = await harness.dispatcher.call("list_collections", {}, CALL_TIMEOUT_MS);
       expect(resp.error).toBeUndefined();
     },
     20_000,
@@ -153,7 +153,7 @@ describe("plugin rebind cycle (issue #110)", () => {
       // fail to rebind and sendConnected would stay false. We test that the
       // rebind+reconnect cycle still delivers a response even in this mode.
       harness = await startHarness({ exclusivePort: true });
-      const resp = await harness.dispatcher.call("list_collections", {});
+      const resp = await harness.dispatcher.call("list_collections", {}, CALL_TIMEOUT_MS);
       expect(resp.error).toBeUndefined();
     },
     20_000,
@@ -169,9 +169,9 @@ describe("plugin rebind cycle (issue #110)", () => {
       harness = await startHarness();
       for (let i = 0; i < 50; i++) {
         await harness.plugin.triggerRebind();
-        const resp = await harness.dispatcher.call("stress", { i });
+        const resp = await harness.dispatcher.call("stress", { i }, CALL_TIMEOUT_MS);
         expect(resp.error).toBeUndefined();
-        expect((resp.result as { echoed: string }).echoed).toBe("stress");
+        expect((resp.result as { data: { echoed: string } }).data.echoed).toBe("stress");
       }
     },
     60_000,
@@ -186,7 +186,7 @@ describe("plugin rebind cycle (issue #110)", () => {
       harness = await startHarness({ exclusivePort: true });
       for (let i = 0; i < 50; i++) {
         await harness.plugin.triggerRebind();
-        const resp = await harness.dispatcher.call("stress_excl", { i });
+        const resp = await harness.dispatcher.call("stress_excl", { i }, CALL_TIMEOUT_MS);
         expect(resp.error).toBeUndefined();
       }
     },
@@ -216,7 +216,6 @@ describe("plugin rebind cycle (issue #110)", () => {
       const dispatcherA = new Dispatcher({
         send: (line) => requestA.send(line),
         getToken: () => TOKEN,
-        timeoutMs: 1_000,
         log: () => {},
       });
 
@@ -224,7 +223,6 @@ describe("plugin rebind cycle (issue #110)", () => {
       const dispatcherB = new Dispatcher({
         send: () => false,
         getToken: () => TOKEN,
-        timeoutMs: 1_000,
         log: () => {},
       });
       const responseB = new PluginSocket({
@@ -254,7 +252,7 @@ describe("plugin rebind cycle (issue #110)", () => {
       responseB.connect();
       await waitFor(() => responseB.isConnected(), 3_000, "response B connected");
 
-      await expect(dispatcherA.call("get_selected_photos", {})).rejects.toThrow(/timeout/i);
+      await expect(dispatcherA.call("get_selected_photos", {}, 1_000)).rejects.toThrow(/timeout/i);
       expect(handledActions).toEqual(["get_selected_photos"]);
       expect(responsesOnB).toHaveLength(1);
     },

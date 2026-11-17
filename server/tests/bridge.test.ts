@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach } from '@jest/globals';
+import { createCallToolHandler } from '../src/tool-handler.js';
+import type { PluginResponse } from '../src/dispatcher.js';
+import { envelopeOf } from './helpers/envelope.js';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -6,7 +9,11 @@ import path from 'node:path';
 import { Bridge, NO_OWNER_MESSAGE, unreachableOwnerMessage, type Leader } from '../src/bridge.js';
 import { BrokerClient, BrokerServer, MAX_FRAME_BYTES, OWNER_LOST_MESSAGE, brokerPath, signNonce, type ToolCaller } from '../src/broker.js';
 import { acquireInstanceLock, LockHeldError, type InstanceLock } from '../src/instance-lock.js';
-import type { ToolResponse } from '../src/tool-handler.js';
+import type { ToolResponse } from '../src/tool-result.js';
+
+function errorText(resp: ToolResponse): string {
+  return String(envelopeOf(resp).error);
+}
 
 function text(resp: ToolResponse): string {
   return resp.content[0]?.text ?? '';
@@ -118,6 +125,27 @@ describe('broker', () => {
     return { sock, hello, lines };
   }
 
+  it('queues a forwarded Develop call behind a Develop call of the owning bridge', async () => {
+    const pending: Array<{ action: string; resolve: (reply: PluginResponse) => void }> = [];
+    const handler = createCallToolHandler({ isReady: () => true, dispatcher: {
+      call: async (action: string) => new Promise<PluginResponse>((resolve) => { pending.push({ action, resolve }); }),
+    } });
+    const { p } = await serve((name, args) => handler(name, args));
+    const client = await connect(p);
+
+    const own = handler('set_develop_settings', { photo_id: 1, settings: { Exposure2012: 0.1 } });
+    const forwarded = client.callTool('list_masks', { photo_id: 2 });
+    await waitFor(() => pending.length > 0);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pending.map((entry) => entry.action)).toEqual(['write_develop_settings']);
+    pending[0].resolve({ id: '1', result: { data: {} } });
+    await own;
+    await waitFor(() => pending.length > 1);
+    expect(pending[1].action).toBe('list_masks');
+    pending[1].resolve({ id: '2', result: { data: { masks: [] } } });
+    expect(envelopeOf(await forwarded).outcome).toBe('done');
+  });
+
   it('forwards tool calls and returns the owner response', async () => {
     const { p } = await serve(async (name, args) => ok(`${name}:${JSON.stringify(args)}`));
     const client = await connect(p);
@@ -143,7 +171,7 @@ describe('broker', () => {
     const reply = await client.callTool('search_photos', {});
 
     expect(reply.isError).toBe(true);
-    expect(text(reply)).toContain('too large');
+    expect(errorText(reply)).toContain('too large');
     expect(closed).toBe(false);
     client.close();
     await server.close();
@@ -186,10 +214,10 @@ describe('broker', () => {
 
     const resp = await pending;
     expect(resp.isError).toBe(true);
-    expect(text(resp)).toBe(OWNER_LOST_MESSAGE);
+    expect(errorText(resp)).toBe(OWNER_LOST_MESSAGE);
     expect(closed).toBe(true);
     expect(client.isConnected()).toBe(false);
-    expect(text(await client.callTool('ping', {}))).toBe(OWNER_LOST_MESSAGE);
+    expect(errorText(await client.callTool('ping', {}))).toBe(OWNER_LOST_MESSAGE);
     release?.();
   });
 
@@ -453,7 +481,7 @@ describe('Bridge', () => {
     await waitFor(() => called);
     await a.shutdown(50);
 
-    expect(text(await pending)).toBe(OWNER_LOST_MESSAGE);
+    expect(errorText(await pending)).toBe(OWNER_LOST_MESSAGE);
     expect(stopped).toEqual(['a']);
   });
 
@@ -513,13 +541,13 @@ describe('Bridge', () => {
 
   unixOnly('releases the lock without taking the plugin when it cannot serve other bridges', async () => {
     const dir = tmpDir();
-    const blocker = path.join(dir, 'blocked');
-    fs.mkdirSync(path.join(blocker, 'bridge-58763-58764.sock'), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(blocker, 'bridge-58763-58764.sock', 'keep'), '', { mode: 0o600, flag: 'wx' });
+    const blocked = path.join(dir, 'b.sock');
+    fs.mkdirSync(blocked, { mode: 0o700 });
+    fs.writeFileSync(path.join(blocked, 'keep'), '', { mode: 0o600, flag: 'wx' });
     const started: string[] = [];
     const logs: string[] = [];
     const bridge = new Bridge({
-      ipcPath: ipcPath(blocker),
+      ipcPath: blocked,
       acquireLock: () => acquireInstanceLock(58763, 58764, dir),
       startLeader: () => {
         started.push('x');
@@ -626,7 +654,7 @@ describe('Bridge', () => {
 
     unresponsive = true;
 
-    expect(text(await stuck)).toBe(OWNER_LOST_MESSAGE);
+    expect(errorText(await stuck)).toBe(OWNER_LOST_MESSAGE);
     await waitFor(() => elections() > 1);
     expect(logs).toContain('[bridge] owning bridge stopped responding, re-electing');
   });
@@ -643,7 +671,7 @@ describe('Bridge', () => {
 
     holder = 222222;
 
-    expect(text(await stuck)).toBe(OWNER_LOST_MESSAGE);
+    expect(errorText(await stuck)).toBe(OWNER_LOST_MESSAGE);
     await waitFor(() => elections() > 1);
     expect(logs).toContain('[bridge] another bridge took over from the owning bridge, re-electing');
   });
@@ -709,7 +737,7 @@ describe('Bridge', () => {
     try {
       const resp = await bridge.callTool('ping', {});
       expect(resp.isError).toBe(true);
-      expect(text(resp)).toBe(unreachableOwnerMessage(process.pid));
+      expect(errorText(resp)).toBe(unreachableOwnerMessage(process.pid));
     } finally {
       lock.release();
     }
@@ -732,7 +760,7 @@ describe('Bridge', () => {
 
     const resp = await bridge.callTool('ping', {});
 
-    expect(text(resp)).toBe(`${NO_OWNER_MESSAGE} Last error: EACCES: permission denied`);
+    expect(errorText(resp)).toBe(`${NO_OWNER_MESSAGE} Last error: EACCES: permission denied`);
     expect(logs.filter((m) => m.includes('cannot take the bridge lock'))).toHaveLength(1);
   });
 

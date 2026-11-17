@@ -43,6 +43,8 @@ local function setup(opts)
                 raw[p].isInStackInFolder = true
                 raw[p].stackInFolderIsCollapsed = opts.stack == "collapsed"
                 raw[p].stackInFolderMembers = { photos[1], photos[2], photos[3] }
+                raw[p].stackPositionInFolder = tonumber(p.localIdentifier)
+                raw[p].topOfStackInFolderContainingPhoto = photos[1]
             end
         end
         return raw
@@ -54,7 +56,6 @@ local function setup(opts)
             assert.are.equal(1, calls.grids)
             calls.removes = calls.removes + 1
             calls.removed = selected
-            if opts.onRemove then opts.onRemove() end
             if opts.failRemoval then error("removal failed") end
             if opts.ignoreRemoval then return end
             for _, p in ipairs(selected) do alive[p] = nil end
@@ -85,43 +86,25 @@ end
 describe("remove_photos_from_catalog by path", function()
     it("refuses a path shared with a virtual copy and removes nothing", function()
         local handler, calls = setup({ virtualCopies = true })
-        local ok, err = pcall(handler.removePhotos, { photo_ids = { "/1.jpg" }, confirm = true })
-        assert.is_false(ok)
-        assert.truthy(tostring(err):find("numeric id", 1, true))
+        assert.matches("numeric id", helper.refusalOf(function()
+            handler.removePhotos({ photo_ids = { "/1.jpg" } })
+        end), 1, true)
         assert.are.equal(0, calls.removes)
     end)
 end)
 
-local function failure(fn, text)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    assert.truthy(tostring(err):find(text, 1, true), tostring(err))
-end
-
 describe("HandlerRemoveFromCatalog.removePhotos", function()
-    it("requires literal confirm true before touching selection or removal", function()
-        local handler, calls = setup()
-        for _, args in ipairs({ {}, { confirm = false }, { confirm = "true" }, { confirm = 1 } }) do
-            args.photo_ids = { "1" }
-            failure(function() handler.removePhotos(args) end, "confirm must be true")
-        end
-        assert.are.equal(0, calls.removes)
-        assert.are.same({}, calls.selections)
-        assert.are.same({}, calls.sources)
-    end)
-
     it("requires Lightroom Classic 14.3 before touching the view", function()
         local handler, calls = setup({ withoutApi = true })
-        failure(function() handler.removePhotos({ photo_ids = { "1" }, confirm = true }) end,
-            "Lightroom Classic 14.3")
+        assert.matches("Lightroom Classic 14.3", helper.refusalOf(function() handler.removePhotos({ photo_ids = { "1" } }) end), 1, true)
         assert.are.same({}, calls.selections)
         assert.are.same({}, calls.sources)
     end)
 
     it("selects only resolved unique photos and restores surviving selection and module", function()
         local handler, calls, photos, alive, catalog = setup()
-        local result = handler.removePhotos({ photo_ids = { "1", "/1.jpg", 2, "999", "999" }, confirm = true })
-        assert.are.same({ success = true, removed = 2, missing = { "999" } }, result)
+        local result = handler.removePhotos({ photo_ids = { "1", "/1.jpg", 2, "999", "999" } })
+        assert.are.same({ data = { removed = 2 }, not_found = { "999" } }, result)
         assert.are.same({ photos[1], photos[2] }, calls.removed)
         assert.are.same({ photos[1], photos[2] }, calls.selections[1])
         local selected, active, module, sources = calls.state()
@@ -136,7 +119,7 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
 
     it("selects in the photos' own folders instead of All Photographs", function()
         local handler, calls, photos = setup()
-        handler.removePhotos({ photo_ids = { "1", "2" }, confirm = true })
+        handler.removePhotos({ photo_ids = { "1", "2" } })
         assert.are.same({ { folder = "" } }, calls.sources[1])
         assert.are.same({ "" }, calls.folderLookups)
         assert.are.same({ photos[1], photos[2] }, calls.removed)
@@ -144,38 +127,37 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
 
     it("falls back to All Photographs when a folder is not found", function()
         local handler, calls, photos = setup({ unknownFolder = true })
-        handler.removePhotos({ photo_ids = { "1" }, confirm = true })
+        handler.removePhotos({ photo_ids = { "1" } })
         assert.are.same({ "all" }, calls.sources[1])
         assert.are.same({ photos[1] }, calls.removed)
     end)
 
     it("repeats the selection until Lightroom keeps it", function()
         local handler, calls, photos = setup({ ignoreSelections = 4 })
-        local result = handler.removePhotos({ photo_ids = { "1", "2" }, confirm = true })
-        assert.are.equal(2, result.removed)
+        local result = handler.removePhotos({ photo_ids = { "1", "2" } })
+        assert.are.equal(2, result.data.removed)
         assert.is_true(#calls.selections >= 5)
         assert.are.same({ photos[1], photos[2] }, calls.removed)
     end)
 
     it("gives up after 30 seconds without removing anything", function()
         local handler, calls = setup({ ignoreSelection = true })
-        failure(function() handler.removePhotos({ photo_ids = { "1" }, confirm = true }) end,
-            "did not select exactly")
+        assert.matches("did not select exactly", helper.refusalOf(function() handler.removePhotos({ photo_ids = { "1" } }) end), 1, true)
         assert.are.equal(16, #calls.selections)
         assert.are.equal(0, calls.removes)
     end)
 
     it("accepts a selection that sticks on the last attempt", function()
         local handler, calls, photos = setup({ ignoreSelections = 15 })
-        local result = handler.removePhotos({ photo_ids = { "1" }, confirm = true })
-        assert.are.equal(1, result.removed)
+        local result = handler.removePhotos({ photo_ids = { "1" } })
+        assert.are.equal(1, result.data.removed)
         assert.is_true(#calls.selections >= 16)
         assert.are.same({ photos[1] }, calls.removed)
     end)
 
     it("makes a surviving photo active when the original active photo was removed", function()
         local handler, calls, photos = setup()
-        handler.removePhotos({ photo_ids = { "4" }, confirm = true })
+        handler.removePhotos({ photo_ids = { "4" } })
         local selected, active = calls.state()
         assert.are.same({ photos[1] }, selected)
         assert.are.equal(photos[1], active)
@@ -183,27 +165,17 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
 
     it("restores an empty selection", function()
         local handler, calls = setup({ selected = {} })
-        handler.removePhotos({ photo_ids = { "1" }, confirm = true })
+        handler.removePhotos({ photo_ids = { "1" } })
         local selected, active = calls.state()
         assert.are.same({}, selected)
         assert.is_nil(active)
     end)
 
-    it("errors without touching selection when no IDs resolve", function()
+    it("answers not_found without touching selection when no IDs resolve", function()
         local handler, calls = setup()
-        failure(function() handler.removePhotos({ photo_ids = { "999" }, confirm = true }) end,
-            "No photos matched")
-        assert.are.same({}, calls.selections)
-        assert.are.equal(0, calls.removes)
-    end)
-
-    it("rejects over 100 IDs and malformed arrays before changing the view", function()
-        local handler, calls = setup()
-        local ids = {}
-        for i = 1, 101 do ids[i] = "1" end
-        for _, bad in ipairs({ ids, {}, { true }, { "" }, { " " }, { [1] = "1", extra = "2" } }) do
-            failure(function() handler.removePhotos({ photo_ids = bad, confirm = true }) end, "photo_ids")
-        end
+        local reply = handler.removePhotos({ photo_ids = { "999" } })
+        assert.is_nil(reply.data)
+        assert.are.same({ "999" }, reply.not_found)
         assert.are.same({}, calls.selections)
         assert.are.equal(0, calls.removes)
     end)
@@ -211,8 +183,7 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
     it("refuses both a rejected selection and one containing extra photos", function()
         for _, opts in ipairs({ { ignoreSelection = true }, { extraSelection = true } }) do
             local handler, calls = setup(opts)
-            failure(function() handler.removePhotos({ photo_ids = { "1", "2" }, confirm = true }) end,
-                "did not select exactly")
+            assert.matches("did not select exactly", helper.refusalOf(function() handler.removePhotos({ photo_ids = { "1", "2" } }) end), 1, true)
             assert.are.equal(0, calls.removes)
             local _, _, module, sources = calls.state()
             assert.are.equal("develop", module)
@@ -223,8 +194,9 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
     it("restores the view after an SDK error and never reports ignored removal as success", function()
         for _, opts in ipairs({ { failRemoval = true }, { ignoreRemoval = true } }) do
             local handler, calls, photos = setup(opts)
-            failure(function() handler.removePhotos({ photo_ids = { "2" }, confirm = true }) end,
-                opts.failRemoval and "removal failed" or "did not remove every")
+            assert.are.equal(opts.failRemoval and "removal failed"
+                or "Lightroom did not remove every requested photo; check the catalog before retrying",
+                helper.unknownOf(function() handler.removePhotos({ photo_ids = { "2" } }) end))
             local selected, active, module = calls.state()
             assert.are.same({ photos[4], photos[1] }, selected)
             assert.are.equal(photos[4], active)
@@ -234,29 +206,24 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
 
     it("refuses a master whose virtual copies were not explicitly requested", function()
         local handler, calls = setup({ virtualCopies = true })
-        failure(function() handler.removePhotos({ photo_ids = { "1" }, confirm = true }) end,
-            "Include every virtual copy")
+        assert.matches("Include every virtual copy", helper.refusalOf(function() handler.removePhotos({ photo_ids = { "1" } }) end), 1, true)
         assert.are.same({}, calls.selections)
         assert.are.equal(0, calls.removes)
     end)
 
-    it("refuses a photo in a collapsed stack unless every member is requested", function()
-        local handler, calls = setup({ stack = "collapsed" })
-        failure(function() handler.removePhotos({ photo_ids = { "1" }, confirm = true }) end,
-            "collapsed stack")
-        failure(function() handler.removePhotos({ photo_ids = { "2", "3" }, confirm = true }) end,
-            "collapsed stack")
-        assert.are.same({}, calls.selections)
-        assert.are.equal(0, calls.removes)
+    it("refuses any photo of a collapsed stack at once, naming the top photo, before changing the selection", function()
+        for _, ids in ipairs({ { "1" }, { "2", "3" }, { "1", "2", "3" } }) do
+            local handler, calls = setup({ stack = "collapsed" })
+            assert.matches("collapsed stack whose top photo is 1; expand the stack in Lightroom first", helper.refusalOf(function() handler.removePhotos({ photo_ids = ids }) end), 1, true)
+            assert.are.same({}, calls.selections)
+            assert.are.same({}, calls.sources)
+            assert.are.equal(0, calls.removes)
+        end
     end)
 
-    it("removes a whole collapsed stack, or one photo of an expanded stack", function()
-        local handler, calls = setup({ stack = "collapsed" })
-        handler.removePhotos({ photo_ids = { "1", "2", "3" }, confirm = true })
-        assert.are.equal(1, calls.removes)
-
-        handler, calls = setup({ stack = "expanded" })
-        handler.removePhotos({ photo_ids = { "2" }, confirm = true })
+    it("removes one photo of an expanded stack", function()
+        local handler, calls = setup({ stack = "expanded" })
+        handler.removePhotos({ photo_ids = { "2" } })
         assert.are.equal(1, calls.removes)
     end)
 end)

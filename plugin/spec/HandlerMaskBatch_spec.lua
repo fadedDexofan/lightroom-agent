@@ -3,12 +3,6 @@ local Store = require 'fake_mask_store'
 
 local COMPUTED_KEYS = { "MaskDigest", "InputDigest", "LocalInputDigest" }
 
-local function errorOf(fn)
-    local ok, err = pcall(fn)
-    assert.is_false(ok)
-    return tostring(err)
-end
-
 local function gradientCorrection(id)
     return Store.correction("Sky", {
         Store.linearComponent({ MaskID = id .. "T1" }),
@@ -78,21 +72,23 @@ local function setup(opts)
         else
             photo.updateAISettings = function()
                 local mode = spec.aiMode or "ok"
-                local computing
+                local components = {}
                 for _, entry in ipairs(store.entries) do
-                    local component = aiComponentOf(entry)
-                    if component then computing = computing or { entry = entry, component = component } end
+                    components[#components + 1] = aiComponentOf(entry)
                 end
+                local newest = components[#components]
                 calls.updates[#calls.updates + 1] = spec.id
                 if opts.onUpdate then opts.onUpdate() end
-                calls.updateSawDigests[spec.id] = computing ~= nil and computing.component.MaskDigest ~= nil
+                calls.updateSawDigests[spec.id] = newest ~= nil and newest.MaskDigest ~= nil
                 clock.now = clock.now + (opts.secondsPerUpdate or 0)
                 if mode == "fail" then error("AI update failed") end
-                if mode == "ok" and computing and computing.component.MaskDigest == nil then
-                    for _, key in ipairs(COMPUTED_KEYS) do
-                        computing.component[key] = key .. "-" .. spec.id
+                if mode == "ok" then
+                    for _, component in ipairs(components) do
+                        if component.MaskDigest == nil then
+                            for _, key in ipairs(COMPUTED_KEYS) do component[key] = key .. "-" .. spec.id end
+                            component.Origin = "origin-" .. spec.id
+                        end
                     end
-                    computing.component.Origin = "origin-" .. spec.id
                 end
             end
         end
@@ -131,6 +127,7 @@ local function setup(opts)
 
     local values = {}
     local selectedMask
+    local selectedTool = "loupe"
     local controller = {
         getAllMasks = function()
             if module ~= "develop" then error("Develop module is not active") end
@@ -140,8 +137,8 @@ local function setup(opts)
         getSelectedMask = function() return selectedMask end,
         goToMasking = function() end,
         selectMaskTool = function() end,
-        selectTool = function() end,
-        getSelectedTool = function() return "loupe" end,
+        selectTool = function(name) selectedTool = name end,
+        getSelectedTool = function() return selectedTool end,
         createNewMask = function(_, subtype)
             if module ~= "develop" then error("Develop module is not active") end
             addDevelopMask(active, subtype)
@@ -203,7 +200,8 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     for _, name in ipairs({
-        "HandlerMaskBatch", "HandlerMaskCreate", "GuardedMaskWrite", "DevelopSession", "AIMaskData", "Log", "MaskSelection",
+        "HandlerMaskBatch", "HandlerMaskCreate", "GuardedMaskWrite", "AIMaskCompute", "DevelopSession", "DevelopBatch", "AIMaskData", "Log",
+        "MaskSelection", "MaskCreationAdjustments",
     }) do
         package.loaded[name] = nil
     end
@@ -220,8 +218,15 @@ local function setup(opts)
 end
 
 local function resultFor(response, photoId)
-    for _, result in ipairs(response.results) do
+    for _, result in ipairs(response.data and response.data.results or {}) do
         if result.photo_id == photoId then return result end
+    end
+    return nil
+end
+
+local function itemFor(items, photoId)
+    for _, item in ipairs(items or {}) do
+        if item.photo_id == photoId then return item end
     end
     return nil
 end
@@ -235,8 +240,9 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         local blocked = {}
         local Handler = setup({
             onUpdate = function()
-                local ok, err = pcall(require('DevelopSession').run, "create_gradient_mask", {}, false, function() end)
-                blocked[#blocked + 1] = ok and "accepted" or tostring(err)
+                blocked[#blocked + 1] = helper.refusalOf(function()
+                    require('DevelopSession').run(helper.requestContext(nil, { title = "create_gradient_mask" }), {}, false, function() end)
+                end)
             end,
         })
 
@@ -249,19 +255,19 @@ describe("HandlerMaskBatch.createMaskBatch", function()
     it("cancel keeps the source mask and leaves the later photos untouched", function()
         local Handler, world = setup({})
         local progress = {}
-        local context = {
+        local context = helper.requestContext(nil, {
             isCanceled = function() return #world.calls.created >= 1 end,
             report = function(_, completed, total, message)
                 progress[#progress + 1] = { completed, total, message }
             end,
-        }
+        })
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" }, context)
 
-        assert.are.same({ { 0, 3, "1" }, { 1, 3, "1" } }, progress)
-        assert.are.equal(1, r.created)
-        assert.is_false(r.complete)
-        assert.are.same({ "2", "3" }, r.remaining_ids)
+        assert.are.same({ { 0, 3, "1" }, { 1, 3, "Done" } }, progress)
+        assert.are.same({ "created" }, { r.data.results[1].status })
+        assert.are.equal(1, #r.data.results)
+        assert.are.same({ "2", "3" }, r.remaining)
         assert.are.equal(1, #entriesOf(world, "1"))
         assert.are.equal(0, #entriesOf(world, "2"))
         assert.are.equal(0, #entriesOf(world, "3"))
@@ -269,25 +275,21 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         assert.are.same({ "develop", "library" }, world.calls.modules)
     end)
 
-    it("creates the mask in Develop on the first photo only and reports every photo created", function()
+    it("creates the mask in Develop on the first photo and reports the others as computed, content not verified", function()
         local Handler, world = setup({})
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" })
 
-        assert.is_true(r.success)
-        assert.is_true(r.complete)
-        assert.is_nil(r.type)
-        assert.is_nil(r.message)
-        assert.are.equal(3, r.created)
-        assert.are.equal(0, r.failed)
-        assert.are.equal(0, r.not_attempted)
-        assert.are.same({}, r.missing)
+        assert.is_nil(r.failed)
+        assert.is_nil(r.unknown)
+        assert.is_nil(r.remaining)
+        assert.is_nil(r.not_found)
         assert.are.same({ { photo = "1", subtype = "sky" } }, world.calls.created)
+        assert.are.same({ "created", "computed", "computed" },
+            { resultFor(r, "1").status, resultFor(r, "2").status, resultFor(r, "3").status })
         for _, id in ipairs({ "1", "2", "3" }) do
-            local result = resultFor(r, id)
-            assert.are.equal("created", result.status)
-            assert.is_true(result.created)
-            assert.is_not_nil(result.mask_id)
+            assert.is_not_nil(resultFor(r, id).mask_id)
+            assert.is_nil(resultFor(r, id).created)
         end
         assert.are.equal("mask-1", resultFor(r, "1").mask_id)
     end)
@@ -347,7 +349,7 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         local r = Handler.createMaskBatch({
             photo_ids = { "1", "2", "3" },
             type = "sky",
-            adjustments = { exposure = -1.5, contrast = 20 },
+            adjustments = { local_Exposure = -1.5, local_Contrast = 20 },
         })
 
         assert.is_nil(r.adjustments)
@@ -383,24 +385,19 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         assert.is_true(world.activeIs(world.startPhoto))
     end)
 
-    it("reports a target where nothing is found as failed, removes its mask and finishes the batch", function()
+    it("reports a target Lightroom did not finish computing as failed, removes its mask and finishes the batch", function()
         local Handler, world = setup({
             photos = { { id = "1" }, { id = "2", aiMode = "nothing" }, { id = "3" } },
         })
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" })
 
-        assert.is_false(r.success)
-        assert.is_true(r.complete)
-        assert.are.equal(2, r.created)
-        assert.are.equal(1, r.failed)
-        local failed = resultFor(r, "2")
-        assert.are.equal("failed", failed.status)
-        assert.is_false(failed.created)
-        assert.is_nil(failed.mask_id)
-        assert.truthy(failed.reason:find("found no sky to select", 1, true))
+        assert.is_nil(r.remaining)
+        assert.is_nil(resultFor(r, "2"))
+        local failed = itemFor(r.failed, "2")
+        assert.truthy(failed.reason:find("did not finish computing the sky mask", 1, true), failed.reason)
         assert.are.same({}, entriesOf(world, "2"))
-        assert.are.equal("created", resultFor(r, "3").status)
+        assert.are.equal("computed", resultFor(r, "3").status)
         assert.are.equal(1, #entriesOf(world, "3"))
         assert.are.same({ "2", "3" }, world.calls.updates)
     end)
@@ -412,12 +409,59 @@ describe("HandlerMaskBatch.createMaskBatch", function()
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "subject" })
 
-        local failed = resultFor(r, "2")
-        assert.are.equal("failed", failed.status)
+        local failed = itemFor(r.failed, "2")
         assert.truthy(failed.reason:find("AI update failed", 1, true))
         assert.are.same({}, entriesOf(world, "2"))
-        assert.are.equal("created", resultFor(r, "3").status)
-        assert.are.equal(2, r.created)
+        assert.are.equal("computed", resultFor(r, "3").status)
+        assert.are.equal(2, #r.data.results)
+    end)
+
+    it("reports a target whose added mask could not be removed as unknown, not failed, and finishes the batch", function()
+        local Handler, world = setup({
+            photos = {
+                { id = "1" },
+                { id = "2", aiMode = "fail", rejectWrite = function(attempt) return attempt >= 2 end },
+                { id = "3" },
+            },
+        })
+
+        local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "subject" })
+
+        assert.is_nil(itemFor(r.failed, "2"))
+        assert.truthy(itemFor(r.unknown, "2"))
+        assert.are.equal(1, #entriesOf(world, "2"))
+        assert.are.equal("computed", resultFor(r, "3").status)
+    end)
+
+    it("answers unknown for a failed target that already had AI masks, which the recompute may have changed", function()
+        local Handler, world = setup({
+            photos = { { id = "1" }, { id = "2", aiMode = "nothing", entries = { newAIEntry("old") } } },
+        })
+
+        local r = Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "sky" })
+
+        assert.is_nil(itemFor(r.failed, "2"))
+        local unknown = itemFor(r.unknown, "2")
+        assert.truthy(unknown.reason:find("did not finish computing the sky mask", 1, true), unknown.reason)
+        assert.truthy(unknown.reason:find("its existing AI masks may have changed", 1, true), unknown.reason)
+        local entries = entriesOf(world, "2")
+        assert.are.equal(1, #entries)
+        assert.are.equal("mask-old", entries[1].CorrectionID)
+    end)
+
+    it("warns for a computed target that already had AI masks, which the recompute may have changed", function()
+        local computedBefore = newAIEntry("old")
+        for _, key in ipairs(COMPUTED_KEYS) do aiComponentOf(computedBefore)[key] = key .. "-old" end
+        local Handler = setup({
+            photos = { { id = "1" }, { id = "2", entries = { computedBefore } }, { id = "3" } },
+        })
+        local context = helper.requestContext(nil, { title = "create_mask_batch" })
+
+        local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" }, context)
+
+        assert.are.equal("computed", resultFor(r, "2").status)
+        assert.are.same({ "Photo 2: Lightroom recomputed AI settings for the whole photo, so its existing AI masks may have changed" },
+            context.warnings)
     end)
 
     it("restores the previous masks of a failed target exactly", function()
@@ -433,24 +477,19 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         assert.are.equal("Mask/Gradient", entries[1].CorrectionMasks[1].What)
     end)
 
-    it("stops at a first photo with nothing to select and reports the rest as not attempted", function()
+    it("halts at a first photo with nothing to select: that photo failed, the rest remaining, the alert a warning", function()
         local Handler, world = setup({
             photos = { { id = "1", createBehavior = "nothing" }, { id = "2" }, { id = "3" } },
         })
+        local context = helper.requestContext(nil, { title = "create_mask_batch" })
 
-        local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" })
+        local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" }, context)
 
-        assert.is_false(r.success)
-        assert.is_false(r.complete)
-        assert.are.equal(0, r.created)
-        assert.are.equal(1, r.failed)
-        assert.are.equal(2, r.not_attempted)
-        assert.are.equal("failed", resultFor(r, "1").status)
-        assert.truthy(resultFor(r, "1").reason:find("found no sky", 1, true))
-        assert.are.equal("not_attempted", resultFor(r, "2").status)
-        assert.truthy(resultFor(r, "2").reason:find("click OK", 1, true))
-        assert.are.same({ "2", "3" }, r.remaining_ids)
-        assert.truthy(r.message:find("No sky detected", 1, true))
+        assert.is_nil(r.data)
+        assert.truthy(itemFor(r.failed, "1").reason:find("found no sky", 1, true))
+        assert.are.same({ "2", "3" }, r.remaining)
+        assert.truthy(context.warnings[1]:find("No sky detected", 1, true))
+        assert.truthy(context.warnings[1]:find("click OK", 1, true))
         assert.are.same({ { photo = "1", subtype = "sky" } }, world.calls.created)
         assert.are.same({}, world.calls.updates)
         assert.are.same({}, world.stores["2"].writes)
@@ -465,12 +504,11 @@ describe("HandlerMaskBatch.createMaskBatch", function()
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" })
 
-        assert.are.equal("failed", resultFor(r, "1").status)
-        assert.truthy(resultFor(r, "1").reason:find("added 2 masks", 1, true))
+        assert.truthy(itemFor(r.failed, "1").reason:find("added 2 masks", 1, true))
         assert.are.equal("created", resultFor(r, "2").status)
-        assert.are.equal("created", resultFor(r, "3").status)
+        assert.are.equal("computed", resultFor(r, "3").status)
         assert.are.same({ "3" }, world.calls.updates)
-        assert.are.same({}, r.remaining_ids or {})
+        assert.is_nil(r.remaining)
         assert.are.equal("library", world.module())
     end)
 
@@ -479,9 +517,8 @@ describe("HandlerMaskBatch.createMaskBatch", function()
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "999", "2", "2", "1" }, type = "sky" })
 
-        assert.are.same({ "999" }, r.missing)
-        assert.are.equal(2, #r.results)
-        assert.are.equal(2, r.created)
+        assert.are.same({ "999" }, r.not_found)
+        assert.are.equal(2, #r.data.results)
         assert.are.same({ "2" }, world.calls.updates)
     end)
 
@@ -490,26 +527,23 @@ describe("HandlerMaskBatch.createMaskBatch", function()
 
         local r = Handler.createMaskBatch({ photo_ids = { "998", "999" }, type = "sky" })
 
-        assert.are.same({}, r.results)
-        assert.are.same({ "998", "999" }, r.missing)
+        assert.is_nil(r.data)
+        assert.are.same({ "998", "999" }, r.not_found)
         assert.are.same({}, world.calls.modules)
         assert.are.same({}, world.calls.created)
     end)
 
-    it("stops starting targets after the time budget and lists the rest", function()
+    it("stops starting targets when the request's budget runs out and lists the rest", function()
         local Handler, world = setup({
             photos = { { id = "1" }, { id = "2" }, { id = "3" }, { id = "4" }, { id = "5" } },
             secondsPerUpdate = 100,
         })
 
-        local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3", "4", "5" }, type = "sky" })
+        local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3", "4", "5" }, type = "sky" },
+            helper.requestContext(300))
 
-        assert.is_false(r.success)
-        assert.is_false(r.complete)
-        assert.are.equal(4, r.created)
-        assert.are.equal(1, r.not_attempted)
-        assert.are.same({ "5" }, r.remaining_ids)
-        assert.truthy(resultFor(r, "5").reason:find("call again", 1, true))
+        assert.are.equal(4, #r.data.results)
+        assert.are.same({ "5" }, r.remaining)
         assert.are.same({ "2", "3", "4" }, world.calls.updates)
     end)
 
@@ -519,9 +553,8 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" })
 
         assert.are.equal("created", resultFor(r, "1").status)
-        assert.are.equal("failed", resultFor(r, "2").status)
-        assert.truthy(resultFor(r, "2").reason:find("did not save", 1, true))
-        assert.are.equal("failed", resultFor(r, "3").status)
+        assert.truthy(itemFor(r.failed, "2").reason:find("did not save", 1, true))
+        assert.is_not_nil(itemFor(r.failed, "3"))
         assert.are.same({}, world.calls.updates)
         assert.are.same({}, world.stores["2"].writes)
     end)
@@ -531,9 +564,9 @@ describe("HandlerMaskBatch.createMaskBatch", function()
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "sky" })
 
-        assert.are.equal(0, r.created)
-        assert.are.equal(2, r.failed)
-        assert.truthy(resultFor(r, "1").reason:find("is not certified", 1, true))
+        assert.is_nil(r.data)
+        assert.are.equal(2, #r.failed)
+        assert.truthy(itemFor(r.failed, "1").reason:find("is not certified", 1, true))
         assert.are.same({}, world.calls.modules)
         assert.are.same({}, world.calls.created)
     end)
@@ -546,12 +579,22 @@ describe("HandlerMaskBatch.createMaskBatch", function()
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" })
 
-        assert.are.equal("failed", resultFor(r, "2").status)
-        assert.truthy(resultFor(r, "2").reason:find("do not match the pinned mask format", 1, true))
+        assert.truthy(itemFor(r.failed, "2").reason:find("do not match the pinned mask format", 1, true))
         assert.are.same({}, world.stores["2"].writes)
         assert.are.equal("created", resultFor(r, "1").status)
-        assert.are.equal("created", resultFor(r, "3").status)
+        assert.are.equal("computed", resultFor(r, "3").status)
         assert.are.same({ "3" }, world.calls.updates)
+    end)
+
+    it("creates the template on a first photo whose existing masks are outside the pinned format", function()
+        local odd = Store.correction("Odd", { { What = "Mask/Mystery", MaskActive = true } }, { CorrectionID = "C1" })
+        local Handler, world = setup({ photos = { { id = "1", entries = { odd } }, { id = "2" } } })
+
+        local r = Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "sky" })
+
+        assert.are.equal("created", resultFor(r, "1").status)
+        assert.are.equal("computed", resultFor(r, "2").status)
+        assert.are.same({ "2" }, world.calls.updates)
     end)
 
     it("rejects a call while another batch is running", function()
@@ -560,7 +603,7 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         local photo = world.catalog:getAllPhotos()[2]
         local original = photo.updateAISettings
         photo.updateAISettings = function(self)
-            nestedError = errorOf(function()
+            nestedError = helper.refusalOf(function()
                 Handler.createMaskBatch({ photo_ids = { "1" }, type = "sky" })
             end)
             return original(self)
@@ -572,13 +615,18 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         assert.are.equal("library", world.module())
     end)
 
-    it("allows a new call after a failed one", function()
-        local Handler = setup({})
+    it("allows a new call after one that failed inside the Develop session", function()
+        local Handler, world = setup({})
+        local photo = world.catalog:getAllPhotos()[1]
+        local update = photo.updateAISettings
+        photo.updateAISettings = nil
+        local message = helper.refusalOf(function() Handler.createMaskBatch({ photo_ids = { "1" }, type = "sky" }) end)
+        assert.truthy(message:find("needs Lightroom Classic 13.3", 1, true), message)
+        photo.updateAISettings = update
 
-        assert.truthy(errorOf(function() Handler.createMaskBatch({ photo_ids = {}, type = "sky" }) end))
         local r = Handler.createMaskBatch({ photo_ids = { "1" }, type = "sky" })
 
-        assert.are.equal(1, r.created)
+        assert.are.equal("created", r.data.results[1].status)
     end)
 
     it("never reads or writes mask data outside the catalog gates", function()
@@ -594,61 +642,19 @@ describe("HandlerMaskBatch.createMaskBatch", function()
         assert.is_false(world.catalog.getQueriedInsideWriteAccess())
     end)
 
-    describe("argument validation", function()
-        local function assertRejectedUntouched(args, expected)
-            local Handler, world = setup({})
-            local message = errorOf(function() Handler.createMaskBatch(args) end)
-            assert.truthy(message:find(expected, 1, true), message)
-            assert.are.same({}, world.calls.modules)
-            assert.are.same({}, world.calls.created)
-            assert.are.equal(0, world.stores["1"].reads)
-        end
-
-        it("requires a non-empty photo_ids array", function()
-            assertRejectedUntouched({ type = "sky" }, "photo_ids is required")
-            assertRejectedUntouched({ photo_ids = {}, type = "sky" }, "photo_ids is required")
-            assertRejectedUntouched({ photo_ids = "1", type = "sky" }, "photo_ids is required")
-        end)
-
-        it("caps photo_ids at 200", function()
-            local ids = {}
-            for index = 1, 201 do ids[index] = tostring(index) end
-            assertRejectedUntouched({ photo_ids = ids, type = "sky" }, "at most 200")
-        end)
-
-        it("rejects ids that are neither ids nor paths", function()
-            assertRejectedUntouched({ photo_ids = { "1", {} }, type = "sky" }, "photo ids or file paths")
-            assertRejectedUntouched({ photo_ids = { "" }, type = "sky" }, "photo ids or file paths")
-        end)
-
-        it("rejects an unknown mask type", function()
-            assertRejectedUntouched({ photo_ids = { "1" }, type = "people" }, "type must be one of")
-            assertRejectedUntouched({ photo_ids = { "1" } }, "type must be one of")
-        end)
-
-        it("shares create_mask validation of adjustments", function()
-            assertRejectedUntouched(
-                { photo_ids = { "1" }, type = "sky", adjustments = { exposure = 4.5 } },
-                "exposure must be between -4 and 4")
-            assertRejectedUntouched(
-                { photo_ids = { "1" }, type = "sky", adjustments = { contrast = 101 } },
-                "contrast must be between -100 and 100")
-            assertRejectedUntouched(
-                { photo_ids = { "1" }, type = "sky", adjustments = { vibrance = 1 } },
-                "Unknown adjustment vibrance")
-        end)
-
+    describe("Lightroom version", function()
         it("needs the Lightroom mask API", function()
             local Handler, world = setup({ withoutCreateApi = true })
-            local message = errorOf(function() Handler.createMaskBatch({ photo_ids = { "1" }, type = "sky" }) end)
-            assert.truthy(message:find("create_mask_batch needs Lightroom Classic 11", 1, true), message)
+            assert.are.equal("create_mask_batch needs LrDevelopController.createNewMask, which this Lightroom does not offer"
+                .. " (Lightroom Classic 11 or later has it)",
+                helper.refusalOf(function() Handler.createMaskBatch({ photo_ids = { "1" }, type = "sky" }) end))
             assert.are.same({}, world.calls.modules)
         end)
 
         it("needs updateAISettings and changes nothing without it", function()
             local Handler, world = setup({ withoutUpdateApi = true })
-            local message = errorOf(function() Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "sky" }) end)
-            assert.truthy(message:find("needs Lightroom Classic 13.3", 1, true), message)
+            assert.are.equal("create_mask_batch needs Lightroom Classic 13.3 or later",
+                helper.refusalOf(function() Handler.createMaskBatch({ photo_ids = { "1", "2" }, type = "sky" }) end))
             assert.are.same({}, world.calls.modules)
             assert.are.same({}, world.calls.created)
         end)
