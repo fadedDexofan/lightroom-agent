@@ -26,7 +26,6 @@ function MaskCombineHandler.combineMask(args, context)
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local photoId = tostring(photo.localIdentifier)
     AIMaskCompute.requireSupported("combine_mask", photo)
-    MaskValues.requireSaved(catalog, photo, maskId)
 
     local verb = VERB_OF_OPERATION[operation]
     local result = AIMaskCompute.run(context, catalog, photo, {

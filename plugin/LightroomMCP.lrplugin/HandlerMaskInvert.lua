@@ -5,6 +5,7 @@ local LrTasks = import 'LrTasks'
 local CatalogWrite = require 'CatalogWrite'
 local PhotoLookup = require 'PhotoLookup'
 local DevelopSession = require 'DevelopSession'
+local JsonValue = require 'JsonValue'
 local Log = require 'Log'
 local MaskSelection = require 'MaskSelection'
 local MaskValues = require 'MaskValues'
@@ -39,14 +40,13 @@ end
 
 local function invertInPlace(context, catalog, photo, photoId, maskId)
     local before = MaskSelection.requireMask(MaskSelection.readMasks(catalog, photo), maskId, photoId)
-    local fingerprintBefore = MaskSelection.fingerprint(before)
 
     callInvertFunction(context, "invertMask", maskId)
 
     local after
     local changed = DevelopSession.waitFor(function()
         after = MaskSelection.findMask(MaskSelection.readMasksOrNil(), maskId)
-        return after ~= nil and MaskSelection.fingerprint(after) ~= fingerprintBefore
+        return after ~= nil and not JsonValue.equal(after, before)
     end, INVERSION_VISIBLE_TIMEOUT_SECONDS)
     if not changed then
         error("Lightroom did not report mask " .. maskId .. " on photo " .. photoId
@@ -74,7 +74,7 @@ local function copyValues(context, catalog, photo, maskId, copyId)
 end
 
 local function duplicateInverted(context, catalog, photo, photoId, maskId, masksBefore)
-    local originalFingerprint = MaskSelection.fingerprint(MaskSelection.findMask(masksBefore, maskId))
+    local original = MaskSelection.findMask(masksBefore, maskId)
     local idsBefore = MaskSelection.idSet(masksBefore)
 
     callInvertFunction(context, "duplicateAndInvertMask", maskId)
@@ -99,7 +99,7 @@ local function duplicateInverted(context, catalog, photo, photoId, maskId, masks
     if not originalAfter then
         sourceChange = string.format("Lightroom no longer lists the source mask %s on photo %s after making the"
             .. " inverted copy", maskId, photoId)
-    elseif MaskSelection.fingerprint(originalAfter) ~= originalFingerprint then
+    elseif not JsonValue.equal(originalAfter, original) then
         sourceChange = string.format("Lightroom changed the source mask %s on photo %s while making the inverted"
             .. " copy", maskId, photoId)
     end
@@ -145,7 +145,8 @@ end
 function MaskInvertHandler.invertMask(args, context)
     local maskId = args.mask_id
     local mode = args.mode
-    MaskSelection.requireControllerFunctions("invert_mask", INVERT_API_FUNCTIONS, INVERT_API_MINIMUM_VERSION)
+    DevelopSession.requireMaskApi("invert_mask")
+    DevelopSession.requireControllerFunctions("invert_mask", INVERT_API_FUNCTIONS, INVERT_API_MINIMUM_VERSION)
 
     local catalog = LrApplication.activeCatalog()
 

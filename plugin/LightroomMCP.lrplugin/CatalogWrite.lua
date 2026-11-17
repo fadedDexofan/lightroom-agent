@@ -3,6 +3,7 @@ local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 
 local Contract = require 'Contract'
+local DevelopSession = require 'DevelopSession'
 local Reply = require 'Reply'
 
 local CatalogWrite = {}
@@ -41,6 +42,15 @@ function CatalogWrite.run(context, catalog, title, fn)
             .. " s, so Lightroom did not run " .. title)
     end
     if returned ~= CatalogWrite.NOTHING then context.ledger:record(title) end
+end
+
+function CatalogWrite.developSettings(context, catalog, photo, title, settingsFor)
+    DevelopSession.flushIfShowing(catalog, photo)
+    CatalogWrite.run(context, catalog, title, function()
+        local settings = settingsFor()
+        if settings == nil then return CatalogWrite.NOTHING end
+        CatalogWrite.call(context, photo, "applyDevelopSettings", settings, title)
+    end)
 end
 
 function CatalogWrite.call(context, object, method, ...)

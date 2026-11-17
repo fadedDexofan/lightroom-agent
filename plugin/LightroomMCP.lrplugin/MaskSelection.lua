@@ -18,11 +18,6 @@ local TOOL_SWITCH_TIMEOUT_SECONDS = 5
 local MASKING_TOOL = "masking"
 local MASKING_TOOL_NAMES = { masking = true, local_point_color = true }
 
-function MaskSelection.requireControllerFunctions(toolName, names, minimumVersion)
-    DevelopSession.requireMaskApi(toolName)
-    DevelopSession.requireControllerFunctions(toolName, names, minimumVersion)
-end
-
 function MaskSelection.idString(value)
     if type(value) == "string" and value ~= "" then return value end
     return nil
@@ -33,18 +28,6 @@ function MaskSelection.findMask(masks, maskId)
         if type(mask) == "table" and mask.ID == maskId then return mask end
     end
     return nil
-end
-
-function MaskSelection.fingerprint(value)
-    if type(value) ~= "table" then return tostring(value) end
-    local keys = {}
-    for key in pairs(value) do keys[#keys + 1] = key end
-    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-    local parts = {}
-    for _, key in ipairs(keys) do
-        parts[#parts + 1] = tostring(key) .. "=" .. MaskSelection.fingerprint(value[key])
-    end
-    return "{" .. table.concat(parts, ",") .. "}"
 end
 
 local function savedMaskCount(catalog, photo)

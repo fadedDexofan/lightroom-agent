@@ -21,7 +21,9 @@ local defaultImports = {
     LrStringUtils = { lower = string.lower },
     LrTasks = { pcall = pcall },
     LrDate = { currentTime = function() return 0 end },
+    LrApplicationView = { getCurrentModuleName = function() return "library" end },
     LrDevelopController = {},
+    LrSelection = {},
     LrFileUtils = {},
     LrPathUtils = { parent = function(path) return path:match("^(.+)/[^/]+$") end },
     LrProgressScope = function()
@@ -151,6 +153,8 @@ function M.defaultLrLogger()
         end,
     })
 end
+
+defaultImports.LrLogger = M.defaultLrLogger()
 
 -- Valid Lightroom SDK metadata keys. The real getRawMetadata/getFormattedMetadata
 -- THROW on an unsupported key, taking down the enclosing withReadAccessDo. The

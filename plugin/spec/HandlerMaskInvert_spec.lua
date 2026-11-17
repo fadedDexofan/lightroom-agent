@@ -33,7 +33,7 @@ local function setup(opts)
         getAllMasks = function()
             if module ~= "develop" then error("Develop module is not active") end
             if listBroken then error("mask list unavailable") end
-            return currentMasks()
+            return require('fake_mask_store').clone(currentMasks())
         end,
         selectMask = function(id) selected = id end,
         getSelectedMask = function() return selected end,

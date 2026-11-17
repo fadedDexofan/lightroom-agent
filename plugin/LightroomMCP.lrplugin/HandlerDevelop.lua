@@ -36,12 +36,6 @@ for _, key in ipairs(Contract.DEVELOP_KEYS) do
     if key.style then STYLE_KEYS[key.name] = true end
 end
 
-local function idStrings(values)
-    local ids = {}
-    for index, value in ipairs(values) do ids[index] = tostring(value) end
-    return ids
-end
-
 local function callPresetMethod(preset, methodName)
     local method = preset and preset[methodName]
     if type(method) ~= "function" then
@@ -271,8 +265,6 @@ function DevelopHandler.compareDevelopPresets(args)
 end
 
 function DevelopHandler.createDevelopPreset(args, context)
-    args.photo_id = tostring(args.photo_id)
-
     if type(LrApplication.addDevelopPresetForPlugin) ~= "function" then
         Reply.refuse("Plugin preset creation is unavailable")
     end
@@ -501,7 +493,6 @@ local function requireAIMaskCompute(toolName, entries)
 end
 
 function DevelopHandler.applyDevelopPreset(args, context)
-    args.photo_ids = idStrings(args.photo_ids)
     local selectedPreset = findPreset(args)
 
     local catalog = LrApplication.activeCatalog()
@@ -581,19 +572,13 @@ end
 local function replaceMasks(context, catalog, photo, target, masks, aiMasks, processVersion)
     if processVersion ~= nil and processVersion ~= target.processVersion then
         MaskWriteAdmission.requireAdmitted(catalog, processVersion)
-        DevelopSession.flushIfShowing(catalog, photo)
-        local title = "Set Process Version " .. tostring(processVersion)
-        CatalogWrite.run(context, catalog, title, function()
-            CatalogWrite.call(context, photo, "applyDevelopSettings", { ProcessVersion = processVersion }, title)
-        end)
+        CatalogWrite.developSettings(context, catalog, photo, "Set Process Version " .. tostring(processVersion),
+            function() return { ProcessVersion = processVersion } end)
     end
     return copyMasks(context, catalog, photo, masks, aiMasks)
 end
 
 function DevelopHandler.copyDevelopSettings(args, context)
-    args.source_id = tostring(args.source_id)
-    args.target_ids = idStrings(args.target_ids)
-
     local catalog = LrApplication.activeCatalog()
     local sourceSettings
 
@@ -675,10 +660,8 @@ function DevelopHandler.copyDevelopSettings(args, context)
                 }
             else
                 local ok, reason = LrTasks.pcall(function()
-                    DevelopSession.flushIfShowing(catalog, entry.photo)
-                    CatalogWrite.run(context, catalog, "Copy Develop Settings", function()
-                        CatalogWrite.call(context, entry.photo, "applyDevelopSettings", rest, "Copy Develop Settings")
-                    end)
+                    CatalogWrite.developSettings(context, catalog, entry.photo, "Copy Develop Settings",
+                        function() return rest end)
                 end)
                 if ok then
                     copiedCount = copiedCount + 1
@@ -710,11 +693,9 @@ end
 local styleMatchSerial = 0
 
 function DevelopHandler.matchPhotoStyle(args, context)
-    local sourceId = tostring(args.reference_id)
-    local targetIds = idStrings(args.target_ids)
     local catalog = LrApplication.activeCatalog()
-    local source = PhotoLookup.requireOne(catalog, sourceId)
-    local targets, missing = PhotoLookup.resolveDistinct(catalog, targetIds)
+    local source = PhotoLookup.requireOne(catalog, args.reference_id)
+    local targets, missing = PhotoLookup.resolveDistinct(catalog, args.target_ids)
     for _, entry in ipairs(targets) do
         if entry.photo.localIdentifier == source.localIdentifier then
             Reply.refuse('Reference photo must not appear in target_ids')
@@ -754,10 +735,8 @@ function DevelopHandler.matchPhotoStyle(args, context)
                 local from = context.ledger:mark()
                 local ok, reason = LrTasks.pcall(function()
                     snapshot = snapshots.create({ photo_id = photoId, name = name }, context).snapshot
-                    DevelopSession.flushIfShowing(catalog, entry.photo)
-                    CatalogWrite.run(context, catalog, 'Match Photo Style', function()
-                        CatalogWrite.call(context, entry.photo, "applyDevelopSettings", DevelopCurves.forWrite(settings))
-                    end)
+                    CatalogWrite.developSettings(context, catalog, entry.photo, "Match Photo Style",
+                        function() return DevelopCurves.forWrite(settings) end)
                     written[#written + 1] = { photo = entry.photo, settings = settings, before = before }
                     results[#results + 1] = { photo_id = photoId, snapshot = snapshot, settings_changed = changed }
                 end)
@@ -780,12 +759,10 @@ function DevelopHandler.setDevelopSettings(args, context)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
 
-    DevelopSession.flushIfShowing(catalog, photo)
     local before
-    CatalogWrite.run(context, catalog, "Set Develop Settings", function()
+    CatalogWrite.developSettings(context, catalog, photo, "Set Develop Settings", function()
         before = DevelopReadBack.before(photo:getDevelopSettings())
-        CatalogWrite.call(context, photo, "applyDevelopSettings", DevelopCurves.forWrite(args.settings),
-            "Set Develop Settings")
+        return DevelopCurves.forWrite(args.settings)
     end)
     Log.info(string.format("Set develop settings on photo %s", tostring(photo.localIdentifier)))
 

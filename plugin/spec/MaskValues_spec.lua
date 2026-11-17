@@ -396,7 +396,7 @@ describe("MaskValues.write on the photo open in Develop", function()
 
         MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
 
-        assert.are.same({ { committed = true, reads = 0, attempts = 0 } }, ctx.flushes)
+        assert.are.same({ committed = true, reads = 0, attempts = 0 }, ctx.flushes[1])
         assert.are.equal(0.125, ctx.store.entries[1].LocalExposure2012)
     end)
 

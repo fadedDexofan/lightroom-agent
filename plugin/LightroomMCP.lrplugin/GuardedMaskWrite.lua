@@ -423,8 +423,8 @@ function GuardedMaskWrite.inspect(catalog, photo)
 end
 
 local function writeEntries(context, catalog, photo, description, entries)
-    CatalogWrite.run(context, catalog, description, function()
-        CatalogWrite.call(context, photo, "applyDevelopSettings", { MaskGroupBasedCorrections = entries })
+    CatalogWrite.developSettings(context, catalog, photo, description, function()
+        return { MaskGroupBasedCorrections = entries }
     end)
 end
 
@@ -466,21 +466,22 @@ local function failAfterRollback(context, catalog, photo, previous, problems, ma
 end
 
 function GuardedMaskWrite.submit(context, catalog, photo, spec)
-    DevelopSession.flushIfShowing(catalog, photo)
     if spec.unchanged then
+        DevelopSession.flushIfShowing(catalog, photo)
         local current = GuardedMaskWrite.readEntries(catalog, photo)
         if spec.unchanged(current) then return { previous = current, entries = current } end
     end
     local previous, proposed, sent, settings
     local mark = context.ledger:mark()
-    local wrote, writeError = LrTasks.pcall(CatalogWrite.run, context, catalog, spec.description, function()
-        settings = photo:getDevelopSettings()
-        previous = entriesOf(settings)
-        proposed = spec.build(deepClone(previous), settings)
-        if proposed == nil then return CatalogWrite.NOTHING end
-        sent = true
-        CatalogWrite.call(context, photo, "applyDevelopSettings", { MaskGroupBasedCorrections = deepClone(proposed) })
-    end)
+    local wrote, writeError = LrTasks.pcall(CatalogWrite.developSettings, context, catalog, photo, spec.description,
+        function()
+            settings = photo:getDevelopSettings()
+            previous = entriesOf(settings)
+            proposed = spec.build(deepClone(previous), settings)
+            if proposed == nil then return nil end
+            sent = true
+            return { MaskGroupBasedCorrections = deepClone(proposed) }
+        end)
     if not wrote and not sent then error(writeError, 0) end
     if not wrote then
         failAfterRollback(context, catalog, photo, previous, { "Lightroom rejected the write: " .. tostring(writeError) },

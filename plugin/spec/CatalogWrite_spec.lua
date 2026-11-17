@@ -19,6 +19,46 @@ local function load(imports)
     return require 'CatalogWrite', helper.requestContext()
 end
 
+describe("CatalogWrite.developSettings", function()
+    local function developing(module, target)
+        local events = {}
+        local photo = {
+            applyDevelopSettings = function(_, settings, historyName)
+                events[#events + 1] = { apply = settings, history = historyName }
+            end,
+        }
+        local CatalogWrite, context = load({
+            LrApplicationView = { getCurrentModuleName = function() return module end },
+            LrDevelopController = { stopTracking = function(committed) events[#events + 1] = { flushed = committed } end },
+        })
+        local catalog = catalogAnswering("executed")
+        catalog.getTargetPhoto = function() return target or photo end
+        return CatalogWrite, context, catalog, photo, events
+    end
+
+    it("commits Develop's pending edits on the photo, then applies the settings under the gate's title", function()
+        package.loaded.DevelopSession = nil
+        local CatalogWrite, context, catalog, photo, events = developing("develop")
+
+        CatalogWrite.developSettings(context, catalog, photo, "Set Develop Settings", function() return { Exposure2012 = 1 } end)
+
+        assert.are.same({ { flushed = true }, { apply = { Exposure2012 = 1 }, history = "Set Develop Settings" } }, events)
+        assert.are.same({ "Set Develop Settings" }, context.ledger:live())
+    end)
+
+    it("commits nothing in Library or on another photo, and records no gate when there is nothing to apply", function()
+        for _, case in ipairs({ { "library" }, { "develop", {} } }) do
+            package.loaded.DevelopSession = nil
+            local CatalogWrite, context, catalog, photo, events = developing(case[1], case[2])
+
+            CatalogWrite.developSettings(context, catalog, photo, "Set Mask", function() return nil end)
+
+            assert.are.same({}, events)
+            assert.are.same({}, context.ledger:live())
+        end
+    end)
+end)
+
 describe("CatalogWrite.run", function()
     it("waits for write access for WAIT_SECONDS, runs the write and records the gate", function()
         local CatalogWrite, context = load()
