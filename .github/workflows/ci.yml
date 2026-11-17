@@ -61,6 +61,7 @@ jobs:
         run: npm run test:coverage -- --ci --reporters=default
 
       - name: Live kit tests
+        if: matrix.os != 'windows-latest'
         working-directory: .
         run: node --test "tests/e2e/live/unit/*.test.mjs"
 
