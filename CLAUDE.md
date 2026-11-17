@@ -19,7 +19,7 @@ This codebase is yours: what it's for and how it's built are your call, and you'
 - Preserve upstream history and the MIT license.
 - Keep `AGENTS.md` a symlink to this file. Verify any behavior claim here against the current source before relying on it, and fix this file in the change that makes it stale.
 - This repository holds technical API facts, contracts and mechanics. API work supplies capabilities, stable identities, render provenance and verifiable outcomes; it never silently turns an experimental score into a culling rule.
-- `skills/lightroom-agent` is the bundled skill, shipped as the MCP prompt and the mcpb prompt; `npm run build` regenerates both from it. `agents/openai.yaml` is its metadata for Codex.
+- `skills/lightroom-agent` is the bundled skill. `npm run build` regenerates the MCP prompt and the mcpb prompt from it; the npm package and the repository-root plugin carry the folder itself. `agents/openai.yaml` is its metadata for Codex.
 - CLI and MCP share tool contracts and access policy. Reuse the existing bridge and Develop session lifecycle; do not add a second Lua protocol or catalog model.
 - Develop and test offline by default. Never install or reload a plug-in, restart Lightroom, switch the open catalog or change a user's photos as a side effect of development or tool discovery.
 - The Lightroom tools act on whatever catalog Lightroom has open; do not call them without the user's permission. To run this checkout's server from a client, add it as CONTRIBUTING.md describes.
@@ -37,13 +37,9 @@ Run from the repository root; `.mise.toml` and `server/package.json` define the 
 - `mise run test` (Jest), `mise run dev` (`tsc --watch`), `mise run lua:lint` (selene), `mise run lua:test` (busted), `mise run live:test` (live-kit unit tests, no Lightroom).
 - `mise install` provisions Node, Lua and selene; `lua:test` installs busted into the ignored `lua_modules/`. `selene.toml` and `lightroom.yml` (the SDK globals) configure the linter.
 
-Before committing, run after your final edit:
+Before committing, run the checks in CONTRIBUTING.md "Check your change" after your final edit.
 
-- in `server/`: `npm run check`, `npm run lint`, `npm run build`, `npm run test:coverage`;
-- `mise run live:test`, `node --test "scripts/*.test.mjs"` and `node scripts/bump-version.mjs --check`;
-- `mise run lua:lint` and `mise run lua:test` if Lua changed.
-
-CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` runs the server checks on Ubuntu, macOS and Windows and the live-kit unit tests on Ubuntu and macOS, fails when the build changes a tracked generated file, and checks version consistency. The Lua workflows run on every push and pull request; `lua-test.yml` takes Lua from `.mise.toml`, pinned to 5.1.5, the version Lightroom Classic runs. A live-kit unit run never substitutes for validation in Lightroom.
+CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` runs the server checks on Ubuntu, macOS and Windows and the live-kit unit tests on Ubuntu and macOS, fails when the build changes a tracked generated file, checks version consistency and runs the release-script tests. `lua-lint.yml` and `lua-test.yml` lint and test the plug-in; `lua-test.yml` takes Lua from `.mise.toml`, pinned to 5.1.5, the version Lightroom Classic runs. `release.yml` builds and checks the release assets on every pull request; a `v*` tag matching `server/package.json` stages the npm publish, waits up to 60 minutes for its approval on npmjs.com, then creates the GitHub release and publishes the MCP registry entry. A live-kit unit run never substitutes for validation in Lightroom.
 
 ## Layout
 
@@ -51,6 +47,7 @@ CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` r
 - `plugin/LightroomAgent.lrplugin/`: the Lua plug-in, pure Lua and the same on macOS and Windows. Specs are in `plugin/spec/`.
 - `tests/e2e/live/`: the live kit. `tests/e2e/mcp-runner.mjs` drives the built server; `manual-test.mjs` probes the plug-in over raw TCP.
 - `docs/adr/`: accepted decisions. `GLOSSARY.md`: the terms these documents use.
+- Repository root: the plugin for agent hosts (`plugin.json`, `mcp.json`, `.claude-plugin/`, `.agents/plugins/marketplace.json`), the MCP registry entry `server.json` and the Claude Desktop bundle `mcpb/`. `server/package.json` is the one source of version, description and author; `node scripts/bump-version.mjs <version>` writes them into those files, `Info.lua` and `Contract.lua`, and `--check` verifies them.
 
 ## Transport
 

@@ -41,6 +41,7 @@ The server runs tools from a shell:
 node server/dist/index.js tools [name]          # print tool schemas
 node server/dist/index.js call <tool> [json]    # call one tool, arguments as a JSON object
 node server/dist/index.js install-plugin        # copy the plug-in into Lightroom
+node server/dist/index.js --version | --help
 ```
 
 `call` uses the same toolsets and read-only setting as the MCP server, so `call set_develop_settings` needs `LIGHTROOM_AGENT_TOOLSETS=develop` (or `all`).
@@ -61,6 +62,6 @@ LIGHTROOM_AGENT_READ_ONLY=true node server/dist/index.js call search_photos '{"l
 
 ## Mask construction and certification
 
-The tools that construct masks (gradients, brushes, range masks, AI masks, combined masks) write an undocumented Lightroom format. Outside the live kit's throwaway catalog they run only when this machine holds a certification for the running Lightroom build and the photo's process version. Value edits (sliders, curves, Point Color) and deletions need none. `get_mask_write_admission` reports the current state for a photo.
+The tools that construct masks (gradients, brushes, range masks, AI masks, combined masks, and full copies of develop settings that carry masks) write an undocumented Lightroom format. Outside the live kit's throwaway catalog they run only when this machine holds a certification for the running Lightroom build and the photo's process version. Value edits (sliders, curves, Point Color) and deletions need none. `get_mask_write_admission` reports the current state for a photo.
 
 To certify, set up the live kit as its [README](../tests/e2e/live/README.md) describes and run `node tests/e2e/live/certify-mask-writes.mjs` with the throwaway catalog open. The kit needs macOS. The record names the Lightroom build and the process versions the run exercised, not a plug-in revision, so rerun it after updating lightroom-agent. After a Lightroom update, mask construction is refused until the run passes again. [ADR 0002](adr/0002-mask-write-admission-by-certification.md) records why.

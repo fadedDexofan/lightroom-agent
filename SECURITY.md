@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-lightroom-agent has no releases yet. Security fixes go to `main`; use the latest commit.
+Releases so far are release candidates. Security fixes go to `main` and the next release; use the latest release or commit.
 
 ## Reporting a vulnerability
 

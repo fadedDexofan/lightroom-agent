@@ -13,7 +13,7 @@ lightroom-agent is an MCP server and a Lightroom Classic plug-in. Claude Code, C
 
 - **Cull.** Search by rating, date, camera, lens, keyword or folder, compare frames on previews, and judge sharpness on 1:1 crops of a full-resolution render rather than on a scaled preview.
 - **Develop.** Set develop sliders by their Lightroom SDK names; ranges are checked before the write and values are read back after Lightroom normalises them. Crop and straighten in the frame the agent sees, apply presets, match one photo's look on others, and keep the previous edit recoverable with snapshots and named virtual copies.
-- **Mask.** Subject, Sky, Background, People and Landscape masks; linear and radial gradients, brushes, colour, luminance and depth ranges (depth photos only); per-mask sliders, curves and Point Color. If Lightroom finds no sky or subject, the call removes the empty mask and says so. Building a mask needs a one-time [certification](docs/reference.md#mask-construction-and-certification) of your Lightroom build; slider, curve and Point Color edits work without it.
+- **Mask.** Subject, Sky, Background, People and Landscape masks; linear and radial gradients, brushes, colour, luminance and depth ranges (depth photos only); per-mask sliders, curves and Point Color. If Lightroom finds no sky or subject, the call removes the empty mask and says so. Building a mask needs a [certification](docs/reference.md#mask-construction-and-certification) of your Lightroom build, rerun after each Lightroom update; slider, curve and Point Color edits work without it.
 - **Organise.** Ratings, flags, colour labels, keywords, collections, metadata and GPS, plus a private score and reason per photo, kept out of IPTC and XMP.
 - **Export.** To a folder or through an export preset; the reply lists the files written.
 
@@ -47,12 +47,12 @@ The decisions behind the first three rows are in [docs/adr](docs/adr/). A [live 
 ### Requirements
 
 - Lightroom Classic 15.0 or later; checked live on 15.6 and 16.0, while 15.0–15.5 are untested.
-- macOS.
+- macOS (Windows is untested against Lightroom).
 - Node.js 20 or later (26.13.1 for development, as `.mise.toml` pins).
 
 ### 1. Build and install the plug-in
 
-lightroom-agent is not on npm yet. Build it from the repository:
+These steps build lightroom-agent from the repository. Release candidates are on npm for testing the installs; installation from npm and as a plugin comes with 0.1.0.
 
 ```sh
 git clone https://github.com/fadedDexofan/lightroom-agent.git
@@ -62,11 +62,11 @@ npm --prefix server run build
 node server/dist/index.js install-plugin
 ```
 
-`install-plugin` copies `plugin/LightroomAgent.lrplugin` into Lightroom's Modules folder (`~/Library/Application Support/Adobe/Lightroom/Modules/` on macOS, `%APPDATA%\Adobe\Lightroom\Modules\` on Windows). It replaces an installed copy from another version and leaves a current one alone; the server does the same when it starts. If a `LightroomMCP.lrplugin` is installed, it refuses, because both use the same ports: quit Lightroom and delete that folder first.
+`install-plugin` copies `plugin/LightroomAgent.lrplugin` where Lightroom Agent is already installed, otherwise into Lightroom's Modules folder (`~/Library/Application Support/Adobe/Lightroom/Modules/` on macOS, `%APPDATA%\Adobe\Lightroom\Modules\` on Windows). It replaces an installed copy of this plug-in from another version and leaves a current one alone; the server does the same when it starts. If a `LightroomMCP.lrplugin` is installed, it refuses, because both use the same ports: quit Lightroom and delete that folder first.
 
 ### 2. Start it in Lightroom
 
-Quit and reopen Lightroom Classic, open **File → Plug-in Manager**, select **Lightroom Agent** and click **Start Server**.
+Quit and reopen Lightroom Classic and bring its window to the front; the plug-in starts its server. If **File → Plug-in Manager** shows Lightroom Agent stopped, click **Start Server**.
 
 ### 3. Connect your agent
 
@@ -84,7 +84,9 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 
 Check it works by asking your agent: *List my Lightroom collections.*
 
-**Updating.** Pull and rebuild, then restart your client: the server replaces the installed plug-in when its version differs, and refuses tool calls, naming both versions, until Lightroom has been restarted onto the new one. To uninstall, delete that folder, `~/.config/lightroom-agent` and the client's server entry.
+**Updating.** Pull and rebuild, then restart your client: the server replaces the installed plug-in when its version differs, and refuses tool calls, naming both versions, until Lightroom has been restarted onto the new one.
+
+**Uninstalling.** Delete the installed `LightroomAgent.lrplugin` folder (Plug-in Manager shows where it is), `~/.config/lightroom-agent` and the client's server entry.
 
 ## The bundled skill
 
@@ -110,6 +112,7 @@ The server writes its diagnostics to stderr, which MCP clients keep in their ser
 | `ECONNREFUSED` in the server log, or `failed to open localhost:58763` in the plug-in log after Reload Plug-in | The old plug-in task still holds the ports. Quit Lightroom and reopen it. |
 | "Lightroom Agent token file not found" | **Start Server** has not run yet, or `LIGHTROOM_AGENT_TOKEN_PATH` points somewhere the plug-in never writes. |
 | The connection opens and drops at once | The token does not match. The server reads the token again on every connect, so this happens when `LIGHTROOM_AGENT_TOKEN_PATH` points at an old copy. |
+| "The installed Lightroom plug-in is version …, and this server is version …" | The server and the plug-in come from different versions. The server installs its own plug-in when it starts; restart Lightroom to load it. |
 | A call times out | The handler is still running in Lightroom. Check **Last event** in Show Status and the plug-in log; a dialog in Lightroom (an AI update prompt during export, for example) blocks until you dismiss it. |
 
 ## Development

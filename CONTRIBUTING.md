@@ -13,7 +13,7 @@ For a new tool or a change in how an existing tool behaves, open an issue first,
 
 ## Set up
 
-You need Node.js and [mise](https://mise.jdx.dev/), which provisions the pinned Node.js, Lua 5.1 (the version Lightroom runs) with LuaRocks, and selene.
+You need [mise](https://mise.jdx.dev/), which provisions the pinned Node.js, Lua 5.1.5 (the version Lightroom runs) with LuaRocks, and selene.
 
 ```sh
 git clone https://github.com/fadedDexofan/lightroom-agent.git
@@ -22,7 +22,7 @@ mise install
 npm --prefix server ci
 ```
 
-To try your build in a client, point it at this checkout's server, for example in Claude Code: `claude mcp add lightroom-dev -e LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/dist/index.js"`. The server installs your build's Lightroom plug-in when it starts; restart Lightroom onto it. While it is installed, a published lightroom-agent server of another version refuses tool calls, naming both versions.
+To try your build in a client, point it at this checkout's server, for example in Claude Code: `claude mcp add lightroom-dev -e LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/dist/index.js"`. The server installs your build's Lightroom plug-in when it starts; restart Lightroom onto it. While your build is installed, a published lightroom-agent server of another version refuses tool calls, naming both versions, and replaces your plug-in with its own when it starts.
 
 [CLAUDE.md](CLAUDE.md) describes the architecture, the conventions and the traps in Lightroom's SDK. Read the parts that cover what you change; [GLOSSARY.md](GLOSSARY.md) and [docs/adr](docs/adr/) define the terms and record the main decisions.
 
