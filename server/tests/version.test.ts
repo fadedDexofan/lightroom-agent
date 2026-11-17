@@ -25,14 +25,14 @@ describe('version sources', () => {
     expect(readJson('.claude-plugin', 'plugin.json').version).toBe(VERSION);
   });
 
-  it('plugin Info.lua matches package.json', () => {
+  it('plugin Info.lua carries the numeric core of package.json', () => {
     const lua = fs.readFileSync(
       path.join(repoRoot, 'plugin', 'LightroomAgent.lrplugin', 'Info.lua'),
       'utf8',
     );
     const m = lua.match(/VERSION = \{ major=(\d+), minor=(\d+), revision=(\d+), build=\d+ \}/);
     expect(m).not.toBeNull();
-    expect(`${m![1]}.${m![2]}.${m![3]}`).toBe(VERSION);
+    expect(`${m![1]}.${m![2]}.${m![3]}`).toBe(/^\d+\.\d+\.\d+/.exec(VERSION)?.[0]);
   });
 
   it('MCP server reports the shared version', async () => {
