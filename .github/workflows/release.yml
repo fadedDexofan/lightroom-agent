@@ -28,7 +28,6 @@ permissions:
   contents: read
 
 env:
-  DRY_RUN: ${{ github.ref_type != 'tag' }}
   NODE_VERSION: '26.13.1'
   NPM_VERSION: '11.21.2'
   MCP_PUBLISHER_VERSION: 'v1.8.9'
@@ -38,7 +37,10 @@ jobs:
   verify:
     name: Version and notes
     runs-on: ubuntu-latest
+    env:
+      PUBLISH: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
     outputs:
+      publish: ${{ env.PUBLISH }}
       version: ${{ steps.info.outputs.version }}
       tag: ${{ steps.info.outputs.tag }}
       prerelease: ${{ steps.info.outputs.prerelease }}
@@ -54,10 +56,10 @@ jobs:
       - name: Tag matches the package version
         id: info
         run: |
-          if [ "$DRY_RUN" = true ]; then
-            node scripts/release.mjs info >> "$GITHUB_OUTPUT"
-          else
+          if [ "$PUBLISH" = true ]; then
             node scripts/release.mjs info --tag "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            node scripts/release.mjs info >> "$GITHUB_OUTPUT"
           fi
 
       - name: Version sources agree
@@ -68,10 +70,10 @@ jobs:
           VERSION: ${{ steps.info.outputs.version }}
         run: |
           mkdir -p build
-          if [ "$DRY_RUN" = true ]; then
-            node scripts/release.mjs notes "$VERSION" --allow-unreleased > build/notes.md
-          else
+          if [ "$PUBLISH" = true ]; then
             node scripts/release.mjs notes "$VERSION" > build/notes.md
+          else
+            node scripts/release.mjs notes "$VERSION" --allow-unreleased > build/notes.md
           fi
           cat build/notes.md
 
@@ -159,7 +161,7 @@ jobs:
   npm:
     name: Stage the npm publish
     needs: [verify, build]
-    if: github.ref_type == 'tag'
+    if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -188,7 +190,7 @@ jobs:
   github-release:
     name: GitHub release
     needs: [verify, build, npm]
-    if: github.ref_type == 'tag'
+    if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -216,7 +218,7 @@ jobs:
   mcp-registry:
     name: MCP registry entry
     needs: [verify, npm]
-    if: github.ref_type == 'tag'
+    if: needs.verify.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     permissions:
