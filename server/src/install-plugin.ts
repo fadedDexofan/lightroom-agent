@@ -4,7 +4,7 @@ import path from "node:path";
 import { sameIdentity, treeDigest, type BuildIdentity } from "./build-identity.js";
 import { PLUGIN_FOLDER, validateBundle, type Paired } from "./plugin-pairing.js";
 
-const UPSTREAM_PLUGIN_FOLDER = "LightroomMCP.lrplugin";
+const CONFLICTING_PLUGIN_FOLDER = "LightroomMCP.lrplugin";
 
 export type InstallResult =
   | { status: "installed" | "current" | "repaired"; destination: string }
@@ -125,7 +125,7 @@ function recoverInterruptedSwaps(): void {
 }
 
 export function installPlugin(pairing: Paired): InstallResult {
-  const conflicting = installedBundle(UPSTREAM_PLUGIN_FOLDER);
+  const conflicting = installedBundle(CONFLICTING_PLUGIN_FOLDER);
   if (conflicting) return { status: "conflict", conflicting };
   recoverInterruptedSwaps();
   const destination = installedBundle(PLUGIN_FOLDER) ?? path.join(lightroomModulesDir(), PLUGIN_FOLDER);

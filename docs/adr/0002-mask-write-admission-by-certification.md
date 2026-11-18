@@ -7,7 +7,7 @@ date: 2026-11-17
 
 ## Context
 
-Mask geometry and AI mask components have no SDK call. They are written through Lightroom's undocumented `MaskGroupBasedCorrections` setting. Upstream allowed those writes only on a list of tested Lightroom versions in source. Lightroom updates itself, so the list refused every such write the day 16.0 shipped, and adding a version to the list proves nothing about it.
+Mask geometry and AI mask components have no SDK call. They are written through Lightroom's undocumented `MaskGroupBasedCorrections` setting. A list of tested Lightroom versions in the source cannot admit them: Lightroom updates itself, so such a list refuses every write the day a new version ships, and adding a version to it proves nothing about that version.
 
 ## Decision
 

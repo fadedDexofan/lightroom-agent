@@ -199,7 +199,7 @@ export const SHADOW_BRIDGE: UnresponsiveDiagnosis = {
   message: "Plugin ports connected but unresponsive; another bridge may hold the client slot. Restart the plug-in in Lightroom's Plug-in Manager.",
   details: "Connected to the Lightroom plugin's ports, but it is not answering. "
     + "The plugin serves one client at a time, so another bridge process (lightroom-agent, "
-    + "or upstream's lightroom-mcp) is most likely holding the connection. Quit any other MCP client or stale "
+    + "or lightroom-mcp) is most likely holding the connection. Quit any other MCP client or stale "
     + "bridge process (pgrep -fl 'lightroom-(agent|mcp)'), or restart the plugin from "
     + "Lightroom's Plug-in Manager.",
 };

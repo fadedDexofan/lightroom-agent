@@ -30,7 +30,7 @@
 
 </div>
 
-lightroom-agent 包含 MCP 伺服器與 Lightroom Classic 增效模組。Claude Code、Codex 或其他任何 MCP 用戶端都能使用管理編目、操作「編輯相片」模組、使用遮色片及轉存相片的工具。隨附的技能（skill）會指導代理程式用這些工具挑圖與編修。本專案衍生自 [Automaat/lightroom-mcp](https://github.com/Automaat/lightroom-mcp)。
+lightroom-agent 包含 MCP 伺服器與 Lightroom Classic 增效模組。Claude Code、Codex 或其他任何 MCP 用戶端都能使用管理編目、操作「編輯相片」模組、使用遮色片及轉存相片的工具。隨附的技能（skill）會指導代理程式用這些工具挑圖與編修。
 
 ## 代理程式能做什麼
 
@@ -197,4 +197,4 @@ Claude Code 與 Codex 外掛會載入它，伺服器也會以 MCP 提示詞 `lig
 
 ## 授權
 
-MIT，與上游相同。lightroom-agent 沿用上游的架構：一個 TypeScript MCP 伺服器，透過本機 socket 與 Lightroom 內的 Lua 增效模組溝通。本專案與 Adobe 並無組織上的關聯，也未獲 Adobe 背書。
+MIT。lightroom-agent 是一個 TypeScript MCP 伺服器，透過本機 socket 與 Lightroom 內的 Lua 增效模組溝通。本專案與 Adobe 並無組織上的關聯，也未獲 Adobe 背書。
