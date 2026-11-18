@@ -94,8 +94,12 @@ export class PluginLiveness {
     await this.pending;
   }
 
-  isUsable(): boolean {
-    return this.state !== "unresponsive" && this.state !== "incompatible";
+  admitted(): number | null {
+    return this.state === "responsive" ? this.generation : null;
+  }
+
+  connectionGeneration(): number {
+    return this.generation;
   }
 
   incompatibility(): string | null {

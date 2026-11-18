@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 const CHECKOUT_FIX = "This server's build does not match its plug-in folder; rebuild it (npm --prefix server run build in the checkout), then restart your client.";
-const PACKAGE_FIX = "This server's installation is damaged; reinstall lightroom-agent.";
+const PACKAGE_FIX = "This server's installation is damaged; reinstall lightroom-agent, then restart your client.";
 const NO_BUNDLE = 'This server has no bundled Lightroom plug-in; reinstall lightroom-agent.';
 
 type Layout = 'checkout' | 'package';
@@ -148,9 +148,5 @@ describe('findBundledPlugin', () => {
     const mcpb = root();
     const mcpbBundle = bundleIn(mcpb);
     expect(findBundledPlugin(path.join(mcpb, 'server', 'dist'))).toEqual({ source: mcpbBundle, layout: 'package' });
-  });
-
-  it('returns null when no plugin directory is found', () => {
-    expect(findBundledPlugin(path.join(root(), 'server', 'dist'))).toBeNull();
   });
 });

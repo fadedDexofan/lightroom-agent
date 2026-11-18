@@ -21,7 +21,7 @@ function readManifestPrompts(): ManifestPrompt[] {
 
 async function connect(): Promise<Client> {
   const server = createMcpServer(createCallToolHandler({
-    isReady: () => false,
+    admitted: () => null,
     dispatcher: { call: async () => ({ id: 'x', result: {} }) },
   }), createToolAccess({ toolsets: ['core'], readOnly: false }));
   const client = new Client({ name: 'test-client', version: '1.0.0' });

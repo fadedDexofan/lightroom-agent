@@ -3,7 +3,7 @@ import path from "node:path";
 import { expectedIdentity, renderContractLua, type PluginIdentity } from "./contract-lua.js";
 import { VERSION } from "./version.js";
 
-export type BundleLayout = "checkout" | "package";
+type BundleLayout = "checkout" | "package";
 
 export const PLUGIN_FOLDER = "LightroomAgent.lrplugin";
 
@@ -15,7 +15,7 @@ function isRegularFile(file: string): boolean {
   }
 }
 
-export function isBundle(dir: string): boolean {
+function isBundle(dir: string): boolean {
   return isRegularFile(path.join(dir, "Info.lua")) && isRegularFile(path.join(dir, "Contract.lua"));
 }
 
@@ -37,12 +37,12 @@ export type Paired = Extract<Pairing, { kind: "paired" }>;
 
 export const PLUGIN_BUILD_RECORD = "plugin-build.json";
 
-export const NO_BUNDLED_PLUGIN = "This server has no bundled Lightroom plug-in; reinstall lightroom-agent.";
+const NO_BUNDLED_PLUGIN = "This server has no bundled Lightroom plug-in; reinstall lightroom-agent.";
 
 const MISMATCH: Record<BundleLayout, string> = {
   checkout: "This server's build does not match its plug-in folder; rebuild it (npm --prefix server run build in the "
     + "checkout), then restart your client.",
-  package: "This server's installation is damaged; reinstall lightroom-agent.",
+  package: "This server's installation is damaged; reinstall lightroom-agent, then restart your client.",
 };
 
 export class PairingLost extends Error {}

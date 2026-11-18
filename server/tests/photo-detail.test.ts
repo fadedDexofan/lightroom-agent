@@ -52,7 +52,7 @@ function handlerFor(reply: PluginResponse, frame: PluginResponse = cropOf(64, 48
     calls.push({ action, params });
     return action === 'get_crop' ? frame : reply;
   };
-  return { handler: createCallToolHandler({ isReady: () => true, dispatcher: { call } }), calls };
+  return { handler: createCallToolHandler({ admitted: () => 0, dispatcher: { call } }), calls };
 }
 
 describe('cutPixels', () => {
@@ -152,7 +152,7 @@ describe('get_photo_detail', () => {
       calls.push(action);
       return action === 'get_crop' ? crop() : { id: 'r', result: {} };
     };
-    const handler = createCallToolHandler({ isReady: () => true, dispatcher: { call } });
+    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
 
     const response = await handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 1, height: 1 }] });
 
@@ -185,7 +185,7 @@ describe('get_photo_detail', () => {
         jest.advanceTimersByTime(5_000);
         return cropOf(64, 48);
       };
-      await createCallToolHandler({ isReady: () => true, dispatcher: { call } })('get_photo_detail', {
+      await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })('get_photo_detail', {
         photo_id: 7, regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }],
       });
       expect(timeouts).toEqual([['get_crop', 300_000], ['render_detail_source', 295_000]]);

@@ -69,6 +69,7 @@ async function startHarness(options?: {
     send: (line) => request.send(line),
     getToken: () => TOKEN,
     log: () => {},
+    connectionGeneration: () => 0,
   });
 
   request.connect();
@@ -217,6 +218,7 @@ describe("plugin rebind cycle (issue #110)", () => {
         send: (line) => requestA.send(line),
         getToken: () => TOKEN,
         log: () => {},
+        connectionGeneration: () => 0,
       });
 
       const responsesOnB: string[] = [];
@@ -224,6 +226,7 @@ describe("plugin rebind cycle (issue #110)", () => {
         send: () => false,
         getToken: () => TOKEN,
         log: () => {},
+        connectionGeneration: () => 0,
       });
       const responseB = new PluginSocket({
         port: plugin.responsePort,

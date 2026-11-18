@@ -23,7 +23,7 @@ function failed(id: number, reason: string): PluginResponse {
   return { id: 'test', result: { failed: [{ photo_id: String(id), reason }] } };
 }
 function handler(call: (action: string, args: unknown, timeoutMs?: number) => Promise<PluginResponse>) {
-  return createCallToolHandler({ isReady: () => true, dispatcher: { call } });
+  return createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
 }
 interface Result {
   groups: { photo_ids: string[] }[];

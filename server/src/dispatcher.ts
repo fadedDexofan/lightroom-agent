@@ -42,6 +42,7 @@ interface PendingResponse {
 export interface DispatcherOptions {
   send: (line: string) => boolean;
   getToken: () => string;
+  connectionGeneration: () => number;
   log?: (msg: string) => void;
   lateReplyGraceMs?: number;
 }
@@ -51,6 +52,7 @@ export class Dispatcher {
   private idCounter = 0;
   private readonly send: (line: string) => boolean;
   private readonly getToken: () => string;
+  private readonly connectionGeneration: () => number;
   private readonly log: (msg: string) => void;
   private readonly lateReplyGraceMs: number;
   private readonly lingering = new Map<string, () => void>();
@@ -58,6 +60,7 @@ export class Dispatcher {
   constructor(opts: DispatcherOptions) {
     this.send = opts.send;
     this.getToken = opts.getToken;
+    this.connectionGeneration = opts.connectionGeneration;
     this.log = opts.log ?? ((msg: string) => console.error(msg));
     this.lateReplyGraceMs = opts.lateReplyGraceMs ?? LATE_REPLY_GRACE_MS;
   }
@@ -104,8 +107,9 @@ export class Dispatcher {
     if (timeoutMs < MIN_CALL_MS) {
       throw new PluginNotSentError(`Only ${Math.max(0, Math.round(timeoutMs))} ms of the time budget were left, so ${action} was not sent`);
     }
+    const generation = this.connectionGeneration();
     const cancel = () => {
-      if (this.pending.has(id)) {
+      if (this.pending.has(id) && this.connectionGeneration() === generation) {
         this.send(JSON.stringify({ hello: this.getToken(), action: "cancel", params: { request_id: id } }));
       }
     };

@@ -36,7 +36,7 @@ function rendered(image: string, photoId: number | string = 914): PluginResponse
 
 function makeHandler(response: PluginResponse = rendered(halves(32, 16))) {
   const call = jest.fn(async (_action: string, _args: unknown, _timeout?: number, _options?: unknown) => response);
-  return { handler: createCallToolHandler({ isReady: () => true, dispatcher: { call } }), call };
+  return { handler: createCallToolHandler({ admitted: () => 0, dispatcher: { call } }), call };
 }
 
 function returnedImage(result: Awaited<ReturnType<ReturnType<typeof makeHandler>['handler']>>) {
@@ -219,7 +219,7 @@ describe('get_photo_previews', () => {
   function batch(answer: Answer) {
     const call = jest.fn(async (_action: string, params: unknown, _timeout?: number, _options?: unknown) =>
       answer((params as { photo_ids: unknown[] }).photo_ids[0]));
-    return { handler: createCallToolHandler({ isReady: () => true, dispatcher: { call } }), call };
+    return { handler: createCallToolHandler({ admitted: () => 0, dispatcher: { call } }), call };
   }
   const images = (result: Awaited<ReturnType<ReturnType<typeof batch>['handler']>>) =>
     result.content.slice(1).map((block) => {
@@ -367,7 +367,7 @@ describe('the batch preview tools', () => {
           const id = (params as { photo_ids: unknown[] }).photo_ids[0];
           return { id: 'p', result: { failed: [{ photo_id: String(id), reason: 'file is offline' }] } };
         });
-        await createCallToolHandler({ isReady: () => true, dispatcher: { call } })(name, {
+        await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })(name, {
           photo_ids: Array.from({ length: 20 }, (_, i) => i + 1),
         });
         expect(call).toHaveBeenCalledTimes(Math.ceil(stated[0] / 2));

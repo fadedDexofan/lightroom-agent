@@ -7,7 +7,7 @@ import { CHECKED_CONTRACTS, validateToolArgs } from "./validate-args.js";
 
 export interface ToolHandlerDeps {
   dispatcher: Pick<Dispatcher, "call">;
-  isReady: () => boolean;
+  admitted: () => number | null;
   notReadyMessage?: () => string;
   settleReadiness?: () => Promise<void>;
 }
@@ -21,6 +21,9 @@ export const NOT_CONNECTED_DETAILS =
   "in the background has not started the server yet. Otherwise open Lightroom and click 'Start Server' " +
   "in Plug-in Manager.";
 
+const CONNECTION_CHANGED_MESSAGE = "The Lightroom connection this call arrived on was lost or replaced, so nothing more "
+  + "of it was sent. Read the state before calling again.";
+
 export function createCallToolHandler(deps: ToolHandlerDeps) {
   const queue = new DevelopQueue();
   return async (name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> => {
@@ -32,20 +35,33 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     if (invalid) return refusedResponse(invalid);
 
     await deps.settleReadiness?.();
-
-    if (!deps.isReady()) return refusedResponse(deps.notReadyMessage?.() ?? NOT_CONNECTED_MESSAGE);
+    const notReady = () => deps.notReadyMessage?.() ?? NOT_CONNECTED_MESSAGE;
+    const generation = deps.admitted();
+    if (generation === null) return refusedResponse(notReady());
+    const withdrawn = (): string | null => (deps.admitted() === generation ? null : CONNECTION_CHANGED_MESSAGE);
+    const fenced: Pick<Dispatcher, "call"> = {
+      call: (action, params, timeoutMs, callOptions) => {
+        const reason = withdrawn();
+        if (reason !== null) return Promise.reject(new PluginNotSentError(reason));
+        return deps.dispatcher.call(action, params, timeoutMs, callOptions);
+      },
+    };
 
     const readOnly = contract.annotations.readOnlyHint === true;
     const { run } = contract;
     const budgetMs = TIMEOUT_MS_BY_DURATION[contract.duration ?? "quick"];
-    const invoke = async (left: number): Promise<PluginReply> => "server" in run
-      ? await run.server(values, deps.dispatcher, left, options)
-      : await deps.dispatcher.call(name, values, left, options);
+    const send = async (left: number): Promise<ToolResponse> => {
+      const reason = withdrawn();
+      if (reason !== null) return refusedResponse(reason);
+      const reply: PluginReply = "server" in run
+        ? await run.server(values, fenced, left, options)
+        : await fenced.call(name, values, left, options);
+      return toolResponse(finishReply(readOnly, reply));
+    };
     try {
-      if (!contract.develop) return toolResponse(finishReply(readOnly, await invoke(budgetMs)));
-      const turn = await queue.run(name, budgetMs, options?.signal, invoke);
-      if (!turn.ran) return refusedResponse(turn.reason);
-      return toolResponse(finishReply(readOnly, turn.value));
+      if (!contract.develop) return await send(budgetMs);
+      const turn = await queue.run(name, budgetMs, options?.signal, send);
+      return turn.ran ? turn.value : refusedResponse(turn.reason);
     } catch (error) {
       return toolResponse(finishLost(readOnly, failureText(name, readOnly, error), !(error instanceof PluginNotSentError)));
     }
