@@ -303,6 +303,6 @@ return {
     STYLE_SUMMARY_MIN_RATING = 4,
     STYLE_SUMMARY_PHOTO_LIMIT = 200,
     HEARTBEAT_INTERVAL_SECONDS = 30,
-    VERSION = "0.1.0-rc.2",
-    BUILD = "a65798ded7ee4eff",
+    VERSION = "0.1.0-rc.3",
+    BUILD = "7488a11ad0ab7657",
 }

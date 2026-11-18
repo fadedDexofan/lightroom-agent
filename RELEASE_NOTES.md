@@ -1,3 +1,28 @@
+# lightroom-agent 0.1.0-rc.3
+
+The fourth release candidate of lightroom-agent. Codex now offers every tool, and a server started from an outdated client no longer replaces a newer Lightroom plug-in.
+
+**Install**
+
+- Claude Code: `/plugin marketplace add fadedDexofan/lightroom-agent`, then `/plugin install lightroom-agent@lightroom-agent`; to update, `claude plugin marketplace update lightroom-agent`, then `claude plugin update lightroom-agent@lightroom-agent`.
+- Codex: `codex plugin marketplace add fadedDexofan/lightroom-agent`, then `codex plugin add lightroom-agent@lightroom-agent`; to update, `codex plugin marketplace upgrade lightroom-agent`, then start a new session.
+- Claude Desktop: open the `.mcpb` attached to this release.
+- Any MCP client: `npx -y lightroom-agent@0.1.0-rc.3` over stdio.
+- From a checkout: run `npm --prefix server run build`, quit every client, run `node server/dist/index.js install-plugin`, restart Lightroom, then start the clients.
+
+After updating, restart every client, then Lightroom Classic: the server that holds the Lightroom connection installs the new plug-in when it starts.
+
+**Changes since 0.1.0-rc.2**
+
+- Codex installs the plugin from a separate package in `codex/`. Codex hides the tools of an Agent Plugins server beyond 64 KB of tool descriptions and offered 17 of 80; the separate package is outside that limit. In `codex exec` the tools arrive a few seconds after the session starts.
+- A server installs the Lightroom plug-in on its own only where none is installed, over an older version, or to repair its own build. Over a newer version, or over another build of the same version, it leaves the plug-in alone, does not connect, and every call says what to update. `install-plugin` still replaces any copy and says when that is a downgrade.
+
+**Known issue**
+
+- The first reset after Lightroom starts can come back `unknown` with nothing changed, most often right after a read of that photo's settings; read the photo and call again.
+
+The full description of this release candidate's behaviour is in the 0.1.0-rc.1 notes below.
+
 # lightroom-agent 0.1.0-rc.2
 
 The third release candidate of lightroom-agent, for testing the installs before 0.1.0. It fixes resets that answered done while nothing was reset.
