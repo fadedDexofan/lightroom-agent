@@ -11,9 +11,9 @@ Mask geometry and AI mask components have no SDK call. They are written through 
 
 ## Decision
 
-Constructing writes are the ones that add a mask entry or component: gradients, brushes, range masks, Subject, Sky, Background, People and Landscape parts, combines, and full copies that carry masks. Outside the live kit's throwaway catalog they are admitted only when a certification record names the running Lightroom version and build and the photo's process version.
+Constructing writes are the ones that add or reshape a mask entry or component: gradients, brushes, range masks, Subject, Sky, Background, People and Landscape parts, combines, and full copies when the source has masks to copy or the target has masks to remove. Outside the live kit's throwaway catalog they are admitted only when a certification record names the running Lightroom version and build and the photo's process version.
 
-The record is written by one live-kit command, only after its suite passed on a throwaway catalog on this machine, with read-back and render checks. On the throwaway catalog, recognised by the kit's marker file, constructing writes are always admitted, because that is where certification runs.
+The record is written by one live-kit command, after its suite passed on a throwaway catalog on this machine, with read-back and render checks. A run whose step missed a threshold can be judged again from its run file without Lightroom (`--rejudge`); it writes the record when every step passes under the thresholds it applies, the shipped ones, overlaid by the saved run's own and then by any `--threshold` overrides; the record names the result. On the throwaway catalog, recognised by the kit's marker file, constructing writes are always admitted, because that is where certification runs.
 
 Writes that construct nothing need no admission: changing a mask's adjustments, curves or Point Color swatches, and deleting masks or components. They address the mask by id and are confirmed by an exact read-back of the whole mask array; Lightroom's own entries must come back byte for byte, or the array is restored.
 

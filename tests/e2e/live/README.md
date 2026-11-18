@@ -20,13 +20,13 @@ Everything that needs no Lightroom (image encoders, orientation maths, manifest 
 
 ## Safety rules
 
-- Scripts that write run only in a throwaway catalog. `lib/catalog-guard.mjs` reads the open catalog from Lightroom's open files (`lsof`) and refuses unless that catalog's folder holds `lragent-live-catalog.json` (written by `setup-catalog.mjs`) or `LRAGENT_LIVE_THROWAWAY_CATALOG` names the catalog. A catalog under `~/Pictures/Lightroom` is always refused.
+- The kit's scripts that write, and the writing `mcp-runner.mjs` scenarios, run only in a throwaway catalog. One-shot `mcp-runner.mjs tool` calls and `node server/dist/index.js call` check nothing: check the open catalog before writing with them. `lib/catalog-guard.mjs` reads the open catalog from Lightroom's open files (`lsof`) and refuses unless that catalog's folder holds `lragent-live-catalog.json` (written by `setup-catalog.mjs`) or `LRAGENT_LIVE_THROWAWAY_CATALOG` names the catalog. A catalog under `~/Pictures/Lightroom` is always refused.
 - `setup-catalog.mjs` uses your open catalog only to reach File → New Catalog. It imports nothing until the new catalog is open and verified.
 - Never commit a `.lrcat` or a photo whose licence does not allow redistribution.
 - Menu clicks and keystrokes go to Lightroom only after `ensureLightroomFrontmost()` has confirmed it is in front; any app that takes focus can redirect them. Dialog buttons are pressed through their Accessibility element (`clickWindowButton`), which neither activates Lightroom nor moves the pointer.
 - Do not force-quit Lightroom or remove another process's socket.
 - Keep plug-in backups outside `$TMPDIR`, which macOS clears.
-- Finish on your own catalog in the Library module, with ports 58763 and 58764 listening, Plug-in Manager closed and `node tests/e2e/mcp-runner.mjs tool list_collections '{"limit":1}'` answering.
+- Finish on your own catalog in the Library module, with ports 58763 and 58764 listening, Plug-in Manager closed and a read answering through the build that matches the restored plug-in: `node server/dist/index.js call list_collections '{"limit":1}'` from that build's checkout, or `npx -y lightroom-agent@<version> call list_collections '{"limit":1}'` for a published build. `call` installs nothing; the stdio server, which `mcp-runner.mjs` starts, replaces an installed plug-in whose files differ from its build when it takes the Lightroom connection.
 
 ## Setup
 
@@ -50,13 +50,13 @@ If the New Catalog dialog proposes another folder, or Accessibility fails, creat
 
 ## Certifying mask writes
 
-The plug-in allows guarded mask writes (gradient, brush, range and AI masks, and `combine_mask`) outside the throwaway catalog only after a certification run has passed for the running Lightroom version and build and the photo's process version. After a Lightroom update, run in the throwaway catalog:
+The plug-in allows guarded mask writes (gradient, brush, range and AI masks, `combine_mask`, and full copies when the source or the target has masks) outside the throwaway catalog only after a certification run has passed for the running Lightroom version and build and the photo's process version. After a Lightroom update, run in the throwaway catalog:
 
 ```sh
 node tests/e2e/live/certify-mask-writes.mjs
 ```
 
-It resets the develop settings of `wide_plain`, `ramp256`, `chart80`, `orient_1`, `pano`, `arw_14bit`, `arw_12bit`, `flat_gray`, `people_photo` (required) and `depth_heic` (when present), then runs each guarded tool once:
+It resets the develop settings of `wide_plain`, `ramp256`, `chart80`, `orient_1`, `pano`, `arw_14bit`, `arw_12bit`, `flat_gray`, `people_photo` (required) and `depth_heic` (when present), then runs these steps:
 
 - linear and radial gradient create and update, a brush with an erase stroke, a luminance range, and a single-sample colour range on `chart80` at the l, a, b Lightroom sampled from its red patch;
 - a depth range (nearest 0 to 0.3, Exposure −1) on `depth_heic`, which must darken the near table edge and leave the far background unchanged;
@@ -67,19 +67,19 @@ It resets the develop settings of `wide_plain`, `ramp256`, `chart80`, `orient_1`
 - on copies of `people_photo`, whose subject fills about 70 % of the frame: Subject (the pixels it darkens become the subject region), a gradient combined with Subject by add, subtract and intersect, and Background. Each must darken at least 0.5 % of the preview, with at least 70 % of the darkened pixels inside its region, and brighten nothing;
 - Subject on `flat_gray`, which must be refused as nothing found with the masks restored exactly.
 
-The AI and combine steps each run on a fresh virtual copy, removed at the end, with Exposure −1. A step that expects a change polls its preview until its own check passes, for at most 60 s; the run file records `landed_ms`, which is null when the change never appeared. The preview is then read when two consecutive previews match and keep at least half the detail of the preview before the write (see `measureChange`).
+The AI and combine steps each run on a fresh virtual copy, removed at the end. The steps judged by render use Exposure −1; the Landscape and nothing-found steps judge only the stored masks and write no adjustment. A step that expects a change polls its preview until its own check passes, for at most 60 s; the run file records `landed_ms`, which is null when the change never appeared. The preview is then read when two consecutive previews match and keep at least half the detail of the preview before the write (see `measureChange`).
 
 **The guarded write next to a Sky.** On an `arw_14bit` copy that already holds a neutral linear gradient, Lightroom computes a Sky, then a second neutral gradient is created. The Sky's stored entry must stay byte-identical. Its effect must stay too: in the region the Sky darkened, and in the rest of the frame, the mean luminance may move by at most `max_region_mean_change` (0.01). The per-pixel maximum is recorded but not judged: on a raw, any parametric mask written next to an AI mask re-renders the whole photo slightly (observed on Lightroom Classic 16.0: a third of the pixels moved by more than 0.01, at most 0.08, with a mean change of −0.002). The neutral gradient comes first because the first parametric mask on a raw changes the render more (about 18 % of pixels by more than 0.01, at most 0.07).
 
 A refusal passes when the call answered `failed`, or `unknown` naming Update AI Settings with the masks restored; the record's `refusals` says which. The run does not certify the stored scales of local sliders: the plug-in writes and checks them with the same `LOCAL_KEYS` formula, so the kit cannot observe a scale Lightroom changed. The record lists them as not exercised.
 
-Each step reads `MaskGroupBasedCorrections` before and after, and checks the masks the step added or changed against the pinned format through `get_mask_write_admission`. A step that throws is recorded as failed and the run continues. Each step's verdict inputs go into the run file in `<catalog folder>/certification-runs/`: the answer, the raw settings before and after, the admission read, the measured numbers with the name of their check, and the previews (in `<run>-previews/`, with their SHA-256). The verdict depends only on that file and `THRESHOLDS` in `lib/certification.mjs`, so a step that missed a threshold can be judged again without Lightroom:
+Each step reads `MaskGroupBasedCorrections` before and after, and checks the masks the step added or changed against the pinned format through `get_mask_write_admission`. A step that throws is recorded as failed and the run continues. Each step's verdict inputs go into the run file in `<catalog folder>/certification-runs/`: the answer, the raw settings before and after, the admission read, the measured numbers with the name of their check, and the previews (in `<run>-previews/`, with their SHA-256). The verdict depends only on that file and `THRESHOLDS` in `lib/certification.mjs`, so a step that missed a threshold can be judged again without Lightroom. A rejudged run whose steps all pass writes the certification record, as a live run does:
 
 ```sh
 node tests/e2e/live/certify-mask-writes.mjs --rejudge <run file> --threshold <name>=<value>
 ```
 
-Only a run where every step passed writes `~/.config/lightroom-agent/mask-certification.json`: the Lightroom version and build, the process versions exercised, the checks, the checks with a render comparison, what was not exercised (also depth range, when no depth photo was supplied or Lightroom found no depth map in it), the kit commit and the thresholds. A failed or interrupted run leaves the previous record.
+Only a run where every step passed writes `~/.config/lightroom-agent/mask-certification.json`: the Lightroom version and build, the process versions exercised, the checks, the checks with a render comparison, what was not exercised (also depth range, when no depth photo was supplied or Lightroom found no depth map in it), the kit commit and the thresholds. A run with a failed step, or an interrupted one, leaves the previous record; stale ranges (below) do not stop the record from being written.
 
 The same run compares the static range tables with Lightroom's: `describe_develop_keys` on `arw_12bit` for every number key of `DEVELOP_KEYS`, and on `pano` with a linear gradient selected for every local slider of `LOCAL_KEYS`. Ranges never decide admission, but a stale static range is written into the record, printed at the end and makes the command exit non-zero: correct the table before installing the build.
 
@@ -138,7 +138,9 @@ A check takes a few lines:
 ```js
 const { session, marker } = await openLiveSession();
 const photoId = requireFixtureId(marker, "orient_6");
-const { before, after } = await measureChange(session, photoId, () => applyMask(session, photoId));
+const { before, after } = await measureChange(session, photoId, () => session.toolOrThrow("create_gradient_mask", {
+  photo_id: String(photoId), shape: "linear", start: { x: 0.5, y: 0.1 }, end: { x: 0.5, y: 0.5 }, adjustments: { local_Exposure: 1 },
+}));
 const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0.7, y1: 0.08 }]);
 ```
 
@@ -152,6 +154,9 @@ Each script checks one area in the open throwaway catalog, prints a pass or FAIL
 - `edit-breadth-keys.mjs`: on a copy of `chart80`, Defringe, Remove CA, Color Grading, Glow, Upright and Projection are written and read back unadjusted, and the colour and Glow writes are visible; GrayMixer after `set_treatment`; refusals for an out-of-range value, a Defringe hue pair closer than 10, GlowStyle with Glow 0 and GrayMixer on a colour photo.
 - `preview-sizes.mjs`: `get_photo_preview` sizes cull, review and 1000 arrive at 864, 1728 and 1000 px, or at the photo's own long edge when it is smaller; the same for `get_photo_previews`.
 - `photo-marks.mjs`: rating, flag and colour label read back and found by `search_photos`; alt text and extended description written with `set_metadata` and returned by `get_photo_metadata`.
+- `batch-preview.mjs`: `get_photo_previews` returns three previews in the order asked, each at most 2000 px and numbered by `image_index`; a reject flag, a yellow label and a private reason written on `wide_plain` read back, and its starting flag, label and reason are restored exactly.
+- `snapshots.mjs`: `create_develop_snapshot` refuses a duplicate name and replaces with `replace: true`; `apply_develop_snapshot` brings back the snapshot's Exposure and leaves rating, flag, keywords, title and caption unchanged; apply and delete refuse a missing id, another photo's snapshot and an unknown photo; a deleted snapshot leaves the list, which ends as it began.
+- `develop-dry-run.mjs`: a `copy_develop_settings` dry run from `arw_14bit` onto `wide_plain` and `pano` leaves their stored develop rows and History unchanged and lists exactly the copied keys; the real copy then changes exactly the listed settings, each from its `before` to its `after`. The targets' rows must first show a write made just before, which proves the catalog flush works in that session.
 - `paths.mjs`: `export_photos` names files under a destination given as `/tmp/...` in that spelling; `import_photos` with `copy_to` keeps the whole file name.
 - `empty-masks.mjs --empty-group <photo id>`: `delete_empty_masks` removes a mask group without components and keeps a gradient without adjustments. No tool can leave a group without components, so the photo must be prepared outside the kit by writing its saved masks directly; the script does not remove that photo.
 - `delete-masks.mjs`: `delete_masks` by mask id, by one tool id of a two-component mask and by a mask's only tool id; each removes what it names and leaves every other mask byte-identical.
@@ -213,7 +218,7 @@ Checks by hand:
 
 ## Manual checks
 
-Positions are always in the frame of the rendered preview, after crop, straightening and orientation; Lightroom stores masks in the source frame (`ImageFrame.lua`).
+Positions are always in the frame of the rendered preview, after crop, straightening and orientation; Lightroom stores masks in the stored frame (`ImageFrame.lua`).
 
 | Tool | Fixtures | Check |
 |---|---|---|
@@ -228,7 +233,7 @@ Positions are always in the frame of the rendered preview, after crop, straighte
 | `create_range_mask` colour | `chart80` | Selection follows Lightroom's l, a, b sample, not sRGB: take it from a range made in Lightroom (`list_masks`) or use `copy_sample_from`. Use exactly one sample: two crash Lightroom (below). |
 | `create_range_mask` depth | `depth_heic` | Near and far regions of the depth map; a photo without depth fails and stays unchanged. |
 | `create_mask` subject, sky, background | `arw_14bit`, `arw_12bit`, `subject_photo` | The Sky covers the sky in the preview; created without opening Develop or raising a dialog; nothing found removes the new entry. |
-| `create_mask_batch` | `batch.ids` | At most 200 photos per call; a call stops starting photos when one more would not fit its time budget, and answers `partial` with the unattempted photos in `remaining`; a photo where nothing is found fails and the batch continues. |
+| `create_mask_batch` | `batch.ids` | At most 200 photos per call; a call stops starting photos when one more would not fit its time budget and lists the unattempted ones in `remaining` (`partial` when some photos succeeded, `failed` when none did, `unknown` when any attempted photo is unknown); a photo where nothing is found fails and the batch continues. |
 | `create_mask` people, landscape | `people_photo`, `arw_14bit` | One mask per part or category, on the right region. |
 | `invert_mask` | `wide_plain` | The change is the shape's complement; inverting twice restores it. |
 | `set_mask_adjustments`, `get_mask` | `wide_plain`, `ramp256` | The preview settles about 3.5 s after the call (use `measureChange`); `local_Exposure` +2 is stored as `LocalExposure2012 = 0.5`. |

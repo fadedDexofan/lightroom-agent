@@ -6,7 +6,7 @@ Terms used by lightroom-agent's API, its documentation and the live kit that tes
 
 ### Guarded write
 
-A write of the photo's mask array through Lightroom's undocumented mask setting, made only through the one module that writes the whole array in one gate, reads it back and restores it on a mismatch. A guarded write that constructs a mask entry or component also needs admission and is checked against the pinned format; one that only changes values or deletes constructs nothing and needs neither.
+A write of the photo's mask array through Lightroom's undocumented mask setting, made only through the one module that writes the whole array in one gate, reads it back and restores it on a mismatch. A guarded write that constructs a mask entry or component also needs admission and is checked against the pinned format; one that only changes values or deletes constructs nothing and needs neither. A full copy that copies or removes masks counts as constructing.
 
 - Avoid: raw mask write, direct write
 
@@ -24,7 +24,7 @@ The decision, taken before a write that constructs a mask changes anything, whet
 
 ### Certification
 
-A passed run of the live kit's mask suite on the throwaway catalog of this machine, on the installed Lightroom build. It is the only thing that admits writes that construct masks outside the throwaway catalog.
+A passed run of the live kit's mask suite on the throwaway catalog of this machine, on the installed Lightroom build. So does a `--rejudge` of a saved run file of the suite, without Lightroom, when every step passes under the thresholds it applies (the shipped ones, overlaid by the saved run's own and then by any `--threshold` overrides; the record names the result). It is the only thing that admits writes that construct masks outside the throwaway catalog.
 
 - Avoid: live check (too wide: any observation against Lightroom is a live check)
 
@@ -52,13 +52,13 @@ A period in which an agent drives the real Lightroom, usually with a restart and
 
 ### Result envelope
 
-The one shape every tool call answers in: an outcome, the data confirmed, and lists of the items that failed, are unknown, were not found or were never attempted.
+The one shape every tool call answers in: an outcome, the data confirmed, and lists of the items that failed, are unknown, were not found or are still to process.
 
 - Avoid: response format, result object
 
 ### Outcome
 
-One of four statements about a call. `done`: everything asked for happened and was confirmed. `partial`: some of it happened, and the lists say which items did not. `failed`: nothing changed (the call wrote nothing, or every write was read back as undone). `unknown`: something may have changed, the error names what was written, and the state must be read before any retry.
+One of four statements about a call. `done`: everything asked for happened and was confirmed. `partial`: some of it happened, and the lists say which items did not. `failed`: nothing changed (the call wrote nothing, or every write was read back as undone). `unknown`: something may have changed, the error names what the plug-in reported writing (a lost reply carries only its transport error), and the state must be read before any retry.
 
 - `status` is not an alias of `outcome`.
 

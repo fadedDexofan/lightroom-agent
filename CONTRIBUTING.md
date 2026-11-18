@@ -1,6 +1,6 @@
 # Contributing
 
-lightroom-agent has one maintainer, who reviews issues and pull requests as time allows. Small, focused changes get merged fastest.
+lightroom-agent has one maintainer, who reviews issues and pull requests as time allows. Keep each pull request to one change.
 
 ## What helps most
 
@@ -22,7 +22,7 @@ mise install
 npm --prefix server ci
 ```
 
-To try your build in a client, point it at this checkout's server, for example in Claude Code: `claude mcp add lightroom-dev -e LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/dist/index.js"`. The server installs your build's Lightroom plug-in when it starts; restart Lightroom onto it. While your build is installed, a published lightroom-agent server of another version refuses tool calls, naming both versions, and replaces your plug-in with its own when it starts.
+To try your build in a client, point it at this checkout's server, for example in Claude Code: `claude mcp add lightroom-dev -e LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/dist/index.js"`. The server that owns the plug-in connection installs your build's Lightroom plug-in when it becomes the owner; restart Lightroom onto it. While your build is installed, a lightroom-agent server of another build, a published one included, refuses tool calls, naming both, and installs its own plug-in only when it owns the connection. Build first, then start clients: a client started while a build is running may refuse until it is restarted. After you pull or edit the plug-in's Lua, rebuild, restart your clients, then Lightroom: a server whose build does not match its plug-in folder refuses every call until it is rebuilt.
 
 [CLAUDE.md](CLAUDE.md) describes the architecture, the conventions and the traps in Lightroom's SDK. Read the parts that cover what you change; [GLOSSARY.md](GLOSSARY.md) and [docs/adr](docs/adr/) define the terms and record the main decisions.
 
