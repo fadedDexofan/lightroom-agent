@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 
 local AIMaskCompute = require 'AIMaskCompute'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
+local HandlerAiMasks = require 'HandlerAiMasks'
 local Log = require 'Log'
 local MaskTypes = require 'MaskTypes'
 local MaskValues = require 'MaskValues'
@@ -30,7 +31,7 @@ end
 
 function MaskCreateHandler.createMask(args, context)
     if args.type == "people" or args.type == "landscape" then
-        return (require 'HandlerAiMasks').createMask(args, context)
+        return HandlerAiMasks.createMask(args, context)
     end
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)

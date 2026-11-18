@@ -258,8 +258,8 @@ function FakeMaskStore.guardedHandler(handlerName, modules, opts)
         photos[#photos + 1] = photo
     end
     local active = photos[1]
-    local module = opts.startModule or "library"
-    local calls = { modules = {}, getAllMasks = 0, stopTracking = {} }
+    local module = "library"
+    local calls = { modules = {}, getAllMasks = 0 }
     catalog = helper.fakeCatalog({ photos = photos })
     for _, photo in ipairs(photos) do FakeMaskStore.trackGates(storeOf[photo], catalog) end
     catalog.getTargetPhoto = function() return active end
@@ -287,9 +287,7 @@ function FakeMaskStore.guardedHandler(handlerName, modules, opts)
             return -100, 100
         end,
         selectMaskTool = function() end,
-        stopTracking = function(commit)
-            calls.stopTracking[#calls.stopTracking + 1] = { committed = commit, writes = #storeOf[active].writes }
-        end,
+        stopTracking = function() end,
     }
 
     helper.admitMaskWrites(opts.maskWrites)

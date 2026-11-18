@@ -91,7 +91,7 @@ describe("Committing Develop's pending edits", function()
                 local source = assert(io.open(directory .. file)):read("*a"):gsub("%-%-[^\n]*", "")
                 local name = file:gsub("%.lua$", "")
                 local counts = {
-                    commit = calls(source, "DevelopSession%.commitPendingEdits%(") - calls(source, "function DevelopSession%.commitPendingEdits%("),
+                    commit = calls(source, "DevelopSession%.commitPendingEdits") - calls(source, "function DevelopSession%.commitPendingEdits"),
                     stopTracking = calls(source, "LrDevelopController%.stopTracking"),
                     releaseTracking = calls(source, "DevelopSession%.releaseTracking") - calls(source, "function DevelopSession%.releaseTracking"),
                 }
