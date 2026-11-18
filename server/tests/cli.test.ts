@@ -89,6 +89,14 @@ describe('tool command parsing', () => {
 });
 
 const CLI_SPAWN_MS = 30_000;
+
+async function waitUntilTrue(check: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const start = Date.now();
+  while (!check()) {
+    if (Date.now() - start > timeoutMs) throw new Error('condition not reached');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
 const CLI_TEST_MS = CLI_SPAWN_MS + 5_000;
 
 describe('CLI process', () => {
@@ -156,6 +164,7 @@ describe('CLI process', () => {
   }
 
   const STALE_LUA = ({ bundle }: { bundle: string }) => fs.writeFileSync(path.join(bundle, 'Handler.lua'), 'return 2\n');
+  const INSTALL_FIX = "Lightroom has loaded a different plug-in build. If the intended build was installed or repaired, restart Lightroom to load it. Otherwise quit the connected clients, run this build's install-plugin, check its result, restart Lightroom, and reconnect.";
   const REBUILD = "This server's build does not match its plug-in folder; rebuild it (npm --prefix server run build in the "
     + 'checkout), then restart your client.';
 
@@ -164,17 +173,57 @@ describe('CLI process', () => {
     while (clients.length > 0) await clients.pop()!.close();
   });
 
-  async function stdio(dist: string, home: State, env: NodeJS.ProcessEnv): Promise<{ client: Client; call: (name: string) => Promise<ToolResponse> }> {
+  type Stdio = { client: Client; call: (name: string) => Promise<ToolResponse>; stderr: () => string };
+
+  async function stdio(dist: string, home: State, env: NodeJS.ProcessEnv, preloads: string[] = []): Promise<Stdio> {
     const client = new Client({ name: 'cli-test', version: '1.0.0' });
-    await client.connect(new StdioClientTransport({
+    const transport = new StdioClientTransport({
       command: process.execPath,
-      args: ['--import', pathToFileURL(home.preload).href, path.join(dist, 'index.js')],
+      args: [...[home.preload, ...preloads].flatMap((file) => ['--import', pathToFileURL(file).href]), path.join(dist, 'index.js')],
       env: processEnv(home, env),
-      stderr: 'ignore',
-    }));
+      stderr: 'pipe',
+    });
+    let stderr = '';
+    transport.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
     clients.push(client);
-    return { client, call: async (name) => await client.callTool({ name, arguments: {} }) as ToolResponse };
+    await client.connect(transport);
+    return { client, call: async (name) => await client.callTool({ name, arguments: {} }) as ToolResponse, stderr: () => stderr };
   }
+
+  function modulesDir(home: State): string {
+    if (process.platform === 'win32') return path.join(home.state, 'appdata', 'Adobe', 'Lightroom', 'Modules');
+    if (process.platform === 'darwin') return path.join(home.testHome, 'Library', 'Application Support', 'Adobe', 'Lightroom', 'Modules');
+    return path.join(home.testHome, '.local', 'share', 'Adobe', 'Lightroom', 'Modules');
+  }
+
+  function installedBuild(home: State): string | undefined {
+    return /\n    BUILD = "([^"]+)",\n/.exec(fs.readFileSync(path.join(modulesDir(home), 'LightroomAgent.lrplugin', 'Contract.lua'), 'utf8'))?.[1];
+  }
+
+  function rebuilt({ dist, bundle }: { dist: string; bundle: string }): string {
+    fs.writeFileSync(path.join(bundle, 'Extra.lua'), "return 'another build'\n");
+    const identity = expectedIdentity(bundle);
+    fs.writeFileSync(path.join(bundle, 'Contract.lua'), renderContractLua(identity));
+    fs.writeFileSync(path.join(dist, 'plugin-build.json'), JSON.stringify({ build: identity.build }));
+    return identity.build;
+  }
+
+  function installOld(home: State): string {
+    const installed = path.join(modulesDir(home), 'LightroomAgent.lrplugin');
+    fs.cpSync(path.join(directory, 'package', 'LightroomAgent.lrplugin'), installed, { recursive: true });
+    const contract = path.join(installed, 'Contract.lua');
+    fs.writeFileSync(contract, fs.readFileSync(contract, 'utf8').replace(/BUILD = "[^"]+"/, 'BUILD = "0000000000000000"'));
+    return fs.readFileSync(contract, 'utf8');
+  }
+
+  function preload(home: State, name: string, body: string): string {
+    const file = path.join(home.state, `${name}.mjs`);
+    fs.writeFileSync(file, `import fs from 'node:fs';\n${body}\n`);
+    return file;
+  }
+
+  const answering = (action: string) => (action === 'ping' ? { pong: true, version: VERSION, build: BUILD } : { collections: [] });
+  const isDone = (response: ToolResponse) => !response.isError;
 
   async function closeClient(client: Client): Promise<void> {
     clients.splice(clients.indexOf(client), 1);
@@ -294,7 +343,25 @@ describe('CLI process', () => {
     });
     const result = await run(['call', 'list_collections'], env);
     expect(result.code).toBe(1);
-    expect(result.stdout).toContain(`The installed Lightroom plug-in is version 0.0.1, and this server is version ${VERSION}.`);
+    expect(JSON.parse(result.stdout)).toEqual({ isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed',
+      error: `${INSTALL_FIX} Loaded: version 0.0.1, build unknown; this server's: version ${VERSION}, build ${BUILD}.` }) }] });
+    expect(called).not.toContain('list_collections');
+  }, CLI_TEST_MS);
+
+  it('refuses a stdio leader\'s calls with the same repair text when its own install failed', async () => {
+    const called: string[] = [];
+    const env = await startPlugin((action) => {
+      called.push(action);
+      return { pong: true, version: VERSION, build: '0000000000000000' };
+    });
+    const home = newState();
+    fs.mkdirSync(path.join(modulesDir(home), 'LightroomMCP.lrplugin'), { recursive: true });
+    fs.writeFileSync(path.join(modulesDir(home), 'LightroomMCP.lrplugin', 'Info.lua'), 'return {}');
+    const leader = await stdio(checkout(), home, env);
+
+    expect(await leader.call('list_collections')).toEqual({ isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed',
+      error: `${INSTALL_FIX} Loaded: version ${VERSION}, build 0000000000000000; this server's: version ${VERSION}, build ${BUILD}.` }) }] });
+    expect(leader.stderr()).toContain('binds the same ports');
     expect(called).not.toContain('list_collections');
   }, CLI_TEST_MS);
 
@@ -433,6 +500,120 @@ describe('CLI process', () => {
     const refused = await run(['call', 'list_collections'], env, undefined, { dist: contract });
     expect(refused.code).toBe(1);
     expect(JSON.parse(refused.stdout)).toEqual({ isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed', error: REBUILD }) }] });
+  }, CLI_TEST_MS);
+
+  it('installs nothing from a follower, even while the installed bundle differs from its build', async () => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    const leader = await stdio(checkout(), home, env);
+    expect(isDone(await leader.call('list_collections'))).toBe(true);
+    const contract = path.join(modulesDir(home), 'LightroomAgent.lrplugin', 'Contract.lua');
+    fs.writeFileSync(contract, fs.readFileSync(contract, 'utf8').replace(/BUILD = "[^"]+"/, 'BUILD = "0000000000000000"'));
+
+    const follower = await stdio(checkout(), home, env);
+    expect(isDone(await follower.call('list_collections'))).toBe(true);
+
+    expect(installedBuild(home)).toBe('0000000000000000');
+  }, CLI_TEST_MS);
+
+  it('leaves the leader\'s installed bundle and plug-in connection alone when a server of another build starts', async () => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    const leader = await stdio(checkout(), home, env);
+    expect(isDone(await leader.call('list_collections'))).toBe(true);
+
+    const other = await stdio(checkout(rebuilt), home, env);
+
+    expect(isDone(await other.call('list_collections'))).toBe(false);
+    expect(installedBuild(home)).toBe(BUILD);
+    expect(plugin!.events.filter((event) => event.kind === 'request_connected')).toHaveLength(1);
+  }, CLI_TEST_MS);
+
+  it('publishes the elected server\'s build when servers of two builds start together', async () => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    let other = '';
+    const [a, b] = await Promise.all([
+      stdio(checkout(), home, env),
+      stdio(checkout((tree) => { other = rebuilt(tree); }), home, env),
+    ]);
+    const [aDone, bDone] = [isDone(await a.call('list_collections')), isDone(await b.call('list_collections'))];
+
+    expect(aDone).not.toBe(bDone);
+    expect(installedBuild(home)).toBe(aDone ? BUILD : other);
+  }, CLI_TEST_MS);
+
+  it('restores the bundle a leader killed mid-swap had moved aside, then installs its own', async () => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    const old = installOld(home);
+    const installed = path.join(modulesDir(home), 'LightroomAgent.lrplugin');
+    const killer = preload(home, 'kill-after-aside', `const rename = fs.renameSync;
+fs.renameSync = (from, to) => { rename(from, to); if (String(to).endsWith('.replaced')) process.reallyExit(9); };`);
+
+    await stdio(checkout(), home, env, [killer]).catch(() => undefined);
+    await waitUntilTrue(() => fs.existsSync(`${installed}.replaced`) && !fs.existsSync(installed));
+    expect(fs.readFileSync(path.join(`${installed}.replaced`, 'Contract.lua'), 'utf8')).toBe(old);
+
+    const next = await stdio(checkout(), home, env);
+    expect(isDone(await next.call('list_collections'))).toBe(true);
+    expect(installedBuild(home)).toBe(BUILD);
+    expect(fs.readdirSync(modulesDir(home))).toEqual(['LightroomAgent.lrplugin']);
+  }, CLI_TEST_MS);
+
+  it('keeps the installed bundle whole and still leads when moving the copy into place fails', async () => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    const old = installOld(home);
+    const failing = preload(home, 'fail-into-place', `const rename = fs.renameSync;
+fs.renameSync = (from, to) => { if (String(from).includes('.installing-')) throw new Error('locked'); rename(from, to); };`);
+
+    const leader = await stdio(checkout(), home, env, [failing]);
+
+    expect(isDone(await leader.call('list_collections'))).toBe(true);
+    expect(fs.readFileSync(path.join(modulesDir(home), 'LightroomAgent.lrplugin', 'Contract.lua'), 'utf8')).toBe(old);
+    expect(fs.readdirSync(modulesDir(home))).toEqual(['LightroomAgent.lrplugin']);
+    expect(leader.stderr()).not.toContain('failed to start as owner');
+    expect(plugin!.events.filter((event) => event.kind === 'request_connected')).toHaveLength(1);
+  }, CLI_TEST_MS);
+
+  it('refuses to publish a copy that no longer matches its build, leaving the installed bundle alone', async () => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    const old = installOld(home);
+    const corrupting = preload(home, 'corrupt-stage', `const copy = fs.copyFileSync;
+fs.copyFileSync = (from, to, mode) => { copy(from, to, mode); if (/\\.installing-.*Contract\\.lua$/.test(String(to))) fs.appendFileSync(to, '-- changed\\n'); };`);
+
+    const leader = await stdio(checkout(), home, env, [corrupting]);
+
+    expect(isDone(await leader.call('list_collections'))).toBe(true);
+    expect(fs.readFileSync(path.join(modulesDir(home), 'LightroomAgent.lrplugin', 'Contract.lua'), 'utf8')).toBe(old);
+    expect(fs.readdirSync(modulesDir(home))).toEqual(['LightroomAgent.lrplugin']);
+  }, CLI_TEST_MS);
+
+  it('refuses install-plugin while a running server owns the plug-in, and leaves no lock after any install', async () => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    const ports = [Number(env.LIGHTROOM_AGENT_REQUEST_PORT), Number(env.LIGHTROOM_AGENT_RESPONSE_PORT)] as const;
+    const lock = path.join(home.testHome, '.config', 'lightroom-agent', `bridge-${ports[0]}-${ports[1]}.lock`);
+    const installed = await run(['install-plugin'], env, undefined, { dist: checkout(), home });
+    expect(installed.code).toBe(0);
+    expect(fs.existsSync(lock)).toBe(false);
+    fs.mkdirSync(path.join(modulesDir(home), 'LightroomMCP.lrplugin'));
+    fs.writeFileSync(path.join(modulesDir(home), 'LightroomMCP.lrplugin', 'Info.lua'), 'return {}');
+    expect((await run(['install-plugin'], env, undefined, { dist: checkout(), home })).code).toBe(1);
+    expect(fs.existsSync(lock)).toBe(false);
+    fs.rmSync(path.join(modulesDir(home), 'LightroomMCP.lrplugin'), { recursive: true });
+    installOld(home);
+    const leader = await stdio(checkout(), home, env);
+    expect(isDone(await leader.call('list_collections'))).toBe(true);
+    fs.rmSync(path.join(modulesDir(home), 'LightroomAgent.lrplugin'), { recursive: true });
+
+    const refused = await run(['install-plugin'], env, undefined, { dist: checkout(), home });
+
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toMatch(/^A running lightroom-agent server owns the plug-in \(pid \d+\); quit its clients, then install again\n$/);
+    expect(fs.existsSync(path.join(modulesDir(home), 'LightroomAgent.lrplugin'))).toBe(false);
   }, CLI_TEST_MS);
 
   it('validates arguments through the common backend without dispatching the operation', async () => {

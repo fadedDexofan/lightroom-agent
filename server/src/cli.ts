@@ -9,7 +9,7 @@ USAGE
   lightroom-agent [stdio]            Run MCP over stdio (default)
   lightroom-agent tools [name]       Print available tool schemas as JSON without connecting
   lightroom-agent call <tool> [json] Call a tool with JSON object arguments (default {})
-  lightroom-agent install-plugin     Install bundled .lrplugin into Lightroom Modules folder
+  lightroom-agent install-plugin     Install or replace the bundled plug-in where Lightroom has it (else Modules)
   lightroom-agent --help | --version
 
 ENV

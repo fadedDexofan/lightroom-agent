@@ -37,7 +37,7 @@ function summary(present: Lists, parts: ReplyParts): string {
     present.failed && `${present.failed.length} failed`,
     present.unknown && `${present.unknown.length} with an unknown outcome (read their state before retrying)`,
     present.not_found && `${present.not_found.length} not found`,
-    present.remaining && `${present.remaining.length} not reached (resend remaining)`,
+    present.remaining && `${present.remaining.length} still to process (resend remaining)`,
   ].filter(Boolean);
   const written = parts.written?.length ? `written before this stopped: ${parts.written.join(", ")}` : undefined;
   return [counts.join(", "), parts.problem, written].filter(Boolean).join("; ");

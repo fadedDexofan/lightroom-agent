@@ -40,7 +40,7 @@ describe('finishReply', () => {
     } });
     expect(result).toEqual({
       outcome: 'partial', data: [1], failed: [photo('2')], remaining: [3, 4],
-      error: '1 failed, 2 not reached (resend remaining); stopped on cancel',
+      error: '1 failed, 2 still to process (resend remaining); stopped on cancel',
     });
   });
 
@@ -48,7 +48,7 @@ describe('finishReply', () => {
     expect(finishReply(false, { result: { failed: [photo('2')], remaining: [3], written: ['/out/new', 'Undo'] } }))
       .toEqual({
         outcome: 'unknown', failed: [photo('2')], remaining: [3],
-        error: '1 failed, 1 not reached (resend remaining); written before this stopped: /out/new, Undo',
+        error: '1 failed, 1 still to process (resend remaining); written before this stopped: /out/new, Undo',
       });
   });
 

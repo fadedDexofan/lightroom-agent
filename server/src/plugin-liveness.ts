@@ -38,17 +38,15 @@ export interface LivenessOptions {
 
 type PingAnswer = { answered: false } | { answered: true; identity: BuildIdentity };
 
-const INSTALL_FIX = "Install the plug-in that comes with this server (lightroom-agent install-plugin; the server also does it "
-  + "when it starts), then restart Lightroom.";
+const INSTALL_FIX = "Lightroom has loaded a different plug-in build. If the intended build was installed or repaired, "
+  + "restart Lightroom to load it. Otherwise quit the connected clients, run this build's install-plugin, check its result, "
+  + "restart Lightroom, and reconnect.";
 
 function pluginMismatch(plugin: BuildIdentity, expected: PluginIdentity): string {
-  if (plugin.version === expected.version) {
-    return `The installed Lightroom plug-in is build ${plugin.build ?? "unknown"} of version ${plugin.version}, `
-      + `and this server's is build ${expected.build}. ${INSTALL_FIX}`;
-  }
-  const installed = plugin.version === null ? "an older build that reports no version" : `version ${plugin.version}`;
-  return `The installed Lightroom plug-in is ${installed}, and this server is version ${expected.version}. `
-    + INSTALL_FIX;
+  const loaded = plugin.version === null
+    ? "an older build that reports no version"
+    : `version ${plugin.version}, build ${plugin.build ?? "unknown"}`;
+  return `${INSTALL_FIX} Loaded: ${loaded}; this server's: version ${expected.version}, build ${expected.build}.`;
 }
 
 export class PluginLiveness {

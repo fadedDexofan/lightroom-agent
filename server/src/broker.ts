@@ -99,15 +99,15 @@ function lostResponse(name: string, text: string): ToolResponse {
   return toolResponse(finishLost(isReadOnlyTool(name), text, true));
 }
 
-function describeServer(identity: ServerIdentity): string {
-  if (identity.version === null) return "an older server that reports no version";
-  return `version ${identity.version} (build ${identity.build ?? "unknown"})`;
-}
+const SERVER_DIMENSIONS = [["version", "version"], ["build", "server build"], ["plugin", "plug-in build"]] as const;
 
 export function serverMismatch(follower: ServerIdentity, owner: ServerIdentity): string | null {
   if (sameIdentity(follower, owner)) return null;
-  return `This server is ${describeServer(follower)}, but the server that owns the Lightroom connection is `
-    + `${describeServer(owner)}, so nothing was sent. Use one lightroom-agent version in every client, then restart them.`;
+  const differences = SERVER_DIMENSIONS
+    .filter(([key]) => follower[key] === null || follower[key] !== owner[key])
+    .map(([key, label]) => `${label} (${follower[key] ?? "none"} here, ${owner[key] ?? "none"} there)`);
+  return `This server and the server that owns the Lightroom connection differ in ${differences.join(", ")}, `
+    + "so nothing was sent. Use one lightroom-agent build in every client, then restart them.";
 }
 
 function replyFrame(reply: BrokerReply, name: string): string {

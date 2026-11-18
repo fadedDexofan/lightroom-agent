@@ -1,16 +1,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { sameIdentity, type BuildIdentity } from "./build-identity.js";
+import { sameIdentity, treeDigest, type BuildIdentity } from "./build-identity.js";
+import { PLUGIN_FOLDER, validateBundle, type Paired } from "./plugin-pairing.js";
 
-const PLUGIN_FOLDER = "LightroomAgent.lrplugin";
 const UPSTREAM_PLUGIN_FOLDER = "LightroomMCP.lrplugin";
 
 export type InstallResult =
-  | { status: "installed" | "current" | "busy"; destination: string }
+  | { status: "installed" | "current" | "repaired"; destination: string }
   | { status: "replaced"; destination: string; from: BuildIdentity; to: BuildIdentity }
   | { status: "foreign"; destination: string; toolkitId: string | null }
-  | { status: "conflict"; conflicting: string };
+  | { status: "conflict"; conflicting: string }
+  | { status: "invalid"; source: string };
 
 const TOOLKIT_ID = /LrToolkitIdentifier\s*=\s*['"]([^'"]+)['"]/;
 const CONTRACT_VERSION = /\n    VERSION = "([^"]+)",\n/;
@@ -79,11 +80,6 @@ function identityOf(bundle: string): BuildIdentity & { toolkitId: string | null 
   };
 }
 
-function bundleIdentity(bundle: string): BuildIdentity {
-  const { version, build } = identityOf(bundle);
-  return { version, build };
-}
-
 function describeChange(from: BuildIdentity, to: BuildIdentity): string {
   if (from.version !== to.version) return `version ${from.version ?? "unknown"} → ${to.version ?? "unknown"}`;
   return `version ${to.version ?? "unknown"}, build ${from.build ?? "unknown"} → ${to.build ?? "unknown"}`;
@@ -102,50 +98,10 @@ export function describeInstall(result: InstallResult): string {
         + "Remove it, then install again.";
     case "conflict":
       return `The installed ${result.conflicting} binds the same ports. Quit Lightroom, remove that folder, then install again.`;
-    case "busy":
-      return `Another lightroom-agent server is installing ${result.destination} right now; it was left to that server.`;
-  }
-}
-
-export type BundleLayout = "checkout" | "package";
-
-function isRegularFile(file: string): boolean {
-  try {
-    return fs.lstatSync(file).isFile();
-  } catch {
-    return false;
-  }
-}
-
-export function isBundle(dir: string): boolean {
-  return isRegularFile(path.join(dir, "Info.lua")) && isRegularFile(path.join(dir, "Contract.lua"));
-}
-
-export function findBundledPlugin(distDir: string): { source: string; layout: BundleLayout } | null {
-  const candidates: Array<[string, BundleLayout]> = [
-    [path.join(distDir, "..", "..", "plugin", PLUGIN_FOLDER), "checkout"],
-    [path.join(distDir, "..", PLUGIN_FOLDER), "package"],
-    [path.join(distDir, "..", "..", PLUGIN_FOLDER), "package"],
-  ];
-  const found = candidates.find(([dir]) => isBundle(dir));
-  return found ? { source: path.resolve(found[0]), layout: found[1] } : null;
-}
-
-const STALE_LOCK_MS = 5 * 60 * 1000;
-
-function lockOf(): string {
-  return path.join(lightroomModulesDir(), `${PLUGIN_FOLDER}.lock`);
-}
-
-function takeLock(lock: string): boolean {
-  fs.mkdirSync(path.dirname(lock), { recursive: true });
-  try {
-    fs.mkdirSync(lock);
-    return true;
-  } catch {
-    if (Date.now() - fs.statSync(lock).mtimeMs < STALE_LOCK_MS) return false;
-    fs.rmSync(lock, { recursive: true, force: true });
-    return takeLock(lock);
+    case "repaired":
+      return `repaired the installed plug-in's files in ${result.destination}; restart Lightroom to load them`;
+    case "invalid":
+      return `refused: the bundled plug-in ${result.source} does not validate against this server's build, so nothing was installed`;
   }
 }
 
@@ -168,59 +124,57 @@ function recoverInterruptedSwaps(): void {
   }
 }
 
-export function installPlugin(opts: { source: string }): InstallResult {
+export function installPlugin(pairing: Paired): InstallResult {
   const conflicting = installedBundle(UPSTREAM_PLUGIN_FOLDER);
   if (conflicting) return { status: "conflict", conflicting };
-  const lock = lockOf();
-  if (!takeLock(lock)) {
-    return { status: "busy", destination: installedBundle(PLUGIN_FOLDER) ?? path.join(lightroomModulesDir(), PLUGIN_FOLDER) };
-  }
-  try {
-    recoverInterruptedSwaps();
-    return installLocked(opts.source);
-  } finally {
-    fs.rmSync(lock, { recursive: true, force: true });
-  }
-}
-
-function installLocked(source: string): InstallResult {
+  recoverInterruptedSwaps();
   const destination = installedBundle(PLUGIN_FOLDER) ?? path.join(lightroomModulesDir(), PLUGIN_FOLDER);
-  if (!fs.existsSync(destination)) {
-    copyIntoPlace(source, destination);
-    return { status: "installed", destination };
+  const installed = fs.existsSync(destination) ? identityOf(destination) : null;
+  if (installed !== null && installed.toolkitId !== identityOf(pairing.source).toolkitId) {
+    return { status: "foreign", destination, toolkitId: installed.toolkitId };
   }
-  const installed = identityOf(destination);
-  const bundled = identityOf(source);
-  if (installed.toolkitId !== bundled.toolkitId) return { status: "foreign", destination, toolkitId: installed.toolkitId };
-  if (sameIdentity(bundleIdentity(destination), bundleIdentity(source))) return { status: "current", destination };
-  copyIntoPlace(source, destination);
-  return {
-    status: "replaced",
-    destination,
-    from: { version: installed.version, build: installed.build },
-    to: { version: bundled.version, build: bundled.build },
-  };
-}
-
-function copyIntoPlace(source: string, destination: string): void {
   const staging = `${destination}.installing-${process.pid}-${Date.now()}`;
   try {
-    copyDirRecursive(source, staging);
-  } catch (err) {
+    copyDirRecursive(pairing.source, staging);
+    if (!validateBundle(staging, pairing.plugin.build)) return { status: "invalid", source: pairing.source };
+    if (installed === null) {
+      fs.renameSync(staging, destination);
+      return { status: "installed", destination };
+    }
+    if (sameFiles(destination, staging)) return { status: "current", destination };
+    swapIntoPlace(staging, destination);
+  } finally {
     fs.rmSync(staging, { recursive: true, force: true });
-    throw err;
   }
-  const replacing = fs.existsSync(destination);
-  if (replacing) fs.renameSync(destination, asideOf(destination));
-  fs.renameSync(staging, destination);
-  if (replacing) fs.rmSync(asideOf(destination), { recursive: true, force: true });
+  const from = { version: installed.version, build: installed.build };
+  if (sameIdentity(from, pairing.plugin)) return { status: "repaired", destination };
+  return { status: "replaced", destination, from, to: pairing.plugin };
 }
 
-export function ensurePluginInstalled(startDir: string, log: (msg: string) => void): void {
-  const source = findBundledPlugin(startDir)?.source;
-  if (!source) return;
+function sameFiles(installed: string, staged: string): boolean {
+  const lua = (file: string) => file.endsWith(".lua");
+  return treeDigest(installed, lua) === treeDigest(staged, lua);
+}
+
+function swapIntoPlace(staging: string, destination: string): void {
+  const aside = asideOf(destination);
+  fs.renameSync(destination, aside);
   try {
-    const result = installPlugin({ source });
+    fs.renameSync(staging, destination);
+  } catch (err) {
+    try {
+      fs.renameSync(aside, destination);
+    } catch {
+      throw new Error(`${(err as Error).message}; the previous bundle stays at ${aside}`);
+    }
+    throw err;
+  }
+  fs.rmSync(aside, { recursive: true, force: true });
+}
+
+export function ensurePluginInstalled(pairing: Paired, log: (msg: string) => void): void {
+  try {
+    const result = installPlugin(pairing);
     if (result.status !== "current") log(`[install-plugin] ${describeInstall(result)}`);
   } catch (err) {
     log(`[install-plugin] failed: ${(err as Error).message}`);
