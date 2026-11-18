@@ -10,6 +10,10 @@ import { Bridge, NO_OWNER_MESSAGE, unreachableOwnerMessage, type Leader } from '
 import { BrokerClient, BrokerServer, MAX_FRAME_BYTES, NOT_CONNECTED_TO_OWNER_MESSAGE, OWNER_LOST_MESSAGE, brokerPath, signNonce, type ToolCaller } from '../src/broker.js';
 import { acquireInstanceLock, LockHeldError, type InstanceLock } from '../src/instance-lock.js';
 import type { ToolResponse } from '../src/tool-result.js';
+import type { ServerIdentity } from '../src/server-identity.js';
+import { PairingLost } from '../src/plugin-pairing.js';
+
+const SERVER: ServerIdentity = { version: '1.0.0', build: 's1', plugin: 'b1' };
 
 function errorText(resp: ToolResponse): string {
   return String(envelopeOf(resp).error);
@@ -88,22 +92,23 @@ describe('broker', () => {
     callTool: (name: string, args: unknown) => Promise<ToolResponse>,
     token: string | null = 't',
     log: (msg: string) => void = () => {},
+    identity: ServerIdentity = SERVER,
   ) {
     const p = ipcPath(tmpDir());
-    const server = new BrokerServer({ path: p, callTool, readToken: () => token, log });
+    const server = new BrokerServer({ server: identity, path: p, callTool, readToken: () => token, log });
     await server.listen();
     closers.push(() => server.close());
     return { p, server };
   }
 
   async function connect(p: string, token: string | null = 't', onClose?: () => void) {
-    const client = new BrokerClient({ path: p, readToken: () => token, onClose });
+    const client = new BrokerClient({ server: SERVER, path: p, readToken: () => token, onClose });
     await client.connect();
     closers.push(() => client.close());
     return client;
   }
 
-  async function rawHandshake(p: string, token: string) {
+  async function rawHandshake(p: string, token: string, server?: unknown) {
     const sock = net.createConnection(p);
     closers.push(() => sock.destroy());
     sock.setEncoding('utf8');
@@ -118,12 +123,98 @@ describe('broker', () => {
       }
     });
     await new Promise<void>((resolve) => sock.once('connect', () => resolve()));
-    sock.write(JSON.stringify({ challenge: 'c' }) + '\n');
+    sock.write(JSON.stringify({ challenge: 'c', server }) + '\n');
     await waitFor(() => lines.length > 0);
     const hello = JSON.parse(lines.shift()!) as { nonce: string; proof: string };
     expect(hello.proof).toBe(signNonce(token, 'owner:c'));
     return { sock, hello, lines };
   }
+
+  async function serveRawOwner(server?: unknown): Promise<string> {
+    const p = ipcPath(tmpDir());
+    const owner = net.createServer((sock) => {
+      sock.setEncoding('utf8');
+      sock.once('data', (line: string) => {
+        const { challenge } = JSON.parse(line) as { challenge: string };
+        sock.write(JSON.stringify({ nonce: 'n', proof: signNonce('t', `owner:${challenge}`), server }) + '\n');
+      });
+    });
+    await new Promise<void>((resolve) => owner.listen(p, () => resolve()));
+    closers.push(() => owner.close());
+    return p;
+  }
+
+  const refusal = (follower: string, owner: string) => `This server is ${follower}, but the server that owns the Lightroom `
+    + `connection is ${owner}, so nothing was sent. Use one lightroom-agent version in every client, then restart them.`;
+
+  it.each([
+    [{ ...SERVER, build: 's2' }, 'version 1.0.0 (build s2)'],
+    [{ ...SERVER, version: '0.9.0', build: 's0' }, 'version 0.9.0 (build s0)'],
+  ])('refuses a follower\'s calls, sending nothing, while the owner is another server build (%o)', async (owner, described) => {
+    const calls: string[] = [];
+    const { p } = await serve(async (name) => { calls.push(name); return ok('x'); }, 't', () => {}, owner);
+    const client = await connect(p);
+
+    const resp = await client.callTool('list_masks', {});
+
+    expect(envelopeOf(resp).outcome).toBe('failed');
+    expect(errorText(resp)).toBe(refusal('version 1.0.0 (build s1)', described));
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
+    ['carries no identity', undefined],
+    ['carries an identity without a build', { version: '1.0.0' }],
+  ])('refuses a follower\'s calls when the owner\'s greeting %s', async (_what, server) => {
+    const client = await connect(await serveRawOwner(server));
+
+    const resp = await client.callTool('list_masks', {});
+
+    expect(errorText(resp)).toBe(refusal('version 1.0.0 (build s1)',
+      server === undefined ? 'an older server that reports no version' : 'version 1.0.0 (build unknown)'));
+  });
+
+  it('answers an older follower whose hello carries no identity with the refusal, never calling the tool', async () => {
+    const calls: string[] = [];
+    const { p } = await serve(async (name) => { calls.push(name); return ok('x'); });
+    const { sock, hello, lines } = await rawHandshake(p, 't');
+
+    sock.write(JSON.stringify({ id: 1, auth: signNonce('t', `follower:${hello.nonce}`), name: 'list_masks', args: {} }) + '\n');
+    await waitFor(() => lines.length > 0);
+
+    const reply = JSON.parse(lines.shift()!) as { result: ToolResponse };
+    expect(errorText(reply.result)).toBe(refusal('an older server that reports no version', 'version 1.0.0 (build s1)'));
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
+    ['of another plug-in build', { ...SERVER, plugin: 'b2' }],
+    ['without a plug-in build', { version: SERVER.version, build: SERVER.build }],
+  ])('refuses, never calling the tool, a follower whose hello names a server %s', async (_what, follower) => {
+    const calls: string[] = [];
+    const { p } = await serve(async (name) => { calls.push(name); return ok('x'); });
+    const { sock, hello, lines } = await rawHandshake(p, 't', follower);
+
+    sock.write(JSON.stringify({ id: 1, auth: signNonce('t', `follower:${hello.nonce}`), name: 'list_masks', args: {} }) + '\n');
+    await waitFor(() => lines.length > 0);
+
+    const reply = JSON.parse(lines.shift()!) as { result: ToolResponse };
+    expect(envelopeOf(reply.result).outcome).toBe('failed');
+    expect(errorText(reply.result)).toContain('so nothing was sent');
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
+    ['of another plug-in build', { ...SERVER, plugin: 'b2' }],
+    ['without a plug-in build', { version: SERVER.version, build: SERVER.build }],
+  ])('refuses a follower\'s calls, sending nothing, when the owner\'s greeting names a server %s', async (_what, owner) => {
+    const client = await connect(await serveRawOwner(owner));
+
+    const resp = await client.callTool('list_masks', {});
+
+    expect(envelopeOf(resp).outcome).toBe('failed');
+    expect(errorText(resp)).toContain('so nothing was sent');
+  });
 
   it('queues a forwarded Develop call behind a Develop call of the owning bridge', async () => {
     const pending: Array<{ action: string; resolve: (reply: PluginResponse) => void }> = [];
@@ -162,10 +253,10 @@ describe('broker', () => {
   it('returns an error instead of dropping the connection for an oversized reply', async () => {
     const dir = tmpDir();
     const huge = 'x'.repeat(MAX_FRAME_BYTES + 1);
-    const server = new BrokerServer({ path: ipcPath(dir), callTool: async () => ok(huge), readToken: () => 't' });
+    const server = new BrokerServer({ server: SERVER, path: ipcPath(dir), callTool: async () => ok(huge), readToken: () => 't' });
     await server.listen();
     let closed = false;
-    const client = new BrokerClient({ path: ipcPath(dir), readToken: () => 't', onClose: () => { closed = true; } });
+    const client = new BrokerClient({ server: SERVER, path: ipcPath(dir), readToken: () => 't', onClose: () => { closed = true; } });
     await client.connect();
 
     const reply = await client.callTool('search_photos', {});
@@ -243,7 +334,7 @@ describe('broker', () => {
   unixOnly('replaces a stale socket file left by a dead owner', async () => {
     const p = ipcPath(tmpDir());
     fs.writeFileSync(p, '', { mode: 0o600, flag: 'wx' });
-    const server = new BrokerServer({ path: p, callTool: async () => ok('x'), readToken: () => 't' });
+    const server = new BrokerServer({ server: SERVER, path: p, callTool: async () => ok('x'), readToken: () => 't' });
     await server.listen();
     closers.push(() => server.close());
 
@@ -254,7 +345,7 @@ describe('broker', () => {
   it('refuses a follower when neither side has a token', async () => {
     const calls: string[] = [];
     const { p } = await serve(async (name) => { calls.push(name); return ok('x'); }, null);
-    const client = new BrokerClient({ path: p, readToken: () => null });
+    const client = new BrokerClient({ server: SERVER, path: p, readToken: () => null });
     closers.push(() => client.close());
 
     await expect(client.connect()).rejects.toThrow(/could not prove/);
@@ -316,7 +407,7 @@ describe('broker', () => {
     });
     await new Promise<void>((resolve) => squatter.listen(p, () => resolve()));
     closers.push(() => squatter.close());
-    const client = new BrokerClient({ path: p, readToken: () => 'secret-token' });
+    const client = new BrokerClient({ server: SERVER, path: p, readToken: () => 'secret-token' });
 
     await expect(client.connect()).rejects.toThrow(/could not prove/);
     expect(errorText(await client.callTool('ping', {}))).toBe(NOT_CONNECTED_TO_OWNER_MESSAGE);
@@ -328,7 +419,7 @@ describe('broker', () => {
     const silent = net.createServer(() => {});
     await new Promise<void>((resolve) => silent.listen(p, () => resolve()));
     closers.push(() => silent.close());
-    const client = new BrokerClient({ path: p, readToken: () => null, helloTimeoutMs: 50 });
+    const client = new BrokerClient({ server: SERVER, path: p, readToken: () => null, helloTimeoutMs: 50 });
 
     await expect(client.connect()).rejects.toThrow(/did not greet/);
     expect(errorText(await client.callTool('ping', {}))).toBe(NOT_CONNECTED_TO_OWNER_MESSAGE);
@@ -339,7 +430,7 @@ describe('broker', () => {
     const rude = net.createServer((sock) => sock.destroy());
     await new Promise<void>((resolve) => rude.listen(p, () => resolve()));
     closers.push(() => rude.close());
-    const client = new BrokerClient({ path: p, readToken: () => null });
+    const client = new BrokerClient({ server: SERVER, path: p, readToken: () => null });
 
     await expect(client.connect()).rejects.toThrow();
   });
@@ -359,6 +450,7 @@ describe('Bridge', () => {
     call?: ToolCaller,
   ) {
     const bridge = new Bridge({
+      server: SERVER,
       ipcPath: ipcPath(dir),
       acquireLock: () => acquireInstanceLock(58763, 58764, dir),
       startLeader: (): Leader => {
@@ -503,6 +595,7 @@ describe('Bridge', () => {
     let attempts = 0;
     const logs: string[] = [];
     const bridge = new Bridge({
+      server: SERVER,
       ipcPath: ipcPath(dir),
       acquireLock: () => acquireInstanceLock(58763, 58764, dir),
       startLeader: () => {
@@ -525,6 +618,34 @@ describe('Bridge', () => {
     expect(text(await bridge.callTool('ping', {}))).toBe('second');
   });
 
+  it('answers its reason from then on, without electing again, once starting as owner finds its pairing lost', async () => {
+    const dir = tmpDir();
+    let attempts = 0;
+    const bridge = new Bridge({
+      server: SERVER,
+      ipcPath: ipcPath(dir),
+      acquireLock: () => acquireInstanceLock(58763, 58764, dir),
+      startLeader: () => {
+        attempts += 1;
+        throw new PairingLost('rebuild it');
+      },
+      readToken: () => 'tok',
+      retryMs: 20,
+      readyWaitMs: 60_000,
+      log: () => {},
+      holderUnresponsive: () => false,
+      lockHolder: () => null,
+    });
+    bridges.push(bridge);
+
+    expect(errorText(await bridge.callTool('ping', {}))).toBe('rebuild it');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(attempts).toBe(1);
+    expect(errorText(await bridge.callTool('ping', {}))).toBe('rebuild it');
+    const next = makeBridge(dir, 'next', []);
+    expect(text(await next.callTool('ping', {}))).toBe('next:ping');
+  });
+
   unixOnly('releases the lock without taking the plugin when it cannot serve other bridges', async () => {
     const dir = tmpDir();
     const blocked = path.join(dir, 'b.sock');
@@ -533,6 +654,7 @@ describe('Bridge', () => {
     const started: string[] = [];
     const logs: string[] = [];
     const bridge = new Bridge({
+      server: SERVER,
       ipcPath: blocked,
       acquireLock: () => acquireInstanceLock(58763, 58764, dir),
       startLeader: () => {
@@ -569,6 +691,7 @@ describe('Bridge', () => {
     const stale = fakeLock();
     let electionsA = 0;
     const a = new Bridge({
+      server: SERVER,
       ipcPath: ipcPath(dir),
       acquireLock: () => (electionsA++ === 0 ? stale.lock : acquireInstanceLock(58763, 58764, dir)),
       startLeader: () => {
@@ -604,6 +727,7 @@ describe('Bridge', () => {
   ) {
     const hung = fakeLock();
     const a = new Bridge({
+      server: SERVER,
       ipcPath: ipcPath(dir),
       acquireLock: () => hung.lock,
       startLeader: () => ({ callTool: () => new Promise<ToolResponse>(() => {}), stop: () => {} }),
@@ -618,6 +742,7 @@ describe('Bridge', () => {
     let leading = false;
     const logs: string[] = [];
     const b = new Bridge({
+      server: SERVER,
       ipcPath: ipcPath(dir),
       acquireLock: () => {
         if (elections++ === 0) throw new LockHeldError(watch.hungPid ?? process.pid, 58763, 58764);
@@ -687,6 +812,7 @@ describe('Bridge', () => {
     await a.start();
     let checks = 0;
     const b = new Bridge({
+      server: SERVER,
       ipcPath: ipcPath(dir),
       acquireLock: () => acquireInstanceLock(58763, 58764, dir),
       startLeader: () => ({ callTool: async () => ok('b'), stop: () => {} }),
@@ -717,6 +843,7 @@ describe('Bridge', () => {
     const dir = tmpDir();
     const lock = acquireInstanceLock(58763, 58764, dir);
     const bridge = new Bridge({
+      server: SERVER,
       ipcPath: ipcPath(dir),
       acquireLock: () => acquireInstanceLock(58763, 58764, dir),
       startLeader: () => ({ callTool: async () => ok('x'), stop: () => {} }),
@@ -740,6 +867,7 @@ describe('Bridge', () => {
   it('surfaces a lock error instead of a bare retry hint', async () => {
     const logs: string[] = [];
     const bridge = new Bridge({
+      server: SERVER,
       ipcPath: ipcPath(tmpDir()),
       acquireLock: () => {
         throw new Error('EACCES: permission denied');

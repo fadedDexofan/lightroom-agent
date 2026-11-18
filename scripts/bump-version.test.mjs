@@ -20,7 +20,6 @@ const VERSIONED_FILES = [
   ".claude-plugin/marketplace.json",
   ".agents/plugins/marketplace.json",
   "plugin/LightroomAgent.lrplugin/Info.lua",
-  "plugin/LightroomAgent.lrplugin/Contract.lua",
 ];
 
 function copyOfRepo() {
@@ -45,14 +44,11 @@ test("the repository's version sources and launch lines agree", () => {
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
-const editText = (root, file, change) => fs.writeFileSync(path.join(root, file), change(fs.readFileSync(path.join(root, file), "utf8")));
-
 const drifts = [
   ["a manifest version", ".claude-plugin/plugin.json", (root, file) => editJson(root, file, (json) => { json.version = "9.9.9"; })],
   ["the Agent Plugins manifest version", "plugin.json", (root, file) => editJson(root, file, (json) => { json.version = "9.9.9"; })],
   ["a package version in the registry entry", "server.json", (root, file) => editJson(root, file, (json) => { json.packages[0].version = "9.9.9"; })],
   ["the root package version in the lock file", "server/package-lock.json", (root, file) => editJson(root, file, (json) => { json.packages[""].version = "9.9.9"; })],
-  ["the plug-in contract version", "plugin/LightroomAgent.lrplugin/Contract.lua", (root, file) => editText(root, file, (text) => text.replace(/\n    VERSION = "[^"]+",\n/, '\n    VERSION = "9.9.9",\n'))],
   ["the pinned package in mcp.json", "mcp.json", (root, file) => editJson(root, file, (json) => { json.mcpServers.lightroom.args = ["-y", "lightroom-agent@9.9.9"]; })],
   ["the launch environment in the Claude Code manifest", ".claude-plugin/plugin.json", (root, file) => editJson(root, file, (json) => { json.mcpServers.lightroom.env = {}; })],
   ["the launch command in the Claude Code manifest", ".claude-plugin/plugin.json", (root, file) => editJson(root, file, (json) => { json.mcpServers.lightroom.command = "node"; })],
@@ -90,7 +86,6 @@ test("a bump writes the version, the package's description and author, and the p
   }
   assert.match(fs.readFileSync(path.join(root, "server/src/version.ts"), "utf8"), /export const VERSION = "9\.8\.7-rc\.1";/);
   assert.match(fs.readFileSync(path.join(root, "plugin/LightroomAgent.lrplugin/Info.lua"), "utf8"), /VERSION = \{ major=9, minor=8, revision=7, build=0 \}/);
-  assert.match(fs.readFileSync(path.join(root, "plugin/LightroomAgent.lrplugin/Contract.lua"), "utf8"), /\n    VERSION = "9\.8\.7-rc\.1",\n/);
   for (const file of ["plugin.json", ".claude-plugin/plugin.json", "mcpb/manifest.json", ".claude-plugin/marketplace.json"]) {
     assert.equal(readJson(root, file).description, "A new description.", file);
   }

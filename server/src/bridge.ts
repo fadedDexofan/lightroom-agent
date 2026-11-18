@@ -1,4 +1,6 @@
 import { BrokerClient, BrokerServer, type ToolCaller } from "./broker.js";
+import { PairingLost } from "./plugin-pairing.js";
+import type { ServerIdentity } from "./server-identity.js";
 import { LockHeldError, type InstanceLock } from "./instance-lock.js";
 import type { CallOptions } from "./dispatcher.js";
 import { refusedResponse, type ToolResponse } from "./tool-result.js";
@@ -10,6 +12,7 @@ export interface Leader {
 
 export interface BridgeOptions {
   ipcPath: string;
+  server: ServerIdentity;
   acquireLock: () => InstanceLock;
   startLeader: () => Leader;
   readToken: () => string | null;
@@ -50,6 +53,7 @@ export class Bridge {
   private started: Promise<void> | null = null;
   private unreachableOwner: number | null = null;
   private lockError: string | null = null;
+  private terminal: string | null = null;
   private waiters: Array<() => void> = [];
   private readonly retryMs: number;
   private readonly readyWaitMs: number;
@@ -74,7 +78,7 @@ export class Bridge {
 
   async callTool(name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> {
     await this.start();
-    if (this.state.kind === "none") await this.waitForRole();
+    if (this.state.kind === "none" && this.terminal === null) await this.waitForRole();
     switch (this.state.kind) {
       case "leader":
         return this.state.leader.callTool(name, args, options);
@@ -90,6 +94,7 @@ export class Bridge {
   }
 
   private noOwnerMessage(): string {
+    if (this.terminal !== null) return this.terminal;
     if (this.unreachableOwner !== null) return unreachableOwnerMessage(this.unreachableOwner);
     if (this.lockError !== null) return `${NO_OWNER_MESSAGE} Last error: ${this.lockError}`;
     return NO_OWNER_MESSAGE;
@@ -157,6 +162,7 @@ export class Bridge {
     let callTool: ToolCaller = async () => this.noOwnerResponse();
     const server = new BrokerServer({
       path: this.opts.ipcPath,
+      server: this.opts.server,
       callTool: (name, args, options) => callTool(name, args, options),
       readToken: this.opts.readToken,
       log: this.log,
@@ -180,9 +186,13 @@ export class Bridge {
     try {
       leader = this.opts.startLeader();
     } catch (err) {
-      this.log(`[bridge] failed to start as owner: ${(err as Error).message}`);
       server.close();
       lock.release();
+      if (err instanceof PairingLost) {
+        this.terminate(err.message);
+        return;
+      }
+      this.log(`[bridge] failed to start as owner: ${(err as Error).message}`);
       this.scheduleElection();
       return;
     }
@@ -190,6 +200,13 @@ export class Bridge {
     this.state = { kind: "leader", leader, server, lock };
     this.log("[bridge] owning the plugin connection");
     lock.onLost(() => this.stepDown(lock));
+    this.notify();
+  }
+
+  private terminate(reason: string): void {
+    this.log(`[bridge] not taking the plugin connection: ${reason}`);
+    this.terminal = reason;
+    this.stopped = true;
     this.notify();
   }
 
@@ -208,6 +225,7 @@ export class Bridge {
   private async follow(holder: number | null): Promise<void> {
     const client = new BrokerClient({
       path: this.opts.ipcPath,
+      server: this.opts.server,
       readToken: this.opts.readToken,
       onClose: () => {
         if (this.state.kind !== "follower" || this.state.client !== client) return;
