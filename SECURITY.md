@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Releases so far are release candidates. Security fixes go to `main` and the next release; use the latest release or commit.
+Security fixes go to `main` and the next release; use the latest release or commit.
 
 ## Reporting a vulnerability
 
