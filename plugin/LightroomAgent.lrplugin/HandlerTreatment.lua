@@ -62,9 +62,7 @@ function Handler.set(args, context)
         restoreView = true,
         reserveSeconds = RESERVE_SECONDS,
         each = function(photo, state)
-            return CatalogWrite.developState(catalog, { photo }, function()
-                return convert(context, catalog, photo, state, args.treatment)
-            end)
+            return convert(context, catalog, photo, state, args.treatment)
         end,
     })
 end

@@ -16,7 +16,7 @@ describe('HandlerVirtualCopies', function()
         local source = {}
         state = { active = photos[1], selected = { photos[1], photos[2] }, sources = { source } }
         if opts.empty then state.active, state.selected = nil, {} end
-        calls = { create = {}, selection = {}, sources = {}, events = {} }
+        calls = { create = {}, selection = {}, sources = {} }
         catalog = helper.fakeCatalog({ photos = photos })
         catalog.kAllPhotos = 'all'
         local getTargets = catalog.getTargetPhotos
@@ -42,7 +42,6 @@ describe('HandlerVirtualCopies', function()
             assert.is_false(catalog.isInsideReadAccess())
             assert.are.equal(1, #state.selected)
             calls.create[#calls.create + 1] = { photo = state.active, name = name }
-            calls.events[#calls.events + 1] = 'create ' .. tostring(state.active.localIdentifier)
             if opts.failCreate or opts.failCreateAt == #calls.create then error('SDK failure') end
             local master = opts.wrongMaster and photos[5] or state.active:getRawMetadata('masterPhoto') or state.active
             local copy = helper.fakePhoto({ id = tostring(100 + #calls.create),
@@ -56,13 +55,10 @@ describe('HandlerVirtualCopies', function()
         end
         helper.installImport({
             LrApplication = { activeCatalog = function() return catalog end },
-            LrApplicationView = { getCurrentModuleName = function() return opts.module or 'library' end, switchToModule = function() end },
+            LrApplicationView = { getCurrentModuleName = function() return 'library' end, switchToModule = function() end },
             LrDate = { currentTime = function() return 0 end },
             LrProgressScope = function() return { setCancelable = function() end, setPortionComplete = function() end,
                 setCaption = function() end, done = function() end, isCanceled = function() return false end } end,
-            LrDevelopController = {
-                stopTracking = function() calls.events[#calls.events + 1] = 'flush ' .. tostring(state.active.localIdentifier) end,
-            },
             LrLogger = helper.defaultLrLogger(),
             LrSelection = { selectNone = function() state.active, state.selected = nil, {} end },
             LrTasks = { pcall = pcall, sleep = function() end },
@@ -106,14 +102,6 @@ describe('HandlerVirtualCopies', function()
         assert.is_nil(calls.create[1].name)
         assertRestored()
     end)
-
-    for _, case in ipairs({ { module = 'develop', events = { 'flush 1', 'create 1' } }, { module = 'library', events = { 'create 1' } } }) do
-        it("commits Develop's pending edits on the photo it shows before copying it (" .. case.module .. ')', function()
-            setup({ module = case.module })
-            Handler.create({ photo_ids = { '1' } })
-            assert.are.same(case.events, calls.events)
-        end)
-    end
 
     it('selects only the requested photo even when it is already active', function()
         setup()

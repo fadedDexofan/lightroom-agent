@@ -1,9 +1,9 @@
 local helper = require 'spec_helper'
 
 describe('develop snapshots', function()
-    local handler, photo, other, state, calls, events, originalSession
+    local handler, photo, other, state, calls, originalSession
     before_each(function()
-        state, calls, events = {}, {}, {}
+        state, calls = {}, {}
         originalSession = package.loaded.DevelopSession
         local inDevelop = false
         package.loaded.DevelopSession = {
@@ -15,9 +15,7 @@ describe('develop snapshots', function()
                 return result
             end,
             waitFor = function(predicate) return predicate() end,
-            flushIfShowing = function(_, target)
-                events[#events + 1] = "flush " .. tostring(target.localIdentifier)
-            end,
+            commitPendingEdits = function() end,
         }
         photo = helper.fakePhoto({ localIdentifier = '1', path = '/1.jpg' })
         other = helper.fakePhoto({ localIdentifier = '2', path = '/2.jpg' })
@@ -30,7 +28,6 @@ describe('develop snapshots', function()
         other.getDevelopSnapshots = function() return {} end
         photo.createDevelopSnapshot = function(_, name, replace)
             createdInGate = true
-            events[#events + 1] = "create"
             for _, item in ipairs(state) do
                 if item.name == name then
                     if not replace then return false end
@@ -75,11 +72,6 @@ describe('develop snapshots', function()
         local result = handler.create({ photo_id = '/1.jpg', name = 'before' })
         assert.same({ photo_id = '1', snapshot = { id = 'snapshot-1', name = 'before' } }, result)
         assert.same({ result.snapshot }, handler.list({ photo_id = 1 }).snapshots)
-    end)
-
-    it("commits Develop's pending edits on the photo before it takes the snapshot", function()
-        handler.create({ photo_id = '1', name = 'before' })
-        assert.same({ 'flush 1', 'create' }, events)
     end)
 
     it('refuses duplicate names unless replacement is requested', function()

@@ -83,18 +83,6 @@ describe("DevelopSession.run", function()
         assert.are.same({ "module develop", "select 2", "module library", "select 1" }, ctx.events)
     end)
 
-    it("lets a write inside a session that never opened the photo commit Develop's pending edits first", function()
-        local DevelopSession, ctx = setup()
-        DevelopSession.openDevelop()
-        ctx.catalog:setSelectedPhotos(ctx.second, { ctx.second })
-
-        DevelopSession.run(helper.requestContext(nil, { title = "tool" }), ctx.catalog, false, function()
-            DevelopSession.flushIfShowing(ctx.catalog, ctx.second)
-        end)
-
-        assert.are.same({ "module develop", "select 2", "flush true" }, ctx.events)
-    end)
-
     it("commits nothing when the session never opened Develop", function()
         local DevelopSession, ctx = setup()
 

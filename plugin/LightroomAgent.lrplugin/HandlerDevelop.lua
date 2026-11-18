@@ -509,7 +509,7 @@ function DevelopHandler.applyDevelopPreset(args, context)
         else
             local from = context.ledger:mark()
             local entriesBefore, before
-            local applied, problem = LrTasks.pcall(CatalogWrite.developState, catalog, { photo }, function()
+            local applied, problem = LrTasks.pcall(function()
                 catalog:withReadAccessDo(function() before = DevelopReadBack.before(photo:getDevelopSettings()) end)
                 entriesBefore = aiPreset and GuardedMaskWrite.readEntries(catalog, photo)
                 applyPreset(context, catalog, selectedPreset, photo)
@@ -951,7 +951,7 @@ end
 local function autoOperation(context, catalog, photo, name, keys, controllerFunction)
     local before = autoValues(catalog, photo, keys)
     CatalogWrite.develop(context, controllerFunction)
-    DevelopSession.flushPendingEdits()
+    DevelopSession.commitPendingEdits()
     local previous, stable, elapsed = before, 0, 0
     local settled = waitFor(function()
         if catalog:getTargetPhoto() ~= photo then
@@ -1008,7 +1008,7 @@ function DevelopHandler.resetDevelopAdjustments(args, context)
         each = function(photo, state)
             DevelopSession.openPhoto(catalog, photo, state)
             CatalogWrite.develop(context, "resetAllDevelopAdjustments")
-            DevelopSession.flushPendingEdits()
+            DevelopSession.commitPendingEdits()
             return { status = "reset" }
         end,
     })

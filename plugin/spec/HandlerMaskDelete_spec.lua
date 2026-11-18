@@ -34,9 +34,8 @@ local function setup(opts)
         masksOf[p] = spec.masks or {}
         p.getDevelopSettings = function() return savedSettingsOf(masksOf[p]) end
     end
-    local calls = { modules = {}, selections = {}, deleteAllEmpty = {}, flushes = {} }
+    local calls = { modules = {}, selections = {}, deleteAllEmpty = {} }
     local catalog = helper.fakeCatalog({ photos = photos, writeAccessAborts = opts.writeAccessAborts })
-    if opts.shown then catalog.getTargetPhoto = function() return photos[opts.shown] end end
     local recordSelection = catalog.setSelectedPhotos
     catalog.setSelectedPhotos = function(self, photo, selected)
         recordSelection(self, photo, selected)
@@ -67,13 +66,8 @@ local function setup(opts)
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrApplicationView = {
-            getCurrentModuleName = function() return opts.module or "library" end,
+            getCurrentModuleName = function() return "library" end,
             switchToModule = function(name) calls.modules[#calls.modules + 1] = name end,
-        },
-        LrDevelopController = {
-            stopTracking = function(committed)
-                calls.flushes[#calls.flushes + 1] = { committed = committed, deletes = #calls.deleteAllEmpty }
-            end,
         },
         LrSelection = {},
         LrTasks = { pcall = pcall, sleep = function() end },
@@ -101,7 +95,6 @@ local function savedSetup(opts)
     })
     local catalog = helper.fakeCatalog({ photos = { photo }, writeAccessAborts = opts.writeAccessAborts })
     Store.trackGates(store, catalog)
-    catalog.getTargetPhoto = function() return photo end
     local modules = {}
     helper.admitMaskWrites({ refuse = "Mask geometry writes are not certified." })
     helper.installImport({
@@ -269,17 +262,6 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
         assert.are.same({ "b" }, idsOf(masksOf[photos[2]]))
         assert.are.same({}, masksOf[photos[3]])
     end)
-
-    for _, case in ipairs({ { module = "develop", flushes = { { committed = true, deletes = 0 } } }, { module = "library", flushes = {} } }) do
-        it("commits Develop's pending edits before deleting only on the photo shown in Develop (" .. case.module .. ")", function()
-            local Handler, calls = setup({ photos = photosWithEmptyMasks(), module = case.module, shown = 3 })
-
-            Handler.deleteEmptyMasks({ photo_ids = { "1", "3" } })
-
-            assert.are.same(case.flushes, calls.flushes)
-            assert.are.equal(1, #calls.deleteAllEmpty)
-        end)
-    end
 
     it("fails without deleting when the catalog stays busy", function()
         local Handler, calls, _, masksOf, photos = setup({

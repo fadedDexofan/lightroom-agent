@@ -2358,7 +2358,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { plugin: "HandlerMaskRead.getMask" },
     description:
-      "Read local adjustments, tone curves and Point Color of a mask_id from list_masks in the photo's saved settings, without opening Develop or selecting the mask. kinds defaults to all; only requested kinds are returned. Returns adjustments (every local slider by its SDK name; a slider the mask does not store reads as its neutral value), curves (main/red/green/blue flat input/output arrays; an extended curve before a plain one, [0,0,255,255] when the channel is not stored) and swatches (Lightroom order, indexed from 1, with the six decimals Lightroom stores). The saved state can trail a change made by hand in Develop by a few seconds. Unknown ids fail without reading values.",
+      "Read local adjustments, tone curves and Point Color of a mask_id from list_masks in the photo's saved settings, without opening Develop or selecting the mask. kinds defaults to all; only requested kinds are returned. Returns adjustments (every local slider by its SDK name; a slider the mask does not store reads as its neutral value), curves (main/red/green/blue flat input/output arrays; an extended curve before a plain one, [0,0,255,255] when the channel is not stored) and swatches (Lightroom order, indexed from 1, with the six decimals Lightroom stores). Unknown ids fail without reading values.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

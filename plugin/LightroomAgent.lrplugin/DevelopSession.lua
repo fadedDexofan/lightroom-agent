@@ -141,14 +141,12 @@ function DevelopSession.openDevelop(isReady)
     end
 end
 
-function DevelopSession.flushPendingEdits()
-    LrTasks.pcall(LrDevelopController.stopTracking, true)
+function DevelopSession.commitPendingEdits()
+    if developModuleShowing() then LrTasks.pcall(LrDevelopController.stopTracking, true) end
 end
 
-function DevelopSession.flushIfShowing(catalog, photo)
-    if developModuleShowing() and catalog:getTargetPhoto() == photo then
-        DevelopSession.flushPendingEdits()
-    end
+function DevelopSession.releaseTracking()
+    return LrDevelopController.stopTracking(false)
 end
 
 local function runBody(context, catalog, restore, body)
@@ -159,7 +157,7 @@ local function runBody(context, catalog, restore, body)
         if restore then view = captureView(catalog) end
         return body(state)
     end)
-    if context.ledger:controllerWroteSince(mark) and developModuleShowing() then DevelopSession.flushPendingEdits() end
+    if context.ledger:controllerWroteSince(mark) then DevelopSession.commitPendingEdits() end
     if view then
         local restored, problems = LrTasks.pcall(restoreView, catalog, view, state)
         if not restored then problems = { tostring(problems) } end
@@ -185,12 +183,10 @@ function DevelopSession.run(context, catalog, restore, body)
 end
 
 function DevelopSession.openPhoto(catalog, photo, state)
-    local alreadyShowingPhoto = developModuleShowing() and catalog:getTargetPhoto() == photo
     DevelopSession.openDevelop()
     if not DevelopSession.activate(catalog, photo, state) then
         Reply.refuse("Could not open photo " .. tostring(photo.localIdentifier) .. " in Develop")
     end
-    if alreadyShowingPhoto then DevelopSession.flushPendingEdits() end
     LrTasks.sleep(PHOTO_SETTLE_SECONDS)
     if catalog:getTargetPhoto() ~= photo then
         Reply.refuse("Another photo became active in Develop while opening photo "

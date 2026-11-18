@@ -10,6 +10,7 @@ local LrFileUtils = import 'LrFileUtils'
 local JSON = require 'JSON'
 local PluginFiles = require 'PluginFiles'
 local Contract = require 'Contract'
+local DevelopSession = require 'DevelopSession'
 local Reply = require 'Reply'
 local RequestContext = require 'RequestContext'
 local Log = require 'Log'
@@ -298,6 +299,7 @@ local function dispatchAction(request)
     -- client. Stick to LrTasks.pcall.
     local context = (id ~= nil and activeRequests[id]) or contextFor(request)
     local execOk, resultOrErr = LrTasks.pcall(function()
+        if action ~= "ping" then DevelopSession.commitPendingEdits() end
         return handler(params, context)
     end)
     if context:isCanceled() then addLog("Cancelled " .. action .. " id=" .. tostring(id)) end

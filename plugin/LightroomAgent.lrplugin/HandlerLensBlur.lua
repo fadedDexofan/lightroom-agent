@@ -82,7 +82,7 @@ end
 
 local function flush(catalog, photo)
     assertActive(catalog, photo)
-    sdk(LrDevelopController.stopTracking, false)
+    sdk(DevelopSession.releaseTracking)
     LrTasks.sleep(5)
     assertActive(catalog, photo)
 end

@@ -140,13 +140,11 @@ function MaskDeleteHandler.deleteEmptyMasks(args, context)
     local photos = {}
     for i, entry in ipairs(entries) do photos[i] = entry.photo end
 
-    local groupsBefore, groupsAfter = CatalogWrite.developState(catalog, photos, function()
-        local before = countGroups(catalog, photos)
-        CatalogWrite.run(context, catalog, "Delete Empty Masks", function()
-            CatalogWrite.call(context, catalog, "deleteAllEmptyMasks", photos)
-        end)
-        return before, countGroups(catalog, photos)
+    local groupsBefore = countGroups(catalog, photos)
+    CatalogWrite.run(context, catalog, "Delete Empty Masks", function()
+        CatalogWrite.call(context, catalog, "deleteAllEmptyMasks", photos)
     end)
+    local groupsAfter = countGroups(catalog, photos)
     local changed = {}
     for _, photo in ipairs(photos) do
         local removed = groupsBefore[photo] - groupsAfter[photo]

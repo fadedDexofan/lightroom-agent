@@ -34,6 +34,7 @@ local RAISE_INSIDE_GATE = {
 }
 
 function CatalogWrite.run(context, catalog, title, fn)
+    DevelopSession.commitPendingEdits()
     local returned
     local outcome = catalog:withWriteAccessDo(title, function() returned = fn() end,
         { timeout = CatalogWrite.WAIT_SECONDS })
@@ -44,18 +45,11 @@ function CatalogWrite.run(context, catalog, title, fn)
     if returned ~= CatalogWrite.NOTHING then context.ledger:record(title) end
 end
 
-function CatalogWrite.developState(catalog, photos, operation)
-    for _, photo in ipairs(photos) do DevelopSession.flushIfShowing(catalog, photo) end
-    return operation()
-end
-
 function CatalogWrite.developSettings(context, catalog, photo, title, settingsFor)
-    CatalogWrite.developState(catalog, { photo }, function()
-        CatalogWrite.run(context, catalog, title, function()
-            local settings = settingsFor()
-            if settings == nil then return CatalogWrite.NOTHING end
-            CatalogWrite.call(context, photo, "applyDevelopSettings", settings, title)
-        end)
+    CatalogWrite.run(context, catalog, title, function()
+        local settings = settingsFor()
+        if settings == nil then return CatalogWrite.NOTHING end
+        CatalogWrite.call(context, photo, "applyDevelopSettings", settings, title)
     end)
 end
 
@@ -66,6 +60,7 @@ function CatalogWrite.call(context, object, method, ...)
 end
 
 function CatalogWrite.invoke(context, what, fn, ...)
+    DevelopSession.commitPendingEdits()
     context.ledger:record(what)
     return fn(...)
 end
