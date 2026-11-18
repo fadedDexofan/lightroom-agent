@@ -6,30 +6,30 @@ Use a mask when a global change cannot do the job: a subject that needs light th
 
 - Masks and their components are addressed by the ids `list_masks` returns (masks, and per mask its tools with `type`, `subtype`, `part`, `inverted`), or by the ids a creating call returns. Edits can regenerate ids: use the latest ones.
 - `list_masks` reads the saved settings without Develop, newest mask first; an empty list means the photo holds no masks.
-- Sliders use one vocabulary everywhere: the `local_*` SDK names (`local_Exposure` −4..4, `local_Contrast`, `local_Highlights`, `local_Shadows`, `local_Texture`, `local_Clarity`, `local_Dehaze`, `local_Sharpness`, `local_LuminanceNoise`, `local_Defringe`, `local_colorgrade*`, `local_glow`, …), in the `adjustments` of every creating call and in `set_mask_adjustments`. Each range is in the schema; `describe_develop_keys` with a `mask_id` shows where Lightroom's live range differs.
+- Sliders use one vocabulary everywhere: the `local_*` SDK names (`local_Exposure` −4..4, `local_Contrast`, `local_Highlights`, `local_Shadows`, `local_Texture`, `local_Clarity`, `local_Dehaze`, `local_Sharpness`, `local_LuminanceNoise`, `local_Defringe`, `local_colorgrade*`, `local_glow`, …), in the `adjustments` of creating calls and in `set_mask_adjustments`; People and Landscape creates take none, so adjust each returned mask afterwards. Each range is in the schema; `describe_develop_keys` with a `mask_id` shows where Lightroom's live range differs.
 - A new geometry mask without `adjustments`, and every new People or Landscape mask, applies no local adjustment until `set_mask_adjustments`, though on a RAW its creation can trigger a re-render ([below](#mask-writes-re-render-a-raw)).
 
 ## Values: read and written in the saved settings
 
 `get_mask`, `set_mask_adjustments`, `set_mask_curves` and every action of `edit_mask_point_colors` work on the photo's saved settings by mask id, without opening Develop or selecting the mask.
 
-- A write changes only the named sliders, channels or swatches and is read back exactly; a changed value adds one history step, and a request with nothing to change can write nothing. If Lightroom changed anything else or stored another value, the photo is put back and the call fails naming what Lightroom stored.
+- A write changes only the named sliders, channels or swatches and is read back exactly; a changed value adds one history step, and a request with nothing to change can write nothing. If Lightroom changed anything else or stored another value, the photo is put back and the call fails naming what Lightroom stored; if the restore cannot be confirmed either, the call is `unknown`: read the masks before anything else.
 - The reply gives stored values: sliders to six decimals, colour-grade sliders as whole numbers (a hue of 212.4 is stored as 212), Point Color to six decimals.
 - **A value write turns the mask on**, as Lightroom's own sliders do: a mask `list_masks` shows as `hidden` is shown again, with a warning. Check before writing to a mask the person switched off.
 - Mask curves take at most 16 points; a straight `[0,0,255,255]` is stored as no curve, and a written channel replaces that channel's extended (HDR) curve.
 - Point Color: `add` needs `SrcHue`, `SrcSat`, `SrcLum`; like Lightroom's own add it stores the source rounded to two decimals and gives the other fields Lightroom's defaults. A mask holds at most eight swatches, with no repeated source colour; `delete` moves later swatches up. Each range's edges must be ordered (LowerNone ≤ LowerFull ≤ UpperFull ≤ UpperNone), because Lightroom drops every swatch of the mask otherwise.
-- Slider changes the person has pending in Develop on that photo are committed first. A read gives the saved state, which can trail a change made by hand a few seconds earlier.
+- Slider changes the person has pending in Develop are committed before a call reads or writes anything, so a read shows them and a write builds on them.
 - `delete_masks` removes masks or top-level components from the saved settings in one history step; `delete_empty_masks` removes masks with no tools over many photos, and keeps every mask that has a component, adjusted or not.
 
 These value edits construct nothing, so they need no certification.
 
 ## Constructing writes need admission
 
-Writes that construct mask data in Lightroom's undocumented format are guarded: `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask`, `create_mask_batch`, `combine_mask`, and a full `copy_develop_settings` that carries masks.
+Writes that construct mask data in Lightroom's undocumented format are guarded: `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask`, `create_mask_batch`, `combine_mask`, and a full `copy_develop_settings` when the source has masks to copy or the target has masks to remove.
 
 - They run on the throwaway catalog of the project's live test kit. On any other catalog they need a certification run on that machine that passed for the running Lightroom version and build and the photo's process version.
 - `get_mask_write_admission` (with `photo_id`) reports admitted or not and why, without writing.
-- A refusal names the reason; after a Lightroom update the guarded writes refuse until certification is rerun. Report that to the person instead of working around it.
+- A refusal names the reason. After a Lightroom update the guarded writes refuse until certification is rerun: report that to the person instead of working around it. A refusal that a mask has no id yet clears when Lightroom names it a few seconds later: retry that call, or in a batch that item.
 - They check what they construct against the certified format, leave every other mask as Lightroom stored it, read the whole mask list back and roll back on a mismatch.
 
 ## Positions
@@ -45,7 +45,7 @@ Range masks: luminance and depth bands at least 0.01 wide (depth needs a photo w
 Four calls write AI masks: `create_mask` (Subject, Sky, Background, People parts, Landscape categories), `create_mask_batch` (one Subject, Sky or Background mask on up to 200 photos), `combine_mask` (add, subtract or intersect a Subject, Sky or Background component) and a full copy with AI masks. Each writes the new mask into the saved settings, lets Lightroom compute it with one Update AI Settings, and judges its own masks on the photo:
 
 - computed: `done`;
-- Lightroom reports finding nothing, or could not compute: the new masks are removed, the photo's own masks are restored exactly, and the call fails naming the failed components; no alert needs dismissing;
+- Lightroom reports finding nothing, or could not compute: the new masks are removed, the photo's own masks are restored exactly, and the call fails naming the failed components; no alert needs dismissing. If that restore cannot be confirmed, the call is `unknown` and asks you to check the photo's masks in Develop before writing to it;
 - if that same compute also refreshed other settings (stale Lens Blur depth, Enhance filters, Remove areas, an adaptive profile), those are not rolled back: the call is `unknown` and names them, and the masks are as before;
 - anything on the photo still computing 15 s later: `unknown`, and nothing more may be written to that photo until a read shows the compute finished;
 - a preset is the exception: `apply_develop_preset` keeps the preset and answers `unknown` (check the masks in Develop before writing to the photo), and an apply that stops ends the batch with the rest in `remaining`;

@@ -20,7 +20,7 @@ Procedure (verify each step on the render):
 5. **Crop away the blank edges** with `set_crop` and `relative_to: "crop"` placed on the preview. The tool does not undo Upright, so the frame can sit up to about 0.05 away near the edges: leave a margin and adjust once.
 6. **Manual fallback** when no mode looks right or a partial correction looks more natural: Upright off, then `PerspectiveVertical`, set from the image rather than a fixed value, `PerspectiveAspect` against a stretched look, `PerspectiveScale` to pull blank edges inside, `PerspectiveRotate` for a small tilt. A slight residual convergence often looks more natural than geometric parallels. Read the render after each.
 
-**Projection** (`ReshapeAmount`, new in Lightroom Classic 16.0) reshapes the edges and corners of a wide frame to reduce the stretch of faces and round objects near the corners; on a facade it did not straighten verticals. Use it for a person, animal or round object stretched near the edge; do not use it as perspective correction or on descriptive architecture or a horizon near the edge, where it bends lines that must stay straight.
+**Projection** (`ReshapeAmount`, Lightroom Classic 16.0) reshapes the edges and corners of a wide frame to reduce the stretch of faces and round objects near the corners; on a facade it did not straighten verticals. Use it for a person, animal or round object stretched near the edge; do not use it as perspective correction or on descriptive architecture or a horizon near the edge, where it bends lines that must stay straight.
 
 ## Depth and atmosphere
 
@@ -39,7 +39,7 @@ For blue hour protect the difference between the cool surroundings and warm wind
 | Descriptive architecture | Proportions, material, controlled colour | Crop or stretch misrepresents the building |
 | Dramatic geometry | Intentional convergence, diagonals, tonal hierarchy | The tilt looks accidental or shapes collapse |
 | Airy landscape | Soft distance, light air, a readable anchor | The scene becomes shapeless grey |
-| Light relief | Existing sun and shadow, separated planes | Masks invent incompatible light or show |
+| Light relief | Existing sun and shadow, separated planes | Mask edges show, or masks add light against the scene's direction |
 | Blue hour | Cool ambient with warm inhabited light | Everything turns blue, or windows become orange blobs |
 | Graphic monochrome | Form, rhythm, tonal plane separation | The colour story is lost or forms merge |
 
