@@ -62,9 +62,12 @@ describe("HandlerMaskAdmission.get", function()
         { held = "masks of the pinned format", entry = Store.correction("A", { Store.linearComponent() }), problems = {} },
         { held = "a mask outside the pinned format, listing it", entry = Store.correction("Odd", { { What = "Mask/Mystery", MaskActive = true } }),
             problems = { "existing mask 1.CorrectionMasks[1]: unknown mask type Mask/Mystery" } },
+        { held = "a mask Lightroom has not named yet, listing it", entry = Store.correction("New", { Store.linearComponent() }),
+            unnamed = true, problems = { "existing mask 1: missing CorrectionID" } },
     }) do
         it("admits a photo of a certified build with a certified process version holding " .. case.held, function()
-            local Handler = setup({ files = { [CERTIFICATION_FILE] = CERTIFIED }, entries = { case.entry } })
+            local Handler, state = setup({ files = { [CERTIFICATION_FILE] = CERTIFIED }, entries = { case.entry } })
+            if case.unnamed then state.entries[1].CorrectionID, state.entries[1].CorrectionSyncID = nil, nil end
 
             local result = Handler.get({ photo_id = "7" })
 

@@ -1,24 +1,17 @@
 local helper = require 'spec_helper'
+local fake = require 'fake_mask_develop'
 
 describe('develop snapshots', function()
-    local handler, photo, other, state, calls, originalSession
+    local handler, photo, other, state, calls, develop
     before_each(function()
         state, calls = {}, {}
-        originalSession = package.loaded.DevelopSession
-        local inDevelop = false
-        package.loaded.DevelopSession = {
-            withPhoto = function(_, _, target, fn)
-                assert.equals(photo, target)
-                inDevelop = true
-                local result = fn()
-                inDevelop = false
-                return result
-            end,
-            waitFor = function(predicate) return predicate() end,
-            commitPendingEdits = function() end,
-        }
-        photo = helper.fakePhoto({ localIdentifier = '1', path = '/1.jpg' })
-        other = helper.fakePhoto({ localIdentifier = '2', path = '/2.jpg' })
+        develop = fake.build({
+            photos = { { id = '1' }, { id = '2' } },
+            handler = 'HandlerSnapshots',
+            modules = { 'HandlerSnapshots', 'DevelopSession', 'PhotoLookup', 'CatalogWrite' },
+        })
+        photo, other = develop.photos[1], develop.photos[2]
+        local function inDevelop() return develop.module == 'develop' and develop.active == photo end
         local serial = 0
         local writing, createdInGate = false, false
         photo.getDevelopSnapshots = function()
@@ -40,17 +33,17 @@ describe('develop snapshots', function()
             return true
         end
         photo.applyDevelopSnapshot = function(_, id)
-            assert.is_true(inDevelop)
+            assert.is_true(inDevelop())
             calls.applied = id
         end
         photo.deleteDevelopSnapshot = function(_, id)
-            assert.is_true(inDevelop)
+            assert.is_true(inDevelop())
             calls.deleted = id
             for i, item in ipairs(state) do
                 if item.id_global == id then table.remove(state, i) return end
             end
         end
-        local catalog = helper.fakeCatalog({ photos = { photo, other } })
+        local catalog = develop.catalog
         local writeAccess = catalog.withWriteAccessDo
         catalog.withWriteAccessDo = function(self, name, fn)
             writing, createdInGate = true, false
@@ -59,12 +52,8 @@ describe('develop snapshots', function()
             if not ok then error(result) end
             return result
         end
-        helper.installImport({ LrApplication = { activeCatalog = function() return catalog end } })
-        package.loaded.PhotoLookup = nil
-        package.loaded.HandlerSnapshots = nil
-        handler = require 'HandlerSnapshots'
+        handler = develop.Handler
     end)
-    after_each(function() package.loaded.DevelopSession = originalSession end)
 
     it('lists an empty photo and returns created ids and names under the resolved photo id', function()
         local listed = handler.list({ photo_id = '/1.jpg' })
@@ -94,6 +83,7 @@ describe('develop snapshots', function()
             handler.delete({ photo_id = '/1.jpg', snapshot_id = first.id }))
         assert.equals('global-1', calls.deleted)
         assert.same({ second }, handler.list({ photo_id = '1' }).snapshots)
+        assert.same({ 'develop', 'library', 'develop', 'library' }, develop.calls.modules)
     end)
 
     it('answers unknown when Lightroom silently ignores a deletion', function()

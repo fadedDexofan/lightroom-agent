@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,8 +22,14 @@ const VERSIONED_FILES = [
   "plugin/LightroomAgent.lrplugin/Info.lua",
 ];
 
+const roots = [];
+after(() => {
+  for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+});
+
 function copyOfRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "bump-version-"));
+  roots.push(root);
   for (const file of VERSIONED_FILES) {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     fs.copyFileSync(path.join(repoRoot, file), path.join(root, file));
