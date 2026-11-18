@@ -475,7 +475,7 @@ describe('CLI process', () => {
     expect(connections()).toBe(1);
 
     await closeClient(leader.client);
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await waitUntilTrue(() => follower.stderr().includes('[bridge] not taking the plugin connection'));
 
     expect(await follower.call('list_collections')).toEqual({
       isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed', error: REBUILD }) }],
