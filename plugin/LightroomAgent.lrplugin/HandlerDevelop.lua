@@ -561,6 +561,7 @@ end
 local function replaceMasks(context, catalog, photo, target, masks, aiMasks, processVersion)
     if processVersion ~= nil and processVersion ~= target.processVersion then
         MaskWriteAdmission.requireAdmitted(MaskWriteAdmission.status(catalog), processVersion)
+        GuardedMaskWrite.requireNamed(catalog, photo)
         CatalogWrite.developSettings(context, catalog, photo, "Set Process Version " .. tostring(processVersion),
             function() return { ProcessVersion = processVersion } end)
     end

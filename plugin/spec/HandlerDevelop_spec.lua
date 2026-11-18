@@ -2773,6 +2773,10 @@ describe("a full copy replaces the target's masks and admits them under the proc
     local function recordingGuard(log, opts)
         opts = opts or {}
         return {
+            requireNamed = function(_, photo)
+                log[#log + 1] = "ids " .. tostring(photo.localIdentifier)
+                if opts.unnamed then Reply.refuse('mask 1 ("A") has no id yet') end
+            end,
             apply = function(context, _, photo, spec)
                 local settings = photo:getDevelopSettings()
                 log[#log + 1] = "masks " .. tostring(photo.localIdentifier) .. " at " .. tostring(settings.ProcessVersion)
@@ -2847,7 +2851,25 @@ describe("a full copy replaces the target's masks and admits them under the proc
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
         assert.are.equal(1, r.data.copied)
-        assert.are.same({ "admit 15.4", "admit 15.4", "write 11 ProcessVersion", "masks 11 at 15.4", "write 11 Exposure2012,ProcessVersion" }, log)
+        assert.are.same({ "admit 15.4", "admit 15.4", "ids 11", "write 11 ProcessVersion", "masks 11 at 15.4",
+            "write 11 Exposure2012,ProcessVersion" }, log)
+    end)
+
+    it("fails a target with nothing written when it holds a mask Lightroom has not named, before the process version", function()
+        local log = {}
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
+            Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
+        } })
+        local older = target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
+        local _, Handler = setup({ photos = { source, older }, guardedMaskWrite = recordingGuard(log, { unnamed = true }),
+            maskWriteAdmission = recordingAdmission(log) })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+
+        assert.are.equal("11", r.failed[1].photo_id)
+        assert.truthy(r.failed[1].reason:find("has no id yet", 1, true), r.failed[1].reason)
+        assert.are.same({ "admit 15.4", "admit 15.4", "ids 11" }, log)
+        assert.are.equal("11.0", older:getDevelopSettings().ProcessVersion)
     end)
 
     it("fails a target with nothing written when the planned process version is not admitted", function()

@@ -300,6 +300,20 @@ describe("MaskValues.write", function()
     end
 end)
 
+describe("MaskValues.write beside a mask Lightroom has not named yet", function()
+    it("refuses with nothing written, since that mask could not be resent unchanged", function()
+        local MaskValues, ctx = setup()
+        ctx.store.entries[2].CorrectionID, ctx.store.entries[2].CorrectionSyncID = nil, nil
+
+        local refusal = helper.failedOf(function()
+            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
+        end)
+
+        assert.matches('mask 2 ("Brush") has no id yet', refusal, 1, true)
+        assert.are.equal(0, ctx.store.attempts)
+    end)
+end)
+
 describe("MaskValues.write on a mask with a Point Color swatch it cannot read", function()
     local UNREADABLE = { LocalPointColors = { "1.0, 0.5" }, LocalColorVariance = { "0.000000" } }
 

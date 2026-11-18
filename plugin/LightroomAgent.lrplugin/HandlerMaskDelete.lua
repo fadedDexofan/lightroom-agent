@@ -67,23 +67,26 @@ local function planDeletion(entries, target, photoId)
         end
         for _, id in ipairs(target.ids) do removeTool[id] = true end
     end
-    local plan = { kept = {}, deletedMaskIds = {}, deletedToolIds = {} }
+    local plan = { kept = {}, deletedMaskIds = {}, deletedToolIds = {}, removed = 0 }
     for _, entry in ipairs(entries) do
         local maskId = idOf(entry.CorrectionID)
-        local survivors, removed = {}, {}
+        local survivors, removed, dropped = {}, {}, 0
         for _, component in ipairs(componentsOf(entry)) do
             local toolId = idOf(component.MaskID)
             if target.kind == "all" or removeMask[maskId] or removeTool[toolId] then
+                dropped = dropped + 1
                 removed[#removed + 1] = toolId
             else
                 survivors[#survivors + 1] = component
             end
         end
         for _, toolId in ipairs(removed) do plan.deletedToolIds[#plan.deletedToolIds + 1] = toolId end
-        if target.kind == "all" or removeMask[maskId] or (#removed > 0 and #survivors == 0) then
+        plan.removed = plan.removed + dropped
+        if target.kind == "all" or removeMask[maskId] or (dropped > 0 and #survivors == 0) then
+            plan.removed = plan.removed + 1
             plan.deletedMaskIds[#plan.deletedMaskIds + 1] = maskId
         else
-            if #removed > 0 then entry.CorrectionMasks = survivors end
+            if dropped > 0 then entry.CorrectionMasks = survivors end
             plan.kept[#plan.kept + 1] = entry
         end
     end
@@ -91,7 +94,7 @@ local function planDeletion(entries, target, photoId)
 end
 
 local function nothingDeleted(plan)
-    return #plan.deletedMaskIds == 0 and #plan.deletedToolIds == 0
+    return plan.removed == 0
 end
 
 function MaskDeleteHandler.deleteMasks(args, context)

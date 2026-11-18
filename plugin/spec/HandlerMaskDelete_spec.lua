@@ -239,6 +239,30 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
     end)
 end)
 
+describe("HandlerMaskDelete.deleteMasks beside a mask Lightroom has not named yet", function()
+    it("refuses with nothing written, since that mask could not be resent unchanged", function()
+        local Handler, store = savedSetup()
+        store.entries[2].CorrectionID, store.entries[2].CorrectionSyncID = nil, nil
+
+        local refusal = helper.failedOf(function() Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-a" } }) end)
+
+        assert.matches('mask 2 ("B") has no id yet', refusal, 1, true)
+        assert.are.equal(0, store.attempts)
+    end)
+
+    it("refuses all=true with nothing written while the only mask and its tools have no id yet", function()
+        local Handler, store = savedSetup()
+        store.entries = { store.entries[1] }
+        store.entries[1].CorrectionID, store.entries[1].CorrectionSyncID = nil, nil
+        for _, component in ipairs(store.entries[1].CorrectionMasks) do component.MaskID, component.MaskSyncID = nil, nil end
+
+        local refusal = helper.failedOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
+
+        assert.matches('mask 1 ("A") has no id yet', refusal, 1, true)
+        assert.are.equal(0, store.attempts)
+    end)
+end)
+
 describe("HandlerMaskDelete.deleteEmptyMasks", function()
     local function photosWithEmptyMasks()
         return {
