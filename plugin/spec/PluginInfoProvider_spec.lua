@@ -85,6 +85,7 @@ local function installStubs(prefs, asyncTasks, opts)
         LrFileUtils = { createAllDirectories = function() end },
     })
     package.loaded.JSON = {}
+    package.loaded.HandlerLoads = nil
     for _, target in pairs(require('Contract').DISPATCH) do
         package.loaded[target[1]] = {}
     end
@@ -236,21 +237,141 @@ describe("PluginInfoProvider server task", function()
         io.open = realOpen
     end)
 
-    it("loads every handler module when the server starts, before any request names it", function()
-        local loaded = {}
-        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
-        for _, target in pairs(require('Contract').DISPATCH) do
-            package.loaded[target[1]] = nil
-            package.preload[target[1]] = function() loaded[target[1]] = true return {} end
+    local function pluginModules()
+        local names = {}
+        for file in io.popen('ls "plugin/LightroomAgent.lrplugin"'):lines() do
+            local name = file:match("^(.+)%.lua$")
+            if name then names[#names + 1] = name end
         end
-        package.loaded.JSON, package.loaded.Reply = nil, nil
+        return names
+    end
 
-        loadInfoProvider().startServer()
-
-        for _, target in pairs(require('Contract').DISPATCH) do
-            package.preload[target[1]] = nil
-            assert.is_true(loaded[target[1]], target[1])
+    local function permissiveImports()
+        local installed = _G.import
+        local function anything()
+            return setmetatable({}, { __index = function() return function() end end, __call = function() end })
         end
+        _G.import = function(name)
+            local found, module = pcall(installed, name)
+            if found then return module end
+            return anything()
+        end
+    end
+
+    it("loads every module a call can run when the plug-in initialises, before any request names it", function()
+        installStubs({ autoStartServer = false })
+        permissiveImports()
+        for _, name in ipairs(pluginModules()) do package.loaded[name] = nil end
+
+        loadPluginInit()
+
+        for _, target in pairs(require('Contract').DISPATCH) do assert.is_table(package.loaded[target[1]], target[1]) end
+        assert.is_table(package.loaded.HandlerAiMasks)
+    end)
+
+    it("requires plug-in modules only at the top level, outside Lightroom's shutdown script", function()
+        local inside = {}
+        for _, name in ipairs(pluginModules()) do
+            if name ~= "PluginShutdown" then
+                local number = 0
+                for line in io.lines("plugin/LightroomAgent.lrplugin/" .. name .. ".lua") do
+                    number = number + 1
+                    if line:match("^%s+") and line:match("%f[%w_]require%s*%(?%s*['\"]") then
+                        inside[#inside + 1] = name .. ".lua:" .. number
+                    end
+                end
+            end
+        end
+        assert.are.same({}, inside)
+    end)
+
+    describe("a handler module's load result", function()
+        local binds, sends
+        local function initialised(prefs)
+            binds, sends = {}, {}
+            installStubs(prefs or { autoStartServer = false }, nil,
+                { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds, sends = sends })
+            package.loaded.JSON, package.loaded.Reply, package.loaded.DevelopSession = nil, nil, nil
+        end
+        local function startFromPanel()
+            require('PluginInfoProvider').startServerFromPanel()
+            _G.LightroomAgent_State.sendConnected = true
+        end
+        local function answer(action)
+            local state = _G.LightroomAgent_State
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"' .. action .. '","action":"' .. action .. '"}')
+            return require('JSON'):decode(sends[#sends])
+        end
+        local function failingOnce(name, cause, module)
+            local attempts = 0
+            package.loaded[name] = nil
+            package.preload[name] = function()
+                attempts = attempts + 1
+                if attempts == 1 then error(cause, 0) end
+                return module or {}
+            end
+            return function() return attempts end
+        end
+        after_each(function()
+            for _, name in ipairs({ "HandlerSearch", "HandlerBrushMasks", "DevelopCurves" }) do package.preload[name] = nil end
+        end)
+
+        it("is the module loaded at init, even when its source changes before the server starts from the panel", function()
+            initialised()
+            package.loaded.HandlerSearch = nil
+            package.preload.HandlerSearch = function() return { searchPhotos = function() return { loaded = "at init" } end } end
+            loadPluginInit()
+            package.preload.HandlerSearch = function() return { searchPhotos = function() return { loaded = "later" } end } end
+
+            startFromPanel()
+
+            assert.are.equal("at init", answer("search_photos").result.data.loaded)
+        end)
+
+        it("answers every action of a module whose first load failed with that cause, loading it once", function()
+            initialised()
+            local healthy = { searchPhotos = function() return { healthy = true } end }
+            package.loaded.HandlerSearch = healthy
+            local attempts = failingOnce("HandlerBrushMasks", "HandlerBrushMasks.lua:7: broken",
+                { createBrushMask = function() return {} end, addBrushStrokes = function() return {} end })
+            loadPluginInit()
+            startFromPanel()
+
+            for _, action in ipairs({ "create_brush_mask", "add_brush_strokes" }) do
+                assert.matches("HandlerBrushMasks.lua:7: broken", answer(action).error, 1, true)
+            end
+            loadInfoProvider()
+            assert.matches("HandlerBrushMasks.lua:7: broken", answer("add_brush_strokes").error, 1, true)
+            assert.is_true(answer("ping").result.data.pong)
+            assert.is_true(answer("search_photos").result.data.healthy)
+            assert.are.equal(healthy, package.loaded.HandlerSearch)
+            assert.are.equal(1, attempts())
+        end)
+
+        it("answers a module's actions with the cause a dependency raised during its first load", function()
+            initialised()
+            permissiveImports()
+            package.loaded.HandlerDevelop = nil
+            local attempts = failingOnce("DevelopCurves", "DevelopCurves.lua:4: broken")
+            loadPluginInit()
+            startFromPanel()
+
+            for _, action in ipairs({ "copy_develop_settings", "list_develop_presets" }) do
+                assert.matches("DevelopCurves.lua:4: broken", answer(action).error, 1, true)
+            end
+            assert.are.equal(1, attempts())
+        end)
+
+        it("keeps the results across a reload while the server is stopped", function()
+            initialised()
+            local attempts = failingOnce("HandlerBrushMasks", "HandlerBrushMasks.lua:7: broken")
+            loadPluginInit()
+            loadPluginInit()
+            startFromPanel()
+
+            assert.matches("HandlerBrushMasks.lua:7: broken", answer("create_brush_mask").error, 1, true)
+            assert.are.equal(1, attempts())
+        end)
     end)
 
     it("commits Develop's pending edit before the handler of every action but ping", function()

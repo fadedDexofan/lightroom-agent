@@ -17,6 +17,7 @@ local DevelopReadBack = require 'DevelopReadBack'
 local DevelopSession = require 'DevelopSession'
 local AIMaskCompute = require 'AIMaskCompute'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
+local HandlerSnapshots = require 'HandlerSnapshots'
 local Log = require 'Log'
 local MaskWriteAdmission = require 'MaskWriteAdmission'
 local JSON = require 'JSON'
@@ -697,7 +698,6 @@ function DevelopHandler.matchPhotoStyle(args, context)
         for key in pairs(STYLE_KEYS) do settings[key] = DevelopCurves.read(reference, key) end
     end)
     local results, failures, written, remaining = {}, {}, {}, {}
-    local snapshots = require 'HandlerSnapshots'
     for _, entry in ipairs(targets) do
         if #remaining > 0 or context:stopping(batchReserve(2, false)) then
             remaining[#remaining + 1] = entry.id
@@ -722,7 +722,7 @@ function DevelopHandler.matchPhotoStyle(args, context)
                 local snapshot
                 local from = context.ledger:mark()
                 local ok, reason = LrTasks.pcall(function()
-                    snapshot = snapshots.create({ photo_id = photoId, name = name }, context).snapshot
+                    snapshot = HandlerSnapshots.create({ photo_id = photoId, name = name }, context).snapshot
                     CatalogWrite.developSettings(context, catalog, entry.photo, "Match Photo Style",
                         function() return DevelopCurves.forWrite(settings) end)
                     written[#written + 1] = { photo = entry.photo, settings = settings, before = before }

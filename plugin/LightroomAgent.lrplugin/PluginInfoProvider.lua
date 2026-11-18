@@ -14,6 +14,7 @@ local DevelopSession = require 'DevelopSession'
 local Reply = require 'Reply'
 local RequestContext = require 'RequestContext'
 local Log = require 'Log'
+local HandlerLoads = require 'HandlerLoads'
 
 local DEFAULT_REQUEST_PORT = 58763
 local DEFAULT_RESPONSE_PORT = 58764
@@ -160,7 +161,7 @@ local function handlerFor(action)
     if action == "ping" then return ping end
     local target = Contract.DISPATCH[action]
     if not target then return nil end
-    return require(target[1])[target[2]]
+    return HandlerLoads.resolve(target[1])[target[2]]
 end
 
 -- Generous wait so the very first response after handshake doesn't get
@@ -286,9 +287,10 @@ local function dispatchAction(request)
     -- is still queued waiting on sendConnected (see STALE_RESTART_HARD_CAP_SECONDS).
     pluginState.inFlightRequests = (pluginState.inFlightRequests or 0) + 1
 
-    local handler = handlerFor(action)
-    if not handler then
-        sendResponse({ id = id, error = "Unknown action: " .. tostring(action), effect = "none" })
+    local found, handler = LrTasks.pcall(handlerFor, action)
+    if not found or not handler then
+        local problem = found and ("Unknown action: " .. tostring(action)) or tostring(handler)
+        sendResponse({ id = id, error = problem, effect = "none" })
         pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
         return
     end
