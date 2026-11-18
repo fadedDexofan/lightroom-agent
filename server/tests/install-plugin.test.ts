@@ -3,14 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  ensurePluginInstalled,
+  admitLeader,
   describeInstall,
   installPlugin,
   lightroomModulesDir,
   lightroomPluginsDir,
 } from '../src/install-plugin.js';
 import { expectedIdentity, renderContractLua } from '../src/contract-lua.js';
-import type { Paired } from '../src/plugin-pairing.js';
+import { PairingLost, type Paired } from '../src/plugin-pairing.js';
 import { VERSION } from '../src/version.js';
 
 const realPlatform = process.platform;
@@ -102,12 +102,12 @@ function bundled(root: string, name = 'src', files: Record<string, string> = {})
   return { kind: 'paired', plugin, source, layout: 'checkout' };
 }
 
-function placeBundle(destination: string, identity: { id?: string; version?: string | null; build?: string } = {}): void {
+function placeBundle(destination: string, identity: { id?: string; version?: string | null; build?: string | null } = {}): void {
   fs.mkdirSync(destination, { recursive: true });
   fs.writeFileSync(path.join(destination, 'Info.lua'), `return {\n    LrToolkitIdentifier = '${identity.id ?? 'io.test.agent'}',\n}\n`);
   if (identity.version !== null) {
-    fs.writeFileSync(path.join(destination, 'Contract.lua'),
-      `return {\n    VERSION = "${identity.version ?? '0.9.0'}",\n    BUILD = "${identity.build ?? 'b1'}",\n}\n`);
+    const build = identity.build === null ? '' : `    BUILD = "${identity.build ?? 'b1'}",\n`;
+    fs.writeFileSync(path.join(destination, 'Contract.lua'), `return {\n    VERSION = "${identity.version ?? '0.9.0'}",\n${build}}\n`);
   }
   fs.writeFileSync(path.join(destination, 'Handler.lua'), '-- old handler');
 }
@@ -172,6 +172,7 @@ describe('installPlugin', () => {
     ['another version', { version: '0.9.0' }, { version: '0.9.0', build: 'b1' }],
     ['another build of the same version', { version: VERSION, build: 'b0' }, { version: VERSION, build: 'b0' }],
     ['no version', { version: null }, { version: null, build: null }],
+    ['a newer version', { version: '9.0.0' }, { version: '9.0.0', build: 'b1' }],
   ])('replaces a bundle of this plug-in that reports %s', (_what, installedIdentity, from) => {
     placeBundle(installed, installedIdentity);
     fs.writeFileSync(path.join(installed, 'Stale.lua'), '-- gone in the new build');
@@ -309,6 +310,7 @@ describe('installPlugin', () => {
   it.each([
     [{ status: 'installed', destination: '/M/LightroomAgent.lrplugin' }, 'installed /M/LightroomAgent.lrplugin; restart Lightroom to load it'],
     [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: { version: '0.9.0', build: 'b0' }, to: { version: '1.0.0', build: 'b1' } }, 'replaced /M/LightroomAgent.lrplugin (version 0.9.0 → 1.0.0); restart Lightroom to load it'],
+    [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: { version: '1.0.0', build: 'b1' }, to: { version: '1.0.0-rc.2', build: 'b0' } }, 'replaced /M/LightroomAgent.lrplugin (version 1.0.0 → 1.0.0-rc.2, older); restart Lightroom to load it'],
     [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: { version: null, build: null }, to: { version: '1.0.0', build: 'b1' } }, 'replaced /M/LightroomAgent.lrplugin (version unknown → 1.0.0); restart Lightroom to load it'],
     [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: { version: '1.0.0', build: 'b0' }, to: { version: '1.0.0', build: 'b1' } }, 'replaced /M/LightroomAgent.lrplugin (version 1.0.0, build b0 → b1); restart Lightroom to load it'],
     [{ status: 'repaired', destination: '/M/LightroomAgent.lrplugin' }, 'repaired the installed plug-in\'s files in /M/LightroomAgent.lrplugin; restart Lightroom to load them'],
@@ -354,7 +356,7 @@ describe.each([
   it('makes the leader\'s install log the conflict instead of installing', () => {
     const log = jest.fn();
 
-    ensurePluginInstalled(bundled(tmp), log);
+    admitLeader(bundled(tmp), true, log);
 
     expect(log).toHaveBeenCalledWith(
       `[install-plugin] The installed ${path.join(dirOf(), 'LightroomMCP.lrplugin')} binds the same ports. `
@@ -364,7 +366,7 @@ describe.each([
   });
 });
 
-describe('ensurePluginInstalled', () => {
+describe('admitLeader', () => {
   let home: string;
   let tmp: string;
 
@@ -387,22 +389,85 @@ describe('ensurePluginInstalled', () => {
     const pairing = bundled(tmp);
     installPlugin(pairing);
     const log = jest.fn();
-    ensurePluginInstalled(pairing, log);
+    admitLeader(pairing, true, log);
     expect(log).not.toHaveBeenCalled();
   });
 
   it('replaces an outdated bundle of this plug-in and logs both versions', () => {
-    placeBundle(destination(), { version: '1.0.0-rc.0' });
+    placeBundle(destination(), { version: '0.1.0-rc.0' });
     const log = jest.fn();
-    ensurePluginInstalled(bundled(tmp), log);
-    expect(log).toHaveBeenCalledWith(`[install-plugin] replaced ${destination()} (version 1.0.0-rc.0 → ${VERSION}); restart Lightroom to load it`);
+    admitLeader(bundled(tmp), true, log);
+    expect(log).toHaveBeenCalledWith(`[install-plugin] replaced ${destination()} (version 0.1.0-rc.0 → ${VERSION}); restart Lightroom to load it`);
   });
 
   it('installs the bundled plugin and logs progress', () => {
     const log = jest.fn();
-    ensurePluginInstalled(bundled(tmp), log);
+    admitLeader(bundled(tmp), true, log);
     expect(log).toHaveBeenCalledWith(`[install-plugin] installed ${destination()}; restart Lightroom to load it`);
     expect(fs.existsSync(path.join(destination(), 'Info.lua'))).toBe(true);
+  });
+
+  it.each([
+    ['a newer version', { version: '9.0.0' }, (own: Paired['plugin']) => `Lightroom's installed plug-in is version 9.0.0, newer than this server's version ${own.version}, so this server leaves it alone and does not connect to Lightroom. Update lightroom-agent in this client, or remove an outdated server entry, then restart the client.`],
+    ['another build of the same version', { version: VERSION, build: 'b0' }, (own: Paired['plugin']) => `Lightroom's installed plug-in is another build (installed: version ${VERSION}, build b0; this server's: version ${own.version}, build ${own.build}), so this server leaves it alone and does not connect to Lightroom. To use this build, quit the other clients, run this build's install-plugin, restart Lightroom, then start the clients again.`],
+    ['no readable contract', { version: null }, (own: Paired['plugin']) => `Lightroom's installed plug-in is another build (installed: version unknown, build unknown; this server's: version ${own.version}, build ${own.build}), so this server leaves it alone and does not connect to Lightroom. To use this build, quit the other clients, run this build's install-plugin, restart Lightroom, then start the clients again.`],
+  ] as const)('refuses to lead over an installed bundle of %s, installing or checking alike, and leaves it alone', (_what, identity, refusal) => {
+    placeBundle(destination(), identity);
+    const before = fs.readdirSync(destination()).map((file) => fs.readFileSync(path.join(destination(), file), 'utf8'));
+    const pairing = bundled(tmp);
+    const log = jest.fn();
+
+    for (const install of [true, false]) {
+      expect(() => admitLeader(pairing, install, log)).toThrow(new PairingLost(refusal(pairing.plugin)));
+    }
+
+    expect(fs.readdirSync(destination()).map((file) => fs.readFileSync(path.join(destination(), file), 'utf8'))).toEqual(before);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('admits the leader over an older bundle that carries no build, as 0.1.0-rc.0 did, and replaces it', () => {
+    placeBundle(destination(), { version: '0.1.0-rc.0', build: null });
+    const log = jest.fn();
+
+    admitLeader(bundled(tmp), true, log);
+
+    expect(log).toHaveBeenCalledWith(`[install-plugin] replaced ${destination()} (version 0.1.0-rc.0 → ${VERSION}); restart Lightroom to load it`);
+    expect(fs.readFileSync(path.join(destination(), 'Contract.lua'), 'utf8')).toContain(`VERSION = "${VERSION}"`);
+  });
+
+  it('repairs an installed bundle of this build whose version cannot be read', () => {
+    const pairing = bundled(tmp);
+    placeBundle(destination(), { version: 'not a version', build: pairing.plugin.build });
+    const log = jest.fn();
+
+    admitLeader(pairing, true, log);
+
+    expect(log).toHaveBeenCalledWith(`[install-plugin] repaired the installed plug-in's files in ${destination()}; restart Lightroom to load them`);
+  });
+
+  it('checks without installing when it is not to install', () => {
+    placeBundle(destination(), { version: '0.0.1' });
+    const log = jest.fn();
+
+    admitLeader(bundled(tmp), false, log);
+
+    expect(fs.readFileSync(path.join(destination(), 'Contract.lua'), 'utf8')).toContain('VERSION = "0.0.1"');
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('logs a failure to read the plug-in folders and admits the leader without installing', () => {
+    placeBundle(destination(), { version: '0.0.1' });
+    const read = fs.readdirSync;
+    jest.spyOn(fs, 'readdirSync').mockImplementation(((dir: fs.PathLike, ...rest: never[]) => {
+      if (String(dir) === lightroomModulesDir()) throw new Error('EACCES: permission denied');
+      return (read as (...args: unknown[]) => unknown)(dir, ...rest);
+    }) as typeof fs.readdirSync);
+    const log = jest.fn();
+
+    admitLeader(bundled(tmp), true, log);
+
+    expect(log).toHaveBeenCalledWith('[install-plugin] failed: EACCES: permission denied');
+    expect(fs.readFileSync(path.join(destination(), 'Contract.lua'), 'utf8')).toContain('VERSION = "0.0.1"');
   });
 
   it('logs a failure message when the install throws', () => {
@@ -411,7 +476,7 @@ describe('ensurePluginInstalled', () => {
       throw new Error('disk full');
     });
     const log = jest.fn();
-    ensurePluginInstalled(pairing, log);
+    admitLeader(pairing, true, log);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('failed: disk full'));
   });
 });

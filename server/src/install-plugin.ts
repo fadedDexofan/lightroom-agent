@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { sameIdentity, treeDigest, type BuildIdentity } from "./build-identity.js";
-import { PLUGIN_FOLDER, validateBundle, type Paired } from "./plugin-pairing.js";
+import { compareVersions, treeDigest, type BuildIdentity } from "./build-identity.js";
+import { PairingLost, PLUGIN_FOLDER, validateBundle, type Paired } from "./plugin-pairing.js";
 
 const CONFLICTING_PLUGIN_FOLDER = "LightroomMCP.lrplugin";
 
@@ -12,6 +12,12 @@ export type InstallResult =
   | { status: "foreign"; destination: string; toolkitId: string | null }
   | { status: "conflict"; conflicting: string }
   | { status: "invalid"; source: string };
+
+export type InstallPlan =
+  | { kind: "conflict"; conflicting: string }
+  | { kind: "foreign"; destination: string; toolkitId: string | null }
+  | { kind: "absent"; destination: string }
+  | { kind: "same-build" | "older" | "newer" | "unordered"; destination: string; installed: BuildIdentity };
 
 const TOOLKIT_ID = /LrToolkitIdentifier\s*=\s*['"]([^'"]+)['"]/;
 const CONTRACT_VERSION = /\n    VERSION = "([^"]+)",\n/;
@@ -81,7 +87,10 @@ function identityOf(bundle: string): BuildIdentity & { toolkitId: string | null 
 }
 
 function describeChange(from: BuildIdentity, to: BuildIdentity): string {
-  if (from.version !== to.version) return `version ${from.version ?? "unknown"} → ${to.version ?? "unknown"}`;
+  if (from.version !== to.version) {
+    const older = compareVersions(from.version, to.version) === 1 ? ", older" : "";
+    return `version ${from.version ?? "unknown"} → ${to.version ?? "unknown"}${older}`;
+  }
   return `version ${to.version ?? "unknown"}, build ${from.build ?? "unknown"} → ${to.build ?? "unknown"}`;
 }
 
@@ -124,20 +133,44 @@ function recoverInterruptedSwaps(): void {
   }
 }
 
-export function installPlugin(pairing: Paired): InstallResult {
+function standing(installed: BuildIdentity, own: Paired["plugin"]): "same-build" | "older" | "newer" | "unordered" {
+  if (installed.build === own.build) return "same-build";
+  const order = compareVersions(installed.version, own.version);
+  if (order === null || order === 0) return "unordered";
+  return order < 0 ? "older" : "newer";
+}
+
+function planInstall(pairing: Paired, recovering: boolean): InstallPlan {
   const conflicting = installedBundle(CONFLICTING_PLUGIN_FOLDER);
-  if (conflicting) return { status: "conflict", conflicting };
-  recoverInterruptedSwaps();
+  if (conflicting) return { kind: "conflict", conflicting };
+  if (recovering) recoverInterruptedSwaps();
   const destination = installedBundle(PLUGIN_FOLDER) ?? path.join(lightroomModulesDir(), PLUGIN_FOLDER);
-  const installed = fs.existsSync(destination) ? identityOf(destination) : null;
-  if (installed !== null && installed.toolkitId !== identityOf(pairing.source).toolkitId) {
-    return { status: "foreign", destination, toolkitId: installed.toolkitId };
+  if (!fs.existsSync(destination)) return { kind: "absent", destination };
+  const { toolkitId, ...installed } = identityOf(destination);
+  if (toolkitId !== identityOf(pairing.source).toolkitId) return { kind: "foreign", destination, toolkitId };
+  return { kind: standing(installed, pairing.plugin), destination, installed };
+}
+
+function installedRefusal(plan: { kind: "newer" | "unordered"; installed: BuildIdentity }, own: Paired["plugin"]): string {
+  const leaves = "so this server leaves it alone and does not connect to Lightroom.";
+  if (plan.kind === "newer") {
+    return `Lightroom's installed plug-in is version ${plan.installed.version}, newer than this server's version ${own.version}, `
+      + `${leaves} Update lightroom-agent in this client, or remove an outdated server entry, then restart the client.`;
   }
+  return `Lightroom's installed plug-in is another build (installed: version ${plan.installed.version ?? "unknown"}, `
+    + `build ${plan.installed.build ?? "unknown"}; this server's: version ${own.version}, build ${own.build}), ${leaves} `
+    + "To use this build, quit the other clients, run this build's install-plugin, restart Lightroom, then start the clients again.";
+}
+
+function performInstall(pairing: Paired, plan: InstallPlan): InstallResult {
+  if (plan.kind === "conflict") return { status: "conflict", conflicting: plan.conflicting };
+  if (plan.kind === "foreign") return { status: "foreign", destination: plan.destination, toolkitId: plan.toolkitId };
+  const { destination } = plan;
   const staging = `${destination}.installing-${process.pid}-${Date.now()}`;
   try {
     copyDirRecursive(pairing.source, staging);
     if (!validateBundle(staging, pairing.plugin.build)) return { status: "invalid", source: pairing.source };
-    if (installed === null) {
+    if (plan.kind === "absent") {
       fs.renameSync(staging, destination);
       return { status: "installed", destination };
     }
@@ -146,9 +179,12 @@ export function installPlugin(pairing: Paired): InstallResult {
   } finally {
     fs.rmSync(staging, { recursive: true, force: true });
   }
-  const from = { version: installed.version, build: installed.build };
-  if (sameIdentity(from, pairing.plugin)) return { status: "repaired", destination };
-  return { status: "replaced", destination, from, to: pairing.plugin };
+  if (plan.kind === "same-build") return { status: "repaired", destination };
+  return { status: "replaced", destination, from: plan.installed, to: pairing.plugin };
+}
+
+export function installPlugin(pairing: Paired): InstallResult {
+  return performInstall(pairing, planInstall(pairing, true));
 }
 
 function sameFiles(installed: string, staged: string): boolean {
@@ -172,9 +208,20 @@ function swapIntoPlace(staging: string, destination: string): void {
   fs.rmSync(aside, { recursive: true, force: true });
 }
 
-export function ensurePluginInstalled(pairing: Paired, log: (msg: string) => void): void {
+export function admitLeader(pairing: Paired, install: boolean, log: (msg: string) => void): void {
+  let plan: InstallPlan;
   try {
-    const result = installPlugin(pairing);
+    plan = planInstall(pairing, install);
+  } catch (err) {
+    log(`[install-plugin] failed: ${(err as Error).message}`);
+    return;
+  }
+  if (plan.kind === "newer" || plan.kind === "unordered") {
+    throw new PairingLost(installedRefusal({ kind: plan.kind, installed: plan.installed }, pairing.plugin));
+  }
+  if (!install) return;
+  try {
+    const result = performInstall(pairing, plan);
     if (result.status !== "current") log(`[install-plugin] ${describeInstall(result)}`);
   } catch (err) {
     log(`[install-plugin] failed: ${(err as Error).message}`);

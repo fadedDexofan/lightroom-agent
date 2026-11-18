@@ -137,7 +137,7 @@ claude mcp add lightroom -e LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/di
 codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/dist/index.js"
 ```
 
-Для обновления выполните `git pull` и пересоберите. Работа с кодом описана в [CONTRIBUTING.md](CONTRIBUTING.md).
+Для обновления выполните `git pull` и `npm --prefix server run build`, закройте все клиенты, выполните `node server/dist/index.js install-plugin`, перезапустите Lightroom, затем запустите клиенты. Сервер автоматически обновляет плагин Lightroom до более новой версии. Если номер версии остался прежним, а сборка изменилась, установите её вручную командой `install-plugin`, как описано выше. Работа с кодом описана в [CONTRIBUTING.md](CONTRIBUTING.md).
 
 </details>
 
@@ -145,7 +145,7 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 
 ### Завершение в Lightroom
 
-Сервер, который держит соединение с Lightroom, при запуске устанавливает плагин Lightroom. Затем закройте и снова откройте Lightroom Classic и выведите его окно на передний план: плагин Lightroom запустит свой сервер. Если в **Файл → Диспетчер плагинов** (File → Plug-in Manager) Lightroom Agent показан остановленным, нажмите **Start Server**.
+При запуске сервер, который отвечает за соединение с Lightroom, проверяет установленный плагин Lightroom и при необходимости устанавливает или восстанавливает свою сборку. Если установленная сборка отличается, а её версия новее, совпадает с версией сервера или не поддаётся сравнению, сервер сообщает причину и не подключается. После успешной установки или проверки закройте и снова откройте Lightroom Classic и выведите его окно на передний план: плагин Lightroom запустит свой сервер. Если в **Файл → Диспетчер плагинов** (File → Plug-in Manager) Lightroom Agent показан остановленным, нажмите **Start Server**.
 
 Попросите агента: *Покажи мои коллекции Lightroom.* Он ответит списком ваших коллекций по названиям.
 
@@ -154,7 +154,7 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 <details>
 <summary>Ручная установка плагина Lightroom и удаление</summary>
 
-`node server/dist/index.js install-plugin` (или `npx -y lightroom-agent@<version> install-plugin`) копирует плагин Lightroom поверх уже установленной копии в папке Modules или Plugins Lightroom, а если её нет — в папку Modules (`~/Library/Application Support/Adobe/Lightroom/Modules/` на macOS, `%APPDATA%\Adobe\Lightroom\Modules\` на Windows). Установленную копию, файлы которой отличаются от его сборки, команда заменяет, а идентичную не трогает. Команда отказывается работать, пока плагином Lightroom владеет запущенный сервер lightroom-agent на тех же портах, поэтому сначала закройте клиенты; при нестандартных портах запускайте её с теми же переменными портов и закройте клиенты и на всех остальных портах, потому что каждая пара портов устанавливает плагин в одну и ту же папку. Если установлен `LightroomMCP.lrplugin`, команда тоже отказывается работать, поскольку оба плагина используют одни и те же порты: закройте Lightroom и сначала удалите эту папку.
+`node server/dist/index.js install-plugin` (или `npx -y lightroom-agent@<version> install-plugin`) копирует плагин Lightroom поверх уже установленной копии в папке Modules или Plugins Lightroom, а если её нет — в папку Modules (`~/Library/Application Support/Adobe/Lightroom/Modules/` на macOS, `%APPDATA%\Adobe\Lightroom\Modules\` на Windows). Команда заменяет установленную копию, если её Lua-файлы отличаются от файлов этой сборки. Если при этом версия понижается, команда сообщает об этом. Если файлы совпадают, команда оставляет копию на месте. При запуске сервер может сам установить плагин Lightroom, обновить более старую версию или восстановить файлы своей сборки. Команда отказывается работать, пока плагином Lightroom владеет запущенный сервер lightroom-agent на тех же портах, поэтому сначала закройте клиенты; при нестандартных портах запускайте её с теми же переменными портов и закройте клиенты и на всех остальных портах, потому что каждая пара портов устанавливает плагин в одну и ту же папку. Если установлен `LightroomMCP.lrplugin`, команда тоже отказывается работать, поскольку оба плагина используют одни и те же порты: закройте Lightroom и сначала удалите эту папку.
 
 Для удаления уберите плагин для агента или запись сервера, затем удалите установленную папку `LightroomAgent.lrplugin` (её расположение показывает Диспетчер плагинов) и `~/.config/lightroom-agent`.
 
@@ -187,6 +187,8 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 | "Lightroom Agent token file not found" | **Start Server** ещё не запускался, или `LIGHTROOM_AGENT_TOKEN_PATH` указывает туда, куда плагин Lightroom никогда не пишет. |
 | "The Lightroom Agent token does not match the running plug-in" | Сервер перечитывает файл токена при каждом подключении, поэтому так бывает, когда `LIGHTROOM_AGENT_TOKEN_PATH` указывает на старую копию. Нажмите **Stop Server**, затем **Start Server** и проверьте переменную. |
 | "Lightroom has loaded a different plug-in build" | Загруженный плагин Lightroom — не той сборки, что этот сервер; сообщение называет обе. Если нужная сборка была установлена или восстановлена, перезапустите Lightroom. Иначе закройте подключённые клиенты, выполните `install-plugin` этой сборки, проверьте результат, перезапустите Lightroom и подключитесь заново. Одна из возможных причин — другой клиент с другой сборкой: используйте одну сборку во всех клиентах. |
+| "Lightroom's installed plug-in is version …, newer than this server's" | В этом клиенте lightroom-agent старее установленного плагина Lightroom, поэтому его сервер не трогает плагин и не подключается. Обновите lightroom-agent в этом клиенте или удалите устаревшую запись сервера, затем перезапустите клиент. |
+| "Lightroom's installed plug-in is another build" | Версии сервера и установленного плагина Lightroom совпадают, но сборки различаются. Например, сервер собран из исходного кода, а плагин установлен из опубликованного пакета. Эта же ошибка возникает, если сборки различаются и сервер не может сравнить их версии. В сообщении указаны версия и сборка каждой стороны. Чтобы установить сборку сервера, закройте остальные клиенты, выполните `install-plugin` из сборки сервера, перезапустите Lightroom и только затем запустите клиенты. |
 | "This server and the server that owns the Lightroom connection differ in …" | Два клиента запускают разные сборки lightroom-agent, и соединение держит тот, что запустился первым. Используйте одну сборку во всех клиентах, затем перезапустите их. |
 | "This server's build does not match its plug-in folder" | Рабочую копию обновили через `git pull` или изменили без пересборки. Выполните `npm --prefix server run build` в рабочей копии, затем перезапустите клиент. |
 | "This server's installation is damaged" | Установка через npm или Claude Desktop, в которой плагин Lightroom больше не соответствует серверу. Переустановите lightroom-agent, затем перезапустите клиент. |
