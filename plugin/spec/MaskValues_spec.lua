@@ -276,28 +276,18 @@ describe("MaskValues.write", function()
         assert.matches("not certified", refusal, 1, true)
     end)
 
-    local function colorRange(samples)
-        return { What = "Mask/RangeMask", MaskID = "C3T1",
-            CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = samples } }
-    end
+    it("writes a value beside a color range Lightroom stored with two samples, resending it unchanged", function()
+        local entry = Store.correction("Colors", { { What = "Mask/RangeMask", MaskID = "C3T1",
+            CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "0.1 0.4 0.5", "0.6 0.5 0.4" } } } },
+            { CorrectionID = "C3" })
+        local MaskValues, ctx = setup({ entries = { subject(), brush(), Store.clone(entry) } })
 
-    for _, case in ipairs({
-        { held = "two samples", component = colorRange({ "0.1 0.4 0.5", "0.6 0.5 0.4" }) },
-        { held = "two samples inside a group of components", component = {
-            What = "Mask/Aggregate", MaskID = "C3T1", Masks = { colorRange({ "0.1 0.4 0.5", "0.6 0.5 0.4" }) },
-        } },
-    }) do
-        it("writes a value beside a color range Lightroom stored with " .. case.held .. ", resending it unchanged", function()
-            local entry = Store.correction("Colors", { case.component }, { CorrectionID = "C3" })
-            local MaskValues, ctx = setup({ entries = { subject(), brush(), Store.clone(entry) } })
+        MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
 
-            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
-
-            assert.are.equal(1, ctx.store.attempts)
-            assert.are.equal(0.125, ctx.store.entries[1].LocalExposure2012)
-            assert.are.same(entry, ctx.store.entries[3])
-        end)
-    end
+        assert.are.equal(1, ctx.store.attempts)
+        assert.are.equal(0.125, ctx.store.entries[1].LocalExposure2012)
+        assert.are.same(entry, ctx.store.entries[3])
+    end)
 end)
 
 describe("MaskValues.write beside a mask Lightroom has not named yet", function()

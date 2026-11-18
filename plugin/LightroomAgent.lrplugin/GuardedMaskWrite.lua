@@ -2,6 +2,7 @@ local LrTasks = import 'LrTasks'
 local LrUUID = import 'LrUUID'
 
 local AIMaskData = require 'AIMaskData'
+local BrushStrokes = require 'BrushStrokes'
 local CatalogWrite = require 'CatalogWrite'
 local LocalSliders = require 'LocalSliders'
 local Reply = require 'Reply'
@@ -17,7 +18,7 @@ local READ_BACK_POLL_SECONDS = 0.1
 local TOLERANCE = 1e-5
 local MAX_REPORTED_PROBLEMS = 6
 
-local PAINT_WHAT = "Mask/Paint"
+local PAINT_WHAT = BrushStrokes.PAINT_WHAT
 local LOCAL_ADJUSTMENT_PREFIX = "Local"
 
 local DERIVED_FIELDS = {

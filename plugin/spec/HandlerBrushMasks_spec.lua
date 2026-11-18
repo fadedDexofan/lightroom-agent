@@ -373,13 +373,18 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
     end)
 
     it("fails for an unknown tool id or a tool that is not a brush, writing nothing", function()
-        local Handler, stores = setup({ photos = { { id = "1", entries = existingBrush() } } })
+        local entries = existingBrush()
+        entries[1].CorrectionMasks[3] = { What = "Mask/Aggregate", MaskID = "C1T3",
+            Masks = { Store.linearComponent({ MaskID = "C1T3A" }) } }
+        local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
 
         local unknown = helper.failedOf(function() Handler.addBrushStrokes(addRequest({ tool_id = "NOPE" })) end)
         local gradient = helper.failedOf(function() Handler.addBrushStrokes(addRequest({ tool_id = "C1T2" })) end)
+        local group = helper.failedOf(function() Handler.addBrushStrokes(addRequest({ tool_id = "C1T3" })) end)
 
         assert.is_truthy(unknown:find("Brush tool not found on this photo: NOPE", 1, true))
         assert.is_truthy(gradient:find("Mask/Gradient mask, not a brush", 1, true))
+        assert.is_truthy(group:find("Mask/Aggregate mask, not a brush", 1, true))
         assert.are.equal(0, #stores["1"].writes)
     end)
 

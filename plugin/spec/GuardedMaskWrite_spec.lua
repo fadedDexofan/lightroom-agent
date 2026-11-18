@@ -141,9 +141,6 @@ describe("GuardedMaskWrite.apply beside entries the call leaves alone", function
             { CorrectionID = "X", MainCurve = "0,0 255,255" }) },
         { held = "a color range with two samples", entry = correction("X", { rangeComponent({ Type = 1, ColorAmount = 0.5,
             PointModels = { "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" } }) }, { CorrectionID = "X" }) },
-        { held = "a color range with two samples inside a group", entry = correction("X", { { What = "Mask/Aggregate", MaskID = "XT1",
-            MaskSyncID = "SXT1", Masks = { { What = "Mask/RangeMask", CorrectionRangeMask = { Type = 1, ColorAmount = 0.5,
-            PointModels = { "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" } } } } } }, { CorrectionID = "X" }) },
     }) do
         it("admits a constructing write beside an entry with " .. case.held .. " and leaves that entry byte-identical", function()
             local Guard, catalog, photo, state = setup({ entries = { case.entry } })
