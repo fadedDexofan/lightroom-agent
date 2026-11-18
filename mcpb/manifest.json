@@ -3,7 +3,7 @@
   "name": "lightroom-agent",
   "display_name": "Lightroom Agent",
   "icon": "icon.png",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "description": "Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render.",
   "long_description": "Connects Claude to a running Adobe Lightroom Classic 15 or later through a bundled Lua plug-in. Tools cover catalog search and organisation, Develop settings, masks, snapshots, virtual copies and export, and render Lightroom’s own previews and 1:1 crops so the agent can check each change. The server that owns the plug-in connection installs its plug-in into Lightroom’s Modules folder when it connects, or replaces an installed copy whose files differ where it is, unless a LightroomMCP plug-in is installed; restart Lightroom after an install, a replacement or a repair. Core catalog tools are always on; this bundle enables all toolsets by default, and read-only mode lists and accepts only read tools.",
   "author": {

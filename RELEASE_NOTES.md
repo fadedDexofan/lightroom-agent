@@ -1,3 +1,28 @@
+# lightroom-agent 0.1.0-rc.2
+
+The third release candidate of lightroom-agent, for testing the installs before 0.1.0. It fixes resets that answered done while nothing was reset.
+
+**Install**
+
+- Claude Code: `/plugin marketplace add fadedDexofan/lightroom-agent`, then `/plugin install lightroom-agent@lightroom-agent`; to update, `claude plugin marketplace update lightroom-agent`, then `claude plugin update lightroom-agent@lightroom-agent`.
+- Codex: `codex plugin marketplace add fadedDexofan/lightroom-agent`, then `codex plugin add lightroom-agent@lightroom-agent`.
+- Claude Desktop: open the `.mcpb` attached to this release.
+- Any MCP client: `npx -y lightroom-agent@0.1.0-rc.2` over stdio.
+
+After updating, restart every client, then Lightroom Classic: the server that holds the Lightroom connection installs the new plug-in when it starts.
+
+**Changes since 0.1.0-rc.1**
+
+- `reset_develop_adjustments` answers `reset` only when a read of the photo 4 s after the reset shows its edits changed; otherwise the photo is `unknown`, to be read before grading on top.
+- Every call that reads a photo's develop settings waits for the Develop calls before it, across all clients, instead of reading while another call works in Develop; such a read could void a running reset. Catalog work, previews and metadata writes still run alongside.
+
+**Known issues**
+
+- In `codex exec`, Codex does not yet offer the plugin's tools to the model, although the server starts.
+- The first reset after Lightroom starts can come back `unknown` with nothing changed, most often right after a read of that photo's settings; read the photo and call again.
+
+The full description of this release candidate's behaviour is in the 0.1.0-rc.1 notes below.
+
 # lightroom-agent 0.1.0-rc.1
 
 The second release candidate of lightroom-agent, for testing the installs before 0.1.0.
