@@ -18,7 +18,7 @@ This codebase is yours: what it's for and how it's built are your call, and you'
 - Keep the MIT license and its copyright notices.
 - Keep `AGENTS.md` a symlink to this file. Verify any behavior claim here against the current source before relying on it, and fix this file in the change that makes it stale.
 - This repository holds technical API facts, contracts and mechanics. API work supplies capabilities, stable identities, render provenance and verifiable outcomes; it never silently turns an experimental score into a culling rule.
-- `skills/lightroom-agent` is the bundled skill. `npm run build` regenerates the MCP prompt and the mcpb prompt from it; the npm package and the repository-root plugin carry the folder itself. `agents/openai.yaml` is its metadata for Codex.
+- `skills/lightroom-agent` is the bundled skill. `npm run build` regenerates the MCP prompt and the mcpb prompt from it; the npm package, the repository-root plugin and `codex/` carry the folder itself. `agents/openai.yaml` is its metadata for Codex.
 - CLI and MCP share tool contracts and access policy. Reuse the existing bridge and Develop session lifecycle; do not add a second Lua protocol or catalog model.
 - Develop and test offline by default. Never install or reload a plug-in, restart Lightroom, switch the open catalog or change a user's photos as a side effect of development or tool discovery.
 - The Lightroom tools act on whatever catalog Lightroom has open; do not call them without the user's permission. To run this checkout's server from a client, add it as CONTRIBUTING.md describes.
@@ -32,7 +32,7 @@ This codebase is yours: what it's for and how it's built are your call, and you'
 
 Run from the repository root; `.mise.toml` and `server/package.json` define the tasks.
 
-- `mise run build` (`npm run build` in `server/`): regenerates `server/src/skill-content.ts` and the prompt in `mcpb/manifest.json` from the bundled skill, runs `tsc` into `server/dist/`, then regenerates `plugin/LightroomAgent.lrplugin/Contract.lua` from the TypeScript contract. Never edit `skill-content.ts`, `Contract.lua`, or the manifest's `prompts` and `tools` by hand; `version`, `description` and `author` come from `server/package.json` through `bump-version`; its other fields are edited in place.
+- `mise run build` (`npm run build` in `server/`): regenerates `server/src/skill-content.ts` and the prompt in `mcpb/manifest.json` from the bundled skill, copies `skills/lightroom-agent` to `codex/skills/`, runs `tsc` into `server/dist/`, then regenerates `plugin/LightroomAgent.lrplugin/Contract.lua` from the TypeScript contract. Never edit `skill-content.ts`, `Contract.lua`, `codex/skills/`, or the manifest's `prompts` and `tools` by hand; `version`, `description` and `author` come from `server/package.json` through `bump-version`; its other fields are edited in place.
 - `mise run test` (Jest), `mise run dev` (`tsc --watch`), `mise run lua:lint` (selene), `mise run lua:test` (busted), `mise run live:test` (live-kit unit tests, no Lightroom).
 - `mise install` provisions Node, Lua and selene; `lua:test` installs busted into the ignored `lua_modules/`. `selene.toml` and `lightroom.yml` (the SDK globals) configure the linter.
 
@@ -46,7 +46,7 @@ CI (`.github/workflows/`) runs on pushes and pull requests to `main`. `ci.yml` r
 - `plugin/LightroomAgent.lrplugin/`: the Lua plug-in, pure Lua and the same on macOS and Windows. Specs are in `plugin/spec/`.
 - `tests/e2e/live/`: the live kit. `tests/e2e/mcp-runner.mjs` drives the built server; `manual-test.mjs` probes the plug-in over raw TCP.
 - `docs/adr/`: accepted decisions. `GLOSSARY.md`: the terms these documents use.
-- Repository root: the plugin for agent hosts (`plugin.json`, `mcp.json`, `.claude-plugin/`, `.agents/plugins/marketplace.json`), the MCP registry entry `server.json` and the Claude Desktop bundle `mcpb/`. `server/package.json` is the one source of version, description and author; `node scripts/bump-version.mjs <version>` writes them into those files, `server/src/version.ts` and `Info.lua`, and `--check` verifies them.
+- Repository root: the plugin for agent hosts (`plugin.json`, `mcp.json`, `.claude-plugin/`, `.agents/plugins/marketplace.json`), the Codex package `codex/` (a legacy `.codex-plugin` manifest, `.mcp.json` and a generated copy of the skill, so Codex does not budget its tools as an Agent Plugins server), the MCP registry entry `server.json` and the Claude Desktop bundle `mcpb/`. `server/package.json` is the one source of version, description and author; `node scripts/bump-version.mjs <version>` writes them into those files, `codex/.codex-plugin/plugin.json`, `codex/.mcp.json`, `server/src/version.ts` and `Info.lua`, and `--check` verifies them.
 
 ## Transport
 

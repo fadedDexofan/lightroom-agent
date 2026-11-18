@@ -105,6 +105,9 @@ const targets = [
   entryDescription(".claude-plugin/marketplace.json"),
   unversionedMarketplace(".claude-plugin/marketplace.json"),
   unversionedMarketplace(".agents/plugins/marketplace.json"),
+  version("codex/.codex-plugin/plugin.json"),
+  description("codex/.codex-plugin/plugin.json"),
+  launchLine("codex/.mcp.json", (spec) => ({ type: "stdio", ...spec })),
   {
     name: "plugin/LightroomAgent.lrplugin/Info.lua",
     expected: (r) => core(r.version),

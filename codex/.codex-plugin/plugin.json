@@ -1,0 +1,12 @@
+{
+  "name": "lightroom-agent",
+  "version": "0.1.0-rc.2",
+  "description": "Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render.",
+  "interface": {
+    "displayName": "Lightroom Agent",
+    "shortDescription": "Cull, develop and export in Lightroom with verified edits",
+    "developerName": "fadedDexofan",
+    "category": "Productivity",
+    "websiteURL": "https://github.com/fadedDexofan/lightroom-agent#readme"
+  }
+}

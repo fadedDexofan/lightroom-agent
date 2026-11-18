@@ -98,7 +98,9 @@ jobs:
           npm run test:coverage -- --ci --reporters=default
 
       - name: Generated files are up to date
-        run: git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts
+        run: |
+          git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts codex/skills
+          test -z "$(git ls-files --others --exclude-standard -- codex/skills)"
 
       - name: Live kit and release script tests
         run: |

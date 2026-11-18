@@ -52,6 +52,7 @@ jobs:
         working-directory: .
         run: |
           test -f scripts/bump-version.test.mjs
+          test -f scripts/codex-package.test.mjs
           test -f scripts/package-contents.test.mjs
           test -f scripts/release.test.mjs
           node --test "scripts/*.test.mjs"
@@ -59,7 +60,9 @@ jobs:
       - name: Generated files are up to date
         if: matrix.os == 'ubuntu-latest'
         working-directory: .
-        run: git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts
+        run: |
+          git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts codex/skills
+          test -z "$(git ls-files --others --exclude-standard -- codex/skills)"
 
       - name: Live kit scripts parse
         if: matrix.os == 'ubuntu-latest'

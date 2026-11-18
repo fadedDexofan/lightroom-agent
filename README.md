@@ -86,7 +86,18 @@ codex plugin marketplace add fadedDexofan/lightroom-agent
 codex plugin add lightroom-agent@lightroom-agent
 ```
 
-The plugin brings the server and the skill, as in Claude Code. In `codex exec`, Codex does not yet offer the plugin's tools to the model. To update, run `codex plugin marketplace upgrade lightroom-agent` and add the plugin again; to uninstall, `codex plugin remove lightroom-agent@lightroom-agent`.
+The plugin brings the server and the skill, as in Claude Code. In `codex exec` the tools arrive a few seconds after the session starts, and none are offered while `approval_policy` is `"never"`. To update, run `codex plugin marketplace upgrade lightroom-agent`, start a new session, then restart Lightroom once; if the session still has no Lightroom tools, remove the plugin and add it again. To uninstall, `codex plugin remove lightroom-agent@lightroom-agent`.
+
+If the plugin's tools do not appear, declare the server in `~/.codex/config.toml`, with `<version>` replaced by your release (`codex plugin list` shows it):
+
+```toml
+[mcp_servers.lightroom]
+command = "npx"
+args = ["-y", "lightroom-agent@<version>"]
+env = { LIGHTROOM_AGENT_TOOLSETS = "all" }
+```
+
+This entry replaces the plugin's server. Keep its version equal to the plugin's when you update: an older server refuses calls once a newer Lightroom plug-in is installed.
 
 </details>
 

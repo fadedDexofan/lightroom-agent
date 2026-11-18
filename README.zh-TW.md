@@ -88,7 +88,18 @@ codex plugin marketplace add fadedDexofan/lightroom-agent
 codex plugin add lightroom-agent@lightroom-agent
 ```
 
-和 Claude Code 一樣，安裝這個外掛時也會一併安裝伺服器與技能。在 `codex exec` 中，Codex 目前還不會把外掛的工具提供給模型。更新時執行 `codex plugin marketplace upgrade lightroom-agent`，再重新加入外掛；解除安裝則執行 `codex plugin remove lightroom-agent@lightroom-agent`。
+和 Claude Code 一樣，安裝這個外掛時也會一併安裝伺服器與技能。在 `codex exec` 中，工具會在工作階段開始幾秒後才出現；`approval_policy` 設為 `"never"` 時則完全不會提供。更新時執行 `codex plugin marketplace upgrade lightroom-agent`，開始新的工作階段，再重新啟動 Lightroom 一次；如果工作階段中仍然沒有 Lightroom 工具，請移除外掛後重新加入。解除安裝則執行 `codex plugin remove lightroom-agent@lightroom-agent`。
+
+如果外掛的工具沒有出現，請在 `~/.codex/config.toml` 中宣告伺服器，並把 `<version>` 換成你使用的版本（`codex plugin list` 會顯示）：
+
+```toml
+[mcp_servers.lightroom]
+command = "npx"
+args = ["-y", "lightroom-agent@<version>"]
+env = { LIGHTROOM_AGENT_TOOLSETS = "all" }
+```
+
+這個項目會取代外掛的伺服器。更新時請讓它的版本與外掛保持一致：Lightroom 已安裝較新的增效模組時，較舊的伺服器會拒絕呼叫。
 
 </details>
 
