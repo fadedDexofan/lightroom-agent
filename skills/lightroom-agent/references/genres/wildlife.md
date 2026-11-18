@@ -4,7 +4,7 @@ Combine the foundations with the animal's behaviour, the recorded light and the 
 
 ## Cull the moment
 
-Compare same-animal sequences, not detector pairs or single thumbnails. Run the technical gate on every frame of a sequence first, with eye crops at one magnification ([cull](../workflow/cull.md#the-procedure)), then apply the weak-sequence rule. Weigh differences in gaze, behaviour, wing and body shape, interaction and habitat. Keep four judgments apart: a technical failure that defeats the subject at the intended size; a weaker usable alternative; uncertain; a candidate with a clear development opportunity.
+Compare same-animal sequences, not detector pairs or single thumbnails. Run the technical gate on every frame of a sequence first, with eye crops at one magnification for eye-led frames and a crop of the carrying detail otherwise ([cull](../workflow/cull.md#the-procedure)), then apply the weak-sequence rule. Weigh differences in gaze, behaviour, wing and body shape, interaction and habitat. Keep four judgments apart: a technical failure that defeats the subject at the intended size; a weaker usable alternative; uncertain; a candidate with a clear development opportunity.
 
 For action, check the eye first, then behaviour, then wing, leg and prey shape and overlaps, then background and crop. A sharp head with softer moving wings can succeed. Closed eyes can express rest; noise and shallow depth of field are not automatic failures. Image stabilisation addresses camera movement, not the animal's.
 

@@ -5,17 +5,17 @@ description: Operate Lightroom Classic through the lightroom-agent tools and mak
 
 # Lightroom agent
 
-The tools can change everything in someone's catalog, and Lightroom's history is shared with them.
+Write tools change edits, ratings, metadata and collections, remove photos from the catalog and export files, and Lightroom's history is shared with them.
 
 The tool descriptions and the server instructions are the authority on what each tool does. This skill tells you how to combine them well and how to judge photographs; when the two seem to disagree, follow the tool description and say so.
 
 ## Ground rules
 
-- **Keep a way back before any Develop change.** Make a snapshot (`create_develop_snapshot`) or a named virtual copy (`create_virtual_copies` with `copy_name`), and check that it exists. There is no batch snapshot: for many photos, snapshot the representative, run the transfer with `dry_run` first, and keep each target's previous values from `get_develop_settings` (one call for the set), or edit named virtual copies (up to 25 per call) and leave the masters untouched. Snapshots do not store ratings, flags, labels or metadata: note those separately if you will change them.
+- **Keep a way back before any Develop change.** Make a snapshot (`create_develop_snapshot`) or a named virtual copy (`create_virtual_copies` with `copy_name`), and check that it exists. There is no batch snapshot: for many photos, snapshot the representative, run a selected-key `copy_develop_settings` with `dry_run` first and keep each target's previous values from `get_develop_settings` with those keys (follow `remaining`); a full copy can remove masks and change the process version, so give every target a snapshot or named copy first, or edit named virtual copies (up to 25 per call) and leave the masters untouched. Snapshots do not store ratings, flags, labels or metadata: note those separately if you will change them.
 - **Anything that deletes, removes, overwrites or replaces the person's work needs their word for that action first.** Examples: `remove_photos_from_catalog`, `reset_develop_adjustments`, `delete_collection`, `remove_from_collection`, `delete_develop_snapshot`, `apply_develop_snapshot` (it overwrites the current edit), `delete_masks`, `delete_empty_masks`, `delete_spot`, `undo_last_step`, `set_process_version`, keyword subtree removal, a full `copy_develop_settings` (it replaces or removes the target's masks) and exports over existing files. Files on disk are never yours to delete. A request to "prepare" or "improve" photos is not permission for any of these. When the current state of every affected photo is preserved (a snapshot or a virtual copy you checked) and the person has allowed reversible edits, applying a snapshot or a full copy onto those photos needs no separate word; removal from the catalog, deletion and overwriting files always do.
 - **Write within the request.** Selection is not development, development is not publication. Ratings, flags and labels carry the person's meaning: read the existing ones first and change them only as asked.
 - **One writer.** Develop calls run one at a time across every client of the server; do not fire parallel writes, and do not work on a photo the person is editing at that moment.
-- **Verify by reading back and looking.** A `done` reply is necessary, not sufficient: read the changed values back and look at a fresh render before you report a change.
+- **Verify by reading back and looking.** A `done` reply is necessary, not sufficient: read the changed values back and look at a fresh render before you report a change. In a partial or unknown reply, items confirmed by their own read-back are real changes and may be reported after that read-back; read the others before reporting anything about them.
 - **Say what you did not check.** Preview size, unverified full-resolution detail, a mask edge you did not inspect: name them.
 
 ## Before the first call
@@ -33,15 +33,15 @@ Every tool answers `{outcome, data, error, failed, unknown, not_found, remaining
 | `done` | everything asked happened and was confirmed | verify the effect as usual |
 | `partial` | `data` holds what happened, the lists what did not | resend exactly `remaining`; fix and retry `failed` items; read `unknown` items first; never repeat what succeeded |
 | `failed` | nothing changed (Lightroom's history may still hold the write and its undo as two steps) | read the reason, fix the cause, retry is safe |
-| `unknown` | something may have been written; the error names what | read the photo's current state before anything else; a blind retry duplicates |
+| `unknown` | something may have been written; the error names what Lightroom reported (a lost reply carries only its error) | read the photo's current state before anything else; a blind retry duplicates |
 
 `warnings` never change the outcome but often matter (a mask placed through Upright, a mask shown again, a key a JPEG cannot store). Details, budgets and timeouts: [tools](references/tools/tools.md#outcomes-ordering-and-time).
 
 ## Judge pictures on the right evidence
 
 - **A preview's size is not the detail it holds.** Previews come from Lightroom's preview cache, which can answer with an enlargement of a smaller cached preview, a cropped photo most of all, without saying so (the preview tools' descriptions say the same), and every whole-frame preview is a downscale. A preview can hide a slight smear or defocus and can make a sharp frame look soft; streaks or doubled contours across the subject are strong evidence of motion, but check a neighbouring frame or a detail crop when unsure.
-- **Reject from a preview only a gross smear:** motion streaks, doubled edges, a subject blurred where the same preview holds sharper areas. A frame that only looks uniformly soft is uncertain, not rejected.
-- **Everything finer comes from `get_photo_detail`:** whether a frame is critically sharp, which of two near-identical frames is sharper, and any keep that rests on sharpness. Each detail call renders the full photo and leaves one Export history step and the exported mark on it, so ask for all regions of a photo in one call.
+- **On sharpness, reject from a preview only a gross smear:** motion streaks, doubled edges, a subject blurred where the same preview holds sharper areas. A frame that only looks uniformly soft is uncertain, not rejected.
+- **Everything finer comes from `get_photo_detail`:** whether a frame is critically sharp, which of two near-identical frames is sharper, and any keep that rests on sharpness. Each detail render leaves one Export history step and the exported mark on the photo (a request refused before rendering leaves neither), so ask for all regions of a photo in one call.
 - **Look again after every change** on a fresh preview.
 
 ## The workflow

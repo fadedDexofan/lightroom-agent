@@ -227,7 +227,7 @@ describe('createMcpServer', () => {
       'certification run', 'process version', 'read back', 'roll back',
       'normalized 0 to 1', 'top-left', 'y increasing down', 'rendered preview',
       'after the develop crop, straighten and displayed orientation', 'about 0.05 of the frame',
-      'Photo ids are strings', 'get_develop_settings is the one develop read', 'listed in adjusted',
+      'Photo ids the catalog resolved are strings', 'get_develop_settings is the one develop read', 'listed in adjusted',
       'set_crop', 'set_treatment', 'get_photo_detail', 'collapsed stack',
       'describe_develop_keys with mask_id reports where Lightroom\'s live range differs',
       'Every catalog write waits up to 10 s', 'a call that had written nothing is failed',

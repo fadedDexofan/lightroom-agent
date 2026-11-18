@@ -40,7 +40,7 @@ These are clues, not certain classifications. **For selection the cause does not
 
 ## Two gates
 
-**Technical gate:** at delivery size the subject reads, critical detail is sufficient for the intended picture, and the treatment has no damaging halos, plastic texture, clipping, mask seams or geometry losses. For an eye-led subject the nearest eye at delivery scale shows a crisp eye-ring edge, a compact catchlight and resolved hair or feathers around it; a stretched or doubled catchlight signals motion. A catchlight is a strong positive, not a hard rule. A clear silhouette or intentional motion can pass without a sharp visible eye when that is the picture's purpose. Recognisability alone does not pass a detail-led portrait.
+**Technical gate:** at delivery size the subject reads, critical detail is sufficient for the intended picture, and the treatment has no damaging halos, plastic texture, clipping, mask seams or geometry losses. For an eye-led subject the nearest eye at delivery scale shows a crisp eye-ring edge and resolved hair or feathers around it; a stretched or doubled catchlight signals motion, and a compact one is a strong positive, not a hard rule. A clear silhouette or intentional motion can pass without a sharp visible eye when that is the picture's purpose. Recognisability alone does not pass a detail-led portrait.
 
 **Editorial gate:** the frame offers a strong moment, form, light, relationship or place and earns its position in the set. A technically fine but weaker duplicate can fail it; a rare moment can justify a documented technical compromise. Being the best of its sequence, or time already spent developing it, does not guarantee a place.
 

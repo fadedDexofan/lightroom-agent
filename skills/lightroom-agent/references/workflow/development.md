@@ -29,7 +29,7 @@ Make one or two render-and-inspect cycles per pass. Stop when changes oscillate,
 
 ## Order of AI and Enhance work
 
-Run Denoise early, before AI masks and Content-Aware Remove, then revisit sharpening and Texture (Adobe's guidance since Lightroom Classic 12.3). Denoise computes in the background after the tool reports applied. Do not run heavy processing across an unculled shoot by habit: cull first, then spend compute on the frames that stay. More pixels from Super Resolution are not more optical detail.
+Run Denoise early, before AI masks and Content-Aware Remove, then revisit sharpening and Texture (Adobe's guidance). Denoise computes in the background after the tool reports applied. Do not run heavy processing across an unculled shoot by habit: cull first, then spend compute on the frames that stay. More pixels from Super Resolution are not more optical detail.
 
 ## Detail without damage
 
