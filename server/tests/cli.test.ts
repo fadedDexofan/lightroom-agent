@@ -11,6 +11,13 @@ import { FakePlugin } from './helpers/fake-plugin.js';
 import { parseCli } from '../src/cli.js';
 import { brokerPath } from '../src/broker.js';
 import { VERSION } from '../src/version.js';
+import { serverIdentity } from '../src/server-identity.js';
+import { expectedIdentity, renderContractLua } from '../src/contract-lua.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import type { ToolResponse } from '../src/tool-result.js';
+
+let BUILD = '';
 
 describe('parseCli', () => {
   function p(...args: string[]) {
@@ -91,14 +98,18 @@ describe('CLI process', () => {
 
   beforeAll(async () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lr-cli-'));
-    build = path.join(directory, 'build');
+    build = path.join(directory, 'package', 'dist');
     await promisify(execFile)(process.execPath, [
       path.resolve('node_modules/@typescript/native/bin/tsc'), '--outDir', build,
     ], { cwd: process.cwd() });
     fs.writeFileSync(path.join(build, 'package.json'), '{"type":"module"}');
     fs.symlinkSync(path.resolve('node_modules'), path.join(build, 'node_modules'), 'junction');
-    fs.mkdirSync(path.join(build, 'LightroomAgent.lrplugin'));
-    fs.writeFileSync(path.join(build, 'LightroomAgent.lrplugin', 'Info.lua'), 'return {}');
+    const bundle = path.join(directory, 'package', 'LightroomAgent.lrplugin');
+    fs.mkdirSync(bundle);
+    fs.writeFileSync(path.join(bundle, 'Info.lua'), 'return {}');
+    BUILD = expectedIdentity(bundle).build;
+    fs.writeFileSync(path.join(bundle, 'Contract.lua'), renderContractLua({ version: VERSION, build: BUILD }));
+    fs.writeFileSync(path.join(build, 'plugin-build.json'), JSON.stringify({ build: BUILD }));
   }, 30_000);
 
   afterEach(async () => {
@@ -110,28 +121,77 @@ describe('CLI process', () => {
     fs.rmSync(directory, { recursive: true, force: true });
   });
 
-  async function run(
-    args: string[],
-    env: NodeJS.ProcessEnv = {},
-    interruption?: { ready: Promise<void>; signal: NodeJS.Signals },
-  ) {
+  type State = { state: string; testHome: string; preload: string };
+
+  function newState(): State {
     const state = fs.mkdtempSync(path.join(directory, 'state-'));
     const testHome = path.join(state, 'home');
     fs.mkdirSync(testHome);
     const preload = path.join(state, 'home.mjs');
     fs.writeFileSync(preload, `import os from 'node:os'; os.homedir = () => ${JSON.stringify(testHome)};`);
+    return { state, testHome, preload };
+  }
+
+  function processEnv({ state }: State, env: NodeJS.ProcessEnv): Record<string, string> {
+    return Object.fromEntries(Object.entries({
+      ...process.env,
+      APPDATA: path.join(state, 'appdata'),
+      LIGHTROOM_AGENT_TOKEN_PATH: path.join(state, 'missing-token'),
+      LIGHTROOM_AGENT_REQUEST_PORT: 'invalid',
+      LIGHTROOM_AGENT_RESPONSE_PORT: 'invalid',
+      LIGHTROOM_AGENT_TOOLSETS: 'core',
+      LIGHTROOM_AGENT_READ_ONLY: 'false',
+      ...env,
+    }).filter((entry): entry is [string, string] => entry[1] !== undefined));
+  }
+
+  function checkout(edit: (tree: { dist: string; bundle: string }) => void = () => {}): string {
+    const root = fs.mkdtempSync(path.join(directory, 'checkout-'));
+    const dist = path.join(root, 'server', 'dist');
+    fs.cpSync(build, dist, { recursive: true, verbatimSymlinks: true });
+    const bundle = path.join(root, 'plugin', 'LightroomAgent.lrplugin');
+    fs.cpSync(path.join(directory, 'package', 'LightroomAgent.lrplugin'), bundle, { recursive: true });
+    edit({ dist, bundle });
+    return dist;
+  }
+
+  const STALE_LUA = ({ bundle }: { bundle: string }) => fs.writeFileSync(path.join(bundle, 'Handler.lua'), 'return 2\n');
+  const REBUILD = "This server's build does not match its plug-in folder; rebuild it (npm --prefix server run build in the "
+    + 'checkout), then restart your client.';
+
+  const clients: Client[] = [];
+  afterEach(async () => {
+    while (clients.length > 0) await clients.pop()!.close();
+  });
+
+  async function stdio(dist: string, home: State, env: NodeJS.ProcessEnv): Promise<{ client: Client; call: (name: string) => Promise<ToolResponse> }> {
+    const client = new Client({ name: 'cli-test', version: '1.0.0' });
+    await client.connect(new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', pathToFileURL(home.preload).href, path.join(dist, 'index.js')],
+      env: processEnv(home, env),
+      stderr: 'ignore',
+    }));
+    clients.push(client);
+    return { client, call: async (name) => await client.callTool({ name, arguments: {} }) as ToolResponse };
+  }
+
+  async function closeClient(client: Client): Promise<void> {
+    clients.splice(clients.indexOf(client), 1);
+    await client.close();
+  }
+
+  async function run(
+    args: string[],
+    env: NodeJS.ProcessEnv = {},
+    interruption?: { ready: Promise<void>; signal: NodeJS.Signals },
+    options: { dist?: string; home?: State } = {},
+  ) {
+    const home = options.home ?? newState();
+    const { state, testHome, preload } = home;
     const result = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
-      const child = execFile(process.execPath, ['--import', pathToFileURL(preload).href, path.join(build, 'index.js'), ...args], {
-        env: {
-          ...process.env,
-          APPDATA: path.join(state, 'appdata'),
-          LIGHTROOM_AGENT_TOKEN_PATH: path.join(state, 'missing-token'),
-          LIGHTROOM_AGENT_REQUEST_PORT: 'invalid',
-          LIGHTROOM_AGENT_RESPONSE_PORT: 'invalid',
-          LIGHTROOM_AGENT_TOOLSETS: 'core',
-          LIGHTROOM_AGENT_READ_ONLY: 'false',
-          ...env,
-        },
+      const child = execFile(process.execPath, ['--import', pathToFileURL(preload).href, path.join(options.dist ?? build, 'index.js'), ...args], {
+        env: processEnv(home, env),
         timeout: CLI_SPAWN_MS,
         maxBuffer: 16 * 1024 * 1024,
       }, (error, stdout, stderr) => {
@@ -145,8 +205,10 @@ describe('CLI process', () => {
     });
     const ports = [env.LIGHTROOM_AGENT_REQUEST_PORT, env.LIGHTROOM_AGENT_RESPONSE_PORT].map(Number);
     if (interruption && ports.every(Number.isInteger)) fs.rmSync(brokerPath(ports[0], ports[1], path.join(testHome, '.config', 'lightroom-agent')), { force: true });
-    expect(fs.existsSync(path.join(testHome, 'Library'))).toBe(false);
-    expect(fs.existsSync(path.join(state, 'appdata'))).toBe(false);
+    if (options.home === undefined) {
+      expect(fs.existsSync(path.join(testHome, 'Library'))).toBe(false);
+      expect(fs.existsSync(path.join(state, 'appdata'))).toBe(false);
+    }
     return { ...result, testHome };
   }
 
@@ -207,7 +269,7 @@ describe('CLI process', () => {
     const called: string[] = [];
     const env = await startPlugin((action, params) => {
       called.push(action);
-      if (action === 'ping') return { pong: true, version: VERSION };
+      if (action === 'ping') return { pong: true, version: VERSION, build: BUILD };
       expect(params).toEqual({ photo_ids: ['914'], size: 864 });
       return { photo_id: 914, image: { data: image, mime_type: 'image/jpeg' } };
     });
@@ -238,7 +300,7 @@ describe('CLI process', () => {
 
   it('returns the backend error as JSON with a failing exit status', async () => {
     const env = await startPlugin((action) => {
-      if (action === 'ping') return { pong: true, version: VERSION };
+      if (action === 'ping') return { pong: true, version: VERSION, build: BUILD };
       throw new Error('Missing catalog fixture');
     });
     const result = await run(['call', 'list_collections'], env);
@@ -283,7 +345,7 @@ describe('CLI process', () => {
       let finish: () => void = () => {};
       const pending = new Promise<void>((resolve) => { finish = resolve; });
       const env = await startPlugin(async (action) => {
-        if (action === 'ping') return { pong: true, version: VERSION };
+        if (action === 'ping') return { pong: true, version: VERSION, build: BUILD };
         entered();
         await pending;
         return { success: true };
@@ -299,9 +361,83 @@ describe('CLI process', () => {
     CLI_TEST_MS,
   );
 
+  it('answers version and tools from a build whose plug-in folder does not match it', async () => {
+    const dist = checkout(STALE_LUA);
+
+    expect((await run(['--version'], {}, undefined, { dist })).stdout).toBe(`${VERSION}\n`);
+    const tools = await run(['tools'], {}, undefined, { dist });
+    expect(tools.code).toBe(0);
+    expect(JSON.parse(tools.stdout)).toEqual(listToolsHandler(new Set(['core']), false));
+  }, CLI_TEST_MS);
+
+  it('refuses install-plugin from a build whose plug-in folder does not match it, installing nothing', async () => {
+    const result = await run(['install-plugin'], {}, undefined, { dist: checkout(STALE_LUA) });
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(REBUILD);
+  }, CLI_TEST_MS);
+
+  it('answers every call of a server unpaired from its plug-in folder with its reason, taking no lock, '
+    + 'and a paired server started afterwards leads', async () => {
+    const env = await startPlugin((action) => (action === 'ping' ? { pong: true, version: VERSION, build: BUILD } : { collections: [] }));
+    const home = newState();
+    const unpaired = await stdio(checkout(STALE_LUA), home, env);
+
+    const refused = await unpaired.call('list_collections');
+
+    expect(refused).toEqual({ isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed', error: REBUILD }) }] });
+    expect(plugin?.events.some((event) => event.kind === 'request_connected')).toBe(false);
+    expect(fs.existsSync(path.join(home.testHome, '.config', 'lightroom-agent'))).toBe(false);
+    const paired = await run(['call', 'list_collections'], env, undefined, { dist: checkout(), home });
+    expect(paired.code).toBe(0);
+    expect(JSON.parse(paired.stdout)).toMatchObject({ content: [{ text: expect.stringContaining('"outcome":"done"') }] });
+  }, CLI_TEST_MS);
+
+  it('stops electing, with its reason, a follower whose plug-in folder changed before its promotion; '
+    + 'a paired server then leads', async () => {
+    const env = await startPlugin((action) => (action === 'ping' ? { pong: true, version: VERSION, build: BUILD } : { collections: [] }));
+    const home = newState();
+    const leader = await stdio(checkout(), home, env);
+    expect(JSON.stringify(await leader.call('list_collections'))).toContain('done');
+    let followerTree: { dist: string; bundle: string } | undefined;
+    const follower = await stdio(checkout((tree) => { followerTree = tree; }), home, env);
+    expect(JSON.stringify(await follower.call('list_collections'))).toContain('done');
+    STALE_LUA(followerTree!);
+    const connections = () => plugin!.events.filter((event) => event.kind === 'request_connected').length;
+    expect(connections()).toBe(1);
+
+    await closeClient(leader.client);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    expect(await follower.call('list_collections')).toEqual({
+      isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed', error: REBUILD }) }],
+    });
+    expect(connections()).toBe(1);
+    const next = await run(['call', 'list_collections'], env, undefined, { dist: checkout(), home });
+    expect(next.code).toBe(0);
+    expect(connections()).toBe(2);
+  }, CLI_TEST_MS);
+
+  it('keeps a build paired after a compiled change outside the contract, as another server build, and refuses '
+    + 'one whose compiled contract no longer matches its plug-in folder', async () => {
+    const env = await startPlugin((action) => (action === 'ping' ? { pong: true, version: VERSION, build: BUILD } : { collections: [] }));
+    const original = serverIdentity(build, BUILD);
+    const touched = checkout(({ dist }) => fs.appendFileSync(path.join(dist, 'cli.js'), '\n'));
+    expect(serverIdentity(touched, BUILD).build).not.toBe(original.build);
+    expect((await run(['call', 'list_collections'], env, undefined, { dist: touched })).code).toBe(0);
+
+    const contract = checkout(({ dist }) => {
+      const file = path.join(dist, 'tool-contracts.js');
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/DEFAULT_PAGE_LIMIT = \d+/, 'DEFAULT_PAGE_LIMIT = 7'));
+    });
+    const refused = await run(['call', 'list_collections'], env, undefined, { dist: contract });
+    expect(refused.code).toBe(1);
+    expect(JSON.parse(refused.stdout)).toEqual({ isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed', error: REBUILD }) }] });
+  }, CLI_TEST_MS);
+
   it('validates arguments through the common backend without dispatching the operation', async () => {
     const called: string[] = [];
-    const env = await startPlugin((action) => { called.push(action); return { pong: true, version: VERSION }; });
+    const env = await startPlugin((action) => { called.push(action); return { pong: true, version: VERSION, build: BUILD }; });
     const result = await run(['call', 'search_photos', '{"unexpected":true}'], env);
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ isError: true });

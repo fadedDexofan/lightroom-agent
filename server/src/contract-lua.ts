@@ -1,3 +1,4 @@
+import { treeDigest } from "./build-identity.js";
 import { DEVELOP_KEYS, LOCAL_KEYS, transfersStyle } from "./develop-keys.js";
 import { DETAIL_RENDER_FOLDER } from "./photo-detail.js";
 import { HEARTBEAT_INTERVAL_SECONDS } from "./plugin-liveness.js";
@@ -17,6 +18,7 @@ import {
 type LuaValue = string | number | boolean | readonly LuaValue[] | { readonly [key: string]: LuaValue };
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const CONTRACT_FILE = "Contract.lua";
 
 function render(value: LuaValue, indent: string): string {
   if (typeof value === "string") return JSON.stringify(value);
@@ -49,8 +51,8 @@ function dispatchMap(): Record<string, readonly [string, string]> {
   }));
 }
 
-export function renderContractLua(): string {
-  const contract: LuaValue = {
+function contractTable(): { readonly [key: string]: LuaValue } {
+  return {
     DISPATCH: dispatchMap(),
     DEVELOP_KEYS: DEVELOP_KEYS.map((key): LuaValue => ({
       name: key.name,
@@ -78,5 +80,18 @@ export function renderContractLua(): string {
     HEARTBEAT_INTERVAL_SECONDS,
     VERSION,
   };
-  return `return ${render(contract, "")}\n`;
+}
+
+export type PluginIdentity = { readonly version: string; readonly build: string };
+
+export function expectedIdentity(pluginDir: string): PluginIdentity {
+  return { version: VERSION, build: pluginBuild(pluginDir, `return ${render(contractTable(), "")}\n`) };
+}
+
+export function renderContractLua(identity: PluginIdentity): string {
+  return `return ${render({ ...contractTable(), BUILD: identity.build }, "")}\n`;
+}
+
+export function pluginBuild(pluginDir: string, contractBody: string): string {
+  return treeDigest(pluginDir, (file) => file.endsWith(".lua") && file !== CONTRACT_FILE, contractBody);
 }

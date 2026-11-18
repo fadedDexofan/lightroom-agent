@@ -5,12 +5,12 @@ import path from 'node:path';
 import {
   ensurePluginInstalled,
   findBundledPlugin,
-  findPluginInCwd,
   describeInstall,
   installPlugin,
   lightroomModulesDir,
   lightroomPluginsDir,
 } from '../src/install-plugin.js';
+import { VERSION } from '../src/version.js';
 
 const realPlatform = process.platform;
 const realAppData = process.env.APPDATA;
@@ -90,12 +90,14 @@ describe('lightroomPluginsDir', () => {
 describe('installPlugin', () => {
   let tmp: string;
   let home: string;
+  let installed: string;
 
   beforeEach(() => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-install-'));
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-home-'));
     setPlatform('linux');
     jest.spyOn(os, 'homedir').mockReturnValue(home);
+    installed = path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin');
   });
 
   afterEach(() => {
@@ -104,109 +106,165 @@ describe('installPlugin', () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  function makeFakePlugin(parent: string, identity: { id?: string; version?: string | null } = {}): string {
-    const src = path.join(parent, 'LightroomAgent.lrplugin');
+  function makeFakePlugin(name: string, identity: { id?: string; version?: string | null; build?: string } = {}): string {
+    const src = path.join(tmp, name, 'LightroomAgent.lrplugin');
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'Info.lua'), `return {\n    LrToolkitIdentifier = '${identity.id ?? 'io.test.agent'}',\n}\n`);
     if (identity.version !== null) {
-      fs.writeFileSync(path.join(src, 'Contract.lua'), `return {\n    VERSION = "${identity.version ?? '1.0.0'}",\n}\n`);
+      fs.writeFileSync(path.join(src, 'Contract.lua'),
+        `return {\n    VERSION = "${identity.version ?? '1.0.0'}",\n    BUILD = "${identity.build ?? 'b1'}",\n}\n`);
     }
     fs.writeFileSync(path.join(src, 'Handler.lua'), '-- handler');
     return src;
   }
 
-  it('copies the plugin into destDir on first install', () => {
-    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'));
-    try {
-      const source = makeFakePlugin(sourceParent);
-      const result = installPlugin({ source, destDir: tmp });
-      expect(result).toEqual({ status: 'installed', destination: path.join(tmp, 'LightroomAgent.lrplugin') });
-      expect(fs.existsSync(path.join(tmp, 'LightroomAgent.lrplugin', 'Info.lua'))).toBe(true);
-      expect(fs.existsSync(path.join(tmp, 'LightroomAgent.lrplugin', 'Handler.lua'))).toBe(true);
-    } finally {
-      fs.rmSync(sourceParent, { recursive: true, force: true });
-    }
+  it('copies the plugin into Lightroom\'s Modules folder on first install', () => {
+    const result = installPlugin({ source: makeFakePlugin('src') });
+
+    expect(result).toEqual({ status: 'installed', destination: installed });
+    expect(fs.existsSync(path.join(installed, 'Info.lua'))).toBe(true);
+    expect(fs.existsSync(path.join(installed, 'Handler.lua'))).toBe(true);
   });
 
   it('copies nested directories recursively', () => {
-    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'));
-    try {
-      const source = makeFakePlugin(sourceParent);
-      fs.mkdirSync(path.join(source, 'sub'));
-      fs.writeFileSync(path.join(source, 'sub', 'Nested.lua'), '-- nested');
-      installPlugin({ source, destDir: tmp });
-      expect(fs.existsSync(path.join(tmp, 'LightroomAgent.lrplugin', 'sub', 'Nested.lua'))).toBe(true);
-    } finally {
-      fs.rmSync(sourceParent, { recursive: true, force: true });
-    }
+    const source = makeFakePlugin('src');
+    fs.mkdirSync(path.join(source, 'sub'));
+    fs.writeFileSync(path.join(source, 'sub', 'Nested.lua'), '-- nested');
+
+    installPlugin({ source });
+
+    expect(fs.existsSync(path.join(installed, 'sub', 'Nested.lua'))).toBe(true);
   });
 
-  it('preserves symlinks when copying', () => {
+  it('copies regular files only, leaving links behind, dangling ones included', () => {
     if (realPlatform === 'win32') return;
-    const sourceParent = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'));
-    try {
-      const source = makeFakePlugin(sourceParent);
-      fs.symlinkSync('Info.lua', path.join(source, 'Info.link.lua'));
-      installPlugin({ source, destDir: tmp });
-      const copied = path.join(tmp, 'LightroomAgent.lrplugin', 'Info.link.lua');
-      expect(fs.lstatSync(copied).isSymbolicLink()).toBe(true);
-      expect(fs.readlinkSync(copied)).toBe('Info.lua');
-    } finally {
-      fs.rmSync(sourceParent, { recursive: true, force: true });
-    }
+    const source = makeFakePlugin('src');
+    fs.symlinkSync('Info.lua', path.join(source, 'Info.link.lua'));
+    fs.symlinkSync('gone.lua', path.join(source, 'Dangling.lua'));
+
+    installPlugin({ source });
+
+    expect(fs.readdirSync(installed).sort()).toEqual(['Contract.lua', 'Handler.lua', 'Info.lua']);
   });
 
-  it('leaves a bundle of this plug-in at the same version alone', () => {
-    const source = makeFakePlugin(fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-')));
-    installPlugin({ source, destDir: tmp });
-    const kept = path.join(tmp, 'LightroomAgent.lrplugin', 'Handler.lua');
+  it('leaves a bundle of this plug-in of the same build alone', () => {
+    const source = makeFakePlugin('src');
+    installPlugin({ source });
+    const kept = path.join(installed, 'Handler.lua');
     fs.writeFileSync(kept, '-- modified');
 
-    const result = installPlugin({ source, destDir: tmp });
+    const result = installPlugin({ source });
 
-    expect(result).toEqual({ status: 'current', destination: path.join(tmp, 'LightroomAgent.lrplugin') });
+    expect(result).toEqual({ status: 'current', destination: installed });
     expect(fs.readFileSync(kept, 'utf8')).toBe('-- modified');
   });
 
   it.each([
-    ['another version', '0.9.0', '0.9.0'],
-    ['no version', null, null],
-  ])('replaces a bundle of this plug-in that reports %s', (_what, installedVersion, from) => {
-    installPlugin({ source: makeFakePlugin(fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-old-')), { version: installedVersion }), destDir: tmp });
-    fs.writeFileSync(path.join(tmp, 'LightroomAgent.lrplugin', 'Stale.lua'), '-- gone in the new build');
+    ['another version', { version: '0.9.0' }, { version: '0.9.0', build: 'b1' }],
+    ['another build of the same version', { build: 'b0' }, { version: '1.0.0', build: 'b0' }],
+    ['no version', { version: null }, { version: null, build: null }],
+  ])('replaces a bundle of this plug-in that reports %s', (_what, installedIdentity, from) => {
+    installPlugin({ source: makeFakePlugin('old', installedIdentity) });
+    fs.writeFileSync(path.join(installed, 'Stale.lua'), '-- gone in the new build');
 
-    const result = installPlugin({ source: makeFakePlugin(fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-')), { version: '1.0.0' }), destDir: tmp });
+    const result = installPlugin({ source: makeFakePlugin('src', { version: '1.0.0' }) });
 
-    expect(result).toEqual({ status: 'replaced', destination: path.join(tmp, 'LightroomAgent.lrplugin'), from, to: '1.0.0' });
-    expect(fs.existsSync(path.join(tmp, 'LightroomAgent.lrplugin', 'Stale.lua'))).toBe(false);
-    expect(fs.readFileSync(path.join(tmp, 'LightroomAgent.lrplugin', 'Contract.lua'), 'utf8')).toContain('VERSION = "1.0.0"');
+    expect(result).toEqual({ status: 'replaced', destination: installed, from, to: { version: '1.0.0', build: 'b1' } });
+    expect(fs.existsSync(path.join(installed, 'Stale.lua'))).toBe(false);
+    expect(fs.readFileSync(path.join(installed, 'Contract.lua'), 'utf8')).toContain('VERSION = "1.0.0"');
+  });
+
+  it('keeps the installed bundle whole when copying its replacement fails', () => {
+    installPlugin({ source: makeFakePlugin('old', { version: '0.9.0' }) });
+    const copy = fs.copyFileSync;
+    let copies = 0;
+    jest.spyOn(fs, 'copyFileSync').mockImplementation((from, to, mode) => {
+      copies += 1;
+      if (copies === 2) throw new Error('disk full');
+      copy(from, to, mode);
+    });
+
+    expect(() => installPlugin({ source: makeFakePlugin('src', { version: '1.0.0' }) })).toThrow('disk full');
+
+    expect(fs.readFileSync(path.join(installed, 'Contract.lua'), 'utf8')).toContain('VERSION = "0.9.0"');
+    expect(fs.readdirSync(lightroomModulesDir())).toEqual(['LightroomAgent.lrplugin']);
+  });
+
+  it('reads the identity of the real bundle: its toolkit id, the server version and the build in its generated contract', () => {
+    installPlugin({ source: makeFakePlugin('old', { id: 'io.github.fadeddexofan.lightroomagent', version: '0.0.1' }) });
+
+    const result = installPlugin({ source: path.resolve(process.cwd(), '..', 'plugin', 'LightroomAgent.lrplugin') });
+
+    expect(result).toEqual({ status: 'replaced', destination: installed, from: { version: '0.0.1', build: 'b1' },
+      to: { version: VERSION, build: expect.stringMatching(/^[0-9a-f]{16}$/) } });
+  });
+
+  it('keeps a whole bundle in place when removing the replaced one is interrupted, and clears the remnant next time', () => {
+    installPlugin({ source: makeFakePlugin('old', { version: '0.9.0' }) });
+    const remove = fs.rmSync;
+    const interrupted = jest.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
+      const info = path.join(String(target), 'Info.lua');
+      if (fs.existsSync(info)) {
+        fs.unlinkSync(info);
+        throw new Error('killed');
+      }
+      remove(target, options);
+    });
+
+    expect(() => installPlugin({ source: makeFakePlugin('src', { version: '1.0.0' }) })).toThrow('killed');
+    interrupted.mockRestore();
+
+    expect(fs.existsSync(path.join(installed, 'Info.lua'))).toBe(true);
+    expect(installPlugin({ source: makeFakePlugin('src', { version: '1.0.0' }) }).status).toBe('current');
+    expect(fs.readdirSync(lightroomModulesDir())).toEqual(['LightroomAgent.lrplugin']);
+  });
+
+  it('reads a bundle checked out with CRLF line endings as the same build', () => {
+    const source = makeFakePlugin('src');
+    installPlugin({ source });
+    const contract = path.join(installed, 'Contract.lua');
+    fs.writeFileSync(contract, fs.readFileSync(contract, 'utf8').replace(/\n/g, '\r\n'));
+
+    expect(installPlugin({ source }).status).toBe('current');
+  });
+
+  it('replaces rather than keeps a bundle whose build cannot be read, even when the bundled one cannot either', () => {
+    const unreadable = (name: string) => {
+      const bundle = makeFakePlugin(name);
+      fs.writeFileSync(path.join(bundle, 'Contract.lua'), 'return {\n    VERSION = "1.0.0",\n}\n');
+      return bundle;
+    };
+    installPlugin({ source: unreadable('old') });
+
+    expect(installPlugin({ source: unreadable('src') }).status).toBe('replaced');
   });
 
   it('leaves another plug-in that sits in the folder alone', () => {
-    installPlugin({ source: makeFakePlugin(fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-other-')), { id: 'com.other.plugin', version: '0.1.0' }), destDir: tmp });
+    installPlugin({ source: makeFakePlugin('other', { id: 'com.other.plugin', version: '0.1.0' }) });
 
-    const result = installPlugin({ source: makeFakePlugin(fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'))), destDir: tmp });
+    const result = installPlugin({ source: makeFakePlugin('src') });
 
-    expect(result).toEqual({ status: 'foreign', destination: path.join(tmp, 'LightroomAgent.lrplugin'), toolkitId: 'com.other.plugin' });
-    expect(fs.readFileSync(path.join(tmp, 'LightroomAgent.lrplugin', 'Contract.lua'), 'utf8')).toContain('VERSION = "0.1.0"');
+    expect(result).toEqual({ status: 'foreign', destination: installed, toolkitId: 'com.other.plugin' });
+    expect(fs.readFileSync(path.join(installed, 'Contract.lua'), 'utf8')).toContain('VERSION = "0.1.0"');
   });
 
   it('replaces an outdated bundle where it is installed, Plugins included', () => {
-    const installed = path.join(lightroomPluginsDir(), 'LightroomAgent.lrplugin');
-    fs.mkdirSync(path.dirname(installed), { recursive: true });
-    fs.cpSync(makeFakePlugin(fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-old-')), { version: '0.9.0' }), installed, { recursive: true });
+    const inPlugins = path.join(lightroomPluginsDir(), 'LightroomAgent.lrplugin');
+    fs.mkdirSync(path.dirname(inPlugins), { recursive: true });
+    fs.cpSync(makeFakePlugin('old', { version: '0.9.0' }), inPlugins, { recursive: true });
 
-    const result = installPlugin({ source: makeFakePlugin(fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-src-'))) });
+    const result = installPlugin({ source: makeFakePlugin('src') });
 
-    expect(result).toEqual({ status: 'replaced', destination: installed, from: '0.9.0', to: '1.0.0' });
-    expect(fs.existsSync(path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin'))).toBe(false);
+    expect(result).toEqual({ status: 'replaced', destination: inPlugins, from: { version: '0.9.0', build: 'b1' }, to: { version: '1.0.0', build: 'b1' } });
+    expect(fs.existsSync(installed)).toBe(false);
   });
 
   it.each([
     [{ status: 'installed', destination: '/M/LightroomAgent.lrplugin' }, 'installed /M/LightroomAgent.lrplugin; restart Lightroom to load it'],
-    [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: '0.9.0', to: '1.0.0' }, 'replaced /M/LightroomAgent.lrplugin (version 0.9.0 → 1.0.0); restart Lightroom to load it'],
-    [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: null, to: '1.0.0' }, 'replaced /M/LightroomAgent.lrplugin (version unknown → 1.0.0); restart Lightroom to load it'],
-    [{ status: 'current', destination: '/M/LightroomAgent.lrplugin' }, '/M/LightroomAgent.lrplugin is already this version'],
+    [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: { version: '0.9.0', build: 'b0' }, to: { version: '1.0.0', build: 'b1' } }, 'replaced /M/LightroomAgent.lrplugin (version 0.9.0 → 1.0.0); restart Lightroom to load it'],
+    [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: { version: null, build: null }, to: { version: '1.0.0', build: 'b1' } }, 'replaced /M/LightroomAgent.lrplugin (version unknown → 1.0.0); restart Lightroom to load it'],
+    [{ status: 'replaced', destination: '/M/LightroomAgent.lrplugin', from: { version: '1.0.0', build: 'b0' }, to: { version: '1.0.0', build: 'b1' } }, 'replaced /M/LightroomAgent.lrplugin (version 1.0.0, build b0 → b1); restart Lightroom to load it'],
+    [{ status: 'current', destination: '/M/LightroomAgent.lrplugin' }, '/M/LightroomAgent.lrplugin is already this build'],
     [{ status: 'foreign', destination: '/M/LightroomAgent.lrplugin', toolkitId: 'com.other' }, '/M/LightroomAgent.lrplugin holds another plug-in (com.other) and was left alone. Remove it, then install again.'],
     [{ status: 'conflict', conflicting: '/M/LightroomMCP.lrplugin' }, 'The installed /M/LightroomMCP.lrplugin binds the same ports. Quit Lightroom, remove that folder, then install again.'],
   ] as const)('describes %o', (result, line) => {
@@ -232,6 +290,7 @@ describe.each([
     const bundled = path.join(startDir, 'LightroomAgent.lrplugin');
     fs.mkdirSync(bundled, { recursive: true });
     fs.writeFileSync(path.join(bundled, 'Info.lua'), '-- fake');
+    fs.writeFileSync(path.join(bundled, 'Contract.lua'), '-- fake');
   });
 
   afterEach(() => {
@@ -250,7 +309,7 @@ describe.each([
   it('makes the start-up install log the conflict instead of installing', () => {
     const log = jest.fn();
 
-    ensurePluginInstalled(startDir, log);
+    ensurePluginInstalled(path.join(startDir, 'dist'), log);
 
     expect(log).toHaveBeenCalledWith(
       `[install-plugin] The installed ${path.join(dirOf(), 'LightroomMCP.lrplugin')} binds the same ports. `
@@ -261,6 +320,22 @@ describe.each([
 });
 
 describe('findBundledPlugin', () => {
+  it('takes the checkout\'s plugin folder over a copy staged into server/ for packing', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-checkout-'));
+    try {
+      for (const bundle of [path.join(root, 'plugin'), path.join(root, 'server')]) {
+        fs.mkdirSync(path.join(bundle, 'LightroomAgent.lrplugin'), { recursive: true });
+        fs.writeFileSync(path.join(bundle, 'LightroomAgent.lrplugin', 'Info.lua'), '-- fake');
+        fs.writeFileSync(path.join(bundle, 'LightroomAgent.lrplugin', 'Contract.lua'), '-- fake');
+      }
+
+      expect(findBundledPlugin(path.join(root, 'server', 'dist')))
+        .toEqual({ source: path.join(root, 'plugin', 'LightroomAgent.lrplugin'), layout: 'checkout' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('returns null when no plugin directory found', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-find-'));
     try {
@@ -270,55 +345,19 @@ describe('findBundledPlugin', () => {
     }
   });
 
-  it('finds plugin one level up', () => {
+  it('finds the plugin beside server/ in an mcpb bundle', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-find-'));
     try {
       const plug = path.join(root, 'LightroomAgent.lrplugin');
       fs.mkdirSync(plug);
       fs.writeFileSync(path.join(plug, 'Info.lua'), '-- fake');
+      fs.writeFileSync(path.join(plug, 'Contract.lua'), '-- fake');
       const child = path.join(root, 'server', 'dist');
       fs.mkdirSync(child, { recursive: true });
-      const found = findBundledPlugin(child);
-      expect(found).not.toBeNull();
-      expect(path.resolve(found!)).toBe(path.resolve(plug));
+      expect(findBundledPlugin(child)).toEqual({ source: path.resolve(plug), layout: 'package' });
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
-  });
-});
-
-describe('plugin lookup in the cwd', () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-exe-'));
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  function bundlePluginIn(parent: string): string {
-    const plug = path.join(parent, 'LightroomAgent.lrplugin');
-    fs.mkdirSync(plug, { recursive: true });
-    fs.writeFileSync(path.join(plug, 'Info.lua'), '-- fake');
-    return path.resolve(plug);
-  }
-
-  it('finds the plugin folder in the working directory', () => {
-    const plug = bundlePluginIn(dir);
-    jest.spyOn(process, 'cwd').mockReturnValue(dir);
-    expect(findPluginInCwd()).toBe(plug);
-  });
-
-  it('does not walk parent dirs of the working directory', () => {
-    bundlePluginIn(path.join(dir, 'plugin'));
-    bundlePluginIn(dir);
-    const sub = path.join(dir, 'sub');
-    fs.mkdirSync(sub);
-    jest.spyOn(process, 'cwd').mockReturnValue(sub);
-    expect(findPluginInCwd()).toBeNull();
   });
 });
 
@@ -343,14 +382,14 @@ describe('ensurePluginInstalled', () => {
     const src = path.join(dir, 'LightroomAgent.lrplugin');
     fs.mkdirSync(src, { recursive: true });
     fs.writeFileSync(path.join(src, 'Info.lua'), "return {\n    LrToolkitIdentifier = 'io.test.agent',\n}\n");
-    fs.writeFileSync(path.join(src, 'Contract.lua'), `return {\n    VERSION = "${version}",\n}\n`);
+    fs.writeFileSync(path.join(src, 'Contract.lua'), `return {\n    VERSION = "${version}",\n    BUILD = "b1",\n}\n`);
   }
 
-  it('leaves a bundle at the server version alone without logging', () => {
+  it('leaves a bundle of the same build alone without logging', () => {
     bundlePluginIn(startDir);
     bundlePluginIn(lightroomModulesDir());
     const log = jest.fn();
-    ensurePluginInstalled(startDir, log);
+    ensurePluginInstalled(path.join(startDir, 'dist'), log);
     expect(log).not.toHaveBeenCalled();
   });
 
@@ -358,21 +397,21 @@ describe('ensurePluginInstalled', () => {
     bundlePluginIn(startDir, '1.0.0');
     bundlePluginIn(lightroomModulesDir(), '1.0.0-rc.0');
     const log = jest.fn();
-    ensurePluginInstalled(startDir, log);
+    ensurePluginInstalled(path.join(startDir, 'dist'), log);
     expect(log).toHaveBeenCalledWith(`[install-plugin] replaced ${path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin')} `
       + '(version 1.0.0-rc.0 → 1.0.0); restart Lightroom to load it');
   });
 
   it('does nothing when no bundled plugin can be found', () => {
     const log = jest.fn();
-    ensurePluginInstalled(startDir, log);
+    ensurePluginInstalled(path.join(startDir, 'dist'), log);
     expect(log).not.toHaveBeenCalled();
   });
 
   it('installs the bundled plugin and logs progress', () => {
     bundlePluginIn(startDir);
     const log = jest.fn();
-    ensurePluginInstalled(startDir, log);
+    ensurePluginInstalled(path.join(startDir, 'dist'), log);
     expect(log).toHaveBeenCalledWith(
       `[install-plugin] installed ${path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin')}; restart Lightroom to load it`);
     expect(
@@ -386,7 +425,7 @@ describe('ensurePluginInstalled', () => {
       bundlePluginIn(cwdDir);
       jest.spyOn(process, 'cwd').mockReturnValue(cwdDir);
       const log = jest.fn();
-      ensurePluginInstalled(startDir, log);
+      ensurePluginInstalled(path.join(startDir, 'dist'), log);
       expect(log).not.toHaveBeenCalled();
       expect(fs.existsSync(path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin'))).toBe(false);
     } finally {
@@ -400,7 +439,7 @@ describe('ensurePluginInstalled', () => {
       throw new Error('disk full');
     });
     const log = jest.fn();
-    ensurePluginInstalled(startDir, log);
+    ensurePluginInstalled(path.join(startDir, 'dist'), log);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('failed: disk full'));
   });
 });

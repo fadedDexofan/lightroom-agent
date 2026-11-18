@@ -5,9 +5,10 @@ import type { Dispatcher } from '../src/dispatcher.js';
 import { SHADOW_BRIDGE } from '../src/port-owner.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
-type Ping = { timeoutMs: number; answer: (version?: string | null) => void; fail: () => void };
+type Ping = { timeoutMs: number; answer: (version?: string | null, build?: string) => void; fail: () => void };
 
 const SERVER_VERSION = '1.2.3';
+const SERVER_BUILD = '0123456789abcdef';
 
 function setup(opts: { connected?: () => boolean } = {}) {
   const pings: Ping[] = [];
@@ -17,8 +18,8 @@ function setup(opts: { connected?: () => boolean } = {}) {
       return new Promise((resolve, reject) => {
         pings.push({
           timeoutMs,
-          answer: (version = SERVER_VERSION) =>
-            resolve({ id: 'ping', result: { data: version === null ? { pong: true } : { pong: true, version } } }),
+          answer: (version = SERVER_VERSION, build = SERVER_BUILD) =>
+            resolve({ id: 'ping', result: { data: version === null ? { pong: true } : { pong: true, version, build } } }),
           fail: () => reject(new Error('timeout')),
         });
       });
@@ -33,7 +34,7 @@ function setup(opts: { connected?: () => boolean } = {}) {
     heartbeatTimeoutMs: 10_000,
     probeTimeoutMs: 5_000,
     recoveryIntervalMs: 5_000,
-    expectedVersion: SERVER_VERSION,
+    plugin: { version: SERVER_VERSION, build: SERVER_BUILD },
   });
   return { liveness, pings, reporter };
 }
@@ -173,7 +174,7 @@ describe('PluginLiveness', () => {
     liveness.stop();
   });
 
-  it('accepts a plug-in that answers with the server version', async () => {
+  it('accepts a plug-in that answers with the version and build of the server\'s bundled plug-in', async () => {
     const { liveness, pings } = setup();
     liveness.check();
     pings[0].answer();
@@ -198,6 +199,20 @@ describe('PluginLiveness', () => {
         + '(lightroom-agent install-plugin; the server also does it when it starts), then restart Lightroom.',
     );
     expect(reporter.report).not.toHaveBeenCalled();
+  });
+
+  it('refuses a plug-in of the same version but another build, naming both builds and the fix', async () => {
+    const { liveness, pings } = setup();
+    liveness.check();
+    pings[0].answer(SERVER_VERSION, 'fedcba9876543210');
+    await flush();
+
+    expect(liveness.isUsable()).toBe(false);
+    expect(liveness.incompatibility()).toBe(
+      'The installed Lightroom plug-in is build fedcba9876543210 of version 1.2.3, and this server\'s is build '
+        + '0123456789abcdef. Install the plug-in that comes with this server (lightroom-agent install-plugin; the '
+        + 'server also does it when it starts), then restart Lightroom.',
+    );
   });
 
   it('becomes usable once a later ping answers with the server version', async () => {

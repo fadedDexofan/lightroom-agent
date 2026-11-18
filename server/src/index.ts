@@ -19,16 +19,13 @@ import { parseCli, helpText } from "./cli.js";
 import { VERSION } from "./version.js";
 import { ConnectionLossDeadline } from "./connection-loss.js";
 import { HEARTBEAT_INTERVAL_SECONDS, PluginLiveness } from "./plugin-liveness.js";
+import { confirmPairing, pairingOf, type Paired, type Pairing } from "./plugin-pairing.js";
+import { serverIdentity } from "./server-identity.js";
+import { refusedResponse } from "./tool-result.js";
 import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
 import { acquireInstanceLock, lockHolder, lockHolderUnresponsive } from "./instance-lock.js";
-import {
-  describeInstall,
-  ensurePluginInstalled,
-  findBundledPlugin,
-  findPluginInCwd,
-  installPlugin,
-} from "./install-plugin.js";
+import { describeInstall, ensurePluginInstalled, installPlugin } from "./install-plugin.js";
 
 const PING_TIMEOUT_MS = 10_000;
 const RESPONSE_CONNECT_SETTLE_MS = 200;
@@ -52,6 +49,16 @@ const SHUTDOWN_EXIT_MARGIN_MS = 1_000;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+type Backend = Pick<Bridge, "callTool" | "start" | "shutdown">;
+
+function refusing(reason: string): Backend {
+  return {
+    callTool: async () => refusedResponse(reason),
+    start: async () => {},
+    shutdown: async () => {},
+  };
+}
+
 async function main() {
   let cli;
   try {
@@ -70,7 +77,7 @@ async function main() {
     return;
   }
   if (cli.command === "install-plugin") {
-    runInstallPlugin();
+    runInstallPlugin(pairingOf(here));
     return;
   }
 
@@ -112,12 +119,15 @@ async function main() {
     return;
   }
 
-  if (cli.command === "stdio") ensurePluginInstalled(here, (m) => console.error(m));
+  const pairing = pairingOf(here);
+  if (pairing.kind === "unpaired") console.error(pairing.reason);
+  else if (cli.command === "stdio") ensurePluginInstalled(here, (m) => console.error(m));
 
-  const bridge = new Bridge({
+  const bridge: Backend = pairing.kind === "unpaired" ? refusing(pairing.reason) : new Bridge({
     ipcPath: brokerPath(REQUEST_PORT, RESPONSE_PORT),
+    server: serverIdentity(here, pairing.plugin.build),
     acquireLock: () => acquireInstanceLock(REQUEST_PORT, RESPONSE_PORT),
-    startLeader: () => startLeader(REQUEST_PORT, RESPONSE_PORT),
+    startLeader: () => startLeader(pairing, REQUEST_PORT, RESPONSE_PORT),
     readToken: tryReadToken,
     holderUnresponsive: () => lockHolderUnresponsive(REQUEST_PORT, RESPONSE_PORT),
     lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
@@ -175,7 +185,8 @@ function tryReadToken(): string | null {
   }
 }
 
-function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
+function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
+  confirmPairing(pairing);
   let requestSocket: PluginSocket;
   let responseSocket: PluginSocket | null = null;
   let responseConnectTimer: NodeJS.Timeout | null = null;
@@ -199,7 +210,7 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
     heartbeatTimeoutMs: PING_TIMEOUT_MS,
     probeTimeoutMs: PROBE_TIMEOUT_MS,
     recoveryIntervalMs: PROBE_RECOVERY_INTERVAL_MS,
-    expectedVersion: VERSION,
+    plugin: pairing.plugin,
   });
   const startResponseSocket = () => {
     if (responseSocket || !requestSocket.isConnected()) return;
@@ -287,15 +298,13 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   };
 }
 
-function runInstallPlugin(): void {
-  const source = findBundledPlugin(here) ?? findPluginInCwd();
-  if (!source) {
-    console.error("Could not locate a LightroomAgent.lrplugin folder.");
-    console.error("Extract LightroomAgent.lrplugin-<version>.zip from the release into this folder, then retry.");
+function runInstallPlugin(pairing: Pairing): void {
+  if (pairing.kind === "unpaired") {
+    console.error(pairing.reason);
     process.exit(1);
   }
   try {
-    const result = installPlugin({ source });
+    const result = installPlugin({ source: pairing.source });
     console.error(describeInstall(result));
     if (result.status === "conflict" || result.status === "foreign") process.exit(1);
   } catch (err) {

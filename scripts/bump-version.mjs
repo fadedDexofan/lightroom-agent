@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Single source of truth for the release version, description and author: server/package.json.
-// Propagates them to every other file that carries them.
+// Propagates them to the manifests, version.ts and Info.lua; the build writes Contract.lua.
 //
 //   node scripts/bump-version.mjs 0.4.0       set explicit version
 //   node scripts/bump-version.mjs --bump=minor bump from package.json
@@ -33,7 +33,6 @@ function versionTs(v) {
 }
 
 const INFO_LUA = /VERSION = \{ major=(\d+), minor=(\d+), revision=(\d+), build=\d+ \}/;
-const CONTRACT_LUA = /\n    VERSION = "([^"]+)",\n/;
 
 function packageRelease() {
   const { version, description, author } = readJson(p("server", "package.json"));
@@ -48,20 +47,6 @@ const jsonField = (file, label, get, set, expected) => ({
     const json = readJson(p(file));
     set(json, expected(release));
     writeJson(p(file), json);
-  },
-});
-
-const textField = (file, pattern, read, replacement, expected) => ({
-  name: file,
-  expected,
-  read() {
-    const match = fs.readFileSync(p(file), "utf8").match(pattern);
-    return match ? read(match) : null;
-  },
-  write(release) {
-    const src = fs.readFileSync(p(file), "utf8");
-    if (!pattern.test(src)) throw new Error(`${file}: VERSION line not found`);
-    fs.writeFileSync(p(file), src.replace(pattern, replacement(expected(release))));
   },
 });
 
@@ -120,10 +105,20 @@ const targets = [
   entryDescription(".claude-plugin/marketplace.json"),
   unversionedMarketplace(".claude-plugin/marketplace.json"),
   unversionedMarketplace(".agents/plugins/marketplace.json"),
-  textField("plugin/LightroomAgent.lrplugin/Info.lua", INFO_LUA, (m) => `${m[1]}.${m[2]}.${m[3]}`,
-    (v) => { const [maj, min, pat] = v.split("."); return `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`; },
-    (r) => core(r.version)),
-  textField("plugin/LightroomAgent.lrplugin/Contract.lua", CONTRACT_LUA, (m) => m[1], (v) => `\n    VERSION = ${JSON.stringify(v)},\n`, (r) => r.version),
+  {
+    name: "plugin/LightroomAgent.lrplugin/Info.lua",
+    expected: (r) => core(r.version),
+    read() {
+      const m = fs.readFileSync(p(this.name), "utf8").match(INFO_LUA);
+      return m ? `${m[1]}.${m[2]}.${m[3]}` : null;
+    },
+    write(release) {
+      const [maj, min, pat] = core(release.version).split(".");
+      const src = fs.readFileSync(p(this.name), "utf8");
+      if (!INFO_LUA.test(src)) throw new Error("Info.lua: VERSION line not found");
+      fs.writeFileSync(p(this.name), src.replace(INFO_LUA, `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`));
+    },
+  },
 ];
 
 function fail(msg) {

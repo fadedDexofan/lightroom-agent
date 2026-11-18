@@ -15,6 +15,8 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { configDir } from "./config-dir.js";
+import { sameIdentity } from "./build-identity.js";
+import { serverIdentityIn, type ServerIdentity } from "./server-identity.js";
 import { LineBuffer } from "./line-buffer.js";
 import type { CallOptions, ToolProgress } from "./dispatcher.js";
 import { isReadOnlyTool } from "./tool-contracts.js";
@@ -97,6 +99,17 @@ function lostResponse(name: string, text: string): ToolResponse {
   return toolResponse(finishLost(isReadOnlyTool(name), text, true));
 }
 
+function describeServer(identity: ServerIdentity): string {
+  if (identity.version === null) return "an older server that reports no version";
+  return `version ${identity.version} (build ${identity.build ?? "unknown"})`;
+}
+
+export function serverMismatch(follower: ServerIdentity, owner: ServerIdentity): string | null {
+  if (sameIdentity(follower, owner)) return null;
+  return `This server is ${describeServer(follower)}, but the server that owns the Lightroom connection is `
+    + `${describeServer(owner)}, so nothing was sent. Use one lightroom-agent version in every client, then restart them.`;
+}
+
 function replyFrame(reply: BrokerReply, name: string): string {
   const frame = JSON.stringify(reply);
   if (Buffer.byteLength(frame) < MAX_FRAME_BYTES) return frame;
@@ -120,6 +133,7 @@ function onLines(sock: net.Socket, handle: (line: string) => void, maxBytes: () 
 
 export interface BrokerServerOptions {
   path: string;
+  server: ServerIdentity;
   callTool: ToolCaller;
   readToken: () => string | null;
   log?: (msg: string) => void;
@@ -164,14 +178,17 @@ export class BrokerServer {
     sock.on("close", () => { for (const controller of calls.values()) controller.abort(); });
     const nonce = newNonce();
     let greeted = false;
+    let refusal: string | null = null;
     onLines(
       sock,
       (line) => {
         if (!greeted) {
-          greeted = this.greet(sock, nonce, line);
+          const follower = this.greet(sock, nonce, line);
+          greeted = follower !== undefined;
+          if (follower !== undefined) refusal = serverMismatch(follower, this.opts.server);
           return;
         }
-        this.handle(sock, nonce, line, calls).catch((err: unknown) => {
+        this.handle(sock, nonce, line, calls, refusal).catch((err: unknown) => {
           this.log(`[broker] failed to serve a follower call: ${String(err)}`);
         });
       },
@@ -179,19 +196,22 @@ export class BrokerServer {
     );
   }
 
-  private greet(sock: net.Socket, nonce: string, line: string): boolean {
-    const challenge = parseObject(line)?.challenge;
+  private greet(sock: net.Socket, nonce: string, line: string): ServerIdentity | undefined {
+    const hello = parseObject(line);
+    const challenge = hello?.challenge;
     if (typeof challenge !== "string") {
       this.log("[broker] follower opened without a challenge, dropping it");
       sock.destroy();
-      return false;
+      return undefined;
     }
     const proof = signNonce(this.opts.readToken(), `owner:${challenge}`);
-    sock.write(JSON.stringify({ nonce, proof }) + "\n");
-    return true;
+    sock.write(JSON.stringify({ nonce, proof, server: this.opts.server }) + "\n");
+    return serverIdentityIn(hello?.server);
   }
 
-  private async handle(sock: net.Socket, nonce: string, line: string, calls: Map<number, AbortController>): Promise<void> {
+  private async handle(
+    sock: net.Socket, nonce: string, line: string, calls: Map<number, AbortController>, refusal: string | null,
+  ): Promise<void> {
     const control = parseObject(line);
     if (typeof control?.cancelFor === "number") {
       const auth = typeof control.auth === "string" ? control.auth : null;
@@ -205,6 +225,10 @@ export class BrokerServer {
     }
     if (!authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), req.auth)) {
       this.reply(sock, req.id, req.name, refusedResponse("Rejected by the Lightroom Agent bridge: token mismatch."));
+      return;
+    }
+    if (refusal !== null) {
+      this.reply(sock, req.id, req.name, refusedResponse(refusal));
       return;
     }
     if (calls.has(req.id)) return;
@@ -305,6 +329,7 @@ export const OWNER_LOST_MESSAGE =
 
 export interface BrokerClientOptions {
   path: string;
+  server: ServerIdentity;
   readToken: () => string | null;
   onClose?: () => void;
   helloTimeoutMs?: number;
@@ -313,6 +338,7 @@ export interface BrokerClientOptions {
 export class BrokerClient {
   private sock: net.Socket | null = null;
   private nonce = "";
+  private refusal: string | null = null;
   private nextId = 0;
   private readonly pending = new Map<number, { name: string; resolve: (resp: ToolResponse) => void; options?: CallOptions; cleanup: () => void }>();
 
@@ -336,7 +362,7 @@ export class BrokerClient {
         );
         sock.once("error", reject);
         sock.once("close", () => reject(new Error("owning bridge closed the connection")));
-        sock.once("connect", () => sock.write(JSON.stringify({ challenge }) + "\n"));
+        sock.once("connect", () => sock.write(JSON.stringify({ challenge, server: this.opts.server }) + "\n"));
         void hello.then((msg) => {
           clearTimeout(timer);
           resolve(msg);
@@ -347,6 +373,7 @@ export class BrokerClient {
         throw new Error("owning bridge could not prove it holds the plugin token");
       }
       this.nonce = greeting.nonce as string;
+      this.refusal = serverMismatch(this.opts.server, serverIdentityIn(greeting.server));
     } catch (err) {
       sock.destroy();
       throw err;
@@ -385,6 +412,7 @@ export class BrokerClient {
     if (options?.signal?.aborted) return Promise.resolve(refusedResponse("Request cancelled"));
     const sock = this.sock;
     if (!sock) return Promise.resolve(refusedResponse(NOT_CONNECTED_TO_OWNER_MESSAGE));
+    if (this.refusal !== null) return Promise.resolve(refusedResponse(this.refusal));
     const id = this.nextId++;
     const req: BrokerRequest = {
       id,

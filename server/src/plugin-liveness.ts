@@ -1,4 +1,6 @@
 import type { Dispatcher } from "./dispatcher.js";
+import { BUILD_FIELDS, identityIn, sameIdentity, type BuildIdentity } from "./build-identity.js";
+import type { PluginIdentity } from "./contract-lua.js";
 
 /**
  * Whether the plugin is actually answering, as opposed to merely accepting TCP
@@ -15,8 +17,9 @@ import type { Dispatcher } from "./dispatcher.js";
  *   responsive   a ping came back.
  *   unresponsive a ping timed out. Tool calls fail immediately with an
  *                explanation instead of burning the full request timeout each.
- *   incompatible a ping came back from a plug-in of another version. Tool
- *                calls fail immediately, naming both versions.
+ *   incompatible a ping came back from a plug-in of another version or build
+ *                than the server's bundled one. Tool calls fail immediately,
+ *                naming both.
  */
 export type PluginLivenessState = "unknown" | "responsive" | "unresponsive" | "incompatible";
 
@@ -30,21 +33,27 @@ export interface LivenessOptions {
   heartbeatTimeoutMs: number;
   probeTimeoutMs: number;
   recoveryIntervalMs: number;
-  expectedVersion: string;
+  plugin: PluginIdentity;
 }
 
-type PingAnswer = { answered: false } | { answered: true; version: string | null };
+type PingAnswer = { answered: false } | { answered: true; identity: BuildIdentity };
 
-export function pluginVersionMismatch(pluginVersion: string | null, serverVersion: string): string {
-  const plugin = pluginVersion === null ? "an older build that reports no version" : `version ${pluginVersion}`;
-  return `The installed Lightroom plug-in is ${plugin}, and this server is version ${serverVersion}. `
-    + "Install the plug-in that comes with this server (lightroom-agent install-plugin; the server also does it "
-    + "when it starts), then restart Lightroom.";
+const INSTALL_FIX = "Install the plug-in that comes with this server (lightroom-agent install-plugin; the server also does it "
+  + "when it starts), then restart Lightroom.";
+
+function pluginMismatch(plugin: BuildIdentity, expected: PluginIdentity): string {
+  if (plugin.version === expected.version) {
+    return `The installed Lightroom plug-in is build ${plugin.build ?? "unknown"} of version ${plugin.version}, `
+      + `and this server's is build ${expected.build}. ${INSTALL_FIX}`;
+  }
+  const installed = plugin.version === null ? "an older build that reports no version" : `version ${plugin.version}`;
+  return `The installed Lightroom plug-in is ${installed}, and this server is version ${expected.version}. `
+    + INSTALL_FIX;
 }
 
 export class PluginLiveness {
   private state: PluginLivenessState = "unknown";
-  private pluginVersion: string | null = null;
+  private plugin: BuildIdentity = { version: null, build: null };
   private pending: Promise<void> | null = null;
   private resolvePending: (() => void) | null = null;
   private generation = 0;
@@ -93,7 +102,7 @@ export class PluginLiveness {
 
   incompatibility(): string | null {
     if (this.state !== "incompatible") return null;
-    return pluginVersionMismatch(this.pluginVersion, this.opts.expectedVersion);
+    return pluginMismatch(this.plugin, this.opts.plugin);
   }
 
   private settle(token: number, answer: PingAnswer): void {
@@ -104,8 +113,8 @@ export class PluginLiveness {
     }
     this.release();
     if (answer.answered) {
-      this.pluginVersion = answer.version;
-      this.state = answer.version === this.opts.expectedVersion ? "responsive" : "incompatible";
+      this.plugin = answer.identity;
+      this.state = sameIdentity(answer.identity, this.opts.plugin) ? "responsive" : "incompatible";
       this.opts.reporter.clear();
       this.stopRecovery();
       return;
@@ -117,9 +126,7 @@ export class PluginLiveness {
 
   private ping(timeoutMs: number): Promise<PingAnswer> {
     return this.opts.dispatcher.call("ping", {}, timeoutMs).then((reply) => {
-      const data = reply.result?.data;
-      const version = typeof data === "object" && data !== null ? (data as { version?: unknown }).version : undefined;
-      return { answered: true, version: typeof version === "string" ? version : null };
+      return { answered: true, identity: identityIn(reply.result?.data, BUILD_FIELDS) };
     }, () => ({ answered: false }));
   }
 
