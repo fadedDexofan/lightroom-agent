@@ -1,6 +1,9 @@
-import { PluginTimeoutError } from "./dispatcher.js";
-
 export type QueueTurn<T> = { ran: true; value: T } | { ran: false; reason: string };
+
+export interface DevelopTurn {
+  remainingMs: number;
+  outlive: (finishing: Promise<void>) => void;
+}
 
 export class DevelopQueue {
   private tail: Promise<void> = Promise.resolve();
@@ -10,7 +13,7 @@ export class DevelopQueue {
     name: string,
     budgetMs: number,
     signal: AbortSignal | undefined,
-    work: (remainingMs: number) => Promise<T>,
+    work: (turn: DevelopTurn) => Promise<T>,
   ): Promise<QueueTurn<T>> {
     const startedAt = Date.now();
     const previous = this.tail;
@@ -43,16 +46,13 @@ export class DevelopQueue {
       };
     }
     this.running = name;
-    let finishing: Promise<void> | undefined;
+    const finishing: Promise<void>[] = [];
     try {
-      return { ran: true, value: await work(remainingMs) };
-    } catch (error) {
-      if (error instanceof PluginTimeoutError) finishing = error.settled;
-      throw error;
+      return { ran: true, value: await work({ remainingMs, outlive: (late) => { finishing.push(late); } }) };
     } finally {
-      if (finishing) {
+      if (finishing.length) {
         this.running = `${name}, still finishing in Lightroom after it timed out`;
-        void finishing.then(() => {
+        void Promise.all(finishing).then(() => {
           this.running = null;
           release();
         });

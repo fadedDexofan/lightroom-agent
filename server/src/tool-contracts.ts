@@ -25,6 +25,14 @@ import {
 
 type InputSchema = Tool["inputSchema"];
 
+export type DevelopUse = "drives" | "settings" | "reads";
+
+export interface PluginAction {
+  name: string;
+  plugin: string;
+  develop?: DevelopUse;
+}
+
 export interface ToolContract {
   name: string;
   toolset: Toolset;
@@ -37,7 +45,7 @@ export interface ToolContract {
   description: string;
   run: { plugin: string } | { server: ServerTool };
   duration?: "long";
-  develop?: "drives" | "settings";
+  develop?: DevelopUse;
   inputSchema: InputSchema;
   rules?: readonly ArgumentRule[];
   alwaysLoad?: true;
@@ -505,13 +513,13 @@ const NORMALIZED_REGION_PROPERTIES = {
 const fitsFrame = (region: { x: number; y: number; width: number; height: number }) =>
   region.x + region.width <= 1 && region.y + region.height <= 1;
 
-export const PLUGIN_ACTIONS: readonly { name: string; plugin: string }[] = [
+export const PLUGIN_ACTIONS: readonly PluginAction[] = [
   { name: "render_preview", plugin: "HandlerPreview.renderPreview" },
   { name: "render_duplicate_preview", plugin: "HandlerPreview.renderDuplicatePreview" },
   { name: "render_detail_source", plugin: "HandlerExport.renderDetailSource" },
-  { name: "write_develop_settings", plugin: "HandlerDevelop.setDevelopSettings" },
-  { name: "plan_crop", plugin: "HandlerCrop.plan" },
-  { name: "read_develop_ranges", plugin: "HandlerDevelopKeys.ranges" },
+  { name: "write_develop_settings", plugin: "HandlerDevelop.setDevelopSettings", develop: "settings" },
+  { name: "plan_crop", plugin: "HandlerCrop.plan", develop: "reads" },
+  { name: "read_develop_ranges", plugin: "HandlerDevelopKeys.ranges", develop: "drives" },
 ];
 
 export const DEFAULT_PAGE_LIMIT = 100;
@@ -575,6 +583,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "develop",
     title: "Summarize develop settings",
     annotations: { readOnlyHint: true, openWorldHint: false },
+    develop: "reads",
     run: { plugin: "HandlerStyleSummary.summarize" },
     description:
       `Summarize numeric Develop settings by camera model and ISO (1-400, 401-1600, 1601-6400, 6401+, unknown). Select rating >= min_rating (default ${STYLE_SUMMARY_MIN_RATING}; 0=all); exported_only requires raw isExported true. Reads at most max_photos settings (default/max ${STYLE_SUMMARY_PHOTO_LIMIT}); export filtering batches flags for all rating matches. Returns count and SDK-key median/min/max per group, scanned/matched/truncated. Excludes crop, perspective, Temperature/Tint, nonfinite/nonnumeric/all-zero settings. Alphabetical keys fill 6000 characters/group; settings_omitted counts size exclusions. Read-only.`,
@@ -649,7 +658,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     duration: "long",
     run: { server: serverTool(getPhotoDetail) },
     description:
-      "Cut 1-4 regions from a full-resolution render of a photo with its current Develop settings, one rendered pixel per returned pixel, to judge sharpness of a detail such as the nearest eye. The render is a temporary export (JPEG quality 100, sRGB, output sharpening off, no catalog add), deleted before the call returns (one left by a timed-out or cancelled call, by a later detail call); it takes seconds, and a second export or detail call is refused, not queued. Each call adds one Export history step to the photo and marks it exported, so summarize_develop_settings' exported_only counts it; Develop settings and pixels stay unchanged, and no cached preview, selection or module changes. Returns photo_id, crop_jpeg_quality (95), per region its pixel box in the render and the image (JPEG 95), plus render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}: source says how the render was made, a string (\"export\" today); left_on_photo says what the render left on the photo, a list of phrases (\"one Export history step\", \"the exported mark\"). A region larger than max_edge, measured against the cropped frame get_crop reports, is refused before the render with the largest normalized size this photo allows; nothing is scaled. A call refused before the render (unknown photo, the cropped frame not read, region over max_edge, export running) is failed with nothing left; an error once the render started is unknown and names the export and what it leaves on the photo.",
+      "Cut 1-4 regions from a full-resolution render of a photo with its current Develop settings, one rendered pixel per returned pixel, to judge sharpness of a detail such as the nearest eye. The render is a temporary export (JPEG quality 100, sRGB, output sharpening off, no catalog add), deleted before the call returns (one left by a timed-out or cancelled call, by a later detail call); it takes seconds, and a second export or detail call is refused, not queued. Its first step reads the cropped frame and waits for the Develop calls before it, as every read of a photo's develop state does; the render runs alongside them. Each call adds one Export history step to the photo and marks it exported, so summarize_develop_settings' exported_only counts it; Develop settings and pixels stay unchanged, and no cached preview, selection or module changes. Returns photo_id, crop_jpeg_quality (95), per region its pixel box in the render and the image (JPEG 95), plus render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}: source says how the render was made, a string (\"export\" today); left_on_photo says what the render left on the photo, a list of phrases (\"one Export history step\", \"the exported mark\"). A region larger than max_edge, measured against the cropped frame get_crop reports, is refused before the render with the largest normalized size this photo allows; nothing is scaled. A call refused before the render (unknown photo, the cropped frame not read, region over max_edge, export running) is failed with nothing left; an error once the render started is unknown and names the export and what it leaves on the photo.",
     rules: [{
       text: "every region must fit within the rendered frame (x + width and y + height at most 1)",
       holds: (args) => (args.regions as { x: number; y: number; width: number; height: number }[]).every(fitsFrame),
@@ -1413,6 +1422,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "develop",
     title: "Create develop preset",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    develop: "reads",
     run: { plugin: "HandlerDevelop.createDevelopPreset" },
     description:
       "Capture selected settings as a versioned plugin Develop checkpoint, hidden from Develop; export for handoff. Returns preset identity/file, visible_in_develop:false and a checkpoint note.",
@@ -1662,6 +1672,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "develop",
     title: "Get crop",
     annotations: { readOnlyHint: true, openWorldHint: false },
+    develop: "reads",
     run: { plugin: "HandlerCrop.read" },
     description:
       "Read one photo's current crop as set_crop states it: the rectangle in the photo as displayed before any crop, the straighten angle and the cropped frame's width and height in pixels, for every orientation. An uncropped photo reads as the whole frame. Reads the catalog without opening Develop.",
@@ -1694,6 +1705,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "develop",
     title: "Get develop settings",
     annotations: { readOnlyHint: true, openWorldHint: false },
+    develop: "reads",
     run: { plugin: "HandlerRawDevelopSettings.get" },
     description:
       "Read develop settings as stored, from the catalog (no Develop or selection change), by the same SDK names set_develop_settings writes. One photo without keys: its top-level names, types and table sizes. With keys: photos[{photo_id, settings by name, absent: names the photo does not carry}] (MaskGroupBasedCorrections whole). A ToneCurvePV2012 channel answers the curve Lightroom renders: its extended (HDR) curve when the photo has one; name ExtendedToneCurvePV2012 and its channel keys to read that field as stored. The only develop read. Photos past the time or 1 MB reply limit are remaining; a photo whose own reply exceeds 1 MB is failed.",
@@ -1821,6 +1833,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "develop",
     title: "List develop snapshots",
     annotations: { readOnlyHint: true, openWorldHint: false },
+    develop: "reads",
     run: { plugin: "HandlerSnapshots.list" },
     description: "List a photo's develop snapshots with their ids and names. A virtual copy's snapshots are listed on its master and on every copy of it.",
     inputSchema: {
@@ -2015,6 +2028,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "List masks",
     annotations: { readOnlyHint: true, openWorldHint: false },
+    develop: "reads",
     run: { plugin: "HandlerMasks.listMasks" },
     description:
       "List a photo's masks from its saved settings, without opening Develop, newest first as Lightroom's Masks panel shows them: id/name/hidden and tools (the mask's components) with id/type/inverted. type is gradient, radialGradient, brush, rangeMask (subtype luminance, color or depth) or aiSelection (subtype subject, sky, background, people or landscape, as create_mask names them; people and landscape add part, the people part or landscape category). A component of an encoding this server does not know is listed with its stored kind as type and no subtype. Range tools include stored luminance/depth min/max/falloffs, or a color range's samples (x/y/l/a/b, one per sample Lightroom stored) and amount; use a sample's rankings with create_range_mask, one sample per range. UI-created masks appear only after Lightroom saves them to the catalog. An empty list means the photo's saved settings hold no masks. Ids remain valid on that photo while masks stay unchanged.",
@@ -2032,6 +2046,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "Get mask write admission",
     annotations: { readOnlyHint: true, openWorldHint: false },
+    develop: "reads",
     run: { plugin: "HandlerMaskAdmission.get" },
     description:
       "Whether guarded mask writes are admitted here: running Lightroom version/build, certified build/time/checks, throwaway-catalog flag, refusal reason. photo_id adds process version, mask count and where the existing masks leave the tested format (reported only: a guarded write leaves those masks as Lightroom stored them). No Develop.",
@@ -2356,6 +2371,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "masks",
     title: "Get mask",
     annotations: { readOnlyHint: true, openWorldHint: false },
+    develop: "reads",
     run: { plugin: "HandlerMaskRead.getMask" },
     description:
       "Read local adjustments, tone curves and Point Color of a mask_id from list_masks in the photo's saved settings, without opening Develop or selecting the mask. kinds defaults to all; only requested kinds are returned. Returns adjustments (every local slider by its SDK name; a slider the mask does not store reads as its neutral value), curves (main/red/green/blue flat input/output arrays; an extended curve before a plain one, [0,0,255,255] when the channel is not stored) and swatches (Lightroom order, indexed from 1, with the six decimals Lightroom stores). Unknown ids fail without reading values.",
@@ -2599,6 +2615,17 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
 ];
+
+export const DISPATCHED_ACTIONS: readonly PluginAction[] = [
+  ...TOOL_CONTRACTS.flatMap(({ name, run, develop }) => ("plugin" in run ? [{ name, plugin: run.plugin, develop }] : [])),
+  ...PLUGIN_ACTIONS,
+];
+
+const DEVELOP_USE = new Map(DISPATCHED_ACTIONS.flatMap(({ name, develop }) => (develop ? [[name, develop] as const] : [])));
+
+export function developUseOf(action: string): DevelopUse | undefined {
+  return DEVELOP_USE.get(action);
+}
 
 const READ_ONLY_TOOLS = new Set(TOOL_CONTRACTS.filter((tool) => tool.annotations.readOnlyHint).map((tool) => tool.name));
 

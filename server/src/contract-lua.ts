@@ -4,7 +4,7 @@ import { DETAIL_RENDER_FOLDER } from "./photo-detail.js";
 import { HEARTBEAT_INTERVAL_SECONDS } from "./plugin-liveness.js";
 import { PREVIEW_REPLY_RESERVE_MS } from "./preview-item.js";
 import { VERSION } from "./version.js";
-import { AI_MASK_COMPUTE_WAIT_SECONDS, AUTO_CHANGE_WAIT_SECONDS, CATALOG_WRITE_WAIT_SECONDS, DEFAULT_PAGE_LIMIT, NEW_MASK_SAVE_WAIT_SECONDS, PLUGIN_ACTIONS, STYLE_SUMMARY_MIN_RATING, STYLE_SUMMARY_PHOTO_LIMIT, TOOL_CONTRACTS } from "./tool-contracts.js";
+import { AI_MASK_COMPUTE_WAIT_SECONDS, AUTO_CHANGE_WAIT_SECONDS, CATALOG_WRITE_WAIT_SECONDS, DEFAULT_PAGE_LIMIT, DISPATCHED_ACTIONS, NEW_MASK_SAVE_WAIT_SECONDS, STYLE_SUMMARY_MIN_RATING, STYLE_SUMMARY_PHOTO_LIMIT } from "./tool-contracts.js";
 import {
   COLOR_LABELS,
   LANDSCAPE_MASK_CATEGORIES,
@@ -41,10 +41,7 @@ function render(value: LuaValue, indent: string): string {
 }
 
 function dispatchMap(): Record<string, readonly [string, string]> {
-  const actions = [
-    ...TOOL_CONTRACTS.flatMap(({ name, run }) => ("plugin" in run ? [{ name, plugin: run.plugin }] : [])),
-    ...PLUGIN_ACTIONS,
-  ].sort((a, b) => a.name.localeCompare(b.name));
+  const actions = [...DISPATCHED_ACTIONS].sort((a, b) => a.name.localeCompare(b.name));
   return Object.fromEntries(actions.map(({ name, plugin }) => {
     const [module, fn] = plugin.split(".");
     return [name, [module, fn] as const];

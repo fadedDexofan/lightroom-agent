@@ -1,6 +1,8 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import { createCallToolHandler } from '../src/tool-handler.js';
-import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
+import path from 'node:path';
+import { DISPATCHED_ACTIONS, TOOL_CONTRACTS } from '../src/tool-contracts.js';
+import { developAccessByHandler } from './helpers/lua-reach.js';
 import { validateToolArgs } from './helpers/validate.js';
 import { DEVELOP_KEYS, LOCAL_KEYS } from '../src/develop-keys.js';
 import { dataOf, envelopeOf } from './helpers/envelope.js';
@@ -226,6 +228,10 @@ describe('Develop call queue', () => {
   }
   const done = (id: string): PluginResponse => ({ id, result: { data: {} } });
   const develop = (id: number) => ['set_develop_settings', { photo_id: id, settings: { Exposure2012: 0.1 } }] as const;
+  const queuedKinds = [
+    ['a server-run call', develop(2)],
+    ['a plug-in call', ['list_spots', { photo_id: 2 }]],
+  ] as const;
 
   it('holds the Develop turn after a timed-out call until the plug-in has finished it', async () => {
     let finishLate!: () => void;
@@ -268,7 +274,7 @@ describe('Develop call queue', () => {
     expect((await third).isError).toBeUndefined();
   });
 
-  it('refuses a queued call whose turn comes after the plug-in stopped being usable, sending nothing', async () => {
+  it.each(queuedKinds)('refuses %s queued until after the plug-in stopped being usable, sending nothing', async (_kind, queued) => {
     const pending: Pending[] = [];
     let ready = true;
     const call = async (action: string, _params: unknown, budget?: number) =>
@@ -277,7 +283,7 @@ describe('Develop call queue', () => {
     const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 
     const first = handler(...develop(1));
-    const second = handler(...develop(2));
+    const second = handler(queued[0], queued[1]);
     await settle();
     ready = false;
     pending[0].resolve(done('1'));
@@ -287,20 +293,97 @@ describe('Develop call queue', () => {
     expect(pending).toHaveLength(1);
   });
 
-  it('runs a call outside the queue alongside a queued one', async () => {
+  it.each([
+    ['list_collections', {}, 'list_collections'],
+    ['set_rating_and_flag', { photo_ids: [2], rating: 3 }, 'set_rating_and_flag'],
+    ['get_photo_preview', { photo_id: 2 }, 'render_preview'],
+  ] as const)('runs %s, which touches no develop state, alongside a queued Develop call', async (name, args, action) => {
     const { pending, handler, settle } = gatedDispatcher();
     void handler(...develop(1));
-    void handler('list_collections', {});
+    void handler(name, args);
     await settle();
-    expect(pending.map((entry) => entry.action).sort()).toEqual(['list_collections', 'write_develop_settings']);
+    expect(pending.map((entry) => entry.action).sort()).toEqual([action, 'write_develop_settings'].sort());
   });
 
-  it('gives up without sending anything when the turn does not come within the budget', async () => {
+  it('sends a read of a photo\'s develop settings only after the running Develop call answered', async () => {
+    const { pending, handler, settle } = gatedDispatcher();
+    const reset = handler('reset_develop_adjustments', { photo_ids: [1], confirm: true });
+    const read = handler('get_develop_settings', { photo_ids: [1] });
+    await settle();
+    expect(pending.map((entry) => entry.action)).toEqual(['reset_develop_adjustments']);
+    pending[0].resolve(done('1'));
+    await reset;
+    await settle();
+    expect(pending.map((entry) => entry.action)).toEqual(['reset_develop_adjustments', 'get_develop_settings']);
+    pending[1].resolve(done('2'));
+    expect((await read).isError).toBeUndefined();
+  });
+
+  it('queues get_photo_detail\'s crop read behind a running Develop call and renders outside the queue', async () => {
+    const { pending, handler, settle } = gatedDispatcher();
+    const reset = handler('reset_develop_adjustments', { photo_ids: [1], confirm: true });
+    void handler('get_photo_detail', { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] });
+    await settle();
+    expect(pending.map((entry) => entry.action)).toEqual(['reset_develop_adjustments']);
+    pending[0].resolve(done('1'));
+    await reset;
+    await settle();
+    expect(pending.map((entry) => entry.action)).toEqual(['reset_develop_adjustments', 'get_crop']);
+    pending[1].resolve({ id: '2', result: { data: { size: { width: 6000, height: 4000 } } } });
+    await settle();
+    void handler(...develop(2));
+    await settle();
+    expect(pending.map((entry) => entry.action)).toEqual([
+      'reset_develop_adjustments', 'get_crop', 'render_detail_source', 'write_develop_settings',
+    ]);
+  });
+
+  it('sends two simultaneous detail renders at once, after their crop reads', async () => {
+    const { pending, handler } = gatedDispatcher();
+    const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+    const detail = { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] };
+    void handler('get_photo_detail', detail);
+    void handler('get_photo_detail', detail);
+    for (let i = 0; i < 2; i++) {
+      await settle();
+      pending.filter((entry) => entry.action === 'get_crop')[i]
+        .resolve({ id: String(i), result: { data: { size: { width: 6000, height: 4000 } } } });
+    }
+    await settle();
+    expect(pending.map((entry) => entry.action).sort()).toEqual(['get_crop', 'get_crop', 'render_detail_source', 'render_detail_source']);
+  });
+
+  it.each([
+    ['set_crop', 'plan_crop', { photo_id: 1, aspect: { width: 1, height: 1 } }],
+    ['get_photo_detail', 'get_crop', { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] }],
+  ] as const)('keeps the Develop turn of %s after its %s timed out until the plug-in has finished it', async (name, action, args) => {
+    let finishLate!: () => void;
+    const calls: string[] = [];
+    const call = async (sent: string) => {
+      calls.push(sent);
+      if (sent === action) throw new PluginTimeoutError(30_000, new Promise<void>((resolve) => { finishLate = resolve; }));
+      return { id: '2', result: { data: {} } };
+    };
+    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
+    const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+
+    const first = await handler(name, args);
+    const next = handler(...develop(2));
+    await settle();
+
+    expect(envelopeOf(first)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('nothing was written') });
+    expect(calls).toEqual([action]);
+    finishLate();
+    await next;
+    expect(calls).toEqual([action, 'write_develop_settings']);
+  });
+
+  it.each(queuedKinds)('gives up on %s without sending anything when its turn does not come within the budget', async (_kind, queued) => {
     jest.useFakeTimers();
     try {
       const { pending, handler, settle } = gatedDispatcher();
       void handler(...develop(1));
-      const waiting = handler(...develop(2));
+      const waiting = handler(queued[0], queued[1]);
       await settle();
       jest.advanceTimersByTime(30_000);
       const result = await waiting;
@@ -382,6 +465,31 @@ describe('Develop call queue', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe('plug-in actions that touch a photo\'s develop state', () => {
+  const accessOf = developAccessByHandler(path.resolve(process.cwd(), '..', 'plugin', 'LightroomAgent.lrplugin'));
+
+  it('are found through the helper modules a handler reads with, and catalog work is not', () => {
+    expect([...accessOf('HandlerCrop.read')]).toEqual(['reads']);
+    expect([...accessOf('HandlerMasks.listMasks')]).toEqual(['reads']);
+    expect([...accessOf('HandlerDevelop.resetDevelopAdjustments')]).toContain('session');
+    expect([...accessOf('HandlerTreatment.set')]).toContain('writes');
+    expect([...accessOf('HandlerCollections.listCollections')]).toEqual([]);
+    expect([...accessOf('HandlerPreview.renderPreview')]).toEqual([]);
+  });
+
+  it('run in the Develop queue: every action whose handler reads, writes or opens Develop is marked', () => {
+    const unmarked = DISPATCHED_ACTIONS
+      .filter((action) => accessOf(action.plugin).size > 0 && action.develop === undefined)
+      .map((action) => `${action.name} (${[...accessOf(action.plugin)].join(', ')})`);
+    expect(unmarked).toEqual([]);
+  });
+
+  it('are marked reads only where the handler reads develop state', () => {
+    const idle = DISPATCHED_ACTIONS.filter((action) => action.develop === 'reads' && !accessOf(action.plugin).has('reads'));
+    expect(idle.map((action) => action.name)).toEqual([]);
   });
 });
 

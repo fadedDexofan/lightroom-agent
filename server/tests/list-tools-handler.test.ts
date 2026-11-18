@@ -371,4 +371,13 @@ describe('Develop-driving reads', () => {
       expect(description).toContain('commits any slider change');
     }
   });
+
+  it('and every other read of a photo\'s develop state say they wait for the Develop calls before them', () => {
+    const reads = TOOL_CONTRACTS.filter((contract) => contract.develop === 'reads');
+    expect(reads.map((contract) => contract.name)).toContain('get_develop_settings');
+    for (const contract of reads) {
+      const description = TOOL_DEFINITIONS.find((tool) => tool.name === contract.name)!.description;
+      expect(description).toContain('Waits for the Develop calls before it');
+    }
+  });
 });
