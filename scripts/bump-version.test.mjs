@@ -19,6 +19,8 @@ const VERSIONED_FILES = [
   ".claude-plugin/plugin.json",
   ".claude-plugin/marketplace.json",
   ".agents/plugins/marketplace.json",
+  "codex/.codex-plugin/plugin.json",
+  "codex/.mcp.json",
   "plugin/LightroomAgent.lrplugin/Info.lua",
 ];
 
@@ -65,6 +67,10 @@ const drifts = [
   ["the Claude marketplace entry description", ".claude-plugin/marketplace.json", (root, file) => editJson(root, file, (json) => { json.plugins[0].description = "stale"; })],
   ["the Claude Code manifest author", ".claude-plugin/plugin.json", (root, file) => editJson(root, file, (json) => { json.author = { name: "Marcin Skalski" }; })],
   ["the Claude Desktop bundle author", "mcpb/manifest.json", (root, file) => editJson(root, file, (json) => { json.author = { name: "Marcin Skalski" }; })],
+  ["the Codex manifest version", "codex/.codex-plugin/plugin.json", (root, file) => editJson(root, file, (json) => { json.version = "9.9.9"; })],
+  ["the Codex manifest description", "codex/.codex-plugin/plugin.json", (root, file) => editJson(root, file, (json) => { json.description = "stale"; })],
+  ["the pinned package in the Codex launch", "codex/.mcp.json", (root, file) => editJson(root, file, (json) => { json.mcpServers.lightroom.args = ["-y", "lightroom-agent@9.9.9"]; })],
+  ["the Codex launch environment", "codex/.mcp.json", (root, file) => editJson(root, file, (json) => { json.mcpServers.lightroom.env = {}; })],
 ];
 for (const [what, file, change] of drifts) {
   test(`--check fails naming ${file} when ${what} differs`, () => {
@@ -82,17 +88,17 @@ test("a bump writes the version, the package's description and author, and the p
   const bumped = run(root, "9.8.7-rc.1");
   assert.equal(bumped.status, 0, bumped.stderr);
   assert.equal(run(root, "--check").status, 0);
-  for (const file of ["server/package.json", "server.json", "server/package-lock.json", "plugin.json", ".claude-plugin/plugin.json", "mcpb/manifest.json"]) {
+  for (const file of ["server/package.json", "server.json", "server/package-lock.json", "plugin.json", ".claude-plugin/plugin.json", "mcpb/manifest.json", "codex/.codex-plugin/plugin.json"]) {
     assert.equal(readJson(root, file).version, "9.8.7-rc.1", file);
   }
   assert.deepEqual(readJson(root, "server.json").packages.map((pkg) => pkg.version), ["9.8.7-rc.1"]);
   assert.equal(readJson(root, "server/package-lock.json").packages[""].version, "9.8.7-rc.1");
-  for (const file of ["mcp.json", ".claude-plugin/plugin.json"]) {
+  for (const file of ["mcp.json", ".claude-plugin/plugin.json", "codex/.mcp.json"]) {
     assert.deepEqual(readJson(root, file).mcpServers.lightroom.args, ["-y", "lightroom-agent@9.8.7-rc.1"], file);
   }
   assert.match(fs.readFileSync(path.join(root, "server/src/version.ts"), "utf8"), /export const VERSION = "9\.8\.7-rc\.1";/);
   assert.match(fs.readFileSync(path.join(root, "plugin/LightroomAgent.lrplugin/Info.lua"), "utf8"), /VERSION = \{ major=9, minor=8, revision=7, build=0 \}/);
-  for (const file of ["plugin.json", ".claude-plugin/plugin.json", "mcpb/manifest.json", ".claude-plugin/marketplace.json"]) {
+  for (const file of ["plugin.json", ".claude-plugin/plugin.json", "mcpb/manifest.json", ".claude-plugin/marketplace.json", "codex/.codex-plugin/plugin.json"]) {
     assert.equal(readJson(root, file).description, "A new description.", file);
   }
   assert.equal(readJson(root, ".claude-plugin/marketplace.json").plugins[0].description, "A new description.");

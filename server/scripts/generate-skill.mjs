@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { cp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 
 const skillRoot = new URL('../../skills/lightroom-agent/', import.meta.url);
@@ -43,3 +43,7 @@ const manifestUrl = new URL('../../mcpb/manifest.json', import.meta.url);
 const manifest = JSON.parse(await readFile(manifestUrl, 'utf8'));
 manifest.prompts = [{ name: prompt.name, description: prompt.description, text }];
 await writeFile(manifestUrl, `${JSON.stringify(manifest, null, 2)}\n`);
+
+const codexSkill = new URL('../../codex/skills/lightroom-agent/', import.meta.url);
+await rm(codexSkill, { recursive: true, force: true });
+await cp(skillRoot, codexSkill, { recursive: true });

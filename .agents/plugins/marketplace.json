@@ -7,8 +7,8 @@
     {
       "name": "lightroom-agent",
       "source": {
-        "source": "url",
-        "url": "./"
+        "source": "local",
+        "path": "./codex"
       },
       "policy": {
         "installation": "AVAILABLE",

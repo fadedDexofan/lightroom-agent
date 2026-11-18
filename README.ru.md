@@ -90,7 +90,18 @@ codex plugin marketplace add fadedDexofan/lightroom-agent
 codex plugin add lightroom-agent@lightroom-agent
 ```
 
-Плагин включает сервер и скилл, как в Claude Code. В `codex exec` Codex пока не предлагает модели инструменты плагина. Для обновления выполните `codex plugin marketplace upgrade lightroom-agent` и добавьте плагин заново; для удаления — `codex plugin remove lightroom-agent@lightroom-agent`.
+Плагин включает сервер и скилл, как в Claude Code. В `codex exec` инструменты появляются через несколько секунд после начала сессии, а при `approval_policy = "never"` не предлагаются вовсе. Для обновления выполните `codex plugin marketplace upgrade lightroom-agent`, начните новую сессию и один раз перезапустите Lightroom; если инструментов Lightroom в сессии так и нет, удалите плагин и добавьте его заново. Для удаления — `codex plugin remove lightroom-agent@lightroom-agent`.
+
+Если инструменты плагина не появляются, объявите сервер в `~/.codex/config.toml`, заменив `<version>` на свой релиз (его показывает `codex plugin list`):
+
+```toml
+[mcp_servers.lightroom]
+command = "npx"
+args = ["-y", "lightroom-agent@<version>"]
+env = { LIGHTROOM_AGENT_TOOLSETS = "all" }
+```
+
+Эта запись заменяет сервер плагина. При обновлении держите её версию равной версии плагина: более старый сервер отказывает в вызовах, когда установлен более новый плагин Lightroom.
 
 </details>
 
