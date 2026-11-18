@@ -23,8 +23,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --runInBand",
     "prepare": "npm run build",
-    "prepack": "node scripts/stage-package.mjs",
-    "prepublishOnly": "npm run build"
+    "prepack": "npm run build && node scripts/stage-package.mjs",
+    "postpack": "node scripts/stage-package.mjs --remove"
   },
   "keywords": [
     "mcp",
