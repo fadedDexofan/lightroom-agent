@@ -47,6 +47,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Release script tests
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: |
+          test -f scripts/bump-version.test.mjs
+          test -f scripts/package-contents.test.mjs
+          test -f scripts/release.test.mjs
+          node --test "scripts/*.test.mjs"
+
       - name: Generated files are up to date
         if: matrix.os == 'ubuntu-latest'
         working-directory: .
@@ -86,6 +95,3 @@ jobs:
 
       - name: Assert all version sources agree
         run: node scripts/bump-version.mjs --check
-
-      - name: Release script tests
-        run: node --test "scripts/*.test.mjs"
