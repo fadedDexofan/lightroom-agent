@@ -1,22 +1,21 @@
 # Lightroom Agent
 
-A fork of Automaat/lightroom-mcp: a broad, verifiable Lightroom Classic API for agents, served by one backend behind an MCP server and a scriptable CLI. Verified capabilities are ported selectively from znznzna/lightroom-cli.
+A broad, verifiable Lightroom Classic API for agents, served by one backend behind an MCP server and a scriptable CLI. Verified capabilities are ported selectively from znznzna/lightroom-cli.
 
 Local, untracked facts about the owner and this machine are in `CLAUDE.local.md` when it exists; read it first.
 
-The aim is a better tool than the existing ones, judged by the quality of the photographs an agent can produce with it and by how much of Lightroom it can drive. Those two outrank token cost, development effort and closeness to upstream.
+The aim is a better tool than the existing ones, judged by the quality of the photographs an agent can produce with it and by how much of Lightroom it can drive. Those two outrank token cost and development effort.
 
 ## Ownership
 
-This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it. That includes the code inherited from upstream.
+This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
 
 - The API is pre-release. A tool's shape, name, default or vocabulary stays only while it is the best one for the calling agent; "it was like this before" is not a reason. Update README, GLOSSARY, the ADRs and the bundled skill in the same change as the API.
-- Upstream is a source of fixes to take, not a shape to stay close to.
-- Outside your ownership: the user's catalog and photographs, what is installed into their Lightroom and when a live session takes it over, publication (push, release, the MIT license, upstream history) and the order of work the maintainer has set. These need the maintainer's explicit word.
+- Outside your ownership: the user's catalog and photographs, what is installed into their Lightroom and when a live session takes it over, publication (push, release, the MIT license) and the order of work the maintainer has set. These need the maintainer's explicit word.
 
 ## Working rules
 
-- Preserve upstream history and the MIT license.
+- Keep the MIT license and its copyright notices.
 - Keep `AGENTS.md` a symlink to this file. Verify any behavior claim here against the current source before relying on it, and fix this file in the change that makes it stale.
 - This repository holds technical API facts, contracts and mechanics. API work supplies capabilities, stable identities, render provenance and verifiable outcomes; it never silently turns an experimental score into a culling rule.
 - `skills/lightroom-agent` is the bundled skill. `npm run build` regenerates the MCP prompt and the mcpb prompt from it; the npm package and the repository-root plugin carry the folder itself. `agents/openai.yaml` is its metadata for Codex.

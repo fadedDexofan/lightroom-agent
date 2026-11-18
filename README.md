@@ -30,7 +30,7 @@ English | [Русский](README.ru.md) | [繁體中文](README.zh-TW.md)
 
 </div>
 
-lightroom-agent is an MCP server and a Lightroom Classic plug-in. Claude Code, Codex or any other MCP client gets tools for the catalog, Develop, masks and export, and a bundled skill that teaches the agent to cull and edit with them. It is a fork of [Automaat/lightroom-mcp](https://github.com/Automaat/lightroom-mcp).
+lightroom-agent is an MCP server and a Lightroom Classic plug-in. Claude Code, Codex or any other MCP client gets tools for the catalog, Develop, masks and export, and a bundled skill that teaches the agent to cull and edit with them.
 
 ## What an agent can do
 
@@ -191,4 +191,4 @@ The server writes its diagnostics to stderr, which MCP clients keep in their ser
 
 ## License
 
-MIT, as upstream. lightroom-agent keeps upstream's architecture: a TypeScript MCP server talking over local sockets to a Lua plug-in inside Lightroom. It is not affiliated with or endorsed by Adobe.
+MIT. lightroom-agent is a TypeScript MCP server that talks over local sockets to a Lua plug-in inside Lightroom. It is not affiliated with or endorsed by Adobe.

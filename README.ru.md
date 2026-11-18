@@ -30,7 +30,7 @@
 
 </div>
 
-lightroom-agent — это сервер MCP и плагин Lightroom Classic. Claude Code, Codex или любой другой клиент MCP получает инструменты для каталога, модуля «Обработка» (Develop), масок и экспорта, а также скилл в комплекте, который учит агента отбирать и обрабатывать фотографии с их помощью. Это форк [Automaat/lightroom-mcp](https://github.com/Automaat/lightroom-mcp).
+lightroom-agent — это сервер MCP и плагин Lightroom Classic. Claude Code, Codex или любой другой клиент MCP получает инструменты для каталога, модуля «Обработка» (Develop), масок и экспорта, а также скилл в комплекте, который учит агента отбирать и обрабатывать фотографии с их помощью.
 
 > Здесь «плагин Lightroom» — плагин, который работает внутри самого Lightroom Classic, а «плагин для агента» — расширение Claude Code или Codex, которое устанавливает lightroom-agent в агента.
 
@@ -199,4 +199,4 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 
 ## Лицензия
 
-MIT, как и в исходном проекте. lightroom-agent сохраняет его архитектуру: сервер MCP на TypeScript общается через локальные сокеты с плагином на Lua внутри Lightroom. Проект не связан с Adobe и не одобрен ею.
+MIT. lightroom-agent — это сервер MCP на TypeScript, который общается через локальные сокеты с плагином на Lua внутри Lightroom. Проект не связан с Adobe и не одобрен ею.
