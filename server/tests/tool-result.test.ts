@@ -1,4 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
+import fs from 'node:fs';
 import { finishLost, finishReply, toolResponse, type PluginReply, type ToolResult } from '../src/tool-result.js';
 
 const photo = (id: string) => ({ photo_id: id, reason: 'refused' });
@@ -55,6 +56,32 @@ describe('finishReply', () => {
   it('omits empty lists and keeps warnings with any outcome', () => {
     expect(finishReply(false, { result: { data: 1, failed: [], warnings: ['view not restored'] } }))
       .toEqual({ outcome: 'done', data: 1, warnings: ['view not restored'] });
+  });
+});
+
+describe('copy_develop_settings replies the plug-in produces', () => {
+  const fixture = JSON.parse(fs.readFileSync('tests/fixtures/copy-replies.json', 'utf8')) as Array<{ case: string; reply: PluginReply }>;
+  const expected: Record<string, ToolResult['outcome']> = {
+    'all refused': 'failed',
+    'mixed': 'partial',
+    'unknown read-back': 'unknown',
+    'unknown and adjusted on one target': 'unknown',
+    'all not found': 'failed',
+    'budget exhausted': 'failed',
+    'confirmed and remaining': 'partial',
+  };
+
+  it('cover the cases this test classifies', () => {
+    expect(fixture.map(({ case: name }) => name).sort()).toEqual(Object.keys(expected).sort());
+  });
+
+  it.each(fixture.map(({ case: name, reply }) => [name, reply] as const))('classify %s', (name, reply) => {
+    const result = finishReply(false, reply);
+
+    expect(result.outcome).toBe(expected[name]);
+    if (name === 'unknown and adjusted on one target') {
+      expect(result).toMatchObject({ error: expect.stringContaining('Lightroom stored other values than written: Exposure2012') });
+    }
   });
 });
 

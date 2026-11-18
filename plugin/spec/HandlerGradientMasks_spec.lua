@@ -240,6 +240,16 @@ describe("HandlerGradientMasks.createGradientMask", function()
 end)
 
 describe("HandlerGradientMasks.updateGradientMask", function()
+    it("answers an uncertified update with the certification refusal before looking for its tool", function()
+        local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } },
+            maskWrites = { refuse = "Constructing mask writes are not certified for this Lightroom" } })
+
+        local message = helper.failedOf(function() Handler.updateGradientMask({ photo_id = "1", tool_id = "C9T9", ["end"] = point(0.9, 0.9) }) end)
+
+        assert.is_truthy(message:find("not certified", 1, true))
+        assert.are.equal(0, #stores["1"].writes)
+    end)
+
     it("moves a linear gradient and keeps its ids", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 

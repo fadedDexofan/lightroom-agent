@@ -560,8 +560,7 @@ end
 
 local function replaceMasks(context, catalog, photo, target, masks, aiMasks, processVersion)
     if processVersion ~= nil and processVersion ~= target.processVersion then
-        MaskWriteAdmission.requireAdmitted(MaskWriteAdmission.status(catalog), processVersion)
-        GuardedMaskWrite.requireNamed(catalog, photo)
+        GuardedMaskWrite.precheck(catalog, photo, masks, processVersion)
         CatalogWrite.developSettings(context, catalog, photo, "Set Process Version " .. tostring(processVersion),
             function() return { ProcessVersion = processVersion } end)
     end
@@ -606,7 +605,6 @@ function DevelopHandler.copyDevelopSettings(args, context)
     end
     toApply = DevelopCurves.forWrite(withoutComputedAIMaskData(toApply))
 
-    local copiedCount = 0
     local masks, rest = nil, toApply
     if not args.settings then
         masks = type(toApply.MaskGroupBasedCorrections) == "table" and toApply.MaskGroupBasedCorrections or {}
@@ -626,12 +624,11 @@ function DevelopHandler.copyDevelopSettings(args, context)
     local aiMasks = masks ~= nil and containsAIMasks({ MaskGroupBasedCorrections = masks })
     local reserveSeconds = batchReserve(masks == nil and 1 or aiMasks and 4 or 3, aiMasks)
 
-    local remaining, computed, masksRemoved = {}, {}, {}
+    local remaining = {}
     for _, entry in ipairs(entries) do
         if #remaining > 0 or context:stopping(reserveSeconds) then
             remaining[#remaining + 1] = entry.id
         else
-            local photoId = tostring(entry.photo.localIdentifier)
             local settings
             catalog:withReadAccessDo(function() settings = entry.photo:getDevelopSettings() or {} end)
             local existing = settings.MaskGroupBasedCorrections
@@ -654,12 +651,10 @@ function DevelopHandler.copyDevelopSettings(args, context)
                         function() return rest end)
                 end)
                 if ok then
-                    copiedCount = copiedCount + 1
-                    written[#written + 1] = { photo = entry.photo, settings = rest, before = before }
-                    if aiMasks then computed[#computed + 1] = photoId end
-                    if masks and #masks == 0 and previous and #previous > 0 then
-                        masksRemoved[#masksRemoved + 1] = { photo_id = photoId, count = #previous }
-                    end
+                    written[#written + 1] = {
+                        photo = entry.photo, settings = rest, before = before,
+                        masksRemoved = masks and #masks == 0 and previous and #previous > 0 and #previous or nil,
+                    }
                 else
                     written[#written + 1] = {
                         photo = entry.photo, settings = rest, before = before, from = from, to = context.ledger:mark(),
@@ -670,14 +665,24 @@ function DevelopHandler.copyDevelopSettings(args, context)
         end
     end
 
-    Log.info(string.format("Copied develop settings from %s to %d photos (AI masks computed: %d)",
-        args.source_id, copiedCount, #computed))
+    local checked = DevelopReadBack.check(context, catalog, written)
+    local copied, computed, masksRemoved = 0, {}, {}
+    for index, result in ipairs(checked) do
+        if DevelopReadBack.confirmed(result) then
+            copied = copied + 1
+            computed[#computed + 1] = result.photo_id
+            if written[index].masksRemoved then
+                masksRemoved[#masksRemoved + 1] = { photo_id = result.photo_id, count = written[index].masksRemoved }
+            end
+        end
+    end
+    Log.info(string.format("Copied develop settings from %s to %d photos", args.source_id, copied))
 
-    return DevelopReadBack.parts(DevelopReadBack.check(context, catalog, written), {
-        copied = copiedCount,
+    return DevelopReadBack.parts(checked, copied > 0 and {
+        copied = copied,
         computed = aiMasks and computed or nil,
         masks_removed = #masksRemoved > 0 and masksRemoved or nil,
-    }, { not_found = missingIds, remaining = remaining })
+    } or nil, { not_found = missingIds, remaining = remaining })
 end
 
 local styleMatchSerial = 0

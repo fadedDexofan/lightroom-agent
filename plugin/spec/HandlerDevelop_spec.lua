@@ -101,7 +101,7 @@ local function setup(opts)
     })
     local Store = require 'fake_mask_store'
     local function storedMasks(photo) return (photo:getDevelopSettings() or {}).MaskGroupBasedCorrections or {} end
-    package.loaded.GuardedMaskWrite = opts.guardedMaskWrite or {
+    package.loaded.GuardedMaskWrite = not opts.realGuard and (opts.guardedMaskWrite or {
         apply = function(context, _, photo, spec)
             local previous = Store.clone(storedMasks(photo))
             context.ledger:record(spec.description)
@@ -115,7 +115,7 @@ local function setup(opts)
         end,
         readEntries = function(_, photo) return Store.clone(storedMasks(photo)) end,
         deepClone = Store.clone,
-    }
+    }) or nil
     package.loaded.AIMaskCompute = nil
     package.loaded.MaskWriteAdmission = opts.maskWriteAdmission or { status = function() return {} end, requireAdmitted = function() end }
     package.loaded.HandlerDevelop = nil
@@ -2469,6 +2469,106 @@ describe("develop writes read back after Lightroom normalises them", function()
     end)
 end)
 
+describe("copy replies carry data only for the copies their read-back confirmed", function()
+    local JSON = require 'JSON'
+    local Reply = require 'Reply'
+
+    local function storingPhoto(id, stored, normalise)
+        local photo = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg", developSettings = stored })
+        photo.applyDevelopSettings = function(_, settings)
+            if normalise and normalise.throws then error(normalise.throws, 0) end
+            for key, value in pairs(settings) do
+                if normalise and normalise[key] ~= nil then value = normalise[key] end
+                if normalise and normalise.drops and normalise.drops[key] then value = nil end
+                stored[key] = value
+            end
+        end
+        return photo
+    end
+
+    local function source()
+        return storingPhoto("10", { Exposure2012 = 1, Contrast2012 = 20 })
+    end
+
+    local function wire(photos, args, opts)
+        opts = opts or {}
+        local _, Handler = setup({ photos = photos, writeAccessAborts = opts.aborts,
+            tasks = { sleep = function() end, pcall = pcall } })
+        local asked = 0
+        local context = helper.requestContext(nil, opts.stopAfter and { stopping = function()
+            asked = asked + 1
+            return asked > opts.stopAfter
+        end } or nil)
+        local ok, value = pcall(Handler.copyDevelopSettings, args, context)
+        local reply = Reply.outcome(ok, value, context)
+        return JSON:decode(JSON:encode(reply))
+    end
+
+    local named = { "Exposure2012", "Contrast2012" }
+    local cases = {
+        ["all refused"] = function()
+            return wire({ source(), storingPhoto("11", { Exposure2012 = 0 }) }, { source_id = "10", target_ids = { "11" }, settings = named },
+                { aborts = function(name) return name == "Copy Develop Settings" end })
+        end,
+        ["mixed"] = function()
+            return wire({ source(), storingPhoto("11", { Exposure2012 = 0 }), storingPhoto("12", { Exposure2012 = 0 }, { throws = "cannot write this photo" }) },
+                { source_id = "10", target_ids = { "11", "12" }, settings = named })
+        end,
+        ["unknown read-back"] = function()
+            return wire({ source(), storingPhoto("11", { Exposure2012 = 0, Contrast2012 = 0 }, { drops = { Contrast2012 = true } }) },
+                { source_id = "10", target_ids = { "11" }, settings = named })
+        end,
+        ["unknown and adjusted on one target"] = function()
+            return wire({ source(), storingPhoto("11", { Exposure2012 = 0, Contrast2012 = 0 }, { drops = { Contrast2012 = true }, Exposure2012 = 0.95 }) },
+                { source_id = "10", target_ids = { "11" }, settings = named })
+        end,
+        ["all not found"] = function()
+            return wire({ source() }, { source_id = "10", target_ids = { "404", "/missing.jpg" }, settings = named })
+        end,
+        ["budget exhausted"] = function()
+            return wire({ source(), storingPhoto("11", { Exposure2012 = 0 }) }, { source_id = "10", target_ids = { "11" }, settings = named },
+                { stopAfter = 0 })
+        end,
+        ["confirmed and remaining"] = function()
+            return wire({ source(), storingPhoto("11", { Exposure2012 = 0 }), storingPhoto("12", { Exposure2012 = 0 }) },
+                { source_id = "10", target_ids = { "11", "12" }, settings = named }, { stopAfter = 1 })
+        end,
+    }
+
+    local file = assert(io.open("server/tests/fixtures/copy-replies.json", "r"))
+    local fixture = JSON:decode(file:read("*a"))
+    file:close()
+
+    for _, expected in ipairs(fixture) do
+        it("answers the shared fixture's " .. expected.case .. " reply", function()
+            assert.are.same(expected.reply, cases[expected.case]())
+        end)
+    end
+
+    it("names every adjusted value in the error when no copy was confirmed", function()
+        local photos, ids = { source() }, {}
+        for index = 11, 21 do
+            photos[#photos + 1] = storingPhoto(tostring(index), { Exposure2012 = 0, Contrast2012 = 0 },
+                { drops = { Contrast2012 = true }, Exposure2012 = 0.95 })
+            ids[#ids + 1] = tostring(index)
+        end
+
+        local reply = wire(photos, { source_id = "10", target_ids = ids, settings = named })
+
+        assert.is_nil(reply.result.data)
+        assert.truthy(reply.result.problem:find("Exposure2012 0.95 on photo 21 (written 1)", 1, true), reply.result.problem)
+        assert.is_nil(reply.result.problem:find("more in adjusted", 1, true))
+    end)
+
+    it("covers every case of the shared fixture", function()
+        local names = {}
+        for _, expected in ipairs(fixture) do names[#names + 1] = expected.case end
+        table.sort(names)
+        assert.are.same({ "all not found", "all refused", "budget exhausted", "confirmed and remaining", "mixed",
+            "unknown and adjusted on one target", "unknown read-back" }, names)
+    end)
+end)
+
 describe("a copy target the catalog stayed busy for before anything was written", function()
     it("is failed, in a named and in a full copy", function()
         for _, settings in ipairs({ { "Exposure2012" }, false }) do
@@ -2484,7 +2584,7 @@ describe("a copy target the catalog stayed busy for before anything was written"
 
             assert.are.same({ { photo_id = "11", reason = helper.catalogBusy("Copy Develop Settings") } }, r.failed, label)
             assert.is_nil(r.unknown, label)
-            assert.are.equal(0, r.data.copied, label)
+            assert.is_nil(r.data, label)
         end
     end)
 end)
@@ -2773,7 +2873,9 @@ describe("a full copy replaces the target's masks and admits them under the proc
     local function recordingGuard(log, opts)
         opts = opts or {}
         return {
-            requireNamed = function(_, photo)
+            precheck = function(catalog, photo, _, processVersion)
+                local Admission = require 'MaskWriteAdmission'
+                Admission.requireAdmitted(Admission.status(catalog), processVersion)
                 log[#log + 1] = "ids " .. tostring(photo.localIdentifier)
                 if opts.unnamed then Reply.refuse('mask 1 ("A") has no id yet') end
             end,
@@ -2927,5 +3029,63 @@ describe("a full copy replaces the target's masks and admits them under the proc
         assert.truthy(r.unknown[1].reason:find("written before this stopped: Set Process Version 15.4", 1, true),
             r.unknown[1].reason)
         assert.truthy(r.unknown[1].reason:find("cannot write the rest", 1, true), r.unknown[1].reason)
+    end)
+end)
+
+describe("a full copy refuses, before its first write to a target, what the guarded mask write would refuse", function()
+    local Reply = require 'Reply'
+    local Store = require 'fake_mask_store'
+
+    local function colorRange(points)
+        return Store.correction("R", { { What = "Mask/RangeMask", MaskActive = true,
+            CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = points } } })
+    end
+
+    local function copyOnto(sourceMasks, targetEntries, opts)
+        opts = opts or {}
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
+            Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = sourceMasks,
+        } })
+        local target = helper.fakePhoto({ id = "11", path = "/t.jpg" })
+        local store = Store.attach(target, { entries = targetEntries, processVersion = "11.0", settings = { Exposure2012 = 0 } })
+        if opts.unnamed then store.entries[1].CorrectionID, store.entries[1].CorrectionSyncID = nil, nil end
+        local _, Handler = setup({ photos = { source, target }, realGuard = true, maskWriteAdmission = opts.admission })
+        return Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }), store, target
+    end
+
+    local function onlyFailure(r)
+        assert.is_nil(r.unknown)
+        assert.are.equal(1, #r.failed)
+        assert.are.equal("11", r.failed[1].photo_id)
+        return r.failed[1].reason
+    end
+
+    it("refuses a source colour range Lightroom sampled twice, leaving the target's process version unwritten", function()
+        local r, store, target = copyOnto({ colorRange({ "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" }) }, {})
+
+        assert.truthy(onlyFailure(r):find("exactly one PointModels entry", 1, true))
+        assert.are.equal(0, store.attempts)
+        assert.are.equal("11.0", target:getDevelopSettings().ProcessVersion)
+    end)
+
+    it("refuses a target holding a mask Lightroom has not named yet, leaving its process version unwritten", function()
+        local r, store, target = copyOnto({ Store.correction("S", { Store.linearComponent() }) },
+            { Store.correction("A", { Store.linearComponent() }) }, { unnamed = true })
+
+        assert.truthy(onlyFailure(r):find('mask 1 ("A") has no id yet', 1, true))
+        assert.are.equal(0, store.attempts)
+        assert.are.equal("11.0", target:getDevelopSettings().ProcessVersion)
+    end)
+
+    it("answers the admission refusal before the id refusal when a maskless source meets an unnamed masked target", function()
+        local r, store = copyOnto({}, { Store.correction("A", { Store.linearComponent() }) }, {
+            unnamed = true,
+            admission = { status = function() return {} end, requireAdmitted = function(_, processVersion)
+                Reply.refuse("process version " .. tostring(processVersion) .. " is not admitted")
+            end },
+        })
+
+        assert.truthy(onlyFailure(r):find("process version 15.4 is not admitted", 1, true))
+        assert.are.equal(0, store.attempts)
     end)
 end)
