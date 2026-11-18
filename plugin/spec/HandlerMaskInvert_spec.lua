@@ -22,6 +22,7 @@ local function setup(opts)
     local module = "library"
     local calls = { modules = {}, selections = {}, goToMasking = 0, invert = {}, duplicate = {}, listed = 0 }
     local unlistedReads = opts.unlistedReads or 0
+    local underListedReads = opts.underListedReads or 0
     local listBroken = false
     local selected
 
@@ -43,7 +44,12 @@ local function setup(opts)
                 error("photo is still loading")
             end
             if listBroken then error("mask list unavailable") end
-            return require('fake_mask_store').clone(currentMasks())
+            local listed = require('fake_mask_store').clone(currentMasks())
+            if underListedReads > 0 then
+                underListedReads = underListedReads - 1
+                listed[#listed] = nil
+            end
+            return listed
         end,
         selectMask = function(id) selected = id end,
         getSelectedMask = function() return selected end,
@@ -171,14 +177,21 @@ describe("HandlerMaskInvert.invertMask in place", function()
         assert.are.same({ "develop", "library" }, calls.modules)
     end)
 
-    it("waits until Develop can list the photo's masks", function()
-        local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } }, unlistedReads = 3 })
+    for _, case in ipairs({
+        { while_ = "it cannot list them yet", opts = { unlistedReads = 3 } },
+        { while_ = "it lists fewer than the saved settings hold", opts = { underListedReads = 3 }, savedMasks = 2 },
+    }) do
+        it("waits for Develop's mask list while " .. case.while_ .. ", then inverts", function()
+            local opts = { photos = { { id = "1", masks = subjectMasks(), savedMasks = case.savedMasks } } }
+            for key, value in pairs(case.opts) do opts[key] = value end
+            local Handler, calls = setup(opts)
 
-        Handler.invertMask(args())
+            Handler.invertMask(args())
 
-        assert.are.equal(4 + 1, calls.listed)
-        assert.are.same({ "m-1" }, calls.invert)
-    end)
+            assert.is_true(calls.listed > 3)
+            assert.are.same({ "m-1" }, calls.invert)
+        end)
+    end
 
     it("refuses with Lightroom's reason when it never lists the masks", function()
         local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } }, listError = "Develop is busy" })

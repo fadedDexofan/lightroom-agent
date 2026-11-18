@@ -3,6 +3,7 @@ local DecimalText = require 'DecimalText'
 
 local RangeMaskGeometry = {}
 
+local RANGE_WHAT = "Mask/RangeMask"
 local LUMINANCE = "luminance"
 local COLOR = "color"
 local DEPTH = "depth"
@@ -111,7 +112,7 @@ end
 
 function RangeMaskGeometry.newComponent(request)
     return {
-        What = "Mask/RangeMask",
+        What = RANGE_WHAT,
         MaskActive = true,
         MaskInverted = request.invert,
         MaskBlendMode = BLEND_MODE_OF_MODE[request.mode],
@@ -132,7 +133,7 @@ local function numbersIn(text)
 end
 
 function RangeMaskGeometry.kindOf(component)
-    if component.What ~= "Mask/RangeMask" or type(component.CorrectionRangeMask) ~= "table" then return nil end
+    if component.What ~= RANGE_WHAT or type(component.CorrectionRangeMask) ~= "table" then return nil end
     return KIND_OF_RANGE_TYPE[component.CorrectionRangeMask.Type]
 end
 
@@ -168,12 +169,9 @@ function RangeMaskGeometry.rangeOf(component, frame)
 end
 
 function RangeMaskGeometry.copiableColorRange(component, frame)
-    if type(component) ~= "table" or component.What ~= "Mask/RangeMask"
-        or type(component.CorrectionRangeMask) ~= "table" then
-        return nil, "is not a range mask"
-    end
-    local stored = component.CorrectionRangeMask
     local kind = RangeMaskGeometry.kindOf(component)
+    if kind == nil and component.What ~= RANGE_WHAT then return nil, "is not a range mask" end
+    local stored = component.CorrectionRangeMask
     if kind ~= COLOR then
         local description = kind ~= nil and (kind .. " range") or "range of an unsupported type"
         return nil, "is a " .. description .. ", not a color range"
