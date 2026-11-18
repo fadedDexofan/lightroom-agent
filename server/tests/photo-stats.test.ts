@@ -18,7 +18,7 @@ function image(width: number, height: number, value: (x: number, y: number) => n
 }
 
 function handler(call: (action: string, params: unknown, timeoutMs?: number) => Promise<PluginResponse>) {
-  return createCallToolHandler({ isReady: () => true, dispatcher: { call } });
+  return createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
 }
 
 function preview(data: string, photoId = '1'): PluginResponse {

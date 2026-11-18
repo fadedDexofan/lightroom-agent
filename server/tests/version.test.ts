@@ -8,7 +8,7 @@ import { createCallToolHandler } from '../src/tool-handler.js';
 describe('server version', () => {
   it('MCP server reports the shared version', async () => {
     const server = createMcpServer(createCallToolHandler({
-      isReady: () => true,
+      admitted: () => 0,
       dispatcher: { call: async () => ({ id: 'x', result: {} }) },
     }), createToolAccess({ toolsets: ['core'], readOnly: false }));
     const client = new Client({ name: 'test-client', version: '1.0.0' });

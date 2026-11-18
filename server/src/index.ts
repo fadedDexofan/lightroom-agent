@@ -194,15 +194,16 @@ function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: numbe
     dispatcher.rejectPending(PLUGIN_CONNECTION_LOST_MESSAGE),
   );
   let connectedToken: string | null = null;
-  const dispatcher = new Dispatcher({
+  const dispatcher: Dispatcher = new Dispatcher({
     send: (line) => requestSocket.send(line),
     getToken: () => readToken(),
+    connectionGeneration: () => liveness.connectionGeneration(),
   });
   const unresponsive = new UnresponsiveReporter({
     diagnose: () => diagnoseUnresponsive([REQUEST_PORT, RESPONSE_PORT]),
     log: (message) => console.error(`[plugin] ${message}`),
   });
-  const liveness = new PluginLiveness({
+  const liveness: PluginLiveness = new PluginLiveness({
     dispatcher,
     connected: () => socketsConnected(),
     reporter: unresponsive,
@@ -268,7 +269,7 @@ function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: numbe
 
   const callTool = createCallToolHandler({
     dispatcher,
-    isReady: () => socketsConnected() && liveness.isUsable(),
+    admitted: () => (socketsConnected() ? liveness.admitted() : null),
     notReadyMessage: () => {
       const incompatibility = liveness.incompatibility();
       if (incompatibility !== null) {

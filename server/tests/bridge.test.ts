@@ -220,7 +220,7 @@ describe('broker', () => {
 
   it('queues a forwarded Develop call behind a Develop call of the owning bridge', async () => {
     const pending: Array<{ action: string; resolve: (reply: PluginResponse) => void }> = [];
-    const handler = createCallToolHandler({ isReady: () => true, dispatcher: {
+    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: {
       call: async (action: string) => new Promise<PluginResponse>((resolve) => { pending.push({ action, resolve }); }),
     } });
     const { p } = await serve((name, args) => handler(name, args));

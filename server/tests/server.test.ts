@@ -185,7 +185,7 @@ describe('read-only mode', () => {
 
 async function connect(opts: { ready?: boolean; call?: CallFn; toolsets?: string; readOnly?: boolean } = {}): Promise<Pair> {
   const server = createMcpServer(createCallToolHandler({
-    isReady: () => opts.ready ?? true,
+    admitted: () => (opts.ready ?? true ? 0 : null),
     dispatcher: {
       call: opts.call ?? (async () => ({ id: 'x', result: {} })),
     },

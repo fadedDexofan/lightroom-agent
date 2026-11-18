@@ -27,6 +27,7 @@ describe('Dispatcher', () => {
       },
       getToken: () => 'test-token',
       log: (msg) => logs.push(msg),
+      connectionGeneration: () => 0,
     });
   });
 
@@ -162,7 +163,7 @@ describe('Dispatcher', () => {
   it('settles a timed-out request after the late-reply grace when no reply comes', async () => {
     jest.useFakeTimers();
     try {
-      const graced = new Dispatcher({ send: () => true, getToken: () => 'test-token', log: () => {}, lateReplyGraceMs: 50 });
+      const graced = new Dispatcher({ send: () => true, getToken: () => 'test-token', log: () => {}, lateReplyGraceMs: 50, connectionGeneration: () => 0 });
       const pending = graced.call('slow', {}, 1000);
       const caught = pending.catch((error: unknown) => error);
       jest.advanceTimersByTime(1000);
@@ -234,6 +235,50 @@ describe('Dispatcher', () => {
       expect(settled).toBe(false);
       jest.advanceTimersByTime(1);
       await expect(pending).rejects.toThrow(/timeout \(60s\)/);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('Dispatcher cancels', () => {
+  function dispatcherOn() {
+    let generation = 0;
+    const sent: SentRequest[] = [];
+    const dispatcher = new Dispatcher({
+      send: (line) => { sent.push(parseSent(line)); return true; },
+      getToken: () => 't',
+      log: () => {},
+      connectionGeneration: () => generation,
+    });
+    return { dispatcher, sent, reconnect: () => { generation += 1; } };
+  }
+
+  it('writes a caller\'s cancel to the connection its request went to, and not to a newer one', () => {
+    const same = dispatcherOn();
+    const kept = new AbortController();
+    void same.dispatcher.call('set_rating', {}, 5_000, { signal: kept.signal }).catch(() => {});
+    kept.abort();
+    expect(same.sent.map((frame) => frame.action)).toEqual(['set_rating', 'cancel']);
+
+    const moved = dispatcherOn();
+    const stale = new AbortController();
+    void moved.dispatcher.call('set_rating', {}, 5_000, { signal: stale.signal }).catch(() => {});
+    moved.reconnect();
+    stale.abort();
+    expect(moved.sent.map((frame) => frame.action)).toEqual(['set_rating']);
+  });
+
+  it('writes no timeout cancel, a ping\'s included, to a newer connection', async () => {
+    jest.useFakeTimers();
+    try {
+      const { dispatcher, sent, reconnect } = dispatcherOn();
+      const ping = dispatcher.call('ping', {}, 1_000).catch((error: unknown) => error);
+      reconnect();
+      jest.advanceTimersByTime(1_000);
+
+      expect(await ping).toBeInstanceOf(PluginTimeoutError);
+      expect(sent.map((frame) => frame.action)).toEqual(['ping']);
     } finally {
       jest.useRealTimers();
     }

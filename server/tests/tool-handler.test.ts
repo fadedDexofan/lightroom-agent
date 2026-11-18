@@ -6,13 +6,15 @@ import { DEVELOP_KEYS, LOCAL_KEYS } from '../src/develop-keys.js';
 import { dataOf, envelopeOf } from './helpers/envelope.js';
 
 import { Dispatcher, PluginNotSentError, PluginTimeoutError, type PluginResponse } from '../src/dispatcher.js';
+import { PluginLiveness } from '../src/plugin-liveness.js';
+import jpeg from 'jpeg-js';
 
 function makeHandler(opts: {
   ready?: boolean;
   call?: (action: string, params: unknown, budget?: number) => Promise<PluginResponse>;
 } = {}) {
   return createCallToolHandler({
-    isReady: () => opts.ready ?? true,
+    admitted: () => (opts.ready ?? true ? 0 : null),
     dispatcher: {
       call: opts.call ?? (async () => ({ id: 'x', result: {} })),
     },
@@ -178,7 +180,7 @@ describe('result envelope at the call boundary', () => {
 describe('time budget', () => {
   it('gives every plug-in tool the budget of its contract duration', async () => {
     const budgets: [string, number | undefined][] = [];
-    const handler = createCallToolHandler({ isReady: () => true, dispatcher: { call: async (action, _params, budget) => {
+    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call: async (action, _params, budget) => {
       budgets.push([action, budget]);
       return { id: '1', result: { data: {} } };
     } } });
@@ -218,7 +220,7 @@ describe('Develop call queue', () => {
     const pending: Pending[] = [];
     const call = async (action: string, _params: unknown, budget?: number) =>
       new Promise<PluginResponse>((resolve) => { pending.push({ action, budget, resolve }); });
-    const handler = createCallToolHandler({ isReady: () => true, dispatcher: { call } });
+    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
     const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
     return { pending, handler, settle };
   }
@@ -233,7 +235,7 @@ describe('Develop call queue', () => {
       if (calls.length === 1) throw new PluginTimeoutError(30_000, new Promise<void>((resolve) => { finishLate = resolve; }));
       return { id: '2', result: { data: {} } };
     };
-    const handler = createCallToolHandler({ isReady: () => true, dispatcher: { call } });
+    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
     const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
     const first = await handler(...develop(1));
@@ -264,6 +266,25 @@ describe('Develop call queue', () => {
     expect(pending).toHaveLength(3);
     pending[2].resolve(done('3'));
     expect((await third).isError).toBeUndefined();
+  });
+
+  it('refuses a queued call whose turn comes after the plug-in stopped being usable, sending nothing', async () => {
+    const pending: Pending[] = [];
+    let ready = true;
+    const call = async (action: string, _params: unknown, budget?: number) =>
+      new Promise<PluginResponse>((resolve) => { pending.push({ action, budget, resolve }); });
+    const handler = createCallToolHandler({ admitted: () => (ready ? 0 : null), notReadyMessage: () => 'plug-in 0.0.1', dispatcher: { call } });
+    const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+
+    const first = handler(...develop(1));
+    const second = handler(...develop(2));
+    await settle();
+    ready = false;
+    pending[0].resolve(done('1'));
+    await first;
+
+    expect(envelopeOf(await second)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('was lost or replaced') });
+    expect(pending).toHaveLength(1);
   });
 
   it('runs a call outside the queue alongside a queued one', async () => {
@@ -297,8 +318,8 @@ describe('Develop call queue', () => {
     jest.useFakeTimers();
     try {
       const sent: string[] = [];
-      const dispatcher = new Dispatcher({ send: (line) => { sent.push(line); return true; }, getToken: () => 'token', log: () => {} });
-      const handler = createCallToolHandler({ isReady: () => true, dispatcher });
+      const dispatcher = new Dispatcher({ send: (line) => { sent.push(line); return true; }, getToken: () => 'token', log: () => {}, connectionGeneration: () => 0 });
+      const handler = createCallToolHandler({ admitted: () => 0, dispatcher });
       const first = handler(...develop(1));
       const waiting = handler(...develop(2));
       for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -321,7 +342,7 @@ describe('Develop call queue', () => {
         calls.push(action);
         throw new PluginTimeoutError(30_000, new Promise<void>(() => {}));
       };
-      const handler = createCallToolHandler({ isReady: () => true, dispatcher: { call } });
+      const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
       await handler(...develop(1));
       const waiting = handler(...develop(2));
       for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -719,5 +740,178 @@ describe('describe_develop_keys', () => {
     const result = await without.describe({});
     expect((dataOf(result) as Described).local.every((entry) => entry.live === null)).toBe(true);
     expect(envelopeOf(result).warnings).toEqual([expect.stringContaining('mask_id')]);
+  });
+});
+
+describe('a call bound to the connection admitted on its arrival', () => {
+  const CONNECTION_CHANGED_MESSAGE = 'The Lightroom connection this call arrived on was lost or replaced, so nothing more of it was sent. '
+    + 'Read the state before calling again.';
+  const IDENTITY = { version: '1.2.3', build: '0123456789abcdef' };
+  type Frame = { generation: number; id: string; action: string; params: unknown };
+  const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  const develop = (id: number) => ['set_develop_settings', { photo_id: id, settings: { Exposure2012: 0.1 } }] as const;
+
+  function connection() {
+    const frames: Frame[] = [];
+    const logs: string[] = [];
+    let liveness!: PluginLiveness;
+    const dispatcher = new Dispatcher({
+      send: (line) => {
+        const frame = JSON.parse(line) as Frame;
+        frames.push({ ...frame, generation: liveness.connectionGeneration() });
+        return true;
+      },
+      getToken: () => 't',
+      log: (message) => logs.push(message),
+      connectionGeneration: () => liveness.connectionGeneration(),
+    });
+    liveness = new PluginLiveness({
+      dispatcher,
+      connected: () => true,
+      reporter: { report: () => {}, clear: () => {} },
+      heartbeatIntervalMs: 30_000,
+      heartbeatTimeoutMs: 10_000,
+      probeTimeoutMs: 5_000,
+      recoveryIntervalMs: 5_000,
+      plugin: IDENTITY,
+    });
+    const handler = createCallToolHandler({
+      dispatcher,
+      admitted: () => liveness.admitted(),
+      notReadyMessage: () => liveness.incompatibility() ?? 'not connected',
+      settleReadiness: () => liveness.settled(),
+    });
+    const answer = (frame: Frame, result: unknown) => dispatcher.handleResponseLine(JSON.stringify({ id: frame.id, result }));
+    const connect = async (identity = IDENTITY) => {
+      liveness.check();
+      answer(frames.filter((frame) => frame.action === 'ping').at(-1)!, { data: { pong: true, ...identity } });
+      await flush();
+    };
+    const reconnect = async (identity = IDENTITY) => {
+      liveness.reset();
+      await connect(identity);
+    };
+    const sentOn = (generation: number) => frames.filter((frame) => frame.generation === generation).map((frame) => frame.action);
+    return { frames, logs, liveness, dispatcher, handler, answer, connect, reconnect, sentOn };
+  }
+
+  it.each([
+    ['the new connection answers first', true],
+    ['the restart is confirmed first', false],
+  ])('refuses a queued call whose turn comes after its connection was replaced (%s), sending it nothing, and serves a call that arrives later', async (_order, reconnectFirst) => {
+    const c = connection();
+    await c.connect();
+    const first = c.handler(...develop(1));
+    await flush();
+    const queued = c.handler(...develop(2));
+    await flush();
+
+    if (reconnectFirst) await c.reconnect();
+    else c.liveness.reset();
+    c.dispatcher.rejectPending('The Lightroom plug-in restarted during this call');
+
+    expect(envelopeOf(await first).outcome).toBe('unknown');
+    expect(envelopeOf(await queued)).toEqual({ outcome: 'failed', error: CONNECTION_CHANGED_MESSAGE });
+    if (!reconnectFirst) await c.connect();
+    expect(c.sentOn(1)).toEqual(['ping']);
+    const fresh = c.handler(...develop(3));
+    await flush();
+    expect(c.sentOn(1)).toEqual(['ping', 'write_develop_settings']);
+    c.answer(c.frames.at(-1)!, { data: {} });
+    expect((await fresh).isError).toBeUndefined();
+  });
+
+  it('refuses at once, without waiting for the held Develop turn, while the plug-in is of another build', async () => {
+    const c = connection();
+    await c.connect();
+    const held = c.handler(...develop(1));
+    await flush();
+    await c.reconnect({ ...IDENTITY, build: 'fedcba9876543210' });
+    let answered = false;
+
+    const refused = c.handler(...develop(2)).then((response) => { answered = true; return response; });
+    await flush();
+
+    expect(answered).toBe(true);
+    expect(envelopeOf(await refused).error).toContain('fedcba9876543210');
+    c.dispatcher.rejectPending('restarted');
+    await held;
+  });
+
+  it('fails set_crop with nothing written when the connection changes after its plan', async () => {
+    const c = connection();
+    await c.connect();
+    const crop = c.handler('set_crop', { photo_id: 914, aspect: { width: 2, height: 1 } });
+    await flush();
+    const plan = c.frames.find((frame) => frame.action === 'plan_crop')!;
+
+    c.liveness.reset();
+    c.answer(plan, { data: {
+      photo_id: '914', settings: { CropLeft: 0.1, CropTop: 0.1, CropRight: 0.9, CropBottom: 0.9, CropAngle: 0 },
+      rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 0, size: { width: 100, height: 50 },
+    } });
+
+    expect(envelopeOf(await crop).outcome).toBe('failed');
+    expect(c.frames.map((frame) => frame.action)).not.toContain('write_develop_settings');
+  });
+
+  it('answers a call the plug-in restart cut short unknown, releases its turn, replays nothing and ignores its old id', async () => {
+    const c = connection();
+    await c.connect();
+    const cut = c.handler(...develop(1));
+    await flush();
+    const cutFrame = c.frames.at(-1)!;
+
+    await c.reconnect();
+    c.dispatcher.rejectPending('The Lightroom plug-in restarted during this call');
+    expect(envelopeOf(await cut).outcome).toBe('unknown');
+    const next = c.handler(...develop(2));
+    await flush();
+    c.answer(cutFrame, { data: {} });
+    c.answer(c.frames.at(-1)!, { data: {} });
+
+    expect((await next).isError).toBeUndefined();
+    expect(c.sentOn(1)).toEqual(['ping', 'write_develop_settings']);
+    expect(c.logs).toContain(`Response for unknown id: ${cutFrame.id}`);
+  });
+
+  it('answers a timed-out call unknown and holds its turn until its late reply settles it', async () => {
+    jest.useFakeTimers();
+    try {
+      const c = connection();
+      await c.connect();
+      const late = c.handler(...develop(1));
+      await flush();
+      const lateFrame = c.frames.at(-1)!;
+      jest.advanceTimersByTime(30_000);
+      expect(envelopeOf(await late).outcome).toBe('unknown');
+
+      const next = c.handler(...develop(2));
+      await flush();
+      expect(c.frames.filter((frame) => frame.action === 'write_develop_settings')).toHaveLength(1);
+      c.answer(lateFrame, { data: {} });
+      await flush();
+
+      expect(c.frames.filter((frame) => frame.action === 'write_develop_settings')).toHaveLength(2);
+      c.answer(c.frames.at(-1)!, { data: {} });
+      expect((await next).isError).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the previews a batch finished and lists the rest as remaining when the connection changes mid-batch', async () => {
+    const c = connection();
+    await c.connect();
+    const image = jpeg.encode({ width: 8, height: 8, data: Buffer.alloc(8 * 8 * 4, 128) }, 90).data.toString('base64');
+    const batch = c.handler('get_photo_previews', { photo_ids: [1, 2, 3] });
+    await flush();
+
+    c.answer(c.frames.at(-1)!, { data: { photo_id: 1, image: { data: image, mime_type: 'image/jpeg' } } });
+    c.liveness.reset();
+    const result = envelopeOf(await batch);
+
+    expect(result).toMatchObject({ outcome: 'partial', remaining: [2, 3] });
+    expect(c.frames.filter((frame) => frame.action === 'render_preview')).toHaveLength(1);
   });
 });
