@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expectedIdentity, renderContractLua } from '../src/contract-lua.js';
-import { pairingOf } from '../src/plugin-pairing.js';
+import { findBundledPlugin, pairingOf } from '../src/plugin-pairing.js';
 import { VERSION } from '../src/version.js';
 
 const roots: string[] = [];
@@ -115,5 +115,42 @@ describe('pairingOf', () => {
     roots.push(root);
 
     expect(pairingOf(path.join(root, 'server', 'dist'))).toEqual({ kind: 'unpaired', reason: NO_BUNDLE });
+  });
+});
+
+describe('findBundledPlugin', () => {
+  function bundleIn(dir: string): string {
+    const bundle = path.join(dir, 'LightroomAgent.lrplugin');
+    fs.mkdirSync(bundle, { recursive: true });
+    fs.writeFileSync(path.join(bundle, 'Info.lua'), '-- fake');
+    fs.writeFileSync(path.join(bundle, 'Contract.lua'), '-- fake');
+    return bundle;
+  }
+
+  function root(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-find-'));
+    roots.push(dir);
+    return dir;
+  }
+
+  it('takes the checkout\'s plugin folder over a copy staged into server/ for packing', () => {
+    const dir = root();
+    const checkout = bundleIn(path.join(dir, 'plugin'));
+    bundleIn(path.join(dir, 'server'));
+
+    expect(findBundledPlugin(path.join(dir, 'server', 'dist'))).toEqual({ source: checkout, layout: 'checkout' });
+  });
+
+  it('finds the plugin beside dist/ in an npm package and beside server/ in an mcpb bundle', () => {
+    const npm = root();
+    const npmBundle = bundleIn(npm);
+    expect(findBundledPlugin(path.join(npm, 'dist'))).toEqual({ source: npmBundle, layout: 'package' });
+    const mcpb = root();
+    const mcpbBundle = bundleIn(mcpb);
+    expect(findBundledPlugin(path.join(mcpb, 'server', 'dist'))).toEqual({ source: mcpbBundle, layout: 'package' });
+  });
+
+  it('returns null when no plugin directory is found', () => {
+    expect(findBundledPlugin(path.join(root(), 'server', 'dist'))).toBeNull();
   });
 });

@@ -7,6 +7,8 @@ import { createCallToolHandler } from '../src/tool-handler.js';
 
 type Ping = { timeoutMs: number; answer: (version?: string | null, build?: string) => void; fail: () => void };
 
+const INSTALL_FIX = "Lightroom has loaded a different plug-in build. If the intended build was installed or repaired, restart Lightroom to load it. Otherwise quit the connected clients, run this build's install-plugin, check its result, restart Lightroom, and reconnect.";
+
 const SERVER_VERSION = '1.2.3';
 const SERVER_BUILD = '0123456789abcdef';
 
@@ -52,10 +54,10 @@ describe('PluginLiveness', () => {
     jest.useRealTimers();
   });
 
-  it('treats a connection with no settled ping as usable', () => {
+  it('admits no call on a connection before a ping settles', () => {
     const { liveness } = setup();
 
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).toBeNull();
   });
 
   it('becomes unusable once a probe fails, reports it, and re-probes until one succeeds', async () => {
@@ -64,14 +66,14 @@ describe('PluginLiveness', () => {
     liveness.check();
     pings[0].fail();
     await flush();
-    expect(liveness.isUsable()).toBe(false);
+    expect(liveness.admitted()).toBeNull();
     expect(reporter.report).toHaveBeenCalledTimes(1);
 
     jest.advanceTimersByTime(5_000);
     expect(pings).toHaveLength(2);
     pings[1].answer();
     await flush();
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).not.toBeNull();
     expect(reporter.clear).toHaveBeenCalled();
 
     jest.advanceTimersByTime(20_000);
@@ -86,14 +88,14 @@ describe('PluginLiveness', () => {
     expect(pings.map((ping) => ping.timeoutMs)).toEqual([10_000]);
     pings[0].fail();
     await flush();
-    expect(liveness.isUsable()).toBe(false);
+    expect(liveness.admitted()).toBeNull();
     expect(reporter.report).toHaveBeenCalledTimes(1);
 
     jest.advanceTimersByTime(5_000);
     expect(pings.map((ping) => ping.timeoutMs)).toEqual([10_000, 5_000]);
     pings[1].answer();
     await flush();
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).not.toBeNull();
     liveness.stop();
   });
 
@@ -107,7 +109,7 @@ describe('PluginLiveness', () => {
     pings[0].answer();
     await flush();
 
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).not.toBeNull();
     liveness.stop();
   });
 
@@ -124,7 +126,7 @@ describe('PluginLiveness', () => {
     expect(pings.map((ping) => ping.timeoutMs)).toEqual([5_000]);
     pings[0].answer();
     await flush();
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).not.toBeNull();
     liveness.stop();
   });
 
@@ -143,7 +145,7 @@ describe('PluginLiveness', () => {
     await waiter;
 
     expect(settled).toBe(true);
-    expect(liveness.isUsable()).toBe(false);
+    expect(liveness.admitted()).toBeNull();
     liveness.reset();
   });
 
@@ -155,7 +157,7 @@ describe('PluginLiveness', () => {
     pings[0].fail();
     await flush();
 
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).toBeNull();
     expect(reporter.report).not.toHaveBeenCalled();
   });
 
@@ -169,7 +171,7 @@ describe('PluginLiveness', () => {
     pings[0].fail();
     await flush();
 
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).toBeNull();
     expect(reporter.report).not.toHaveBeenCalled();
     liveness.stop();
   });
@@ -180,24 +182,21 @@ describe('PluginLiveness', () => {
     pings[0].answer();
     await flush();
 
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).not.toBeNull();
     expect(liveness.incompatibility()).toBeNull();
   });
 
   it.each([
-    ['1.2.2', 'The installed Lightroom plug-in is version 1.2.2'],
-    [null, 'The installed Lightroom plug-in is an older build that reports no version'],
-  ])('refuses a plug-in that answers with version %p, naming both versions and the fix', async (version, start) => {
+    ['1.2.2', 'version 1.2.2, build 0123456789abcdef'],
+    [null, 'an older build that reports no version'],
+  ])('refuses a plug-in that answers with version %p, naming both and the fix', async (version, loaded) => {
     const { liveness, pings, reporter } = setup();
     liveness.check();
     pings[0].answer(version);
     await flush();
 
-    expect(liveness.isUsable()).toBe(false);
-    expect(liveness.incompatibility()).toBe(
-      `${start}, and this server is version 1.2.3. Install the plug-in that comes with this server `
-        + '(lightroom-agent install-plugin; the server also does it when it starts), then restart Lightroom.',
-    );
+    expect(liveness.admitted()).toBeNull();
+    expect(liveness.incompatibility()).toBe(`${INSTALL_FIX} Loaded: ${loaded}; this server's: version 1.2.3, build 0123456789abcdef.`);
     expect(reporter.report).not.toHaveBeenCalled();
   });
 
@@ -207,11 +206,9 @@ describe('PluginLiveness', () => {
     pings[0].answer(SERVER_VERSION, 'fedcba9876543210');
     await flush();
 
-    expect(liveness.isUsable()).toBe(false);
+    expect(liveness.admitted()).toBeNull();
     expect(liveness.incompatibility()).toBe(
-      'The installed Lightroom plug-in is build fedcba9876543210 of version 1.2.3, and this server\'s is build '
-        + '0123456789abcdef. Install the plug-in that comes with this server (lightroom-agent install-plugin; the '
-        + 'server also does it when it starts), then restart Lightroom.',
+      `${INSTALL_FIX} Loaded: version 1.2.3, build fedcba9876543210; this server's: version 1.2.3, build 0123456789abcdef.`,
     );
   });
 
@@ -226,7 +223,7 @@ describe('PluginLiveness', () => {
     pings[1].answer();
     await flush();
 
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).not.toBeNull();
     liveness.stop();
   });
 
@@ -245,7 +242,7 @@ describe('PluginLiveness', () => {
     liveness.reset();
     jest.advanceTimersByTime(60_000);
 
-    expect(liveness.isUsable()).toBe(true);
+    expect(liveness.admitted()).toBeNull();
     expect(pings).toHaveLength(1);
   });
 
@@ -266,7 +263,7 @@ describe('tool handler readiness message', () => {
   it('explains that another bridge owns the plugin when sockets are up but silent', async () => {
     const handler = createCallToolHandler({
       dispatcher,
-      isReady: () => false,
+      admitted: () => null,
       notReadyMessage: () => SHADOW_BRIDGE.message,
     });
 
@@ -283,7 +280,7 @@ describe('tool handler readiness message', () => {
     const call = jest.fn(() => Promise.resolve({ id: 'req_1', result: {} }));
     const handler = createCallToolHandler({
       dispatcher: { call },
-      isReady: () => liveness.isUsable(),
+      admitted: () => liveness.admitted(),
       notReadyMessage: () => SHADOW_BRIDGE.message,
       settleReadiness: () => liveness.settled(),
     });

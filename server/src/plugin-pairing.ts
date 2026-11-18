@@ -1,8 +1,33 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expectedIdentity, renderContractLua, type PluginIdentity } from "./contract-lua.js";
-import { findBundledPlugin, isBundle, type BundleLayout } from "./install-plugin.js";
 import { VERSION } from "./version.js";
+
+export type BundleLayout = "checkout" | "package";
+
+export const PLUGIN_FOLDER = "LightroomAgent.lrplugin";
+
+function isRegularFile(file: string): boolean {
+  try {
+    return fs.lstatSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+export function isBundle(dir: string): boolean {
+  return isRegularFile(path.join(dir, "Info.lua")) && isRegularFile(path.join(dir, "Contract.lua"));
+}
+
+export function findBundledPlugin(distDir: string): { source: string; layout: BundleLayout } | null {
+  const candidates: Array<[string, BundleLayout]> = [
+    [path.join(distDir, "..", "..", "plugin", PLUGIN_FOLDER), "checkout"],
+    [path.join(distDir, "..", PLUGIN_FOLDER), "package"],
+    [path.join(distDir, "..", "..", PLUGIN_FOLDER), "package"],
+  ];
+  const found = candidates.find(([dir]) => isBundle(dir));
+  return found ? { source: path.resolve(found[0]), layout: found[1] } : null;
+}
 
 export type Pairing =
   | { kind: "paired"; plugin: PluginIdentity; source: string; layout: BundleLayout }

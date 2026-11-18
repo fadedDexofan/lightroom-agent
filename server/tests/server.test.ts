@@ -546,6 +546,9 @@ describe('createMcpServer', () => {
     expect(text).toContain('](references/workflow/cull.md#the-procedure)');
     expect(text).toContain('](references/tools/masks.md#mask-writes-re-render-a-raw)');
     expect(text).not.toMatch(/\]\((?!https?:|SKILL\.md|references\/)/);
+    expect(text).toContain('only the server elected to own the plug-in connection installs its plug-in');
+    expect(text).toContain('A preview batch may list the item it was fetching');
+    expect(text).toContain('items confirmed by their own read-back');
   });
 
   it('rejects an unknown skill prompt', async () => {

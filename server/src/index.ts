@@ -24,7 +24,7 @@ import { serverIdentity } from "./server-identity.js";
 import { refusedResponse } from "./tool-result.js";
 import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
-import { acquireInstanceLock, lockHolder, lockHolderUnresponsive } from "./instance-lock.js";
+import { acquireInstanceLock, LockHeldError, lockHolder, lockHolderUnresponsive, type InstanceLock } from "./instance-lock.js";
 import { describeInstall, ensurePluginInstalled, installPlugin } from "./install-plugin.js";
 
 const PING_TIMEOUT_MS = 10_000;
@@ -121,13 +121,12 @@ async function main() {
 
   const pairing = pairingOf(here);
   if (pairing.kind === "unpaired") console.error(pairing.reason);
-  else if (cli.command === "stdio") ensurePluginInstalled(here, (m) => console.error(m));
 
   const bridge: Backend = pairing.kind === "unpaired" ? refusing(pairing.reason) : new Bridge({
     ipcPath: brokerPath(REQUEST_PORT, RESPONSE_PORT),
     server: serverIdentity(here, pairing.plugin.build),
     acquireLock: () => acquireInstanceLock(REQUEST_PORT, RESPONSE_PORT),
-    startLeader: () => startLeader(pairing, REQUEST_PORT, RESPONSE_PORT),
+    startLeader: () => startLeader(pairing, REQUEST_PORT, RESPONSE_PORT, cli.command === "stdio"),
     readToken: tryReadToken,
     holderUnresponsive: () => lockHolderUnresponsive(REQUEST_PORT, RESPONSE_PORT),
     lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
@@ -185,8 +184,9 @@ function tryReadToken(): string | null {
   }
 }
 
-function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
+function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: number, install: boolean): Leader {
   confirmPairing(pairing);
+  if (install) ensurePluginInstalled(pairing, (m) => console.error(m));
   let requestSocket: PluginSocket;
   let responseSocket: PluginSocket | null = null;
   let responseConnectTimer: NodeJS.Timeout | null = null;
@@ -301,15 +301,28 @@ function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: numbe
 function runInstallPlugin(pairing: Pairing): void {
   if (pairing.kind === "unpaired") {
     console.error(pairing.reason);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
+  }
+  let lock: InstanceLock;
+  try {
+    lock = acquireInstanceLock(requestPort(), responsePort());
+  } catch (err) {
+    console.error(err instanceof LockHeldError
+      ? `A running lightroom-agent server owns the plug-in (pid ${err.pid}); quit its clients, then install again`
+      : `Install failed: ${(err as Error).message}`);
+    process.exitCode = 1;
+    return;
   }
   try {
-    const result = installPlugin({ source: pairing.source });
+    const result = installPlugin(pairing);
     console.error(describeInstall(result));
-    if (result.status === "conflict" || result.status === "foreign") process.exit(1);
+    if (result.status === "conflict" || result.status === "foreign" || result.status === "invalid") process.exitCode = 1;
   } catch (err) {
     console.error(`Install failed: ${(err as Error).message}`);
-    process.exit(1);
+    process.exitCode = 1;
+  } finally {
+    lock.release();
   }
 }
 

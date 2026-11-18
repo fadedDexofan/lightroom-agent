@@ -144,12 +144,12 @@ describe('broker', () => {
     return p;
   }
 
-  const refusal = (follower: string, owner: string) => `This server is ${follower}, but the server that owns the Lightroom `
-    + `connection is ${owner}, so nothing was sent. Use one lightroom-agent version in every client, then restart them.`;
+  const refusal = (differences: string) => 'This server and the server that owns the Lightroom connection differ in '
+    + `${differences}, so nothing was sent. Use one lightroom-agent build in every client, then restart them.`;
 
   it.each([
-    [{ ...SERVER, build: 's2' }, 'version 1.0.0 (build s2)'],
-    [{ ...SERVER, version: '0.9.0', build: 's0' }, 'version 0.9.0 (build s0)'],
+    [{ ...SERVER, build: 's2' }, 'server build (s1 here, s2 there)'],
+    [{ ...SERVER, version: '0.9.0', build: 's0' }, 'version (1.0.0 here, 0.9.0 there), server build (s1 here, s0 there)'],
   ])('refuses a follower\'s calls, sending nothing, while the owner is another server build (%o)', async (owner, described) => {
     const calls: string[] = [];
     const { p } = await serve(async (name) => { calls.push(name); return ok('x'); }, 't', () => {}, owner);
@@ -158,7 +158,7 @@ describe('broker', () => {
     const resp = await client.callTool('list_masks', {});
 
     expect(envelopeOf(resp).outcome).toBe('failed');
-    expect(errorText(resp)).toBe(refusal('version 1.0.0 (build s1)', described));
+    expect(errorText(resp)).toBe(refusal(described));
     expect(calls).toEqual([]);
   });
 
@@ -170,8 +170,9 @@ describe('broker', () => {
 
     const resp = await client.callTool('list_masks', {});
 
-    expect(errorText(resp)).toBe(refusal('version 1.0.0 (build s1)',
-      server === undefined ? 'an older server that reports no version' : 'version 1.0.0 (build unknown)'));
+    expect(errorText(resp)).toBe(refusal(server === undefined
+      ? 'version (1.0.0 here, none there), server build (s1 here, none there), plug-in build (b1 here, none there)'
+      : 'server build (s1 here, none there), plug-in build (b1 here, none there)'));
   });
 
   it('answers an older follower whose hello carries no identity with the refusal, never calling the tool', async () => {
@@ -183,14 +184,15 @@ describe('broker', () => {
     await waitFor(() => lines.length > 0);
 
     const reply = JSON.parse(lines.shift()!) as { result: ToolResponse };
-    expect(errorText(reply.result)).toBe(refusal('an older server that reports no version', 'version 1.0.0 (build s1)'));
+    expect(errorText(reply.result)).toBe(
+      refusal('version (none here, 1.0.0 there), server build (none here, s1 there), plug-in build (none here, b1 there)'));
     expect(calls).toEqual([]);
   });
 
   it.each([
-    ['of another plug-in build', { ...SERVER, plugin: 'b2' }],
-    ['without a plug-in build', { version: SERVER.version, build: SERVER.build }],
-  ])('refuses, never calling the tool, a follower whose hello names a server %s', async (_what, follower) => {
+    ['of another plug-in build', { ...SERVER, plugin: 'b2' }, 'plug-in build (b2 here, b1 there)'],
+    ['without a plug-in build', { version: SERVER.version, build: SERVER.build }, 'plug-in build (none here, b1 there)'],
+  ])('refuses, never calling the tool, a follower whose hello names a server %s', async (_what, follower, differences) => {
     const calls: string[] = [];
     const { p } = await serve(async (name) => { calls.push(name); return ok('x'); });
     const { sock, hello, lines } = await rawHandshake(p, 't', follower);
@@ -200,20 +202,20 @@ describe('broker', () => {
 
     const reply = JSON.parse(lines.shift()!) as { result: ToolResponse };
     expect(envelopeOf(reply.result).outcome).toBe('failed');
-    expect(errorText(reply.result)).toContain('so nothing was sent');
+    expect(errorText(reply.result)).toBe(refusal(differences));
     expect(calls).toEqual([]);
   });
 
   it.each([
-    ['of another plug-in build', { ...SERVER, plugin: 'b2' }],
-    ['without a plug-in build', { version: SERVER.version, build: SERVER.build }],
-  ])('refuses a follower\'s calls, sending nothing, when the owner\'s greeting names a server %s', async (_what, owner) => {
+    ['of another plug-in build', { ...SERVER, plugin: 'b2' }, 'plug-in build (b1 here, b2 there)'],
+    ['without a plug-in build', { version: SERVER.version, build: SERVER.build }, 'plug-in build (b1 here, none there)'],
+  ])('refuses a follower\'s calls, sending nothing, when the owner\'s greeting names a server %s', async (_what, owner, differences) => {
     const client = await connect(await serveRawOwner(owner));
 
     const resp = await client.callTool('list_masks', {});
 
     expect(envelopeOf(resp).outcome).toBe('failed');
-    expect(errorText(resp)).toContain('so nothing was sent');
+    expect(errorText(resp)).toBe(refusal(differences));
   });
 
   it('queues a forwarded Develop call behind a Develop call of the owning bridge', async () => {
