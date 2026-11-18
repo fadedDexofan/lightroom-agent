@@ -44,17 +44,9 @@ local function setup(opts)
             return withWriteAccessDo(self, ...)
         end
     end
-    catalog.getTargetPhoto = function() return opts.target == "other" and other or photo end
-    local flushes = {}
     helper.admitMaskWrites({ refuse = "Mask geometry writes are not certified." })
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
-        LrApplicationView = { getCurrentModuleName = function() return opts.module or "library" end },
-        LrDevelopController = {
-            stopTracking = function(committed)
-                flushes[#flushes + 1] = { committed = committed, reads = store.reads, attempts = store.attempts }
-            end,
-        },
         LrSelection = {},
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
@@ -62,7 +54,7 @@ local function setup(opts)
     for _, name in ipairs({ "MaskValues", "GuardedMaskWrite", "LocalSliders", "JsonValue", "CatalogWrite", "DevelopSession" }) do
         package.loaded[name] = nil
     end
-    local ctx = { store = store, catalog = catalog, photo = photo, flushes = flushes }
+    local ctx = { store = store, catalog = catalog, photo = photo }
     function ctx.readsInsideWrite() return readInsideWrite end
     return require 'MaskValues', ctx
 end
@@ -388,28 +380,4 @@ describe("MaskValues.write deleting a Point Color swatch", function()
         assert.matches("previous masks were restored", refusal, 1, true)
         assert.are.same(before, ctx.store.entries)
     end)
-end)
-
-describe("MaskValues.write on the photo open in Develop", function()
-    it("flushes Develop's pending edits before it reads the snapshot it writes on", function()
-        local MaskValues, ctx = setup({ module = "develop" })
-
-        MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
-
-        assert.are.same({ { committed = true, reads = 1, attempts = 0 } }, ctx.flushes)
-        assert.are.equal(0.125, ctx.store.entries[1].LocalExposure2012)
-    end)
-
-    for _, case in ipairs({
-        { where = "in Library", opts = { module = "library" } },
-        { where = "in Develop on another photo", opts = { module = "develop", target = "other" } },
-    }) do
-        it("flushes nothing " .. case.where, function()
-            local MaskValues, ctx = setup(case.opts)
-
-            MaskValues.write(helper.requestContext(), ctx.catalog, ctx.photo, "C1", { adjustments = { local_Exposure = 0.5 } })
-
-            assert.are.same({}, ctx.flushes)
-        end)
-    end
 end)

@@ -595,22 +595,6 @@ describe("HandlerDevelop.exportDevelopPreset", function()
 end)
 
 describe("HandlerDevelop.applyDevelopPreset", function()
-    it("commits Develop's pending edits on the photo it shows before reading the state it keeps as before", function()
-        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
-        local events = {}
-        local read, apply = p.getDevelopSettings, p.applyDevelopPreset
-        p.getDevelopSettings = function(...) events[#events + 1] = "read"; return read(...) end
-        p.applyDevelopPreset = function(...) events[#events + 1] = "apply"; return apply(...) end
-        local catalog, Handler = setup({ photos = { p }, folders = { fakeFolder("User", { fakePreset("Vibrant") }) },
-            applicationView = { getCurrentModuleName = function() return "develop" end, switchToModule = function() end },
-            developController = { stopTracking = function() events[#events + 1] = "flush" end } })
-        catalog.getTargetPhoto = function() return p end
-
-        Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Vibrant" })
-
-        assert.are.same({ "flush", "read", "apply" }, { events[1], events[2], events[3] })
-    end)
-
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local preset = fakePreset("Vibrant")
@@ -1413,23 +1397,6 @@ describe("HandlerDevelop.setDevelopSettings", function()
         assert.are.same(composite, applied.ToneCurvePV2012)
         assert.are.same(red, applied.ToneCurvePV2012Red)
     end)
-
-    for _, case in ipairs({ { module = "develop", flushes = 1 }, { module = "library", flushes = 0 } }) do
-        it("commits Develop's pending edits before writing only on the photo shown in Develop (" .. case.module .. ")", function()
-            local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
-            local events = {}
-            local apply = p.applyDevelopSettings
-            p.applyDevelopSettings = function(...) events[#events + 1] = "write"; return apply(...) end
-            local catalog, Handler = setup({ photos = { p },
-                applicationView = { getCurrentModuleName = function() return case.module end, switchToModule = function() end },
-                developController = { stopTracking = function() events[#events + 1] = "flush" end } })
-            catalog.getTargetPhoto = function() return p end
-
-            Handler.setDevelopSettings({ photo_id = "1", settings = { Exposure2012 = 0.5 } })
-
-            assert.are.same(case.flushes == 1 and { "flush", "write" } or { "write" }, events)
-        end)
-    end
 
     it("writes each point curve with its Extended companion holding the same points", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })

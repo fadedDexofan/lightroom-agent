@@ -57,14 +57,6 @@ describe("HandlerGradientMasks.createGradientMask", function()
         assert.are.equal(0.25, stores["1"].entries[1].LocalExposure2012)
     end)
 
-    it("commits an edit pending on the photo open in Develop before it writes the mask", function()
-        local Handler, _, calls = setup({ startModule = "develop" })
-
-        Handler.createGradientMask(linearRequest())
-
-        assert.are.same({ { committed = true, writes = 0 } }, calls.stopTracking)
-    end)
-
     it("places a linear gradient as a new mask and returns its ids", function()
         local Handler, stores = setup()
 

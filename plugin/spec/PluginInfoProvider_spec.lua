@@ -40,6 +40,12 @@ local function installStubs(prefs, asyncTasks, opts)
             pcall = pcall,
         },
         LrLogger = helper.defaultLrLogger(),
+        LrApplicationView = { getCurrentModuleName = function() return opts.develop and "develop" or "library" end },
+        LrDevelopController = {
+            stopTracking = function(committed)
+                if opts.develop then table.insert(opts.develop, "commit " .. tostring(committed)) end
+            end,
+        },
         LrDialogs = { message = function() end },
         LrFunctionContext = {
             postAsyncTaskWithContext = function(_, fn)
@@ -99,6 +105,7 @@ local function serving(opts, asyncTasks)
     installStubs(nil, asyncTasks, stubOpts)
     package.loaded.JSON = nil
     package.loaded.Reply = nil
+    package.loaded.DevelopSession = nil
     local mod = loadInfoProvider()
     mod.startServer()
     local state = _G.LightroomAgent_State
@@ -227,6 +234,34 @@ describe("PluginInfoProvider server task", function()
     end)
     after_each(function()
         io.open = realOpen
+    end)
+
+    it("loads every handler module when the server starts, before any request names it", function()
+        local loaded = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
+        for _, target in pairs(require('Contract').DISPATCH) do
+            package.loaded[target[1]] = nil
+            package.preload[target[1]] = function() loaded[target[1]] = true return {} end
+        end
+        package.loaded.JSON, package.loaded.Reply = nil, nil
+
+        loadInfoProvider().startServer()
+
+        for _, target in pairs(require('Contract').DISPATCH) do
+            package.preload[target[1]] = nil
+            assert.is_true(loaded[target[1]], target[1])
+        end
+    end)
+
+    it("commits Develop's pending edit before the handler of every action but ping", function()
+        local events = {}
+        local binds, _, state = serving({ develop = events })
+        package.loaded.HandlerSearch = { searchPhotos = function() events[#events + 1] = "handler" return {} end }
+
+        binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"s1","action":"search_photos"}')
+        binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p1","action":"ping"}')
+
+        assert.are.same({ "commit true", "handler" }, events)
     end)
 
     describe("progress", function()

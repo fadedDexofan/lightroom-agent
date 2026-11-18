@@ -31,13 +31,8 @@ local function setup(opts)
         withWriteAccessDo = function(_, _, fn) fn() end,
     }
     Store.trackGates(state, catalog)
-    catalog.getTargetPhoto = function() return photo end
-    state.flushes = {}
     helper.installImport({
-        LrApplicationView = { getCurrentModuleName = function() return opts.module or "library" end },
-        LrDevelopController = {
-            stopTracking = function(committed) state.flushes[#state.flushes + 1] = { committed = committed, attempts = state.attempts } end,
-        },
+        LrApplicationView = { getCurrentModuleName = function() return "library" end },
         LrSelection = {},
         LrApplication = {
             versionTable = function() return { major = 16, minor = 0, revision = 0, build = 1234567 } end,
@@ -74,19 +69,6 @@ local function appendGradient(component)
         return entries
     end
 end
-
-describe("GuardedMaskWrite.apply on the photo shown in Develop", function()
-    for _, case in ipairs({ { module = "develop", flushes = { { committed = true, attempts = 0 } } }, { module = "library", flushes = {} } }) do
-        it("commits Develop's pending edits before its gate only in Develop (" .. case.module .. ")", function()
-            local Guard, catalog, photo, state = setup({ module = case.module, entries = { correction("A", { linearComponent() }) } })
-
-            Guard.apply(helper.requestContext(), catalog, photo, { description = "Create gradient mask", build = appendGradient(radialComponent()) })
-
-            assert.are.same(case.flushes, state.flushes)
-            assert.are.equal(2, #state.entries)
-        end)
-    end
-end)
 
 describe("GuardedMaskWrite.apply admission", function()
     it("writes when the certification names the running build and the photo's process version", function()

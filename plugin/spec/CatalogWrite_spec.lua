@@ -20,83 +20,91 @@ local function load(imports)
 end
 
 describe("CatalogWrite.developSettings", function()
-    local function developing(module, target)
+    local function developing()
         local events = {}
         local photo = {
             applyDevelopSettings = function(_, settings, historyName)
                 events[#events + 1] = { apply = settings, history = historyName }
             end,
         }
-        local CatalogWrite, context = load({
-            LrApplicationView = { getCurrentModuleName = function() return module end },
-            LrDevelopController = { stopTracking = function(committed) events[#events + 1] = { flushed = committed } end },
-        })
-        local catalog = catalogAnswering("executed")
-        catalog.getTargetPhoto = function() return target or photo end
-        return CatalogWrite, context, catalog, photo, events
+        local CatalogWrite, context = load()
+        return CatalogWrite, context, catalogAnswering("executed"), photo, events
     end
 
-    it("commits Develop's pending edits on the photo, then applies the settings under the gate's title", function()
-        package.loaded.DevelopSession = nil
-        local CatalogWrite, context, catalog, photo, events = developing("develop")
+    it("applies the settings under the gate's title and records the gate", function()
+        local CatalogWrite, context, catalog, photo, events = developing()
 
         CatalogWrite.developSettings(context, catalog, photo, "Set Develop Settings", function() return { Exposure2012 = 1 } end)
 
-        assert.are.same({ { flushed = true }, { apply = { Exposure2012 = 1 }, history = "Set Develop Settings" } }, events)
+        assert.are.same({ { apply = { Exposure2012 = 1 }, history = "Set Develop Settings" } }, events)
         assert.are.same({ "Set Develop Settings" }, context.ledger:live())
     end)
 
-    it("commits nothing in Library or on another photo, and records no gate when there is nothing to apply", function()
-        for _, case in ipairs({ { "library" }, { "develop", {} } }) do
-            package.loaded.DevelopSession = nil
-            local CatalogWrite, context, catalog, photo, events = developing(case[1], case[2])
+    it("records no gate when there is nothing to apply", function()
+        local CatalogWrite, context, catalog, photo, events = developing()
 
-            CatalogWrite.developSettings(context, catalog, photo, "Set Mask", function() return nil end)
+        CatalogWrite.developSettings(context, catalog, photo, "Set Mask", function() return nil end)
 
-            assert.are.same({}, events)
-            assert.are.same({}, context.ledger:live())
-        end
+        assert.are.same({}, events)
+        assert.are.same({}, context.ledger:live())
     end)
 end)
 
-describe("CatalogWrite.developState", function()
-    it("commits Develop's pending edits only for the photo Develop shows, before the operation runs", function()
-        package.loaded.DevelopSession = nil
-        local events = {}
-        local shown, hidden = {}, {}
-        local CatalogWrite = load({
-            LrApplicationView = { getCurrentModuleName = function() return "develop" end },
-            LrDevelopController = { stopTracking = function(committed) events[#events + 1] = "flush " .. tostring(committed) end },
-        })
-        local catalog = catalogAnswering("executed")
-        catalog.getTargetPhoto = function() return shown end
+describe("CatalogWrite's writes", function()
+    for _, case in ipairs({
+        { write = "run", act = function(CatalogWrite, context, events)
+            CatalogWrite.run(context, catalogAnswering("executed"), "Gate", function() events[#events + 1] = "write" end)
+        end },
+        { write = "invoke", act = function(CatalogWrite, context, events)
+            CatalogWrite.invoke(context, "Call", function() events[#events + 1] = "write" end)
+        end },
+    }) do
+        it("commit Develop's pending edit before " .. case.write .. " writes, whichever photo Develop shows", function()
+            for _, module in ipairs({ "develop", "library" }) do
+                package.loaded.DevelopSession = nil
+                local events = {}
+                local CatalogWrite, context = load({
+                    LrApplicationView = { getCurrentModuleName = function() return module end },
+                    LrDevelopController = { stopTracking = function(committed) events[#events + 1] = "commit " .. tostring(committed) end },
+                })
 
-        local answer = CatalogWrite.developState(catalog, { hidden, shown }, function()
-            events[#events + 1] = "operation"
-            return "done"
+                case.act(CatalogWrite, context, events)
+
+                assert.are.same(module == "develop" and { "commit true", "write" } or { "write" }, events)
+            end
         end)
-
-        assert.are.equal("done", answer)
-        assert.are.same({ "flush true", "operation" }, events)
-    end)
+    end
 end)
 
 describe("Committing Develop's pending edits", function()
-    it("happens only in CatalogWrite.developState and Develop sessions", function()
+    local function calls(source, pattern)
+        local count = 0
+        for _ in source:gmatch(pattern) do count = count + 1 end
+        return count
+    end
+
+    it("happens at its named homes only: dispatch, CatalogWrite's two writes, Auto and reset, and a session's end", function()
         local directory = "plugin/LightroomAgent.lrplugin/"
-        local homes = { ["CatalogWrite.lua"] = true, ["DevelopSession.lua"] = true }
-        local elsewhere = {}
+        local found = { commit = {}, stopTracking = {}, releaseTracking = {} }
         for file in io.popen('ls "' .. directory .. '"'):lines() do
-            if file:match("%.lua$") and not homes[file] then
+            if file:match("%.lua$") then
                 local source = assert(io.open(directory .. file)):read("*a"):gsub("%-%-[^\n]*", "")
-                for name in source:gmatch("DevelopSession%.(flush[%w_]*)") do
-                    if not (file == "HandlerDevelop.lua" and name == "flushPendingEdits") then
-                        elsewhere[#elsewhere + 1] = file .. ": " .. name
-                    end
+                local name = file:gsub("%.lua$", "")
+                local counts = {
+                    commit = calls(source, "DevelopSession%.commitPendingEdits%(") - calls(source, "function DevelopSession%.commitPendingEdits%("),
+                    stopTracking = calls(source, "LrDevelopController%.stopTracking"),
+                    releaseTracking = calls(source, "DevelopSession%.releaseTracking") - calls(source, "function DevelopSession%.releaseTracking"),
+                }
+                for kind, count in pairs(counts) do
+                    if count > 0 then found[kind][name] = count end
                 end
             end
         end
-        assert.are.same({}, elsewhere)
+        assert.are.same({
+            commit = { PluginInfoProvider = 1, CatalogWrite = 2, HandlerDevelop = 2, DevelopSession = 1 },
+            stopTracking = { DevelopSession = 2 },
+            releaseTracking = { HandlerLensBlur = 1 },
+        }, found)
     end)
 end)
 
