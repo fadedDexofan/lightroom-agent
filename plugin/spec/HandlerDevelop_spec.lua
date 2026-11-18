@@ -1444,6 +1444,23 @@ local function denoiseSetup(opts)
     local photos, panels, outside, unselectable, settingsOf = {}, {}, {}, {}, {}
     local clock = { now = 0 }
     local pendingSaves = {}
+    local reads, pendingReset = {}, nil
+    local active, calls
+    local function landReset(photo)
+        local settings = settingsOf[photo]
+        if opts.reset == "voided" then return end
+        if opts.reset == "derived" then
+            settings.UprightCenterNormX, settings.UprightPreview = 0.4813, true
+            local masks = {}
+            for index, entry in ipairs(settings.MaskGroupBasedCorrections or {}) do
+                masks[index] = deepCopy(entry)
+                masks[index].CorrectionMasks[1].MaskDigest = "recomputed"
+            end
+            settings.MaskGroupBasedCorrections = masks
+            return
+        end
+        for key in pairs(settings) do settings[key] = nil end
+    end
     local function storeDenoise(photo, amount)
         settingsOf[photo].FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d" .. amount } } }
     end
@@ -1457,8 +1474,18 @@ local function denoiseSetup(opts)
     end
     for _, spec in ipairs(opts.photos) do
         local settings = {}
+        for key, value in pairs(spec.settings or {}) do settings[key] = deepCopy(value) end
         local p = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".rw2", developSettings = settings })
         settingsOf[p] = settings
+        p.getDevelopSettings = function()
+            reads[#reads + 1] = { kind = "read", id = spec.id, at = clock.now }
+            if opts.onRead then
+                local switched = opts.onRead(spec.id, photos)
+                if switched then active = switched end
+            end
+            if opts.nilAfterReset and calls.resetAt and calls.resetAt[spec.id] then return nil end
+            return deepCopy(settings)
+        end
         if spec.denoise then
             settings.FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d" .. spec.denoise } } }
         end
@@ -1471,12 +1498,12 @@ local function denoiseSetup(opts)
         outside[p] = spec.outsideSource
         unselectable[p] = spec.unselectable
     end
-    local active = not opts.nothingSelected and photos[1] or nil
+    active = not opts.nothingSelected and photos[1] or nil
     local module = "library"
     local sources = { "folder" }
     local dropNextSelection = false
     local autoSelectPending = false
-    local calls = {
+    calls = {
         selections = {}, enhance = {}, amounts = {}, switched = 0, modules = {}, sources = {}, selectNone = 0,
     }
     local Handler
@@ -1486,6 +1513,10 @@ local function denoiseSetup(opts)
             if opts.resetError then error(opts.resetError) end
             calls.resets = calls.resets or {}
             calls.resets[#calls.resets + 1] = active.localIdentifier
+            calls.resetAt = calls.resetAt or {}
+            calls.resetAt[active.localIdentifier] = clock.now
+            reads[#reads + 1] = { kind = "reset", id = active.localIdentifier, at = clock.now }
+            pendingReset = { photo = active, at = clock.now + 2 }
             if opts.onReset then opts.onReset(clock) end
         end,
         getEnhancePanelState = function()
@@ -1544,6 +1575,10 @@ local function denoiseSetup(opts)
         pcall = pcall,
         sleep = function(seconds)
             clock.now = clock.now + seconds
+            if pendingReset and clock.now >= pendingReset.at then
+                landReset(pendingReset.photo)
+                pendingReset = nil
+            end
             for index = #pendingSaves, 1, -1 do
                 if clock.now >= pendingSaves[index].at then
                     storeDenoise(pendingSaves[index].photo, pendingSaves[index].amount)
@@ -1605,6 +1640,7 @@ local function denoiseSetup(opts)
         dropNextSelection = opts.dropSelectionAfterSourceSwitch or false
         autoSelectPending = opts.autoSelectAfterSourceSwitch or false
     end
+    calls.reads = reads
     return Handler, calls, photos, clock
 end
 
@@ -1623,8 +1659,83 @@ local function reasonsOf(items)
 end
 
 describe("HandlerDevelop.resetDevelopAdjustments", function()
+    local EDITED = { Exposure2012 = 0.5 }
+    local LANDING_SECONDS = 2.1
+    local GRADIENT = { { CorrectionID = "G1", CorrectionMasks = { { What = "Mask/Gradient", MaskDigest = "a" } } } }
+    local PREPARED = {
+        CropLeft = 0.124764, CropAngle = 5, PerspectiveUpright = 1, UprightCenterNormX = 0.5, Contrast2012 = 20,
+        Exposure2012 = 0.5, MaskGroupBasedCorrections = GRADIENT,
+    }
+
+    local function readsAfterReset(calls, id)
+        local after, resetAt = {}, nil
+        for _, event in ipairs(calls.reads) do
+            if event.id == id and event.kind == "reset" then resetAt = event.at end
+            if event.id == id and event.kind == "read" and resetAt then after[#after + 1] = event.at - resetAt end
+        end
+        return after
+    end
+
+    for _, case in ipairs({
+        { "tone, crop, Upright and a mask", PREPARED },
+        { "only an HSL slider", { SaturationAdjustmentBlue = -40 } },
+        { "only masks", { MaskGroupBasedCorrections = GRADIENT } },
+        { "only spots", { RetouchAreas = { { SpotType = "heal" } } } },
+        { "only the camera profile", { CameraProfile = "Adobe Standard" } },
+        { "only the profile Look", { Look = { Name = "Adobe Vivid", Amount = 1, UUID = "EA1DE074F188405965EEA2D7A5D3E3E9" } } },
+        { "only an Enhance filter", { FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d50" } } } } },
+    }) do
+        it("answers reset once one read, after Lightroom lands a reset, shows a change to " .. case[1], function()
+            local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = case[2] } } })
+            local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } })
+            assert.are.same({ "1:reset" }, statuses(reply))
+            local after = readsAfterReset(calls, "1")
+            assert.are.equal(1, #after)
+            assert.is_true(after[1] > LANDING_SECONDS + 0.5, tostring(after[1]))
+        end)
+    end
+
+    for _, case in ipairs({
+        { "Lightroom never lands the reset", "voided", PREPARED },
+        { "Lightroom changes only the Upright and mask data it derives", "derived", PREPARED },
+        { "the photo has no edit a reset changes", nil, {} },
+    }) do
+        it("answers unknown, naming the reset as written, when " .. case[1], function()
+            local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = case[3] } }, reset = case[2] })
+            local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } })
+            assert.is_nil(reply.data)
+            assert.is_nil(reply.failed)
+            assert.are.equal("1", reply.unknown[1].photo_id)
+            for _, text in ipairs({ "no edit", "read the photo", "written before this stopped: resetAllDevelopAdjustments" }) do
+                assert.truthy(reply.unknown[1].reason:find(text, 1, true), reply.unknown[1].reason)
+            end
+            assert.are.equal(1, #readsAfterReset(calls, "1"))
+        end)
+    end
+
+    it("answers unknown when Lightroom returns no saved settings after the reset", function()
+        local Handler = denoiseSetup({ photos = { { id = "1", settings = PREPARED } }, reset = "voided", nilAfterReset = true })
+        local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } })
+        assert.is_nil(reply.data)
+        assert.are.equal("1", reply.unknown[1].photo_id)
+        assert.truthy(reply.unknown[1].reason:find("written before this stopped: resetAllDevelopAdjustments", 1, true),
+            reply.unknown[1].reason)
+    end)
+
+    it("resets no photo when another photo becomes active while it reads the photo before the reset", function()
+        local Handler, calls = denoiseSetup({
+            photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED } },
+            onRead = function(id, photos) if id == "1" then return photos[2] end end,
+        })
+        local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } })
+        assert.is_nil(calls.resets)
+        assert.is_nil(reply.data)
+        assert.is_nil(reply.unknown)
+        assert.are.same({ "1:another photo became active before the reset; nothing was reset" }, reasonsOf(reply.failed))
+    end)
+
     it("resets each photo once, whether named by id or path, and lists unknown inputs as not_found", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" } } })
+        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED } } })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1", "404", "1", "/2.rw2", "2" } })
         assert.are.same({ "1", "2" }, calls.resets)
         assert.are.same({ "1:reset", "2:reset" }, statuses(reply))
@@ -1637,7 +1748,7 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
 
     it("lists the unprocessed inputs as remaining when the request's budget runs out", function()
         local Handler, calls = denoiseSetup({
-            photos = { { id = "1" }, { id = "2" }, { id = "3" } },
+            photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED }, { id = "3", settings = EDITED } },
             onReset = function(clock) clock.now = clock.now + 100 end,
         })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1", 2, "3" } },
@@ -1648,7 +1759,7 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
     end)
 
     it("lists every input as remaining when the budget is spent before the first photo", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" } } })
+        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED } } })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1", "2" } },
             helper.requestContext(30))
         assert.is_nil(reply.data)
@@ -1658,7 +1769,7 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
     end)
 
     it("reports an error from the reset itself as an unknown outcome and restores the view", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1" } }, resetError = "reset refused" })
+        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED } }, resetError = "reset refused" })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } })
         assert.is_nil(reply.data)
         assert.are.equal("1", reply.unknown[1].photo_id)
@@ -1667,7 +1778,7 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
     end)
 
     it("reports a photo Develop cannot select as failed and carries on", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2", unselectable = true }, { id = "3" } } })
+        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", unselectable = true, settings = EDITED }, { id = "3", settings = EDITED } } })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "2", "3" } })
         assert.are.same({ "3" }, calls.resets)
         assert.are.same({ "3:reset" }, statuses(reply))
@@ -1676,14 +1787,14 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
 
     it("reports progress that never decreases", function()
         local reports = {}
-        local Handler = denoiseSetup({ photos = { { id = "1" }, { id = "2" }, { id = "3" } } })
+        local Handler = denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED }, { id = "3", settings = EDITED } } })
         Handler.resetDevelopAdjustments({ photo_ids = { "1", "2", "3", "404" } },
             helper.requestContext(nil, { report = function(_, done, total) reports[#reports + 1] = { done, total } end }))
         assert.are.same({ { 0, 3 }, { 1, 3 }, { 2, 3 }, { 3, 3 } }, reports)
     end)
 
     it("warns when it cannot put the user's module back", function()
-        local Handler = denoiseSetup({ photos = { { id = "1" } }, stuckInModule = "develop" })
+        local Handler = denoiseSetup({ photos = { { id = "1", settings = EDITED } }, stuckInModule = "develop" })
         local context = helper.requestContext(nil, { title = "reset_develop_adjustments" })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } }, context)
         assert.are.same({ "1:reset" }, statuses(reply))
@@ -1692,7 +1803,7 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
     end)
 
     it("lists all inputs as remaining when canceled before opening Develop", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1" } } })
+        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED } } })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } },
             helper.requestContext(nil, { isCanceled = function() return true end }))
         assert.are.same({ "1" }, reply.remaining)

@@ -41,12 +41,41 @@ local function sortedKeys(settings)
     return keys
 end
 
+local function keyChanged(key, before, stored)
+    local was, now = DevelopCurves.read(before, key), DevelopCurves.read(stored, key)
+    return (was == nil) ~= (now == nil) or (was ~= nil and not same(key, was, now))
+end
+
 local function unchanged(settings, before, stored)
     for _, key in ipairs(sortedKeys(settings)) do
-        local was, now = DevelopCurves.read(before, key), DevelopCurves.read(stored, key)
-        if (was == nil) ~= (now == nil) or (was ~= nil and not same(key, was, now)) then return false end
+        if keyChanged(key, before, stored) then return false end
     end
     return true
+end
+
+local LISTED_EDITS = {
+    { "MaskGroupBasedCorrections", function(settings) return settings.MaskGroupBasedCorrections end },
+    { "RetouchAreas", function(settings) return settings.RetouchAreas end },
+    { "FilterList", function(settings) return type(settings.FilterList) == "table" and settings.FilterList.Filters end },
+}
+
+local function profileOf(settings)
+    local look = type(settings.Look) == "table" and settings.Look or {}
+    return { settings.CameraProfile, look.Name, look.Amount }
+end
+
+function DevelopReadBack.changedEdits(before, after)
+    local changed = {}
+    for _, key in ipairs(Contract.DEVELOP_KEYS) do
+        if keyChanged(key.name, before, after) then changed[#changed + 1] = key.name end
+    end
+    for _, edit in ipairs(LISTED_EDITS) do
+        local name, listOf = edit[1], edit[2]
+        if #(listOf(after) or {}) < #(listOf(before) or {}) then changed[#changed + 1] = name end
+    end
+    local was, now = profileOf(before), profileOf(after)
+    if was[1] ~= now[1] or was[2] ~= now[2] or was[3] ~= now[3] then changed[#changed + 1] = "profile" end
+    return changed
 end
 
 function DevelopReadBack.before(settings)
