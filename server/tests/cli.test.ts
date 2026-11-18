@@ -88,16 +88,17 @@ describe('tool command parsing', () => {
   });
 });
 
-const CLI_SPAWN_MS = 30_000;
+const PROCESS_SLOWDOWN = process.platform === 'win32' ? 6 : 1;
+const CLI_SPAWN_MS = 30_000 * PROCESS_SLOWDOWN;
 
-async function waitUntilTrue(check: () => boolean, timeoutMs = 10_000): Promise<void> {
+async function waitUntilTrue(check: () => boolean, timeoutMs = 10_000 * PROCESS_SLOWDOWN): Promise<void> {
   const start = Date.now();
   while (!check()) {
     if (Date.now() - start > timeoutMs) throw new Error('condition not reached');
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
-const CLI_TEST_MS = CLI_SPAWN_MS + 5_000;
+const CLI_TEST_MS = CLI_SPAWN_MS + 5_000 * PROCESS_SLOWDOWN;
 
 describe('CLI process', () => {
   let directory: string;
@@ -173,7 +174,7 @@ describe('CLI process', () => {
     while (clients.length > 0) await clients.pop()!.close();
   });
 
-  type Stdio = { client: Client; call: (name: string) => Promise<ToolResponse>; stderr: () => string };
+  type Stdio = { client: Client; pid: number | null; call: (name: string) => Promise<ToolResponse>; stderr: () => string };
 
   async function stdio(dist: string, home: State, env: NodeJS.ProcessEnv, preloads: string[] = []): Promise<Stdio> {
     const client = new Client({ name: 'cli-test', version: '1.0.0' });
@@ -187,7 +188,7 @@ describe('CLI process', () => {
     transport.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
     clients.push(client);
     await client.connect(transport);
-    return { client, call: async (name) => await client.callTool({ name, arguments: {} }) as ToolResponse, stderr: () => stderr };
+    return { client, pid: transport.pid, call: async (name) => await client.callTool({ name, arguments: {} }) as ToolResponse, stderr: () => stderr };
   }
 
   function modulesDir(home: State): string {
@@ -529,18 +530,49 @@ describe('CLI process', () => {
     expect(plugin!.events.filter((event) => event.kind === 'request_connected')).toHaveLength(1);
   }, CLI_TEST_MS);
 
-  it('publishes the elected server\'s build when servers of two builds start together', async () => {
-    const env = await startPlugin(answering);
+  it.each([
+    ['together', undefined],
+    ['with A first', 'A'],
+    ['with B first', 'B'],
+  ] as const)('publishes the elected server\'s build when servers of two builds start %s', async (_order, first) => {
     const home = newState();
-    let other = '';
-    const [a, b] = await Promise.all([
-      stdio(checkout(), home, env),
-      stdio(checkout((tree) => { other = rebuilt(tree); }), home, env),
-    ]);
-    const [aDone, bDone] = [isDone(await a.call('list_collections')), isDone(await b.call('list_collections'))];
+    const env = await startPlugin((action) => {
+      if (action !== 'ping') return { collections: [] };
+      try {
+        return { pong: true, version: VERSION, build: installedBuild(home) };
+      } catch {
+        return { pong: true, version: VERSION };
+      }
+    });
+    const builds = { A: BUILD, B: '' };
+    const dists = { A: checkout(), B: checkout((tree) => { builds.B = rebuilt(tree); }) };
+    const lock = path.join(home.testHome, '.config', 'lightroom-agent',
+      `bridge-${env.LIGHTROOM_AGENT_REQUEST_PORT}-${env.LIGHTROOM_AGENT_RESPONSE_PORT}.lock`);
+    const holderPid = () => {
+      try {
+        return Number(fs.readFileSync(lock, 'utf8').trim());
+      } catch {
+        return null;
+      }
+    };
+    const start = async (name: 'A' | 'B') => [name, await stdio(dists[name], home, env)] as const;
+    let servers: Map<'A' | 'B', Stdio>;
+    if (first === undefined) {
+      servers = new Map(await Promise.all([start('A'), start('B')]));
+    } else {
+      const leader = await start(first);
+      await waitUntilTrue(() => holderPid() === leader[1].pid);
+      servers = new Map([leader, await start(first === 'A' ? 'B' : 'A')]);
+    }
+    const done = new Map<string, boolean>();
+    for (const [name, server] of servers) done.set(name, isDone(await server.call('list_collections')));
 
-    expect(aDone).not.toBe(bDone);
-    expect(installedBuild(home)).toBe(aDone ? BUILD : other);
+    const [winner] = [...servers].find(([, server]) => server.pid === holderPid()) ?? [];
+    expect(winner).toBeDefined();
+    if (first !== undefined) expect(winner).toBe(first);
+    expect(installedBuild(home)).toBe(builds[winner!]);
+    expect([...done].filter(([, ok]) => ok).map(([name]) => name)).toEqual([winner]);
+    expect(plugin!.events.filter((event) => event.kind === 'request_connected')).toHaveLength(1);
   }, CLI_TEST_MS);
 
   it('restores the bundle a leader killed mid-swap had moved aside, then installs its own', async () => {
