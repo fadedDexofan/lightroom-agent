@@ -469,15 +469,24 @@ describe('Develop call queue', () => {
 });
 
 describe('plug-in actions that touch a photo\'s develop state', () => {
-  const accessOf = developAccessByHandler(path.resolve(process.cwd(), '..', 'plugin', 'LightroomAgent.lrplugin'));
+  const { accessOf, defines } = developAccessByHandler(path.resolve(process.cwd(), '..', 'plugin', 'LightroomAgent.lrplugin'));
 
   it('are found through the helper modules a handler reads with, and catalog work is not', () => {
     expect([...accessOf('HandlerCrop.read')]).toEqual(['reads']);
     expect([...accessOf('HandlerMasks.listMasks')]).toEqual(['reads']);
     expect([...accessOf('HandlerDevelop.resetDevelopAdjustments')]).toContain('session');
     expect([...accessOf('HandlerTreatment.set')]).toContain('writes');
+    expect([...accessOf('HandlerUndo.undoLastStep')]).toEqual(['writes']);
+    expect([...accessOf('HandlerVirtualCopies.create')]).toContain('writes');
+    expect([...accessOf('HandlerSpots.update')]).toContain('writes');
+    expect([...accessOf('HandlerOrganization.setRatingAndFlag')]).toEqual([]);
     expect([...accessOf('HandlerCollections.listCollections')]).toEqual([]);
     expect([...accessOf('HandlerPreview.renderPreview')]).toEqual([]);
+  });
+
+  it('resolve every dispatched handler to a function the scan has read', () => {
+    expect(defines('HandlerDevelop.noSuchHandler')).toBe(false);
+    expect(DISPATCHED_ACTIONS.filter((action) => !defines(action.plugin)).map((action) => action.plugin)).toEqual([]);
   });
 
   it('run in the Develop queue: every action whose handler reads, writes or opens Develop is marked', () => {

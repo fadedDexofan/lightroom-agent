@@ -10,11 +10,12 @@ interface Chunk { node: string; tokens: Token[] }
 const LONG_BRACKET = /^\[(=*)\[/;
 const NOT_STATEMENT_START = new Set(['end', 'else', 'elseif', 'until', '}', ')', ']']);
 const DEVELOP_READS = new Set(['getDevelopSettings', 'getDevelopSnapshots']);
-const DEVELOP_WRITE_METHODS = new Set([
+const DEVELOP_WRITES = new Set([
   'applyDevelopSettings', 'applyDevelopPreset', 'createDevelopSnapshot', 'applyDevelopSnapshot',
-  'deleteDevelopSnapshot', 'updateAISettings', 'deleteAllEmptyMasks', 'quickDevelopSetTreatment',
+  'deleteDevelopSnapshot', 'updateAISettings', 'deleteAllEmptyMasks', 'quickDevelopSetTreatment', 'createVirtualCopies',
 ]);
 const SESSION = 'DevelopSession.run';
+const CONTROLLER_WRITE = 'CatalogWrite.develop';
 
 function tokenize(source: string): Token[] {
   const tokens: Token[] = [];
@@ -116,7 +117,7 @@ function readModule(file: string, source: string): Module {
   return { file, table, requires, chunks, locals };
 }
 
-interface Graph { edges: Map<string, Set<string>>; access: Map<string, Set<DevelopAccess>> }
+interface Graph { nodes: Set<string>; edges: Map<string, Set<string>>; access: Map<string, Set<DevelopAccess>> }
 
 function addTo<T>(map: Map<string, Set<T>>, key: string, value: T) {
   const set = map.get(key) ?? new Set<T>();
@@ -125,6 +126,7 @@ function addTo<T>(map: Map<string, Set<T>>, key: string, value: T) {
 }
 
 function graphOf(modules: Module[]): Graph {
+  const nodes = new Set(modules.flatMap((module) => module.chunks.map((chunk) => chunk.node)));
   const edges = new Map<string, Set<string>>();
   const access = new Map<string, Set<DevelopAccess>>();
   for (const module of modules) {
@@ -136,33 +138,36 @@ function graphOf(modules: Module[]): Graph {
     for (const { node, tokens } of module.chunks) {
       tokens.forEach((token, at) => {
         const before = tokens[at - 1]?.text;
-        if (token.kind !== 'name' || before === '.') return;
-        if (before === ':') {
-          if (DEVELOP_READS.has(token.text)) addTo(access, node, 'reads');
+        if (token.kind === 'string' || before === '.' || before === ':') {
+          if (DEVELOP_WRITES.has(token.text)) addTo(access, node, 'writes');
+          if (before === ':' && DEVELOP_READS.has(token.text)) addTo(access, node, 'reads');
           return;
         }
+        if (token.kind !== 'name') return;
         const field = tokens[at + 1]?.text === '.' && tokens[at + 2]?.kind === 'name' ? tokens[at + 2].text : undefined;
-        if (field === 'quickDevelopSetTreatment') addTo(access, node, 'writes');
+        if (token.text === 'LrUndo' && field === 'undo') addTo(access, node, 'writes');
         const target = resolve(token.text, field);
         if (target === null || target === node) return;
         addTo(edges, node, target);
         if (target === SESSION) addTo(access, node, 'session');
-        if (target === 'CatalogWrite.call') {
-          const method = tokens.slice(at + 3, at + 12).find((next) => next.kind === 'string');
-          if (method && DEVELOP_WRITE_METHODS.has(method.text)) addTo(access, node, 'writes');
-        }
+        if (target === CONTROLLER_WRITE) addTo(access, node, 'writes');
       });
     }
   }
-  return { edges, access };
+  return { nodes, edges, access };
 }
 
-export function developAccessByHandler(pluginDir: string): (handler: string) => Set<DevelopAccess> {
+export interface DevelopAccessScan {
+  accessOf: (handler: string) => Set<DevelopAccess>;
+  defines: (handler: string) => boolean;
+}
+
+export function developAccessByHandler(pluginDir: string): DevelopAccessScan {
   const modules = fs.readdirSync(pluginDir)
     .filter((name) => name.endsWith('.lua') && name !== 'Contract.lua')
     .map((name) => readModule(path.basename(name, '.lua'), fs.readFileSync(path.join(pluginDir, name), 'utf8')));
-  const { edges, access } = graphOf(modules);
-  return (handler) => {
+  const { nodes, edges, access } = graphOf(modules);
+  const accessOf = (handler: string) => {
     const reached = new Set<DevelopAccess>();
     const seen = new Set<string>([handler]);
     const queue = [handler];
@@ -175,4 +180,5 @@ export function developAccessByHandler(pluginDir: string): (handler: string) => 
     }
     return reached;
   };
+  return { accessOf, defines: (handler) => nodes.has(handler) };
 }
