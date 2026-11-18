@@ -1,3 +1,5 @@
+English | [Русский](README.ru.md) | [繁體中文](README.zh-TW.md)
+
 <h1 align="center">lightroom-agent</h1>
 
 <p align="center">Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render.</p>
