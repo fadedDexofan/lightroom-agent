@@ -1004,6 +1004,30 @@ function DevelopHandler.applyAutoAdjustments(args, context)
 end
 
 local RESET_PHOTO_AND_RESTORE_SECONDS = 60
+local RESET_LANDING_WAIT_SECONDS = Contract.RESET_LANDING_WAIT_SECONDS
+
+local function savedSettings(catalog, photo)
+    local settings
+    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+    if settings == nil then error("Lightroom returned no saved settings for the photo", 0) end
+    return settings
+end
+
+local function resetPhoto(context, catalog, photo)
+    local before = savedSettings(catalog, photo)
+    if catalog:getTargetPhoto() ~= photo then
+        Reply.refuse("another photo became active before the reset; nothing was reset")
+    end
+    CatalogWrite.develop(context, "resetAllDevelopAdjustments")
+    DevelopSession.commitPendingEdits()
+    LrTasks.sleep(RESET_LANDING_WAIT_SECONDS)
+    if #DevelopReadBack.changedEdits(before, savedSettings(catalog, photo)) == 0 then
+        error(string.format("no edit a reset clears (develop sliders, crop, Upright, profile, masks, spots, Enhance)"
+            .. " changed in the saved settings %d s after the reset: Lightroom may not have reset the photo, or it had"
+            .. " no such edit; read the photo before writing to it", RESET_LANDING_WAIT_SECONDS), 0)
+    end
+    return { status = "reset" }
+end
 
 function DevelopHandler.resetDevelopAdjustments(args, context)
     local catalog = LrApplication.activeCatalog()
@@ -1013,9 +1037,7 @@ function DevelopHandler.resetDevelopAdjustments(args, context)
         reserveSeconds = RESET_PHOTO_AND_RESTORE_SECONDS,
         each = function(photo, state)
             DevelopSession.openPhoto(catalog, photo, state)
-            CatalogWrite.develop(context, "resetAllDevelopAdjustments")
-            DevelopSession.commitPendingEdits()
-            return { status = "reset" }
+            return resetPhoto(context, catalog, photo)
         end,
     })
 end

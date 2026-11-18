@@ -528,6 +528,7 @@ export const STYLE_SUMMARY_PHOTO_LIMIT = 200;
 export const CATALOG_WRITE_WAIT_SECONDS = 10;
 export const AI_MASK_COMPUTE_WAIT_SECONDS = 15;
 export const AUTO_CHANGE_WAIT_SECONDS = 8;
+export const RESET_LANDING_WAIT_SECONDS = 4;
 export const NEW_MASK_SAVE_WAIT_SECONDS = 8;
 const DEVELOP_READ_BACK = "After the write the tool waits for Lightroom to normalise it (about a second) and reads the written table keys back: a value stored differently is listed in adjusted ({photo_id, key, requested, stored}) and makes the outcome partial; a key the photo held before and Lightroom no longer shows makes the photo unknown; a key the photo stores neither before nor after the write (a raw's Temperature and Tint on a JPEG) is listed in not_stored ({photo_id, keys}) with a warning and does not change the outcome.";
 const AI_COMPUTE_CHANGED_MORE = "unless Update AI Settings also changed other settings of the photo (it can refresh stale Lens Blur depth, Enhance filters, Remove areas or an adaptive profile, which are not rolled back): then it is unknown and names them";
@@ -1931,7 +1932,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerDevelop.resetDevelopAdjustments" },
     description:
-      "Reset all Develop edits, including crop/masks, on up to 100 photos (confirm:true); recover through Lightroom History. Opens each in Develop; shared restoration rules apply. Returns results per photo, status reset. Stops starting photos when one more would not fit its time budget, or on cancel; resend remaining.",
+      `Reset all Develop edits, including crop/masks, on up to 100 photos (confirm:true); recover through Lightroom History. Opens each in Develop; shared restoration rules apply. Returns results per photo, status reset, only when a read of the saved settings ${RESET_LANDING_WAIT_SECONDS} s after the reset (none sooner: a read while Lightroom applies a reset can void it) shows one of the photo's edits changed: a develop slider, the crop, Upright, or fewer masks or spots. Otherwise the photo is unknown: Lightroom may not have reset it, or it had no such edit; read it before writing to it. Stops starting photos when one more would not fit its time budget, or on cancel; resend remaining.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
