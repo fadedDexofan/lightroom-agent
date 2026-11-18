@@ -1,8 +1,8 @@
 import { PluginNotSentError, PluginTimeoutError, type CallOptions, type Dispatcher } from "./dispatcher.js";
-import { DevelopQueue } from "./develop-queue.js";
-import type { ToolArgs } from "./tool-contracts.js";
+import { DevelopQueue, type DevelopTurn } from "./develop-queue.js";
+import { developUseOf, type ToolArgs } from "./tool-contracts.js";
 import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
-import { finishLost, finishReply, refusedResponse, toolResponse, unknownToolResponse, type PluginReply, type ToolResponse } from "./tool-result.js";
+import { finishLost, finishReply, refusedResponse, toolResponse, unknownToolResponse, type ToolResponse } from "./tool-result.js";
 import { CHECKED_CONTRACTS, validateToolArgs } from "./validate-args.js";
 
 export interface ToolHandlerDeps {
@@ -39,28 +39,40 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     const generation = deps.admitted();
     if (generation === null) return refusedResponse(notReady());
     const withdrawn = (): string | null => (deps.admitted() === generation ? null : CONNECTION_CHANGED_MESSAGE);
+    let held: DevelopTurn | null = null;
+    const sendWithin = (turn: DevelopTurn, action: string, params: unknown, timeoutMs: number, callOptions?: CallOptions) =>
+      deps.dispatcher.call(action, params, timeoutMs, callOptions).catch((error: unknown) => {
+        if (error instanceof PluginTimeoutError) turn.outlive(error.settled);
+        throw error;
+      });
     const fenced: Pick<Dispatcher, "call"> = {
-      call: (action, params, timeoutMs, callOptions) => {
+      call: async (action, params, timeoutMs, callOptions) => {
         const reason = withdrawn();
-        if (reason !== null) return Promise.reject(new PluginNotSentError(reason));
-        return deps.dispatcher.call(action, params, timeoutMs, callOptions);
+        if (reason !== null) throw new PluginNotSentError(reason);
+        if (held) return sendWithin(held, action, params, timeoutMs, callOptions);
+        if (!developUseOf(action)) return deps.dispatcher.call(action, params, timeoutMs, callOptions);
+        const turn = await queue.run(name, timeoutMs, callOptions?.signal, (own) => {
+          const late = withdrawn();
+          if (late !== null) throw new PluginNotSentError(late);
+          return sendWithin(own, action, params, own.remainingMs, callOptions);
+        });
+        if (!turn.ran) throw new PluginNotSentError(turn.reason);
+        return turn.value;
       },
     };
 
     const readOnly = contract.annotations.readOnlyHint === true;
     const { run } = contract;
     const budgetMs = TIMEOUT_MS_BY_DURATION[contract.duration ?? "quick"];
-    const send = async (left: number): Promise<ToolResponse> => {
-      const reason = withdrawn();
-      if (reason !== null) return refusedResponse(reason);
-      const reply: PluginReply = "server" in run
-        ? await run.server(values, fenced, left, options)
-        : await fenced.call(name, values, left, options);
-      return toolResponse(finishReply(readOnly, reply));
-    };
     try {
-      if (!contract.develop) return await send(budgetMs);
-      const turn = await queue.run(name, budgetMs, options?.signal, send);
+      if (!("server" in run)) return toolResponse(finishReply(readOnly, await fenced.call(name, values, budgetMs, options)));
+      if (!contract.develop) return toolResponse(finishReply(readOnly, await run.server(values, fenced, budgetMs, options)));
+      const turn = await queue.run(name, budgetMs, options?.signal, async (own) => {
+        const reason = withdrawn();
+        if (reason !== null) return refusedResponse(reason);
+        held = own;
+        return toolResponse(finishReply(readOnly, await run.server(values, fenced, own.remainingMs, options)));
+      });
       return turn.ran ? turn.value : refusedResponse(turn.reason);
     } catch (error) {
       return toolResponse(finishLost(readOnly, failureText(name, readOnly, error), !(error instanceof PluginNotSentError)));
