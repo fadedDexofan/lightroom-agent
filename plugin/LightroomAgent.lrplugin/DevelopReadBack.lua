@@ -95,6 +95,10 @@ function DevelopReadBack.check(context, catalog, written)
     return checked
 end
 
+function DevelopReadBack.confirmed(result)
+    return result.error == nil and #result.absent == 0
+end
+
 function DevelopReadBack.parts(checked, data, lists)
     local parts = lists or {}
     parts.data = data
@@ -102,8 +106,9 @@ function DevelopReadBack.parts(checked, data, lists)
     local adjusted, notStored = {}, {}
     parts.failed = parts.failed or {}
     for _, result in ipairs(checked) do
-        if result.error ~= nil then
-            local class, reason = Reply.stopped(result.error, result.written)
+        if not DevelopReadBack.confirmed(result) then
+            local class, reason = "unknown", "Lightroom shows no " .. table.concat(result.absent, ", ") .. " after the write"
+            if result.error ~= nil then class, reason = Reply.stopped(result.error, result.written) end
             local list = class == "failed" and parts.failed or parts.unknown
             list[#list + 1] = { photo_id = result.photo_id, reason = reason }
         end
@@ -114,23 +119,17 @@ function DevelopReadBack.parts(checked, data, lists)
             parts.warnings[#parts.warnings + 1] = string.format("Lightroom stores no %s for photo %s",
                 table.concat(result.notStored, ", "), result.photo_id)
         end
-        if #result.absent > 0 then
-            parts.unknown[#parts.unknown + 1] = {
-                photo_id = result.photo_id,
-                reason = "Lightroom shows no " .. table.concat(result.absent, ", ") .. " after the write",
-            }
-        end
     end
-    if #notStored > 0 then data.not_stored = notStored end
+    if #notStored > 0 and data ~= nil then data.not_stored = notStored end
     if #adjusted > 0 then
-        data.adjusted = adjusted
-        local named = {}
-        for index = 1, math.min(#adjusted, NAMED_IN_PROBLEM) do
+        if data ~= nil then data.adjusted = adjusted end
+        local named, shown = {}, data ~= nil and math.min(#adjusted, NAMED_IN_PROBLEM) or #adjusted
+        for index = 1, shown do
             local item = adjusted[index]
             named[#named + 1] = string.format("%s %s on photo %s (written %s)",
                 item.key, valueText(item.stored), item.photo_id, valueText(item.requested))
         end
-        if #adjusted > NAMED_IN_PROBLEM then named[#named + 1] = string.format("%d more in adjusted", #adjusted - NAMED_IN_PROBLEM) end
+        if #adjusted > shown then named[#named + 1] = string.format("%d more in adjusted", #adjusted - shown) end
         parts.problem = "Lightroom stored other values than written: " .. table.concat(named, ", ")
     end
     return Reply.parts(parts)

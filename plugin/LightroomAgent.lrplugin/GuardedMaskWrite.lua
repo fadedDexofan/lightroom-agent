@@ -273,6 +273,23 @@ local function describeProblems(problems)
     return text
 end
 
+local function planConstruction(before, proposed)
+    nameAdded(proposed)
+    local plan = plannedEntries(before, proposed)
+    local problems = {}
+    for index, entry in ipairs(proposed) do
+        if not plan[index].preserved then
+            validateEntry(entry, "new mask " .. index, problems, plan[index].before)
+        end
+    end
+    if #problems > 0 then
+        table.sort(problems)
+        Reply.refuse("The requested mask change does not match the format this tool was tested with: "
+            .. describeProblems(problems))
+    end
+    return plan
+end
+
 local function closeEnough(left, right)
     return math.abs(left - right) <= TOLERANCE * math.max(1, math.abs(left))
 end
@@ -491,8 +508,11 @@ local function failAfterRollback(context, catalog, photo, previous, problems, ma
         .. " confirmed restored; check the photo's masks in Develop: " .. summary, 0)
 end
 
-function GuardedMaskWrite.requireNamed(catalog, photo)
-    requireNamed(GuardedMaskWrite.readEntries(catalog, photo))
+function GuardedMaskWrite.precheck(catalog, photo, proposed, processVersion)
+    MaskWriteAdmission.requireAdmitted(MaskWriteAdmission.status(catalog), processVersion)
+    local entries = GuardedMaskWrite.readEntries(catalog, photo)
+    requireNamed(entries)
+    planConstruction(entries, deepClone(proposed))
 end
 
 function GuardedMaskWrite.submit(context, catalog, photo, spec)
@@ -543,19 +563,7 @@ function GuardedMaskWrite.apply(context, catalog, photo, spec)
             local read = deepClone(entries)
             local proposed = spec.build(entries)
             if type(proposed) ~= "table" then error("mask change produced no mask list", 0) end
-            nameAdded(proposed)
-            plan = plannedEntries(read, proposed)
-            local problems = {}
-            for index, entry in ipairs(proposed) do
-                if not plan[index].preserved then
-                    validateEntry(entry, "new mask " .. index, problems, plan[index].before)
-                end
-            end
-            if #problems > 0 then
-                table.sort(problems)
-                Reply.refuse("The requested mask change does not match the format this tool was tested with: "
-                    .. describeProblems(problems))
-            end
+            plan = planConstruction(read, proposed)
             return proposed
         end,
         mismatches = function(expected, actual) return mismatchesFor(plan)(expected, actual) end,

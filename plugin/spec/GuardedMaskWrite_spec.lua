@@ -179,6 +179,22 @@ describe("GuardedMaskWrite.apply beside entries the call leaves alone", function
         end)
     end
 
+    it("validates an existing entry a build changed in place", function()
+        local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
+            { CorrectionID = "X" }) } })
+
+        local message = helper.failedOf(function()
+            Guard.apply(helper.requestContext(), catalog, photo, { description = "Add to mask", build = function(entries)
+                entries[1].CorrectionMasks[2] = { What = "Mask/RangeMask", MaskActive = true,
+                    CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "a", "b" } } }
+                return entries
+            end })
+        end)
+
+        assert.is_truthy(message:find("exactly one PointModels entry", 1, true))
+        assert.are.equal(0, #state.writes)
+    end)
+
     it("checks only what the call changed in an existing entry, admitting its Lightroom-only fields", function()
         local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
             { CorrectionID = "X", ExtendedMainCurve = { "0,0", "40,30", "255,255" } }) } })

@@ -149,7 +149,9 @@ function FakeMaskStore.attach(photo, opts)
         readsOutsideGate = 0,
         readsInsideWrite = 0,
         writesOutsideGate = 0,
+        settings = clone(opts.settings or {}),
     }
+    state.settings.ProcessVersion = opts.processVersion or "15.4"
     for _, entry in ipairs(state.entries) do
         local number = tostring(entry.CorrectionID):match("^C(%d+)$")
         if number then state.counter.next = math.max(state.counter.next, tonumber(number)) end
@@ -173,9 +175,7 @@ function FakeMaskStore.attach(photo, opts)
         if not state.insideRead and not state.insideWrite then state.readsOutsideGate = state.readsOutsideGate + 1 end
         state.reads = state.reads + 1
         if state.insideWrite then state.readsInsideWrite = state.readsInsideWrite + 1 end
-        local settings = {}
-        for key, value in pairs(opts.settings or {}) do settings[key] = value end
-        if not opts.noProcessVersion then settings.ProcessVersion = opts.processVersion or "15.4" end
+        local settings = clone(state.settings)
         local source = state.entries
         if #state.writes > 0 and state.readsSinceWrite < (opts.lagReadsAfterWrite or 0) then
             source = state.previousEntries
@@ -190,6 +190,10 @@ function FakeMaskStore.attach(photo, opts)
         if not state.insideWrite then state.writesOutsideGate = state.writesOutsideGate + 1 end
         state.attempts = state.attempts + 1
         if opts.rejectWrite and opts.rejectWrite(state.attempts) then error("write rejected") end
+        for key, value in pairs(settings) do
+            if key ~= "MaskGroupBasedCorrections" then state.settings[key] = clone(value) end
+        end
+        if settings.MaskGroupBasedCorrections == nil then return end
         local writeNumber = #state.writes + 1
         local written = clone(settings.MaskGroupBasedCorrections)
         state.writes[writeNumber] = clone(written)

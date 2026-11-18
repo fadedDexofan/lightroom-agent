@@ -1,0 +1,92 @@
+[
+  {
+    "case": "all refused",
+    "reply": {
+      "result": {
+        "failed": [
+          {
+            "photo_id": "11",
+            "reason": "The catalog stayed busy with another write for 10 s, so Lightroom did not run Copy Develop Settings"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "mixed",
+    "reply": {
+      "result": {
+        "data": {
+          "copied": 1
+        },
+        "failed": [
+          {
+            "photo_id": "12",
+            "reason": "cannot write this photo"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "unknown read-back",
+    "reply": {
+      "result": {
+        "unknown": [
+          {
+            "photo_id": "11",
+            "reason": "Lightroom shows no Contrast2012 after the write"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "unknown and adjusted on one target",
+    "reply": {
+      "result": {
+        "unknown": [
+          {
+            "photo_id": "11",
+            "reason": "Lightroom shows no Contrast2012 after the write"
+          }
+        ],
+        "problem": "Lightroom stored other values than written: Exposure2012 0.95 on photo 11 (written 1)"
+      }
+    }
+  },
+  {
+    "case": "all not found",
+    "reply": {
+      "result": {
+        "not_found": [
+          "404",
+          "/missing.jpg"
+        ]
+      }
+    }
+  },
+  {
+    "case": "budget exhausted",
+    "reply": {
+      "result": {
+        "remaining": [
+          "11"
+        ]
+      }
+    }
+  },
+  {
+    "case": "confirmed and remaining",
+    "reply": {
+      "result": {
+        "data": {
+          "copied": 1
+        },
+        "remaining": [
+          "12"
+        ]
+      }
+    }
+  }
+]

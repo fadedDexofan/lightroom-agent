@@ -17,7 +17,7 @@ local function setup(opts)
     if not opts.withoutUpdateAi then
         photo.updateAISettings = function()
             calls.updateAI = calls.updateAI + 1
-            for key, value in pairs(opts.computeChanges or {}) do opts.settings[key] = value end
+            for key, value in pairs(opts.computeChanges or {}) do store.settings[key] = value end
             Store.computeAI(store, function(_, component)
                 if opts.nothingFound and component.MaskDigest == nil then
                     return opts.errorReason and { ErrorReason = opts.errorReason } or "absent"
