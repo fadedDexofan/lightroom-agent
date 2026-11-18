@@ -157,6 +157,28 @@ describe("GuardedMaskWrite.apply beside entries the call leaves alone", function
         end)
     end
 
+    for _, case in ipairs({
+        { unnamed = "a mask", strip = function(entry) entry.CorrectionID, entry.CorrectionSyncID = nil, nil end,
+            text = 'mask 1 ("X") has no id yet' },
+        { unnamed = "a tool of a mask", strip = function(entry)
+            entry.CorrectionMasks[1].MaskID, entry.CorrectionMasks[1].MaskSyncID = nil, nil
+        end, text = 'a tool of mask 1 ("X") has no id yet' },
+    }) do
+        it("refuses a constructing write while " .. case.unnamed .. " on the photo has no id, writing nothing", function()
+            local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent() }) } })
+            case.strip(state.entries[1])
+            local held = Store.clone(state.entries[1])
+
+            local message = helper.failedOf(function()
+                Guard.apply(helper.requestContext(), catalog, photo, { description = "Create gradient mask", build = appendGradient(radialComponent()) })
+            end)
+
+            assert.is_truthy(message:find(case.text .. "; Lightroom names a mask a few seconds after it is written; call again", 1, true))
+            assert.are.equal(0, #state.writes)
+            assert.are.same({ held }, state.entries)
+        end)
+    end
+
     it("checks only what the call changed in an existing entry, admitting its Lightroom-only fields", function()
         local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
             { CorrectionID = "X", ExtendedMainCurve = { "0,0", "40,30", "255,255" } }) } })

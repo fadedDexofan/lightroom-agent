@@ -209,11 +209,7 @@ local function validateEntry(entry, where, problems, before)
     end
     for index, component in ipairs(entry.CorrectionMasks) do
         if not heldComponent(component, before) then
-            local at = where .. ".CorrectionMasks[" .. index .. "]"
-            if type(component) == "table" and type(component.MaskID) ~= "string" then
-                addProblem(problems, at .. ": missing MaskID")
-            end
-            validateComponent(component, at, problems)
+            validateComponent(component, where .. ".CorrectionMasks[" .. index .. "]", problems)
         end
     end
 end
@@ -227,6 +223,19 @@ end
 
 local function newId()
     return LrUUID.generateUUID():upper()
+end
+
+local function requireNamed(entries)
+    for index, entry in ipairs(entries) do
+        local mask = string.format('mask %d ("%s")', index, tostring(entry.CorrectionName))
+        local unnamed = entry.CorrectionID == nil and mask or nil
+        for _, component in ipairs(type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
+            if unnamed == nil and type(component) == "table" and component.MaskID == nil then unnamed = "a tool of " .. mask end
+        end
+        if unnamed ~= nil then
+            Reply.refuse(unnamed .. " has no id yet; Lightroom names a mask a few seconds after it is written; call again")
+        end
+    end
 end
 
 local function nameAdded(proposed)
@@ -243,10 +252,10 @@ end
 local function plannedEntries(read, proposed)
     local byId, plan = {}, {}
     for _, entry in ipairs(read) do
-        if entry.CorrectionID ~= nil then byId[tostring(entry.CorrectionID)] = entry end
+        byId[tostring(entry.CorrectionID)] = entry
     end
     for index, entry in ipairs(proposed) do
-        local before = entry.CorrectionID ~= nil and byId[tostring(entry.CorrectionID)] or nil
+        local before = byId[tostring(entry.CorrectionID)]
         plan[index] = { preserved = before ~= nil and JsonValue.equal(before, entry), before = before }
     end
     return plan
@@ -482,6 +491,10 @@ local function failAfterRollback(context, catalog, photo, previous, problems, ma
         .. " confirmed restored; check the photo's masks in Develop: " .. summary, 0)
 end
 
+function GuardedMaskWrite.requireNamed(catalog, photo)
+    requireNamed(GuardedMaskWrite.readEntries(catalog, photo))
+end
+
 function GuardedMaskWrite.submit(context, catalog, photo, spec)
     if spec.unchanged then
         local current = GuardedMaskWrite.readEntries(catalog, photo)
@@ -493,6 +506,7 @@ function GuardedMaskWrite.submit(context, catalog, photo, spec)
         function()
             settings = photo:getDevelopSettings()
             previous = entriesOf(settings)
+            requireNamed(previous)
             proposed = spec.build(deepClone(previous), settings)
             if proposed == nil then return nil end
             sent = true
@@ -571,7 +585,7 @@ end
 function GuardedMaskWrite.findComponent(entries, toolId)
     for entryIndex, entry in ipairs(entries) do
         for componentIndex, component in ipairs(entry.CorrectionMasks or {}) do
-            if component.MaskID ~= nil and tostring(component.MaskID) == tostring(toolId) then
+            if tostring(component.MaskID) == tostring(toolId) then
                 return entryIndex, componentIndex, component
             end
         end

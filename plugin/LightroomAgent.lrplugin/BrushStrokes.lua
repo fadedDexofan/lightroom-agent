@@ -6,7 +6,8 @@ local Reply = require 'Reply'
 local BrushStrokes = {}
 
 local AGGREGATE_WHAT = "Mask/Aggregate"
-local PAINT_WHAT = "Mask/Paint"
+BrushStrokes.PAINT_WHAT = "Mask/Paint"
+local PAINT_WHAT = BrushStrokes.PAINT_WHAT
 
 local DEFAULT_RADIUS = 0.14
 local DEFAULT_FLOW = 1
@@ -149,11 +150,14 @@ function BrushStrokes.newAggregate(strokes)
 end
 
 function BrushStrokes.isBrush(component)
-    return component ~= nil and component.What == AGGREGATE_WHAT
+    if component.What ~= AGGREGATE_WHAT or type(component.Masks) ~= "table" then return false end
+    for _, child in ipairs(component.Masks) do
+        if type(child) ~= "table" or child.What ~= PAINT_WHAT then return false end
+    end
+    return true
 end
 
 function BrushStrokes.appendStrokes(aggregate, strokes)
-    if type(aggregate.Masks) ~= "table" then aggregate.Masks = {} end
     for _, stroke in ipairs(strokes) do
         aggregate.Masks[#aggregate.Masks + 1] = BrushStrokes.newPaint(stroke)
     end
