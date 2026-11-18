@@ -12,6 +12,33 @@ export function sameIdentity<K extends string>(left: Identity<K>, right: Identit
   return (Object.keys(left) as K[]).every((key) => left[key] !== null && left[key] === right[key]);
 }
 
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/;
+
+function compareIdentifiers(left: string, right: string): number {
+  const numeric = /^\d+$/;
+  if (numeric.test(left) && numeric.test(right)) return Math.sign(Number(left) - Number(right));
+  if (numeric.test(left)) return -1;
+  if (numeric.test(right)) return 1;
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function compareVersions(left: string | null, right: string | null): -1 | 0 | 1 | null {
+  const a = left === null ? null : SEMVER.exec(left);
+  const b = right === null ? null : SEMVER.exec(right);
+  if (a === null || b === null) return null;
+  for (const index of [1, 2, 3]) {
+    const order = Math.sign(Number(a[index]) - Number(b[index]));
+    if (order !== 0) return order as -1 | 1;
+  }
+  if (a[4] === undefined || b[4] === undefined) return a[4] === b[4] ? 0 : a[4] === undefined ? 1 : -1;
+  const pa = a[4].split("."), pb = b[4].split(".");
+  for (let index = 0; index < Math.min(pa.length, pb.length); index++) {
+    const order = compareIdentifiers(pa[index], pb[index]);
+    if (order !== 0) return order as -1 | 1;
+  }
+  return Math.sign(pa.length - pb.length) as -1 | 0 | 1;
+}
+
 export function identityIn<K extends string>(value: unknown, fields: readonly K[]): Identity<K> {
   const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
   return Object.fromEntries(fields.map((field) => {

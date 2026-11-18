@@ -133,13 +133,13 @@ claude mcp add lightroom -e LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/di
 codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/dist/index.js"
 ```
 
-To update, pull and rebuild. [CONTRIBUTING.md](CONTRIBUTING.md) covers working on the code.
+To update, pull, run `npm --prefix server run build`, quit every client, run `node server/dist/index.js install-plugin`, restart Lightroom, then start the clients. A server updates an older plug-in on its own; a checkout whose version equals the installed one but whose build differs needs this explicit install. [CONTRIBUTING.md](CONTRIBUTING.md) covers working on the code.
 
 </details>
 
 ### Finish in Lightroom
 
-The server that holds the Lightroom connection installs the plug-in when it starts. Then quit and reopen Lightroom Classic and bring its window to the front: the plug-in starts its server. If **File → Plug-in Manager** shows Lightroom Agent stopped, click **Start Server**.
+When it starts, the server that holds the Lightroom connection checks the installed plug-in and installs or repairs its own build as needed. If another build is installed whose version is newer, the same or cannot be compared, the server says why and does not connect. Once the plug-in is installed or checked, quit and reopen Lightroom Classic and bring its window to the front: the plug-in starts its server. If **File → Plug-in Manager** shows Lightroom Agent stopped, click **Start Server**.
 
 Ask your agent: *List my Lightroom collections.* It answers with your collections by name.
 
@@ -148,7 +148,7 @@ After any update, restart all your clients first, then Lightroom: every server r
 <details>
 <summary>Installing the plug-in by hand, and uninstalling</summary>
 
-`node server/dist/index.js install-plugin` (or `npx -y lightroom-agent@<version> install-plugin`) copies the plug-in over its existing copy in Lightroom's Modules or Plugins folder, otherwise into the Modules folder (`~/Library/Application Support/Adobe/Lightroom/Modules/` on macOS, `%APPDATA%\Adobe\Lightroom\Modules\` on Windows). It replaces an installed copy whose files differ from its build and leaves an identical one alone. It refuses while a running lightroom-agent server on the same ports owns the plug-in, so quit your clients first; with custom ports, run it with the same port variables and quit clients on any other ports too, since every port pair installs into the same folder. If a `LightroomMCP.lrplugin` is installed, it refuses, because both use the same ports: quit Lightroom and delete that folder first.
+`node server/dist/index.js install-plugin` (or `npx -y lightroom-agent@<version> install-plugin`) copies the plug-in over its existing copy in Lightroom's Modules or Plugins folder, otherwise into the Modules folder (`~/Library/Application Support/Adobe/Lightroom/Modules/` on macOS, `%APPDATA%\Adobe\Lightroom\Modules\` on Windows). It replaces an installed copy whose Lua files differ from its build's, older or newer alike, says so when that is a downgrade, and leaves an identical one alone. On its own, a server only installs a missing plug-in, updates an older version or repairs its own build. It refuses while a running lightroom-agent server on the same ports owns the plug-in, so quit your clients first; with custom ports, run it with the same port variables and quit clients on any other ports too, since every port pair installs into the same folder. If a `LightroomMCP.lrplugin` is installed, it refuses, because both use the same ports: quit Lightroom and delete that folder first.
 
 To uninstall, remove the agent's plugin or server entry, then delete the installed `LightroomAgent.lrplugin` folder (Plug-in Manager shows where it is) and `~/.config/lightroom-agent`.
 
@@ -179,6 +179,8 @@ The server writes its diagnostics to stderr, which MCP clients keep in their ser
 | "Lightroom Agent token file not found" | **Start Server** has not run yet, or `LIGHTROOM_AGENT_TOKEN_PATH` points somewhere the plug-in never writes. |
 | "The Lightroom Agent token does not match the running plug-in" | The server reads the token file again on every connect, so this happens when `LIGHTROOM_AGENT_TOKEN_PATH` points at an old copy. Click **Stop Server**, then **Start Server**, and check the variable. |
 | "Lightroom has loaded a different plug-in build" | The plug-in Lightroom has loaded is not this server's build; the message names both. If the intended build was installed or repaired, restart Lightroom. Otherwise quit the connected clients, run this build's `install-plugin`, check its result, restart Lightroom and reconnect. Another client running a different build is one possible cause: use one build in every client. |
+| "Lightroom's installed plug-in is version …, newer than this server's" | This client runs an older lightroom-agent than the installed plug-in, so its server leaves the plug-in alone and does not connect. Update lightroom-agent in this client, or remove an outdated server entry, then restart the client. |
+| "Lightroom's installed plug-in is another build" | The installed plug-in has this server's version but another build, for example a server built from source and a plug-in installed from a release; the same error appears when the builds differ and the versions cannot be compared. The message gives each side's version and build. To install the server's build, quit the other clients, run `install-plugin` from the server's build, restart Lightroom, then start the clients. |
 | "This server and the server that owns the Lightroom connection differ in …" | Two clients run different lightroom-agent builds, and the first one started holds the connection. Use one build in every client, then restart them. |
 | "This server's build does not match its plug-in folder" | A checkout pulled or edited without a rebuild. Run `npm --prefix server run build` in the checkout, then restart your client. |
 | "This server's installation is damaged" | An npm or Claude Desktop installation whose plug-in no longer matches its server. Reinstall lightroom-agent, then restart your client. |

@@ -135,7 +135,7 @@ claude mcp add lightroom -e LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/di
 codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/dist/index.js"
 ```
 
-更新時，先拉取最新的原始碼，再重新建置。[CONTRIBUTING.md](CONTRIBUTING.md) 說明如何參與程式碼開發。
+更新時，先拉取最新的原始碼並執行 `npm --prefix server run build`，接著結束所有用戶端，執行 `node server/dist/index.js install-plugin`，重新啟動 Lightroom，再啟動用戶端。伺服器會自動將舊版增效模組更新到新版。如果從原始碼建置的增效模組與已安裝的增效模組版本號相同，但組建不同，就需要依照上述步驟執行 `install-plugin` 手動安裝。[CONTRIBUTING.md](CONTRIBUTING.md) 說明如何參與程式碼開發。
 
 </details>
 
@@ -143,7 +143,7 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 
 ### 在 Lightroom 中完成設定
 
-負責 Lightroom 連線的伺服器會在啟動時安裝增效模組。接著，請結束並重新開啟 Lightroom Classic，再將視窗切到前景。這時增效模組就會啟動自己的伺服器。如果 **檔案 → 增效模組管理員**（**File → Plug-in Manager**）顯示 Lightroom Agent 已停止，請按一下 **Start Server**。
+負責 Lightroom 連線的伺服器會在啟動時檢查增效模組，並視需要安裝或修復自己的組建。如果已安裝的增效模組與伺服器的組建不同，而且版本較新、版本號相同或無法比較版本，伺服器會顯示原因並不會連線至 Lightroom。確認增效模組已就緒後，請結束並重新開啟 Lightroom Classic，再將視窗切到前景。這時增效模組就會啟動自己的伺服器。如果 **檔案 → 增效模組管理員**（**File → Plug-in Manager**）顯示 Lightroom Agent 已停止，請按一下 **Start Server**。
 
 可以這樣問代理程式：*列出我的 Lightroom 集合。* 它會列出各個集合的名稱。
 
@@ -152,7 +152,7 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 <details>
 <summary>手動安裝增效模組與解除安裝</summary>
 
-`node server/dist/index.js install-plugin`（或 `npx -y lightroom-agent@<version> install-plugin`）會檢查 Lightroom 的 Modules 或 Plugins 資料夾。若其中已有這個增效模組，就安裝到原來的位置；若兩處都沒有，就安裝到 Modules 資料夾（macOS 上為 `~/Library/Application Support/Adobe/Lightroom/Modules/`，Windows 上為 `%APPDATA%\Adobe\Lightroom\Modules\`）。只有已安裝的檔案與這個組建不同時才會覆寫；完全相同就保留原檔。如果同一組連接埠上仍有 lightroom-agent 伺服器負責這個增效模組，安裝指令會拒絕安裝，因此請先結束用戶端。若使用自訂連接埠，請用相同的連接埠變數設定執行安裝指令，並一併結束使用其他連接埠的用戶端，因為不論使用哪一組連接埠，安裝位置都相同。如果已安裝 `LightroomMCP.lrplugin`，安裝指令也會拒絕安裝，因為兩個增效模組使用相同的連接埠。請先結束 Lightroom，再刪除該增效模組的資料夾。
+`node server/dist/index.js install-plugin`（或 `npx -y lightroom-agent@<version> install-plugin`）會檢查 Lightroom 的 Modules 或 Plugins 資料夾。若其中已有這個增效模組，就安裝到原來的位置；若兩處都沒有，就安裝到 Modules 資料夾（macOS 上為 `~/Library/Application Support/Adobe/Lightroom/Modules/`，Windows 上為 `%APPDATA%\Adobe\Lightroom\Modules\`）。手動安裝時，如果已安裝的 Lua 檔案與這個組建的檔案不同，安裝指令就會覆寫原有的增效模組。若這次安裝會降版，指令會在結果中說明。檔案相同時會保留原檔。伺服器啟動時可以自動安裝缺少的增效模組、更新較舊的版本，或修復與伺服器組建相同的增效模組。如果同一組連接埠上仍有 lightroom-agent 伺服器負責這個增效模組，安裝指令會拒絕安裝，因此請先結束用戶端。若使用自訂連接埠，請用相同的連接埠變數設定執行安裝指令，並一併結束使用其他連接埠的用戶端，因為不論使用哪一組連接埠，安裝位置都相同。如果已安裝 `LightroomMCP.lrplugin`，安裝指令也會拒絕安裝，因為兩個增效模組使用相同的連接埠。請先結束 Lightroom，再刪除該增效模組的資料夾。
 
 解除安裝時，先移除代理程式中的外掛或伺服器設定項目，再刪除已安裝的 `LightroomAgent.lrplugin` 資料夾（增效模組管理員會顯示它的位置）以及 `~/.config/lightroom-agent`。
 
@@ -185,6 +185,8 @@ Claude Code 與 Codex 外掛會載入它，伺服器也會以 MCP 提示詞 `lig
 | "Lightroom Agent token file not found" | 尚未執行 **Start Server**，或 `LIGHTROOM_AGENT_TOKEN_PATH` 指向增效模組從不寫入的位置。 |
 | "The Lightroom Agent token does not match the running plug-in" | 伺服器每次連線都會重新讀取權杖檔，當 `LIGHTROOM_AGENT_TOKEN_PATH` 指向舊的權杖檔時，就會出現這個錯誤。按一下 **Stop Server**，再按 **Start Server**，並檢查該變數。 |
 | "Lightroom has loaded a different plug-in build" | Lightroom 載入的增效模組不是這個伺服器的組建；訊息中會列出兩者。如果預期的組建已經安裝或修復，請重新啟動 Lightroom。否則請結束已連線的用戶端，執行這個組建的 `install-plugin`，確認其結果，重新啟動 Lightroom 並重新連線。可能的原因之一是另一個用戶端執行著不同的組建：請在每個用戶端中使用同一個組建。 |
+| "Lightroom's installed plug-in is version …, newer than this server's" | 這個用戶端的 lightroom-agent 比已安裝的增效模組舊，所以它的伺服器不會更動增效模組，也不會連線。請更新這個用戶端中的 lightroom-agent，或移除過時的伺服器設定項目，然後重新啟動用戶端。 |
+| "Lightroom's installed plug-in is another build" | 已安裝的增效模組與伺服器版本相同，但組建不同。例如，伺服器是從原始碼建置的，而增效模組來自發行版。如果組建不同，而且伺服器無法比較兩者的版本，也會出現這個訊息。訊息中會列出雙方的版本和組建。若要使用伺服器的組建，請先結束其他用戶端，執行該伺服器隨附的 `install-plugin`，重新啟動 Lightroom，再啟動用戶端。 |
 | "This server and the server that owns the Lightroom connection differ in …" | 兩個用戶端執行不同的 lightroom-agent 組建，而最先啟動的那個持有連線。請在每個用戶端中使用同一個組建，然後重新啟動它們。 |
 | "This server's build does not match its plug-in folder" | 拉取或修改本機原始碼後，尚未重新建置。請在該工作目錄中執行 `npm --prefix server run build`，然後重新啟動你的用戶端。 |
 | "This server's installation is damaged" | 透過 npm 或 Claude Desktop 安裝的版本中，增效模組已與伺服器不相符。請重新安裝 lightroom-agent，然後重新啟動你的用戶端。 |

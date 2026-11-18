@@ -25,7 +25,7 @@ import { refusedResponse } from "./tool-result.js";
 import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
 import { acquireInstanceLock, LockHeldError, lockHolder, lockHolderUnresponsive, type InstanceLock } from "./instance-lock.js";
-import { describeInstall, ensurePluginInstalled, installPlugin } from "./install-plugin.js";
+import { admitLeader, describeInstall, installPlugin } from "./install-plugin.js";
 
 const PING_TIMEOUT_MS = 10_000;
 const RESPONSE_CONNECT_SETTLE_MS = 200;
@@ -186,7 +186,7 @@ function tryReadToken(): string | null {
 
 function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: number, install: boolean): Leader {
   confirmPairing(pairing);
-  if (install) ensurePluginInstalled(pairing, (m) => console.error(m));
+  admitLeader(pairing, install, (m) => console.error(m));
   let requestSocket: PluginSocket;
   let responseSocket: PluginSocket | null = null;
   let responseConnectTimer: NodeJS.Timeout | null = null;

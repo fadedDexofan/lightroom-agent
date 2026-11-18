@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from '@jest/globals';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -209,13 +209,38 @@ describe('CLI process', () => {
     return identity.build;
   }
 
-  function installOld(home: State): string {
+  function installOld(home: State, version = '0.0.1'): string {
     const installed = path.join(modulesDir(home), 'LightroomAgent.lrplugin');
     fs.cpSync(path.join(directory, 'package', 'LightroomAgent.lrplugin'), installed, { recursive: true });
     const contract = path.join(installed, 'Contract.lua');
-    fs.writeFileSync(contract, fs.readFileSync(contract, 'utf8').replace(/BUILD = "[^"]+"/, 'BUILD = "0000000000000000"'));
+    fs.writeFileSync(contract, fs.readFileSync(contract, 'utf8')
+      .replace(/BUILD = "[^"]+"/, 'BUILD = "0000000000000000"')
+      .replace(/VERSION = "[^"]+"/, `VERSION = "${version}"`));
     return fs.readFileSync(contract, 'utf8');
   }
+
+  function pairedAt(version: string): { dist: string; bundle: string; build: string } {
+    let tree = { dist: '', bundle: '' };
+    checkout((created) => { tree = created; });
+    const compiled = path.join(tree.dist, 'version.js');
+    fs.writeFileSync(compiled, fs.readFileSync(compiled, 'utf8').replace(/VERSION = "[^"]+"/, `VERSION = "${version}"`));
+    const rendering = execFileSync(process.execPath, ['--input-type=module', '-e', [
+      `const { expectedIdentity, renderContractLua } = await import(${JSON.stringify(pathToFileURL(path.join(tree.dist, 'contract-lua.js')).href)});`,
+      `const identity = expectedIdentity(${JSON.stringify(tree.bundle)});`,
+      'process.stdout.write(JSON.stringify({ build: identity.build, contract: renderContractLua(identity) }));',
+    ].join('\n')], { encoding: 'utf8' });
+    const { build, contract } = JSON.parse(rendering) as { build: string; contract: string };
+    fs.writeFileSync(path.join(tree.bundle, 'Contract.lua'), contract);
+    fs.writeFileSync(path.join(tree.dist, 'plugin-build.json'), JSON.stringify({ build }));
+    return { ...tree, build };
+  }
+
+  const NEWER = (installed: string) => `Lightroom's installed plug-in is version ${installed}, newer than this server's version ${VERSION}, `
+    + 'so this server leaves it alone and does not connect to Lightroom. Update lightroom-agent in this client, '
+    + 'or remove an outdated server entry, then restart the client.';
+  const UNORDERED = (installed: string) => `Lightroom's installed plug-in is another build (installed: ${installed}; `
+    + `this server's: version ${VERSION}, build ${BUILD}), so this server leaves it alone and does not connect to Lightroom. `
+    + "To use this build, quit the other clients, run this build's install-plugin, restart Lightroom, then start the clients again.";
 
   function preload(home: State, name: string, body: string): string {
     const file = path.join(home.state, `${name}.mjs`);
@@ -527,6 +552,70 @@ describe('CLI process', () => {
 
     expect(isDone(await other.call('list_collections'))).toBe(false);
     expect(installedBuild(home)).toBe(BUILD);
+    expect(plugin!.events.filter((event) => event.kind === 'request_connected')).toHaveLength(1);
+  }, CLI_TEST_MS);
+
+  it('leaves a newer installed plug-in alone and stops electing, with its reason; a server of that version then leads', async () => {
+    const newer = pairedAt('9.0.0');
+    const env = await startPlugin((action) => (action === 'ping' ? { pong: true, version: '9.0.0', build: newer.build } : { collections: [] }));
+    const home = newState();
+    const installed = path.join(modulesDir(home), 'LightroomAgent.lrplugin');
+    fs.cpSync(newer.bundle, installed, { recursive: true });
+    const contract = fs.readFileSync(path.join(installed, 'Contract.lua'), 'utf8');
+    const lock = path.join(home.testHome, '.config', 'lightroom-agent',
+      `bridge-${env.LIGHTROOM_AGENT_REQUEST_PORT}-${env.LIGHTROOM_AGENT_RESPONSE_PORT}.lock`);
+    const connections = () => plugin!.events.filter((event) => event.kind === 'request_connected').length;
+    const older = await stdio(checkout(), home, env);
+
+    expect(await older.call('list_collections')).toEqual({
+      isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed', error: NEWER('9.0.0') }) }],
+    });
+    expect(older.stderr()).toContain('[bridge] not taking the plugin connection');
+    expect(fs.readFileSync(path.join(installed, 'Contract.lua'), 'utf8')).toBe(contract);
+    expect(fs.existsSync(lock)).toBe(false);
+    expect(connections()).toBe(0);
+
+    const matching = await stdio(newer.dist, home, env);
+    expect(isDone(await matching.call('list_collections'))).toBe(true);
+    expect(connections()).toBe(1);
+    expect(fs.readFileSync(path.join(installed, 'Contract.lua'), 'utf8')).toBe(contract);
+  }, CLI_TEST_MS);
+
+  it.each([
+    ['another build of the same version', (home: State) => installOld(home, VERSION), `version ${VERSION}, build 0000000000000000`],
+    ['an unreadable version and another build', (home: State) => {
+      installOld(home);
+      const contract = path.join(modulesDir(home), 'LightroomAgent.lrplugin', 'Contract.lua');
+      fs.writeFileSync(contract, fs.readFileSync(contract, 'utf8').replace(/\n *VERSION = "[^"]+",/, ''));
+      return fs.readFileSync(contract, 'utf8');
+    }, 'version unknown, build 0000000000000000'],
+  ] as const)('leaves an installed plug-in of %s alone and does not lead, naming both builds', async (_what, install, named) => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    const contract = install(home);
+    const leader = await stdio(checkout(), home, env);
+
+    expect(await leader.call('list_collections')).toEqual({
+      isError: true, content: [{ type: 'text', text: JSON.stringify({ outcome: 'failed', error: UNORDERED(named) }) }],
+    });
+    expect(fs.readFileSync(path.join(modulesDir(home), 'LightroomAgent.lrplugin', 'Contract.lua'), 'utf8')).toBe(contract);
+    expect(plugin!.events.some((event) => event.kind === 'request_connected')).toBe(false);
+  }, CLI_TEST_MS);
+
+  it('leads without installing when reading the plug-in folders fails', async () => {
+    const env = await startPlugin(answering);
+    const home = newState();
+    const old = installOld(home);
+    const modules = modulesDir(home);
+    const failing = preload(home, 'fail-modules-read', `const read = fs.readdirSync;
+fs.readdirSync = (dir, ...rest) => { if (String(dir) === ${JSON.stringify(modules)}) throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }); return read(dir, ...rest); };`);
+
+    const leader = await stdio(checkout(), home, env, [failing]);
+
+    expect(isDone(await leader.call('list_collections'))).toBe(true);
+    expect(fs.readFileSync(path.join(modules, 'LightroomAgent.lrplugin', 'Contract.lua'), 'utf8')).toBe(old);
+    expect(leader.stderr()).toContain('[install-plugin] failed: EACCES');
+    expect(leader.stderr()).not.toContain('failed to start as owner');
     expect(plugin!.events.filter((event) => event.kind === 'request_connected')).toHaveLength(1);
   }, CLI_TEST_MS);
 
