@@ -12,12 +12,16 @@ local function previewPhoto(meta, thumbnail)
     return photo
 end
 
-local function setup(photos, onSleep)
+local function setup(photos, onSleep, view)
+    view = view or {}
     local catalog = helper.fakeCatalog({ photos = photos or {} })
+    catalog.getTargetPhoto = function() return view.target end
     -- now is a fake clock: each sleep advances it, and tests can jump it.
     local sleeps = { count = 0, now = 0 }
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
+        LrApplicationView = { getCurrentModuleName = function() return view.module or "library" end },
+        LrExportSession = function() error("a thumbnail preview must not export", 0) end,
         LrDate = { currentTime = function() return sleeps.now end },
         LrLogger = helper.defaultLrLogger(),
         LrStringUtils = { encodeBase64 = function(s) return "b64(" .. s .. ")" end },
@@ -137,6 +141,61 @@ describe("HandlerPreview.renderPreview", function()
         assert.are.equal(3, requests)
     end)
 
+    for _, case in ipairs({
+        { "preview", function(Handler) return Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30)) end },
+        { "duplicate preview", function(Handler)
+            return Handler.renderDuplicatePreview({ photo_ids = { "1" } }, helper.requestContext(30))
+        end },
+    }) do
+        it("answers a no-pixels " .. case[1] .. " of the photo open in Develop at once, with its cause", function()
+            local requests = 0
+            local photo = previewPhoto({ id = "1", path = "/a.arw", dateTimeOriginal = 5 }, function(_, _, _, cb)
+                requests = requests + 1
+                cb(nil, "error loading thumb")
+            end)
+            local _, Handler, sleeps = setup({ photo }, nil, { module = "develop", target = photo })
+
+            local reply = case[2](Handler)
+
+            assert.are.same({ {
+                photo_id = "1",
+                reason = "Lightroom renders no preview of photo 1 while it is the photo open in Develop",
+                cause = "active_in_develop",
+            } }, reply.failed)
+            assert.are.equal(1, requests)
+            assert.are.equal(0, sleeps.count)
+        end)
+    end
+
+    it("asks again for a photo that is not the one open in Develop, even while Develop is showing", function()
+        local requests = 0
+        local other = helper.fakePhoto({ id = "2", path = "/b.arw" })
+        local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
+            requests = requests + 1
+            if requests < 3 then cb(nil, "error loading thumb") else cb("JPEGDATA") end
+        end)
+        local _, Handler = setup({ photo, other }, nil, { module = "develop", target = other })
+
+        local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30))
+
+        assert.are.equal("b64(JPEGDATA)", reply.data.image.data)
+        assert.are.equal(3, requests)
+    end)
+
+    it("asks again for the Develop target while Lightroom shows Library", function()
+        local requests = 0
+        local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
+            requests = requests + 1
+            if requests < 3 then cb(nil, "error loading thumb") else cb("JPEGDATA") end
+        end)
+        local _, Handler = setup({ photo }, nil, { module = "library", target = photo })
+
+        local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30))
+
+        assert.are.equal("b64(JPEGDATA)", reply.data.image.data)
+        assert.are.equal(3, requests)
+    end)
+
     it("answers failed, saying Lightroom still had no preview pixels, when no render succeeds within the time", function()
         local requests, context = 0, nil
         local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
@@ -150,7 +209,7 @@ describe("HandlerPreview.renderPreview", function()
         local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, context)
 
         assert.are.equal("Lightroom still had no preview pixels for photo 1 (it answered \"error loading thumb\" until"
-            .. " the time ran out); ask again later, or check whether the photo is the active photo in Develop",
+            .. " the time ran out); ask again later",
             reply.failed[1].reason)
         assert.is_true(requests > 1)
         assert.is_true(context:timeLeft() >= 10)
@@ -210,5 +269,120 @@ describe("HandlerPreview.renderPreview", function()
         local _, Handler = setup({ photo })
 
         assert.are.equal("7", Handler.renderPreview({ photo_ids = { "/a.nef" }, size = 512 }).data.photo_id)
+    end)
+end)
+
+describe("HandlerPreview.renderPreviewInLibrary", function()
+    local function librarySetup(opts)
+        opts = opts or {}
+        local events = {}
+        local clock = { now = 0 }
+        local view = { module = opts.module or "develop" }
+        local photo = previewPhoto({ id = "1", path = "/a.arw", dateTimeOriginal = 77 }, function(_, w, _, cb)
+            events[#events + 1] = "render " .. w .. " in " .. view.module
+            if opts.renderFails then return cb(nil, "file is offline") end
+            if view.module == "develop" then cb(nil, "error loading thumb") else cb("JPEG") end
+        end)
+        local other = helper.fakePhoto({ id = "2", path = "/b.arw" })
+        local catalog = helper.fakeCatalog({ photos = { photo, other } })
+        local active, selected = opts.active or photo, { opts.active or photo }
+        catalog.getTargetPhoto = function() return active end
+        catalog.getTargetPhotos = function() return selected end
+        catalog.getActiveSources = function() return { "folder" } end
+        catalog.setSelectedPhotos = function(_, target, selection)
+            active, selected = target, selection
+            events[#events + 1] = "select " .. target.localIdentifier
+        end
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return catalog end },
+            LrApplicationView = {
+                getCurrentModuleName = function() return view.module end,
+                switchToModule = function(name)
+                    events[#events + 1] = "module " .. name
+                    if not (opts.libraryStuck and name == "library") then view.module = name end
+                end,
+            },
+            LrDate = { currentTime = function() return clock.now end },
+            LrLogger = helper.defaultLrLogger(),
+            LrStringUtils = { encodeBase64 = function(s) return "b64(" .. s .. ")" end },
+            LrTasks = { pcall = pcall, sleep = function(seconds) clock.now = clock.now + seconds end },
+        })
+        package.loaded.DevelopSession = nil
+        package.loaded.HandlerPreview = nil
+        return require 'HandlerPreview', events, view
+    end
+
+    it("renders the photo open in Develop from Library, then puts Develop and the selection back", function()
+        local Handler, events, view = librarySetup()
+
+        local reply = Handler.renderPreviewInLibrary({ action = "render_preview", photo_ids = { "1" }, size = 864 },
+            helper.requestContext(30, { title = "get_photo_preview" }))
+
+        assert.are.same({ photo_id = "1", image = { mime_type = "image/jpeg", data = "b64(JPEG)" } }, reply.data)
+        assert.are.same({ "module library", "render 864 in library", "module develop" }, events)
+        assert.are.equal("develop", view.module)
+    end)
+
+    it("renders the duplicate variant at 64 pixels with its capture time", function()
+        local Handler, events = librarySetup()
+
+        local reply = Handler.renderPreviewInLibrary({ action = "render_duplicate_preview", photo_ids = { "1" } },
+            helper.requestContext(30, { title = "find_duplicate_groups" }))
+
+        assert.are.equal(77, reply.data.capture_time)
+        assert.are.equal("render 64 in library", events[2])
+    end)
+
+    it("renders without leaving Develop when the photo is no longer the one open there", function()
+        local Handler, events = librarySetup({ module = "library" })
+
+        local reply = Handler.renderPreviewInLibrary({ action = "render_preview", photo_ids = { "1" }, size = 864 },
+            helper.requestContext(30, { title = "get_photo_preview" }))
+
+        assert.are.equal("b64(JPEG)", reply.data.image.data)
+        assert.are.same({ "render 864 in library" }, events)
+    end)
+
+    it("renders without leaving Develop when another photo is the one open there", function()
+        local Handler, events = librarySetup({ active = helper.fakePhoto({ id = "9", path = "/z.arw" }) })
+
+        local reply = Handler.renderPreviewInLibrary({ action = "render_preview", photo_ids = { "1" }, size = 864 },
+            helper.requestContext(30, { title = "get_photo_preview" }))
+
+        assert.matches("Lightroom still had no preview pixels for photo 1", reply.failed[1].reason, 1, true)
+        for _, event in ipairs(events) do assert.are.equal("render 864 in develop", event) end
+    end)
+
+    it("answers failed with the view back in Develop when Library does not open", function()
+        local Handler, _, view = librarySetup({ libraryStuck = true })
+
+        local reply = Handler.renderPreviewInLibrary({ action = "render_preview", photo_ids = { "1" }, size = 864 },
+            helper.requestContext(30, { title = "get_photo_preview" }))
+
+        assert.are.same({ { photo_id = "1", reason = "Library module did not open" } }, reply.failed)
+        assert.are.equal("develop", view.module)
+    end)
+
+    it("puts the view back when the render in Library fails", function()
+        local Handler, events, view = librarySetup({ renderFails = true })
+
+        local reply = Handler.renderPreviewInLibrary({ action = "render_preview", photo_ids = { "1" }, size = 864 },
+            helper.requestContext(30, { title = "get_photo_preview" }))
+
+        assert.are.same({ { photo_id = "1", reason = "Preview failed: file is offline" } }, reply.failed)
+        assert.are.equal("develop", view.module)
+        assert.are.equal("module develop", events[#events])
+    end)
+
+    it("refuses an action it renders no preview for, leaving Develop alone", function()
+        local Handler, events = librarySetup()
+
+        local reason = helper.failedOf(function()
+            Handler.renderPreviewInLibrary({ action = "export_photos", photo_ids = { "1" } },
+                helper.requestContext(30, { title = "get_photo_preview" }))
+        end)
+
+        assert.are.equal("No preview is rendered for export_photos", reason)
+        assert.are.same({}, events)
     end)
 end)
