@@ -516,6 +516,7 @@ const fitsFrame = (region: { x: number; y: number; width: number; height: number
 export const PLUGIN_ACTIONS: readonly PluginAction[] = [
   { name: "render_preview", plugin: "HandlerPreview.renderPreview" },
   { name: "render_duplicate_preview", plugin: "HandlerPreview.renderDuplicatePreview" },
+  { name: "render_preview_in_library", plugin: "HandlerPreview.renderPreviewInLibrary", develop: "drives" },
   { name: "render_detail_source", plugin: "HandlerExport.renderDetailSource" },
   { name: "write_develop_settings", plugin: "HandlerDevelop.setDevelopSettings", develop: "settings" },
   { name: "plan_crop", plugin: "HandlerCrop.plan", develop: "reads" },
@@ -539,6 +540,7 @@ const pagingProperties = (items: string) => ({
   offset: { type: "integer", minimum: 0, description: `Number of ${items} to skip (default 0)` },
 });
 
+const OPEN_IN_DEVELOP_RENDER = (when: string) => `Lightroom renders no preview of the photo open in Develop, so that photo is rendered ${when}from Library once running Develop operations finish: Lightroom switches to Library for about a second and back, restoring module, active photo, selection and source but not an open masking panel or the Develop tool.`;
 const PREVIEW_CACHE_ENLARGES = "Lightroom's preview cache can answer with an enlargement of a smaller cached preview, most often on a cropped photo, without saying so; judge fine sharpness with get_photo_detail.";
 const PREVIEW_START_LIMIT = `${previewStartLimitMs(TIMEOUT_MS_BY_DURATION.quick) / 1000} s`;
 
@@ -626,7 +628,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { server: serverTool(renderPreview) },
     description:
-      `Lightroom-rendered JPEG with Develop edits (raw supported). region crops the rendered frame after develop crop/rotation: normalized x/y/width/height, origin top-left, x right, y down. width/height/bytes are actual; requested_size is the edge asked of Lightroom; scaled_by_server is true when the server scaled Lightroom's larger image down. Lightroom sometimes answers that it has no preview pixels for a photo, typically right after a change; the call asks again for about ${previewStartLimitMs(TIMEOUT_MS_BY_DURATION.quick) / 1000} s and, if it still has none, fails with that reason: ask again later, or check whether the photo is the active photo in Develop. ${PREVIEW_CACHE_ENLARGES} See size for cost/edge rules.`,
+      `Lightroom-rendered JPEG with Develop edits (raw supported). region crops the rendered frame after develop crop/rotation: normalized x/y/width/height, origin top-left, x right, y down. width/height/bytes are actual; requested_size is the edge asked of Lightroom; scaled_by_server is true when the server scaled Lightroom's larger image down. Lightroom sometimes answers that it has no preview pixels for a photo, typically right after a change; the call asks again for about ${previewStartLimitMs(TIMEOUT_MS_BY_DURATION.quick) / 1000} s and, if it still has none, fails with that reason: ask again later. ${OPEN_IN_DEVELOP_RENDER("")} ${PREVIEW_CACHE_ENLARGES} See size for cost/edge rules.`,
     rules: [{
       text: "region must fit within the rendered frame (x + width and y + height at most 1)",
       holds: (args) => {
@@ -693,7 +695,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { server: serverTool(getPhotoPreviews) },
     description:
-      `Get JPEG thumbnails for 1–20 photos in input order for culling. Each preview names its photo_id and 1-based image_index, with width, height, bytes and scaled_by_server as in get_photo_preview; a photo that cannot be rendered is failed, the others still arrive; a photo Lightroom answers it has no preview pixels for is asked again within the time, which can leave the photos after it remaining. Total budget 8 MiB. Photos not reached by ${PREVIEW_START_LIMIT} or beyond the budget are remaining; resend them. ${PREVIEW_CACHE_ENLARGES} Catalog unchanged.`,
+      `Get JPEG thumbnails for 1–20 photos in input order for culling. Each preview names its photo_id and 1-based image_index, with width, height, bytes and scaled_by_server as in get_photo_preview; a photo that cannot be rendered is failed, the others still arrive; a photo Lightroom answers it has no preview pixels for is asked again within the time, which can leave the photos after it remaining. ${OPEN_IN_DEVELOP_RENDER("after the others, ")} Total budget 8 MiB. Photos not reached by ${PREVIEW_START_LIMIT} or beyond the budget are remaining; resend them. ${PREVIEW_CACHE_ENLARGES} Catalog unchanged.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -714,7 +716,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { server: serverTool(findDuplicateGroups) },
     description:
-      `Group near-duplicates/bursts from up to 100 IDs/paths using 64-bit dHash of current JPEG previews (minimum edge 64) and raw capture time. Every pair must meet inclusive time_window_seconds (default 5) and max_hamming_distance (default 10). Input-order groups omit singletons and repeated photos. Similarity does not rank frames. photos gives raw capture_time in Lightroom seconds (second precision, no timezone normalization). No hash cache or catalog changes. At ${PREVIEW_START_LIMIT} returns the groups so far and the unreached inputs as remaining; preview and missing-time failures are failed with reasons. Resend remaining together with the originals to grow groups.`,
+      `Group near-duplicates/bursts from up to 100 IDs/paths using 64-bit dHash of current JPEG previews (minimum edge 64) and raw capture time. Every pair must meet inclusive time_window_seconds (default 5) and max_hamming_distance (default 10). Input-order groups omit singletons and repeated photos. Similarity does not rank frames. photos gives raw capture_time in Lightroom seconds (second precision, no timezone normalization). No hash cache or catalog changes. At ${PREVIEW_START_LIMIT} returns the groups so far and the unreached inputs as remaining; preview and missing-time failures are failed with reasons. ${OPEN_IN_DEVELOP_RENDER("after the others, ")} Resend remaining together with the originals to grow groups.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -733,7 +735,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { server: serverTool(getPhotoStats) },
     description:
-      `Measure current rendered JPEG previews for up to 20 photos; results by photo_id, failures as failed, photos not started within ${PREVIEW_START_LIMIT} as remaining. histogram: 64 normalized Rec.709 luma bins (0-255, four levels/bin); mean_luminance same scale; shadow_fraction <=1, highlight_fraction >=254. sharpness: four-neighbor Laplacian variance after area resampling to 512px long edge (enlarges small previews); higher=sharper. These measure JPEG previews, not raw clipping/full-resolution focus. Catalog unchanged.`,
+      `Measure current rendered JPEG previews for up to 20 photos; results by photo_id, failures as failed, photos not started within ${PREVIEW_START_LIMIT} as remaining. histogram: 64 normalized Rec.709 luma bins (0-255, four levels/bin); mean_luminance same scale; shadow_fraction <=1, highlight_fraction >=254. sharpness: four-neighbor Laplacian variance after area resampling to 512px long edge (enlarges small previews); higher=sharper. These measure JPEG previews, not raw clipping/full-resolution focus. ${OPEN_IN_DEVELOP_RENDER("after the others, ")} Catalog unchanged.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,

@@ -1,6 +1,6 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { PREVIEW_SIZES, previewEdge, type PreviewSize } from "./preview-sizes.js";
-import { batchReply, jpegOf, previewBatch, previewItem, reasonOf, type PreviewItem, type RenderedPreview } from "./preview-item.js";
+import { batchReply, fallbackItem, jpegOf, previewBatch, previewItem, reasonOf, type CompletedItem, type RenderedPreview } from "./preview-item.js";
 import { cutPixels, decodeJpeg, encodeWithin, pixelBox, scaleToEdge, type NormalizedRegion } from "./rendered-image.js";
 import type { Input, PluginReply } from "./tool-result.js";
 
@@ -66,7 +66,7 @@ function cropPreview(preview: RenderedPreview, region: NormalizedRegion, request
   return fitted(preview, requestedSize, box, encoded, source !== decoded);
 }
 
-function partsOf(item: PreviewItem, fit: (preview: RenderedPreview) => FittedPreview): PluginReply {
+function partsOf(item: CompletedItem, fit: (preview: RenderedPreview) => FittedPreview): PluginReply {
   if ("notFound" in item) return { result: { not_found: [item.notFound] } };
   if ("failed" in item) return { result: { failed: [item.failed] } };
   try {
@@ -85,8 +85,10 @@ export async function renderPreview(
   const edge = previewEdge(args.size ?? DEFAULT_SIZE);
   const { region } = args;
   const requested = region ? regionSourceEdge(edge, region) : edge;
-  const item = await previewItem(dispatcher, { action: "render_preview", input: args.photo_id, size: requested },
-    budgetMs, options);
+  const deadline = performance.now() + budgetMs;
+  const request = { action: "render_preview", input: args.photo_id, size: requested };
+  const first = await previewItem(dispatcher, request, budgetMs, options);
+  const item = "blocked" in first ? await fallbackItem(dispatcher, request, deadline - performance.now(), options) : first;
   if (options?.signal?.aborted) throw new Error("Request cancelled");
   return partsOf(item, region ? (preview) => cropPreview(preview, region, requested) : (preview) => fitPreview(preview, edge));
 }
@@ -98,10 +100,10 @@ export async function getPhotoPreviews(
   options?: CallOptions,
 ): Promise<PluginReply> {
   const edge = previewEdge(args.size ?? DEFAULT_BATCH_SIZE);
-  const previews: FittedPreview[] = [];
+  const previews: (FittedPreview & { position: number })[] = [];
   let bytes = 0;
   const batch = await previewBatch(dispatcher, args.photo_ids, { action: "render_preview", size: edge, budgetMs }, options,
-    (rendered, fail) => {
+    (rendered, fail, position) => {
       let preview: FittedPreview;
       try {
         preview = fitPreview(rendered, edge);
@@ -111,7 +113,8 @@ export async function getPhotoPreviews(
       }
       if (bytes + preview.bytes > BATCH_BUDGET_BYTES) return false;
       bytes += preview.bytes;
-      previews.push(preview);
+      previews.push({ ...preview, position });
     });
-  return batchReply(batch, previews.length ? { previews } : undefined);
+  const ordered = previews.sort((a, b) => a.position - b.position).map(({ position: _position, ...preview }) => preview);
+  return batchReply(batch, ordered.length ? { previews: ordered } : undefined);
 }

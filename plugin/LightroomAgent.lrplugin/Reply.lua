@@ -17,12 +17,17 @@ function Reply.isParts(value)
     return type(value) == "table" and getmetatable(value) == PARTS
 end
 
-function Reply.refuse(message)
-    error(setmetatable({ message = message }, REFUSAL), 0)
+function Reply.refuse(message, cause)
+    error(setmetatable({ message = message, cause = cause }, REFUSAL), 0)
 end
 
 local function refusalOf(value)
     if type(value) == "table" and getmetatable(value) == REFUSAL then return value.message end
+    return nil
+end
+
+function Reply.causeOf(value)
+    if type(value) == "table" and getmetatable(value) == REFUSAL then return value.cause end
     return nil
 end
 

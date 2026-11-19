@@ -59,6 +59,7 @@ return {
         render_detail_source = { "HandlerExport", "renderDetailSource" },
         render_duplicate_preview = { "HandlerPreview", "renderDuplicatePreview" },
         render_preview = { "HandlerPreview", "renderPreview" },
+        render_preview_in_library = { "HandlerPreview", "renderPreviewInLibrary" },
         reset_develop_adjustments = { "HandlerDevelop", "resetDevelopAdjustments" },
         search_photos = { "HandlerSearch", "searchPhotos" },
         set_ai_metadata = { "HandlerAiMetadata", "setAiMetadata" },
@@ -304,5 +305,5 @@ return {
     STYLE_SUMMARY_PHOTO_LIMIT = 200,
     HEARTBEAT_INTERVAL_SECONDS = 30,
     VERSION = "0.1.0-rc.3",
-    BUILD = "7488a11ad0ab7657",
+    BUILD = "d8088241fe5a857b",
 }

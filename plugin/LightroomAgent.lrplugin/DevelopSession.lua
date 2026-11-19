@@ -132,13 +132,18 @@ local function developModuleShowing()
     return LrApplicationView.getCurrentModuleName() == "develop"
 end
 
+local function openModule(name, isReady, refusal)
+    local function showing() return LrApplicationView.getCurrentModuleName() == name end
+    if not showing() then LrApplicationView.switchToModule(name) end
+    if not DevelopSession.waitFor(isReady or showing, SELECT_TIMEOUT_SECONDS) then Reply.refuse(refusal) end
+end
+
 function DevelopSession.openDevelop(isReady)
-    if not developModuleShowing() then
-        LrApplicationView.switchToModule("develop")
-    end
-    if not DevelopSession.waitFor(isReady or developModuleShowing, SELECT_TIMEOUT_SECONDS) then
-        Reply.refuse("Develop module did not open")
-    end
+    openModule("develop", isReady, "Develop module did not open")
+end
+
+function DevelopSession.openLibrary()
+    openModule("library", nil, "Library module did not open")
 end
 
 function DevelopSession.commitPendingEdits()
