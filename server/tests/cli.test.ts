@@ -444,9 +444,9 @@ describe('CLI process', () => {
         return { success: true };
       });
       try {
-        const result = await run(['call', 'list_collections'], env, { ready, signal });
-        expect(result.code).toBe(expectedCode);
-        expect(result.stdout).toBe('');
+        const { code, stdout, stderr } = await run(['call', 'list_collections'], env, { ready, signal });
+        const seen = { code, stdout, stderr };
+        expect(seen).toEqual({ ...seen, code: expectedCode, stdout: '' });
       } finally {
         finish();
       }
