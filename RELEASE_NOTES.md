@@ -1,3 +1,27 @@
+# lightroom-agent 0.1.0-rc.4
+
+The fifth release candidate of lightroom-agent. Previews now work for the photo you are editing in Develop.
+
+**Install**
+
+- Claude Code: `/plugin marketplace add fadedDexofan/lightroom-agent`, then `/plugin install lightroom-agent@lightroom-agent`; to update, `claude plugin marketplace update lightroom-agent`, then `claude plugin update lightroom-agent@lightroom-agent`.
+- Codex CLI: `codex plugin marketplace add fadedDexofan/lightroom-agent`, then `codex plugin add lightroom-agent@lightroom-agent`; to update, `codex plugin marketplace upgrade lightroom-agent`, then start a new session.
+- Claude Desktop: open the `.mcpb` attached to this release.
+- Any MCP client: `npx -y lightroom-agent@0.1.0-rc.4` over stdio.
+- From a checkout: run `npm --prefix server run build`, quit every client, run `node server/dist/index.js install-plugin`, restart Lightroom, then start the clients.
+
+After updating, restart every client, then Lightroom Classic.
+
+**Changes since 0.1.0-rc.3**
+
+- Lightroom renders no preview of the photo open in Develop after an edit, so `get_photo_preview`, `get_photo_previews`, `get_photo_stats` and `find_duplicate_groups` failed for it after about 20 s. They now render that photo from Library: Lightroom shows Library for about a second and returns to Develop with the photo, selection and source restored; an open masking panel and the Develop tool are not restored. In a batch, that photo is rendered last.
+
+**Known issue**
+
+- The first reset after Lightroom starts can come back `unknown` with nothing changed, most often right after a read of that photo's settings; read the photo and call again.
+
+The full description of this release candidate's behaviour is in the 0.1.0-rc.1 notes below.
+
 # lightroom-agent 0.1.0-rc.3
 
 The fourth release candidate of lightroom-agent. Codex now offers every tool, and a server started from an outdated client no longer replaces a newer Lightroom plug-in.
