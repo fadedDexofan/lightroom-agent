@@ -898,7 +898,7 @@ function DevelopHandler.applyDenoise(args, context)
             DevelopSession.openDevelop(function() return LrDevelopController.getEnhancePanelState() ~= nil end)
         end,
         each = function(photo, state)
-            if not DevelopSession.activate(catalog, photo, state) then
+            if not DevelopSession.selectAlone(catalog, photo, state) then
                 Reply.refuse("could not select the photo in Develop")
             end
             return denoisePhoto(context, catalog, photo, amount)

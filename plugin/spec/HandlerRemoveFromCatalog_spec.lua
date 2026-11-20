@@ -16,8 +16,10 @@ local function setup(opts)
     catalog.getTargetPhotos = function() return selected end
     catalog.getActiveSources = function() return sources end
     catalog.setActiveSources = function(_, value)
-        sources = value
         calls.sources[#calls.sources + 1] = value
+        local name = value[1] == "all" and "all" or value[1] == "original source" and "original" or "folder"
+        if (opts.refuseSources or {})[name] then return false end
+        sources = value
     end
     catalog.kAllPhotos = "all"
     calls.folderLookups = {}
@@ -71,12 +73,14 @@ local function setup(opts)
             gridView = function() calls.grids = calls.grids + 1 end,
         },
         LrPathUtils = { parent = function(path) return (path:gsub("/[^/]*$", "")) end },
+        LrFileUtils = { exists = function() return not opts.missingFolder and "directory" or false end },
         LrSelection = selection,
         LrDevelopController = {},
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.DevelopSession = nil
+    package.loaded.PhotoSources = nil
     package.loaded.HandlerRemoveFromCatalog = nil
     local handler = require 'HandlerRemoveFromCatalog'
     calls.state = function() return selected, active, module, sources end
@@ -118,10 +122,43 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
         assert.are.same({ photos[1], photos[2] }, calls.removed)
     end)
 
+    it("shows All Photographs when Lightroom refuses the photos' folders, and removes", function()
+        local handler, calls, photos = setup({ refuseSources = { folder = true } })
+        handler.removePhotos({ photo_ids = { "1" } })
+        assert.are.same({ "all" }, calls.sources[2])
+        assert.are.same({ photos[1] }, calls.removed)
+    end)
+
+    it("removes nothing when Lightroom refuses both the folders and All Photographs", function()
+        local handler, calls = setup({ refuseSources = { folder = true, all = true } })
+        local class, message = helper.outcomeOf(function(context) handler.removePhotos({ photo_ids = { "1" } }, context) end)
+        assert.are.equal("failed", class)
+        assert.matches("nothing was removed", message, 1, true)
+        assert.are.equal(0, calls.removes)
+    end)
+
+    it("still restores the surviving selection when Lightroom refuses the previous source, and says so", function()
+        local handler, calls, photos = setup({ refuseSources = { original = true } })
+        local class, message = helper.outcomeOf(function(context) handler.removePhotos({ photo_ids = { "1" } }, context) end)
+        assert.are.equal("unknown", class)
+        assert.matches("Lightroom did not reopen the previous source", message, 1, true)
+        local selected, active = calls.state()
+        assert.are.same({ photos[4] }, selected)
+        assert.are.equal(photos[4], active)
+    end)
+
     it("falls back to All Photographs when a folder is not found", function()
         local handler, calls, photos = setup({ unknownFolder = true })
         handler.removePhotos({ photo_ids = { "1" } })
         assert.are.same({ "all" }, calls.sources[1])
+        assert.are.same({ photos[1] }, calls.removed)
+    end)
+
+    it("falls back to All Photographs, never setting a folder missing on disk", function()
+        local handler, calls, photos = setup({ missingFolder = true })
+        handler.removePhotos({ photo_ids = { "1" } })
+        assert.are.same({ "all" }, calls.sources[1])
+        assert.are.same({}, calls.folderLookups)
         assert.are.same({ photos[1] }, calls.removed)
     end)
 

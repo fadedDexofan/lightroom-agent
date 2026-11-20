@@ -4,11 +4,13 @@ local LrSelection = import 'LrSelection'
 local LrTasks = import 'LrTasks'
 
 local Log = require 'Log'
+local PhotoSources = require 'PhotoSources'
 local Reply = require 'Reply'
 
 local DevelopSession = {}
 
 local SELECT_TIMEOUT_SECONDS = 10
+local FIRST_TRY_SECONDS = 2
 local RESELECT_SECONDS = 1
 local POLL_SECONDS = 0.1
 local PHOTO_SETTLE_SECONDS = 0.5
@@ -44,12 +46,6 @@ end
 
 local retryUntil = DevelopSession.retryUntil
 
-local function selectAndWait(catalog, photo, selection)
-    return retryUntil(
-        function() return catalog:getTargetPhoto() == photo end,
-        function() catalog:setSelectedPhotos(photo, selection) end)
-end
-
 function DevelopSession.selectionMatches(catalog, photo, selection)
     if catalog:getTargetPhoto() ~= photo then return false end
     local expected = {}
@@ -76,22 +72,30 @@ local function selectNoneAndWait(catalog)
     end, function() LrSelection.selectNone() end)
 end
 
-local function withAllPhotosFallback(catalog, state, select)
-    if select() then return true end
-    if state.switchedSource then return false end
+local function switchTo(catalog, state, step, sources, photo)
     state.switchedSource = true
-    local ok = LrTasks.pcall(function() catalog:setActiveSources({ catalog.kAllPhotos }) end)
-    if not ok then return false end
-    return select()
+    Log.info(string.format("Showing photo %s through %s", tostring(photo.localIdentifier), step))
+    return PhotoSources.show(catalog, sources)
 end
 
-function DevelopSession.activate(catalog, photo, state)
-    return withAllPhotosFallback(catalog, state, function() return selectAndWait(catalog, photo, { photo }) end)
+local function withSourceFallback(catalog, photo, state, select)
+    if state.allPhotos then return select(SELECT_TIMEOUT_SECONDS) end
+    if select(FIRST_TRY_SECONDS) then return true end
+    if not state.folder then
+        local folders = PhotoSources.foldersOf(catalog, { photo })
+        if folders then
+            state.folder = true
+            if switchTo(catalog, state, "its folder", folders, photo) and select(SELECT_TIMEOUT_SECONDS) then return true end
+        end
+    end
+    if not switchTo(catalog, state, "All Photographs", { catalog.kAllPhotos }, photo) then return false end
+    state.allPhotos = true
+    return select(SELECT_TIMEOUT_SECONDS)
 end
 
 function DevelopSession.selectAlone(catalog, photo, state)
-    return withAllPhotosFallback(catalog, state, function()
-        return DevelopSession.selectExactly(catalog, photo, { photo })
+    return withSourceFallback(catalog, photo, state, function(timeoutSeconds)
+        return DevelopSession.selectExactly(catalog, photo, { photo }, timeoutSeconds)
     end)
 end
 
@@ -113,10 +117,8 @@ local function restoreView(catalog, view, state)
             problems[#problems + 1] = "the " .. tostring(view.module) .. " module was not reopened"
         end
     end
-    if state.switchedSource and view.sources then
-        if not LrTasks.pcall(function() catalog:setActiveSources(view.sources) end) then
-            problems[#problems + 1] = "the previous source was not reopened"
-        end
+    if state.switchedSource and view.sources and not PhotoSources.show(catalog, view.sources) then
+        problems[#problems + 1] = "the previous source was not reopened"
     end
     if view.active then
         local ok, restored = LrTasks.pcall(DevelopSession.selectExactly, catalog, view.active, view.selection)
@@ -184,7 +186,7 @@ end
 
 function DevelopSession.openPhoto(catalog, photo, state)
     DevelopSession.openDevelop()
-    if not DevelopSession.activate(catalog, photo, state) then
+    if not DevelopSession.selectAlone(catalog, photo, state) then
         Reply.refuse("Could not open photo " .. tostring(photo.localIdentifier) .. " in Develop")
     end
     LrTasks.sleep(PHOTO_SETTLE_SECONDS)

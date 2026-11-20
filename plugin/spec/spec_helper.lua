@@ -532,7 +532,7 @@ function M.fakeCatalog(opts)
             end
             return M.fakePhoto({ id = id, __dangling = true })
         end,
-        getTargetPhotos = function() markQuery() return opts.targetPhotos or photos end,
+        getTargetPhotos = function() markQuery() return opts.targetPhotos or (selectionCall and selectionCall.photos) or photos end,
         findPhotoByPath = function(_, path, caseSensitive)
             markQuery()
             for _, photo in ipairs(photos) do
