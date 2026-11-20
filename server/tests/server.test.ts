@@ -57,6 +57,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   copy_develop_settings: 'destructive',
   match_photo_style: 'destructive',
   set_develop_settings: 'destructive',
+  set_develop_settings_batch: 'destructive',
   set_crop: 'destructive',
   describe_develop_keys: 'read-only',
   get_crop: 'read-only',

@@ -749,19 +749,50 @@ function DevelopHandler.matchPhotoStyle(args, context)
         { failed = failures, not_found = missing, remaining = remaining })
 end
 
+local SET_SETTINGS_REPLY_SECONDS = 2
+local READ_BACK_PER_PHOTO_SECONDS = 0.1
+
+local function writeSettings(context, catalog, photo, settings)
+    local before
+    local from = context.ledger:mark()
+    CatalogWrite.developSettings(context, catalog, photo, "Set Develop Settings", function()
+        before = DevelopReadBack.before(photo:getDevelopSettings())
+        return DevelopCurves.forWrite(settings)
+    end)
+    Log.info(string.format("Set develop settings on photo %s", tostring(photo.localIdentifier)))
+    return { photo = photo, settings = settings, before = before, from = from, to = context.ledger:mark() }
+end
+
 function DevelopHandler.setDevelopSettings(args, context)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
-
-    local before
-    CatalogWrite.developSettings(context, catalog, photo, "Set Develop Settings", function()
-        before = DevelopReadBack.before(photo:getDevelopSettings())
-        return DevelopCurves.forWrite(args.settings)
-    end)
-    Log.info(string.format("Set develop settings on photo %s", tostring(photo.localIdentifier)))
-
-    local checked = DevelopReadBack.check(context, catalog, { { photo = photo, settings = args.settings, before = before } })
+    local checked = DevelopReadBack.check(context, catalog, { writeSettings(context, catalog, photo, args.settings) })
     return DevelopReadBack.parts(checked, { photo_id = checked[1].photo_id, settings = checked[1].stored })
+end
+
+function DevelopHandler.setDevelopSettingsBatch(args, context)
+    local catalog = LrApplication.activeCatalog()
+    local items, inputs = args.photos, {}
+    for index, item in ipairs(items) do inputs[index] = item.photo_id end
+    return DevelopBatch.run(context, catalog, {
+        inputs = inputs,
+        duplicates = "refuse",
+        reserveSeconds = function(started)
+            return DevelopReadBack.NORMALISE_SECONDS + READ_BACK_PER_PHOTO_SECONDS * (started + 1) + SET_SETTINGS_REPLY_SECONDS
+        end,
+        refusal = function(entry) return items[entry.index].refused end,
+        each = function(photo, _, entry) return writeSettings(context, catalog, photo, items[entry.index].settings) end,
+        finish = function(written)
+            local checked = DevelopReadBack.check(context, catalog, written)
+            local results = {}
+            for _, result in ipairs(checked) do
+                if DevelopReadBack.confirmed(result) then
+                    results[#results + 1] = { photo_id = result.photo_id, settings = result.stored }
+                end
+            end
+            return DevelopReadBack.parts(checked, #results > 0 and { results = results } or nil)
+        end,
+    })
 end
 
 -- AI Denoise is not a plain develop key: Lightroom stores it as an "Enhance"

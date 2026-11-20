@@ -7,7 +7,7 @@ import { DEFAULT_DETAIL_EDGE, getPhotoDetail, MAX_DETAIL_EDGE } from "./photo-de
 import { DEVELOP_KEYS, DEVELOP_RULES, developKeyNamesSchema, developSettingsSchema, isPointCurve, keysRefusedFor, localAdjustmentsSchema, pointCurveRuleText, pointCurveSchema, writtenElsewhereText } from "./develop-keys.js";
 import { setCrop } from "./crop.js";
 import { describeDevelopKeys } from "./describe-develop-keys.js";
-import { setDevelopSettings } from "./develop-write.js";
+import { setDevelopSettings, setDevelopSettingsBatch } from "./develop-write.js";
 import { getPhotoPreviews, renderPreview } from "./photo-preview.js";
 import { RENDITION_JPEG_QUALITY, renderPhoto } from "./photo-render.js";
 import { previewStartLimitMs } from "./preview-item.js";
@@ -92,6 +92,19 @@ const developSettingsRules: readonly ArgumentRule[] = [
     holds: (args) => CURVE_KEYS.every((key) => settingsOf(args)[key] === undefined || isPointCurve(settingsOf(args)[key])),
   },
 ];
+
+const eachPhotoRule = (rule: ArgumentRule): ArgumentRule => ({
+  text: `in each photo, ${rule.text}`,
+  holds: (args) => (args.photos as { settings: unknown }[]).every((photo) => rule.holds(photo as ToolArgs)),
+});
+
+const photosOnceRule: ArgumentRule = {
+  text: "each photo_id appears once",
+  holds: (args) => {
+    const ids = (args.photos as { photo_id: unknown }[]).map((photo) => String(photo.photo_id));
+    return new Set(ids).size === ids.length;
+  },
+};
 
 const copyListRule: ArgumentRule = {
   text: `refused in a named settings list: ${WRITTEN_ELSEWHERE}`,
@@ -522,6 +535,7 @@ export const PLUGIN_ACTIONS: readonly PluginAction[] = [
   { name: "render_duplicate_preview", plugin: "HandlerPreview.renderDuplicatePreview" },
   { name: "render_source", plugin: "HandlerExport.renderSource" },
   { name: "write_develop_settings", plugin: "HandlerDevelop.setDevelopSettings", develop: "settings" },
+  { name: "write_develop_settings_batch", plugin: "HandlerDevelop.setDevelopSettingsBatch", develop: "settings" },
   { name: "plan_crop", plugin: "HandlerCrop.plan", develop: "reads" },
   { name: "read_develop_ranges", plugin: "HandlerDevelopKeys.ranges", develop: "drives" },
 ];
@@ -1607,6 +1621,40 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       required: ["photo_id", "settings"],
     },
     rules: developSettingsRules,
+  },
+  {
+    name: "set_develop_settings_batch",
+    toolset: "develop",
+    title: "Set develop settings on many photos",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    develop: "settings",
+    duration: "long",
+    run: { server: serverTool(setDevelopSettingsBatch) },
+    description:
+      `Set each of 1-50 photos its own Develop settings in one call, by the keys, ranges, rounding and rules of set_develop_settings, which apply to each photo against its own stored values. A photo whose settings break a rule is failed with the rule, a photo listed twice (also by id and by path) is failed for both entries, and nothing is written to either; the others are written. Returns results [{photo_id, settings as stored}] in request order. ${DEVELOP_READ_BACK} One read-back wait serves the whole batch. Photos not started before the time budget ends are remaining; resend exactly those.`,
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photos: {
+          type: "array",
+          minItems: 1,
+          maxItems: 50,
+          description: "Photos and their own settings, in result order",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              photo_id: photoIdSchema("Photo ID or file path"),
+              settings: { ...developSettingsProperty, description: "SDK setting key/value pairs for this photo" },
+            },
+            required: ["photo_id", "settings"],
+          },
+        },
+      },
+      required: ["photos"],
+    },
+    rules: [photosOnceRule, ...developSettingsRules.map(eachPhotoRule)],
   },
   {
     name: "describe_develop_keys",

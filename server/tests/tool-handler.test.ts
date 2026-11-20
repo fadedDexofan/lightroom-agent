@@ -635,6 +635,62 @@ describe('a read before the write that does not come back', () => {
   });
 });
 
+describe('set_develop_settings_batch', () => {
+  function batchWith(stored: Record<string, Record<string, unknown>>, write?: () => never) {
+    const calls: [string, unknown][] = [];
+    const handler = makeHandler({ call: async (action, params) => {
+      calls.push([action, params]);
+      if (action === 'get_develop_settings') {
+        const { photo_ids, keys } = params as { photo_ids: number[]; keys: string[] };
+        return { id: '1', result: { data: { photos: photo_ids.map((id) => ({
+          photo_id: String(id), settings: Object.fromEntries(keys.flatMap((key) => (key in (stored[id] ?? {}) ? [[key, stored[id][key]]] : []))), absent: [],
+        })) } } };
+      }
+      if (write) write();
+      return { id: '1', result: { data: { results: [{ photo_id: '1', settings: {} }] } } };
+    } });
+    return { calls, run: (photos: unknown[]) => handler('set_develop_settings_batch', { photos }) };
+  }
+
+  it('writes each photo its own rounded settings in one plug-in call, naming the photo in each rounding warning', async () => {
+    const { calls, run } = batchWith({});
+    const result = await run([{ photo_id: 1, settings: { Exposure2012: 0.333333 } }, { photo_id: 2, settings: { Temperature: 5200 } }]);
+    expect(calls).toEqual([['write_develop_settings_batch', { photos: [
+      { photo_id: 1, settings: { Exposure2012: 0.33 } }, { photo_id: 2, settings: { Temperature: 5200 } },
+    ] }]]);
+    expect(envelopeOf(result).warnings).toEqual(['Rounded to the precision Lightroom keeps on photo 1: Exposure2012 0.333333 -> 0.33']);
+  });
+
+  it('sends a photo refused on a rule against its stored values marked refused, so the plug-in still resolves every input', async () => {
+    const { calls, run } = batchWith({ 1: { Glow: 0 }, 2: { Glow: 60 } });
+    await run([{ photo_id: 1, settings: { GlowStyle: 2 } }, { photo_id: 2, settings: { GlowStyle: 2 } }]);
+    expect(calls[0]).toEqual(['get_develop_settings', { photo_ids: [1, 2], keys: ['Glow'] }]);
+    expect(calls[1]).toEqual(['write_develop_settings_batch', { photos: [
+      { photo_id: 1, refused: expect.stringContaining('Refused before writing: GlowStyle needs Glow above 0') },
+      { photo_id: 2, settings: { GlowStyle: 2 } },
+    ] }]);
+  });
+
+  it('refuses a photo listed twice by the same identifier before sending anything', async () => {
+    const { calls, run } = batchWith({});
+    const result = await run([{ photo_id: 1, settings: { Exposure2012: 1 } }, { photo_id: 1, settings: { Exposure2012: 2 } }]);
+    expect(envelopeOf(result).outcome).toBe('failed');
+    expect(calls).toEqual([]);
+  });
+
+  it.each<[string, () => never, string, Record<string, unknown>]>([
+    ['lost after it was sent', () => { throw new Error('Plugin request timed out after 60000 ms'); }, 'unknown',
+      { failed: [{ photo_id: '1', reason: expect.stringContaining('Refused before writing') }],
+        unknown: [{ photo_id: '2', reason: 'the write was sent and its reply was lost (Plugin request timed out after 60000 ms)' }] }],
+    ['never sent', () => { throw new PluginNotSentError('Failed to send request to plugin (socket dropped)'); }, 'failed', {}],
+  ])('answers a batch whose write was %s by photo', async (_what, write, outcome, lists) => {
+    const { run } = batchWith({ 1: { Glow: 0 }, 2: { Glow: 60 } }, write);
+    const envelope = envelopeOf(await run([{ photo_id: 1, settings: { GlowStyle: 2 } }, { photo_id: 2, settings: { GlowStyle: 2 } }]));
+    expect(envelope.outcome).toBe(outcome);
+    expect(envelope).toMatchObject(lists);
+  });
+});
+
 describe('set_develop_settings and keys another tool writes', () => {
   it('refuses ConvertToGrayscale before anything is read or written and points to set_treatment', async () => {
     const calls: string[] = [];

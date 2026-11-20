@@ -79,6 +79,7 @@ return {
         update_gradient_mask = { "HandlerGradientMasks", "updateGradientMask" },
         update_spot = { "HandlerSpots", "update" },
         write_develop_settings = { "HandlerDevelop", "setDevelopSettings" },
+        write_develop_settings_batch = { "HandlerDevelop", "setDevelopSettingsBatch" },
     },
     DEVELOP_KEYS = {
         { name = "WhiteBalance" },
@@ -306,5 +307,5 @@ return {
     STYLE_SUMMARY_PHOTO_LIMIT = 200,
     HEARTBEAT_INTERVAL_SECONDS = 30,
     VERSION = "0.1.0-rc.4",
-    BUILD = "24b6b03880609d10",
+    BUILD = "6f608b347f3b69a6",
 }
