@@ -1320,6 +1320,64 @@ describe("HandlerDevelop.copyDevelopSettings", function()
     end)
 end)
 
+describe("HandlerDevelop.setDevelopSettingsBatch", function()
+    it("writes each photo its own settings, reads all back after one wait, and answers by photo in request order", function()
+        local one = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+        local two = helper.fakePhoto({ id = "2", path = "/2.jpg" })
+        local sleeps = 0
+        local _, Handler = setup({ photos = { one, two }, tasks = { pcall = pcall, sleep = function() sleeps = sleeps + 1 end } })
+
+        local reply = Handler.setDevelopSettingsBatch({ photos = {
+            { photo_id = "2", settings = { Temperature = 5200 } },
+            { photo_id = "1", settings = { Exposure2012 = 0.5 } },
+        } }, helper.requestContext())
+
+        assert.are.same({ Temperature = 5200 }, two:getRawMetadata("__appliedSettings"))
+        assert.are.same({ Exposure2012 = 0.5 }, one:getRawMetadata("__appliedSettings"))
+        assert.are.same({ { photo_id = "2", settings = { Temperature = 5200 } }, { photo_id = "1", settings = { Exposure2012 = 0.5 } } },
+            reply.data.results)
+        assert.are.equal(1, sleeps)
+    end)
+
+    it("never writes a photo the server refused, answering it with the server's reason", function()
+        local one = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+        local two = helper.fakePhoto({ id = "2", path = "/2.jpg" })
+        local _, Handler = setup({ photos = { one, two } })
+
+        local reply = Handler.setDevelopSettingsBatch({ photos = {
+            { photo_id = "1", refused = "Refused before writing: GlowStyle needs Glow above 0" },
+            { photo_id = "2", settings = { Exposure2012 = 0.5 } },
+        } }, helper.requestContext())
+
+        assert.is_nil(one:getRawMetadata("__appliedSettings"))
+        assert.are.same({ { photo_id = "1", reason = "Refused before writing: GlowStyle needs Glow above 0" } }, reply.failed)
+        assert.are.same({ { photo_id = "2", settings = { Exposure2012 = 0.5 } } }, reply.data.results)
+    end)
+
+    it("keeps the other photos' read-back when one photo's read raises, answering that one unknown", function()
+        local photos = {}
+        for id = 1, 3 do photos[id] = helper.fakePhoto({ id = tostring(id), path = "/" .. id .. ".jpg" }) end
+        local _, Handler = setup({ photos = photos })
+        local get = photos[2].getDevelopSettings
+        local reads = 0
+        photos[2].getDevelopSettings = function(self)
+            reads = reads + 1
+            if reads > 1 then error("catalog read failed", 0) end
+            return get(self)
+        end
+
+        local reply = Handler.setDevelopSettingsBatch({ photos = {
+            { photo_id = "1", settings = { Exposure2012 = 0.1 } },
+            { photo_id = "2", settings = { Exposure2012 = 0.2 } },
+            { photo_id = "3", settings = { Exposure2012 = 0.3 } },
+        } }, helper.requestContext())
+
+        assert.are.same({ "1", "3" }, { reply.data.results[1].photo_id, reply.data.results[2].photo_id })
+        assert.are.equal("2", reply.unknown[1].photo_id)
+        assert.matches("the read%-back failed: catalog read failed", reply.unknown[1].reason)
+    end)
+end)
+
 describe("HandlerDevelop.setDevelopSettings", function()
     it("names the history step", function()
         local photo = helper.fakePhoto({ id = "1" })

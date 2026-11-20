@@ -8,6 +8,7 @@ local Reply = require 'Reply'
 local DevelopReadBack = {}
 
 local NORMALISE_SECONDS = 1
+DevelopReadBack.NORMALISE_SECONDS = NORMALISE_SECONDS
 local NAMED_IN_PROBLEM = 10
 
 local KEYS = {}
@@ -92,10 +93,14 @@ function DevelopReadBack.check(context, catalog, written)
     local checked = {}
     catalog:withReadAccessDo(function()
         for _, entry in ipairs(written) do
-            local stored = entry.photo:getDevelopSettings() or {}
+            local read, stored = LrTasks.pcall(function() return entry.photo:getDevelopSettings() or {} end)
             local result = { photo_id = tostring(entry.photo.localIdentifier), stored = {}, adjusted = {}, absent = {},
                 notStored = {} }
-            if entry.error ~= nil then
+            if not read then
+                result.error = entry.error or ("the read-back failed: " .. Reply.messageOf(stored))
+                result.written = entry.from and context.ledger:since(entry.from, entry.to) or {}
+                if #result.written == 0 and entry.error == nil then result.written = { "the settings written before this read" } end
+            elseif entry.error ~= nil then
                 result.error = entry.error
                 result.written = context.ledger:since(entry.from, entry.to)
                 if #result.written == 0 and entry.before ~= nil and not unchanged(entry.settings, entry.before, stored) then

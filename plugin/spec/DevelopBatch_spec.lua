@@ -69,4 +69,54 @@ describe("DevelopBatch.run", function()
         DevelopBatch.run(helper.requestContext(), catalog, operation)
         assert.are.equal(1, prepared)
     end)
+
+    it("refuses every input of a photo listed twice, by id and by path, refused on a rule or not, and writes the rest", function()
+        local DevelopBatch, catalog = setup()
+        local seen = {}
+        local reply = DevelopBatch.run(helper.requestContext(), catalog, {
+            inputs = { "1", "/1.jpg", "2", "/3.jpg", "3", "4" },
+            duplicates = "refuse",
+            refusal = function(entry) if entry.index == 4 or entry.index == 6 then return "Refused before writing: rule" end end,
+            reserveSeconds = 0,
+            each = function(photo, _, entry)
+                seen[#seen + 1] = tostring(photo.localIdentifier) .. "@" .. entry.index
+                return {}
+            end,
+        })
+
+        assert.are.same({ "2@3" }, seen)
+        assert.are.same({
+            { photo_id = "1", reason = "listed twice, as 1 and /1.jpg" },
+            { photo_id = "3", reason = "listed twice, as /3.jpg and 3" },
+            { photo_id = "4", reason = "Refused before writing: rule" },
+        }, reply.failed)
+    end)
+
+    it("lets a finishing step replace the results with what it verified", function()
+        local DevelopBatch, catalog = setup()
+        local reply = DevelopBatch.run(helper.requestContext(), catalog, {
+            inputs = { "1", "2" },
+            reserveSeconds = 0,
+            each = function(photo) return { photo = photo } end,
+            finish = function(results)
+                return { data = { verified = #results }, unknown = { { photo_id = "2", reason = "read-back failed" } } }
+            end,
+        })
+
+        assert.are.same({ verified = 2 }, reply.data)
+        assert.are.same({ { photo_id = "2", reason = "read-back failed" } }, reply.unknown)
+    end)
+
+    it("asks for a reserve that grows with every photo started", function()
+        local DevelopBatch, catalog = setup()
+        local asked = {}
+        local context = helper.requestContext(nil, { stopping = function(_, seconds) asked[#asked + 1] = seconds; return false end })
+        DevelopBatch.run(context, catalog, {
+            inputs = { "1", "2", "3" },
+            reserveSeconds = function(started) return 1 + started end,
+            each = function() return {} end,
+        })
+
+        assert.are.same({ 1, 2, 3 }, asked)
+    end)
 end)

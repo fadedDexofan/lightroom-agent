@@ -43,7 +43,7 @@ Choose white balance by the scene's intent: a fixed Kelvin number is not a trans
 
 ## Copy across the cluster
 
-Show the representative's before and after, and get agreement when the direction is the person's choice, before copying. Then copy only the keys meant for the cluster: `copy_develop_settings` with a `settings` list, or a preset made from the look ([looks](looks.md#make-a-preset-from-a-tuned-look)). Exposure, white balance, crop, transform, lens, masks and detail are per photo unless the light is truly the same; evaluate them on each target. Read back every target and look at its render; if several targets need major rescue, reconsider the cluster or the look; handle an isolated outlier separately.
+Show the representative's before and after, and get agreement when the direction is the person's choice, before copying. Then copy only the keys meant for the cluster: `copy_develop_settings` with a `settings` list, or a preset made from the look ([looks](looks.md#make-a-preset-from-a-tuned-look)). Exposure, white balance, crop, transform, lens, masks and detail are per photo unless the light is truly the same; evaluate them on each target, and write the per-photo values in one `set_develop_settings_batch` call. Read back every target and look at its render; if several targets need major rescue, reconsider the cluster or the look; handle an isolated outlier separately.
 
 ## Final check
 
