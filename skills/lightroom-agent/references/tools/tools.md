@@ -13,6 +13,7 @@ Read the tool's own description before a call you have not made in this session;
 
 - Resolved ids are catalog-local strings in every reply (`not_found` and `remaining` echo the inputs as given); an input takes the id (number or digit string) or an absolute file path. Prefer ids: a path names the master, never a virtual copy.
 - A virtual copy keeps its master's filename. `get_photo_metadata` reports `is_virtual_copy` and `virtual_copy` (`master_photo_id`, `copy_name`, or a master's `copy_photo_ids`), and `stack` (`position`, `is_collapsed`, `top_photo_id`, `member_photo_ids`).
+- `get_photo_metadata` with `lens_profile: true` adds the lens profile Lightroom stores for each photo (`enabled`, `setup`, `name`, `filename`, `embedded`, `distortion_scale`, `vignetting_scale`; absent keys left out): check it when corners look soft or vignetted. Only that read waits for running Develop calls.
 - `search_photos` does not see the hidden members of a collapsed stack; its warning names the stack tops on the page. Read a top's `member_photo_ids` to reach them.
 - Follow pagination (`limit`, `offset`, `has_more`) until the set is complete.
 
