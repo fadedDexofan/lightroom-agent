@@ -37,7 +37,6 @@ return {
         get_lens_blur = { "HandlerLensBlur", "get" },
         get_mask = { "HandlerMaskRead", "getMask" },
         get_mask_write_admission = { "HandlerMaskAdmission", "get" },
-        get_photo_metadata = { "HandlerMetadata", "getPhotoMetadata" },
         get_selected_photos = { "HandlerSelection", "getSelectedPhotos" },
         import_photos = { "HandlerImport", "importPhotos" },
         invert_mask = { "HandlerMaskInvert", "invertMask" },
@@ -52,6 +51,8 @@ return {
         match_photo_style = { "HandlerDevelop", "matchPhotoStyle" },
         plan_crop = { "HandlerCrop", "plan" },
         read_develop_ranges = { "HandlerDevelopKeys", "ranges" },
+        read_lens_profiles = { "HandlerLensProfile", "read" },
+        read_photo_metadata = { "HandlerMetadata", "getPhotoMetadata" },
         remove_from_collection = { "HandlerCollections", "removeFromCollection" },
         remove_keyword_subtree = { "HandlerOrganization", "removeKeywordSubtree" },
         remove_photos_from_catalog = { "HandlerRemoveFromCatalog", "removePhotos" },
@@ -305,5 +306,5 @@ return {
     STYLE_SUMMARY_PHOTO_LIMIT = 200,
     HEARTBEAT_INTERVAL_SECONDS = 30,
     VERSION = "0.1.0-rc.4",
-    BUILD = "570562df4d085dcb",
+    BUILD = "24b6b03880609d10",
 }

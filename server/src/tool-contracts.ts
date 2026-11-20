@@ -13,6 +13,7 @@ import { RENDITION_JPEG_QUALITY, renderPhoto } from "./photo-render.js";
 import { previewStartLimitMs } from "./preview-item.js";
 import { MAX_IMAGE_BYTES, previewSizeSchema } from "./preview-sizes.js";
 import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
+import { getPhotoMetadata } from "./photo-metadata.js";
 import type { PluginReply } from "./tool-result.js";
 import {
   COLOR_LABEL_NAMES,
@@ -515,6 +516,8 @@ const fitsFrame = (region: { x: number; y: number; width: number; height: number
   region.x + region.width <= 1 && region.y + region.height <= 1;
 
 export const PLUGIN_ACTIONS: readonly PluginAction[] = [
+  { name: "read_photo_metadata", plugin: "HandlerMetadata.getPhotoMetadata" },
+  { name: "read_lens_profiles", plugin: "HandlerLensProfile.read", develop: "reads" },
   { name: "render_preview", plugin: "HandlerPreview.renderPreview" },
   { name: "render_duplicate_preview", plugin: "HandlerPreview.renderDuplicatePreview" },
   { name: "render_source", plugin: "HandlerExport.renderSource" },
@@ -605,7 +608,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     toolset: "core",
     title: "Get photo metadata",
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: { plugin: "HandlerMetadata.getPhotoMetadata" },
+    run: { server: serverTool(getPhotoMetadata) },
     description:
       "Read 1-100 photos, field names in snake_case: rating (0 = unrated), flag and color_label in the set_rating_and_flag/set_color_label values, keywords/nested keyword_paths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/state_province/country/iso_country_code, copyright and accessibility alt_text/extended_description (omitted when empty); develop settings are read with get_develop_settings. photo_id and related ids are catalog-local strings. is_virtual_copy marks copies; optional virtual_copy holds master_photo_id and copy_name, or a master's copy_photo_ids. Optional folder stack holds position (top=1), is_collapsed, top_photo_id and ordered member_photo_ids.",
     inputSchema: {
@@ -615,6 +618,10 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_ids: {
           ...photoIdArray("1 to 100 photo IDs or file paths; returns photos in request order; unknown identifiers are not_found. Repeated identifiers produce repeated entries."),
           maxItems: MAX_METADATA_PHOTO_IDS,
+        },
+        lens_profile: {
+          type: "boolean",
+          description: "Add lens_profile to each found photo: the lens profile in its saved develop settings, as Lightroom stores it: enabled (a boolean here; get_develop_settings returns the stored LensProfileEnable 0/1), setup (LensDefaults, Auto or Custom), name, filename, embedded, distortion_scale and vignetting_scale (0-200, 100 is the profile's own amount); a key the photo does not carry is left out. Reading develop settings waits for the Develop calls before it, as every read of a photo's develop state does; without lens_profile this tool does not wait.",
         },
       },
       required: ["photo_ids"],
