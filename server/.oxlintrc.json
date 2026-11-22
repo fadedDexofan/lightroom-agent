@@ -5,7 +5,6 @@
   "rules": {
     "typescript/no-floating-promises": "error",
     "typescript/no-unsafe-assignment": "error",
-    "typescript/consistent-type-imports": "error",
-    "no-useless-escape": "off"
+    "typescript/consistent-type-imports": "error"
   }
 }
