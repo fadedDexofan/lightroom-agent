@@ -46,7 +46,7 @@ The outcome table is in [SKILL.md](../../SKILL.md#read-every-replys-outcome). In
 - Colour Grading's shadow and highlight hue and saturation, and Balance, are stored under the `SplitToning*` names (`SplitToningShadowHue`, `SplitToningHighlightSaturation`, `SplitToningBalance`); their luminance (`ColorGradeShadowLum`, `ColorGradeHighlightLum`), midtones, global and blending under `ColorGrade*`.
 - Keys that need their own tool: `ConvertToGrayscale` (`set_treatment`), Denoise (`apply_denoise`), Lens Blur (`set_lens_blur`), process version (`set_process_version`), crop (`set_crop`). Profile selection has no tool: use a preset that carries the profile, or Lightroom's UI.
 
-Groups observed on Lightroom Classic 16.0 (range, read-back and a render that changed as expected, on test images):
+Groups observed on Lightroom Classic 16.0 and 16.0.1 (range, read-back and a render that changed as expected, on test images):
 
 | Group | Keys |
 | --- | --- |
@@ -54,7 +54,10 @@ Groups observed on Lightroom Classic 16.0 (range, read-back and a render that ch
 | Defringe | `DefringePurpleAmount`, `DefringeGreenAmount` 0..20; hue ranges `DefringePurpleHueLo/Hi`, `DefringeGreenHueLo/Hi`. Renders nothing on a black and white photo |
 | Color Grading | as above; hues 0..360 (about 45 amber, 120 green, 220 blue, 300 magenta), saturations 0..100, luminances and balance −100..100, `ColorGradeBlending` 0..100 (default 50) |
 | Black and white mix | `GrayMixerRed`, `GrayMixerOrange`, `GrayMixerYellow`, `GrayMixerGreen`, `GrayMixerAqua`, `GrayMixerBlue`, `GrayMixerPurple`, `GrayMixerMagenta` −100..100 |
-| Upright and transform | `PerspectiveUpright` 0–4 ([modes](../genres/architecture-landscape.md#upright-and-projection)); `PerspectiveVertical`, `PerspectiveHorizontal`, `PerspectiveAspect`, `LensManualDistortionAmount` −100..100; `PerspectiveRotate` −10..10; `PerspectiveScale` 50..150 |
+| Upright and transform | `PerspectiveUpright` 0–4 ([modes](../genres/architecture-landscape.md#upright-and-projection)); `PerspectiveVertical`, `PerspectiveHorizontal`, `PerspectiveAspect`, `LensManualDistortionAmount` −100..100; `PerspectiveRotate` −10..10; `PerspectiveScale` 50..150; `PerspectiveX`, `PerspectiveY` (offset) −100..100 in steps of 0.1 |
+| Lens vignetting | `VignetteAmount` −100..100; `VignetteMidpoint` 0..100 (default 50), which renders nothing while `VignetteAmount` is 0 |
+| Calibration | `ShadowTint` (shadow tint, green to magenta), `RedHue`, `RedSaturation`, `GreenHue`, `GreenSaturation`, `BlueHue`, `BlueSaturation` −100..100; kept on rendered files too |
+| Effects and curve | `PostCropVignetteHighlightContrast` 0..100, which renders nothing while `PostCropVignetteAmount` is 0 or `PostCropVignetteStyle` is 3 (Paint Overlay); `CurveRefineSaturation` 0..100 (default 100, the tone curve's saturation refinement) |
 | Glow | `Glow`, `GlowRange`, `GlowSpread` 0..100, `GlowWarmth` −100..100, `GlowStyle` 0 diffusion, 1 bloom, 2 halation, 3 motion, 4 streak, `GlowDirection` −180..180 |
 | Projection | `ReshapeAmount` 0..100 |
 
@@ -81,7 +84,7 @@ Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defrin
 
 - `copy_develop_settings` with a `settings` list copies only those keys and leaves the target's masks and process version alone (`ProcessVersion` cannot be named); without one it copies everything including masks, which then replace the target's masks through the guarded mask write (and a source without masks removes the target's masks). A full copy leaves out Enhance results (Denoise, Raw Details, Super Resolution); a RAW's white balance does not reach a non-RAW target (`not_stored`); a target on another process version first gets the source's, as its own history step when masks are copied or removed; if the mask step then fails, that process version stays written and the target is unknown: read it before retrying. Use `dry_run` first; it lists what would change. For a set, always name the keys.
 - `apply_develop_preset` and `copy_develop_settings` compute AI masks on each target ([masks](masks.md#ai-masks-judged-on-the-photo)).
-- `match_photo_style` transfers the global look (tone, colour, curves, detail, noise, grain, vignette) and leaves out what describes one photo: crop, perspective and Upright, white balance, lens corrections, local adjustments.
+- `match_photo_style` transfers the global look (tone, colour, curves, calibration, detail, noise, grain, vignette) and leaves out what describes one photo: crop, perspective and Upright, white balance, lens corrections, local adjustments.
 - Saving, comparing and exporting presets: [looks](../workflow/looks.md#make-a-preset-from-a-tuned-look).
 - `apply_auto_adjustments` gives no completion signal: a photo where no change is seen within 8 s is `unknown`; read its settings before writing to it.
 - `apply_denoise` computes in the background; "applied" does not mean every preview has caught up. An unsaved change answers `unknown`: read the Denoise state before retrying.

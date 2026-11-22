@@ -108,3 +108,16 @@ describe("DevelopReadBack.check within the time budget", function()
         assert.is_nil(parts.unknown)
     end)
 end)
+
+describe("DevelopReadBack.check of a calibration key", function()
+    it("reads a written RedHue back as stored, through the generic key path", function()
+        local DevelopReadBack = load()
+        local photo = photoReading("7", { RedHue = 20 })
+
+        local checked = DevelopReadBack.check(helper.requestContext(), helper.fakeCatalog({ photos = {} }),
+            { { photo = photo, settings = { RedHue = 20 }, before = {} } })
+
+        assert.are.same({ RedHue = 20 }, checked[1].stored)
+        assert.are.same({}, checked[1].adjusted)
+    end)
+end)

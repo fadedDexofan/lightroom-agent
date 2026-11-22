@@ -790,6 +790,36 @@ describe('set_develop_settings_batch', () => {
   });
 });
 
+describe('develop keys added from the installed parameter table', () => {
+  const BOUNDS: [string, number, number][] = [
+    ['ShadowTint', -100, 100], ['RedHue', -100, 100], ['RedSaturation', -100, 100], ['GreenHue', -100, 100],
+    ['GreenSaturation', -100, 100], ['BlueHue', -100, 100], ['BlueSaturation', -100, 100],
+    ['PerspectiveX', -100, 100], ['PerspectiveY', -100, 100], ['VignetteAmount', -100, 100], ['VignetteMidpoint', 0, 100],
+    ['PostCropVignetteHighlightContrast', 0, 100], ['CurveRefineSaturation', 0, 100],
+  ];
+
+  it.each(BOUNDS)('accepts %s from %d to %d and refuses a value just outside', (key, low, high) => {
+    const write = (value: number) => validateToolArgs('set_develop_settings', { photo_id: 914, settings: { [key]: value } });
+    expect(write(low)).toBeNull();
+    expect(write(high)).toBeNull();
+    expect(write(low - 1)).toContain(key);
+    expect(write(high + 1)).toContain(key);
+  });
+
+  it('publishes the dependencies observed live as notes in the settings schema', () => {
+    const settings = (TOOL_CONTRACTS.find((contract) => contract.name === 'set_develop_settings')?.inputSchema as unknown as
+      { properties: { settings: { properties: Record<string, { description?: string }> } } }).properties.settings.properties;
+    expect(settings.VignetteMidpoint.description).toContain('Renders nothing while VignetteAmount is 0');
+    expect(settings.PostCropVignetteHighlightContrast.description).toContain('PostCropVignetteStyle is 3 (Paint Overlay)');
+  });
+
+  it('refuses GlowDirectionalSoftness, which rendered nothing under GlowStyle 1 or 3 on Lightroom 16.0.1', () => {
+    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { GlowDirectionalSoftness: 80 } }))
+      .toContain('GlowDirectionalSoftness');
+  });
+
+});
+
 describe('the AI compute wait', () => {
   it.each(['apply_develop_preset', 'create_mask', 'combine_mask', 'create_mask_batch', 'copy_develop_settings'])('%s states a wait of 30 s', (name) => {
     expect(TOOL_CONTRACTS.find((contract) => contract.name === name)?.description).toMatch(/computing 30 s (after|later)/);

@@ -20,7 +20,7 @@ Preserve the starting edit first (snapshot or named virtual copy). Then change o
 2. **Technical correction.** White balance, Exposure, Highlights, Shadows, Whites, Blacks: usable exposure, protected highlights that hold information, plausible shadows. No creative colour yet. Lens profile and Remove Chromatic Aberration belong here, as part of the camera and lens base.
 3. **Geometry.** Upright or manual transform, then the final crop ([architecture and landscape](../genres/architecture-landscape.md#upright-and-projection), [foundations](foundations.md#intent-attention-and-frame)). Solve geometry before the final crop.
 4. **Tonal shape.** Contrast, curve, local relationships. Describe the tonal goal (soft highlight roll-off, deep but open blacks) before setting numbers.
-5. **Colour.** White balance refinements, then bounded HSL changes on visible subjects (skin, foliage, sky, neutrals). Do not map a scene label to arbitrary HSL values.
+5. **Colour.** White balance refinements, then bounded HSL changes on visible subjects (skin, foliage, sky, neutrals). Do not map a scene label to arbitrary HSL values. Calibration shifts the camera's red, green and blue primaries (`RedHue` … `BlueSaturation`) and tints the shadows green or magenta (`ShadowTint`) for the whole image; use it for a deliberate palette, after white balance, in small steps.
 6. **Local light.** Masks where a global change cannot do it ([masks](../tools/masks.md)).
 7. **Look,** if one is wanted ([looks](looks.md)).
 8. **Detail and noise.** Judged on detail crops of the final state: sharpening, Texture, noise reduction. Low light is a modifier on any look, not a look.
