@@ -34,5 +34,11 @@ jobs:
           install_args: lua
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Restore the Lua rocks
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: lua_modules
+          key: lua-modules-${{ runner.os }}-${{ env.ImageOS }}-${{ hashFiles('.mise.toml') }}
+
       - name: Run busted
         run: mise run lua:test
