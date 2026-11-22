@@ -13,6 +13,42 @@ export function maskCount(rawAnswer) {
 
 const errorOf = (answer) => answer.envelope?.error ?? answer.text;
 
+const FIXTURE_LISTS = {
+  MaskGroupBasedCorrections: (settings) => settings.MaskGroupBasedCorrections,
+  RetouchAreas: (settings) => settings.RetouchAreas,
+  FilterList: (settings) => settings.FilterList?.Filters,
+};
+const FIXTURE_VALUES = {
+  CropLeft: 0, CropTop: 0, CropRight: 1, CropBottom: 1, CropAngle: 0,
+  Exposure2012: 0, Contrast2012: 0, Highlights2012: 0, Shadows2012: 0, Whites2012: 0, Blacks2012: 0,
+  Texture: 0, Clarity2012: 0, Dehaze: 0, Vibrance: 0, Saturation: 0, WhiteBalance: "As Shot", ConvertToGrayscale: false,
+  PerspectiveVertical: 0, PerspectiveHorizontal: 0, PerspectiveRotate: 0, PerspectiveAspect: 0, PerspectiveScale: 100, PerspectiveUpright: 0,
+  ...Object.fromEntries(["Hue", "Saturation", "Luminance"].flatMap((part) =>
+    ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"].map((color) => [`${part}Adjustment${color}`, 0]))),
+};
+export const FIXTURE_STATE_KEYS = [...Object.keys(FIXTURE_LISTS), ...Object.keys(FIXTURE_VALUES)];
+
+export function fixtureStateProblems(settings) {
+  const listed = Object.entries(FIXTURE_LISTS).filter(([, listOf]) => (listOf(settings) ?? []).length > 0).map(([key]) => key);
+  const valued = Object.entries(FIXTURE_VALUES).filter(([key, value]) => key in settings && settings[key] !== value).map(([key]) => key);
+  return [...listed, ...valued];
+}
+
+export function uncertifiedFixtures(read, photoIds) {
+  const settingsOf = new Map((read.photos ?? []).map((photo) => [String(photo.photo_id), photo.settings ?? {}]));
+  return photoIds.flatMap((photoId) => {
+    const settings = settingsOf.get(String(photoId));
+    if (!settings) return [{ photo_id: String(photoId), keys: ["not returned by the read"] }];
+    const keys = fixtureStateProblems(settings);
+    return keys.length > 0 ? [{ photo_id: String(photoId), keys }] : [];
+  });
+}
+
+export function fixturesNotProvenReset(answer, photoIds) {
+  const reset = new Set((answer.data?.results ?? []).filter((result) => result.status === "reset").map((result) => String(result.photo_id)));
+  return photoIds.filter((photoId) => !reset.has(String(photoId)));
+}
+
 export const DEPTH_STEP = "depth range";
 export const NOT_EXERCISED = ["depth range (needs a photo with device depth)"];
 const LOCAL_SCALES_NOT_EXERCISED = "local slider stored scales (written and checked through the plug-in's own LOCAL_KEYS formula, so not observed independently)";
