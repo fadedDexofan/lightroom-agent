@@ -21,7 +21,7 @@
     "watch": "tsc --watch",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage --runInBand",
+    "test:coverage": "jest --coverage",
     "prepare": "npm run build",
     "prepack": "npm run build && node scripts/stage-package.mjs",
     "postpack": "node scripts/stage-package.mjs --remove"
