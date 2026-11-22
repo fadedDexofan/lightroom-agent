@@ -12,6 +12,8 @@ import {
   fixturesNotProvenReset,
   uncertifiedFixtures,
   judgeRun,
+  REGION_RENDERS,
+  regionRender,
   maskCount,
   NOT_EXERCISED,
   renderPasses,
@@ -20,6 +22,7 @@ import {
   writeCertification,
 } from "../lib/certification.mjs";
 import { REPO_ROOT, THROWAWAY_MARKER_FILE } from "../lib/paths.mjs";
+import { regionDeltas } from "../lib/preview.mjs";
 
 const raw = (entries, processVersion = "15.4") => ({
   settings: { ProcessVersion: processVersion, ...(entries === undefined ? {} : { MaskGroupBasedCorrections: entries }) },
@@ -357,4 +360,23 @@ test("a fixture the state read did not return, or returned edited, keeps certifi
   const read = { photos: [{ photo_id: "2", settings: fixtureSettings() }, { photo_id: "3", settings: fixtureSettings({ Exposure2012: 1 }) }] };
   assert.deepEqual(uncertifiedFixtures(read, ["2", "3", "4"]), [{ photo_id: "3", keys: ["Exposure2012"] }, { photo_id: "4", keys: ["not returned by the read"] }]);
   assert.deepEqual(uncertifiedFixtures(read, ["2"]), []);
+});
+
+const W = 200, H = 120;
+const frame = (luminance) => {
+  const L = new Float64Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) L[y * W + x] = luminance(x / W, y / H);
+  return { w: W, h: H, L };
+};
+const sceneLuminance = (fx, fy) => (fy < 0.3 ? 0.9 : fy > 0.88 ? 0.85 : 0.4);
+const skyStep = REGION_RENDERS["sky batch"];
+const judgeSky = (after) => renderPasses(regionRender(skyStep, regionDeltas(frame(sceneLuminance), frame(after), skyStep.regions)));
+
+test("the sky batch passes a Sky that darkens the sky and also bright non-sky surfaces near the bottom", () => {
+  assert.equal(judgeSky((fx, fy) => sceneLuminance(fx, fy) - (fy < 0.3 || fy > 0.88 ? 0.05 : 0)), true);
+});
+
+test("the sky batch fails a darkening of the whole frame and an unchanged frame", () => {
+  assert.equal(judgeSky((fx, fy) => sceneLuminance(fx, fy) - 0.1), false);
+  assert.equal(judgeSky(sceneLuminance), false);
 });

@@ -3,13 +3,14 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { certificationResult, evaluateStep, FIXTURE_STATE_KEYS, fixturesNotProvenReset, judgeRun, renderPasses, requireThrowaway, THRESHOLDS, uncertifiedFixtures, writeCertification } from "./lib/certification.mjs";
+import { certificationResult, evaluateStep, FIXTURE_STATE_KEYS, fixturesNotProvenReset, judgeRun, REGION_RENDERS, regionRender, renderPasses, requireThrowaway, THRESHOLDS, uncertifiedFixtures, writeCertification } from "./lib/certification.mjs";
 import { compareRanges } from "./lib/develop-ranges.mjs";
 import { fixtureIdOrNull, openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 import { REPO_ROOT } from "./lib/paths.mjs";
 import {
   changedShare,
   changedWhere,
+  decodeJpegBase64,
   detailLevel,
   ellipseInside,
   intersectionOverUnion,
@@ -48,6 +49,14 @@ if (rejudgeAt !== -1) {
     const [key, value] = (process.argv[at + 1] ?? "").split("=");
     if (!(key in THRESHOLDS) || !Number.isFinite(Number(value))) throw new Error(`--threshold takes one of ${Object.keys(THRESHOLDS).join(", ")}=<number>`);
     thresholds[key] = Number(value);
+  }
+  const previews = runFile.replace(/\.json$/, "-previews");
+  for (const step of run.steps) {
+    const spec = REGION_RENDERS[step.name];
+    if (!spec || !step.previews?.before || !step.previews?.after) continue;
+    const [before, after] = [step.previews.before, step.previews.after].map(({ file }) => decodeJpegBase64(fs.readFileSync(path.join(previews, file)).toString("base64")));
+    step.rendered = regionRender(spec, regionDeltas(before, after, spec.regions));
+    console.log(`${step.name}: measured again from its saved previews with the kit's regions: ${JSON.stringify(step.rendered.measured.deltas)}`);
   }
   const { steps, notExercised } = judgeRun(run.steps, thresholds);
   console.log(notExercised.length ? `not exercised: ${notExercised.join("; ")}` : "every step exercised");
@@ -237,7 +246,7 @@ const batchOther = await cleanCopy(ids.arw14, "sky batch");
 await check({
   name: "sky batch", photoId: batchJudged, added: 1, nothingFoundAllowed: [batchOther],
   call: tool("create_mask_batch", { photo_ids: [batchJudged, batchOther], type: "sky", adjustments: AI_AMOUNT }, { timeoutMs: AI_TIMEOUT_MS }),
-  render: regionsChange([{ name: "sky", x0: 0.3, y0: 0.02, x1: 0.7, y1: 0.12 }, { name: "ground", x0: 0.3, y0: 0.9, x1: 0.7, y1: 0.98 }], "sky", "ground", -1, "region_contrast"),
+  render: (before, after) => regionRender(REGION_RENDERS["sky batch"], regionDeltas(before, after, REGION_RENDERS["sky batch"].regions)),
 });
 
 let subject = null;
