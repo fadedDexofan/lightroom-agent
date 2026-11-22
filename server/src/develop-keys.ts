@@ -14,27 +14,52 @@ export type DevelopKey = { name: string; note?: string; writtenBy?: string } & (
 const SLIDER: Bounds = [-100, 100];
 const AMOUNT: Bounds = [0, 100];
 
-const slider = (name: string, range: Bounds = SLIDER, precision = 1): DevelopKey =>
-  ({ name, kind: "number", range, precision });
-const geometry = (name: string, range: Bounds, precision = 1): DevelopKey =>
-  ({ name, kind: "number", range, precision, photo: true });
+const slider = (name: string, range: Bounds = SLIDER, precision = 1): DevelopKey => ({
+  name,
+  kind: "number",
+  range,
+  precision,
+});
+const geometry = (name: string, range: Bounds, precision = 1): DevelopKey => ({
+  name,
+  kind: "number",
+  range,
+  precision,
+  photo: true,
+});
 const HUE: Bounds = [0, 360];
 const B_AND_W_DEFRINGE = "While the photo is black and white, Defringe reads back but renders nothing";
 const COLORS = ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"];
 
 export const DEVELOP_KEYS: readonly DevelopKey[] = [
   {
-    name: "WhiteBalance", kind: "enum", photo: true,
+    name: "WhiteBalance",
+    kind: "enum",
+    photo: true,
     values: ["As Shot", "Auto", "Daylight", "Cloudy", "Shade", "Tungsten", "Fluorescent", "Flash", "Custom"],
   },
   {
-    name: "Temperature", kind: "number", range: "photo", precision: 1, photo: true,
+    name: "Temperature",
+    kind: "number",
+    range: "photo",
+    precision: 1,
+    photo: true,
     note: "Range depends on the photo: kelvin 1500 to 50000 on a raw, -150 to 100 on a rendered file (Lightroom 16.0)",
   },
   { name: "Tint", kind: "number", range: "photo", precision: 1, photo: true, note: "Range depends on the photo" },
   slider("Exposure2012", [-5, 5], 0.01),
-  ...["Contrast2012", "Highlights2012", "Shadows2012", "Whites2012", "Blacks2012", "Texture", "Clarity2012", "Dehaze",
-    "Vibrance", "Saturation"].map((name) => slider(name)),
+  ...[
+    "Contrast2012",
+    "Highlights2012",
+    "Shadows2012",
+    "Whites2012",
+    "Blacks2012",
+    "Texture",
+    "Clarity2012",
+    "Dehaze",
+    "Vibrance",
+    "Saturation",
+  ].map((name) => slider(name)),
   ...["Saturation", "Hue", "Luminance"].flatMap((part) => COLORS.map((color) => slider(`${part}Adjustment${color}`))),
   ...["ParametricShadows", "ParametricDarks", "ParametricLights", "ParametricHighlights"].map((name) => slider(name)),
   slider("ParametricShadowSplit", [10, 70]),
@@ -47,9 +72,16 @@ export const DEVELOP_KEYS: readonly DevelopKey[] = [
   ...COLORS.map((color) => slider(`GrayMixer${color}`)),
   slider("Sharpness", [0, 150]),
   slider("SharpenRadius", [0.5, 3], 0.1),
-  ...["SharpenDetail", "SharpenEdgeMasking", "LuminanceSmoothing", "LuminanceNoiseReductionDetail",
-    "LuminanceNoiseReductionContrast", "ColorNoiseReduction", "ColorNoiseReductionDetail",
-    "ColorNoiseReductionSmoothness"].map((name) => slider(name, AMOUNT)),
+  ...[
+    "SharpenDetail",
+    "SharpenEdgeMasking",
+    "LuminanceSmoothing",
+    "LuminanceNoiseReductionDetail",
+    "LuminanceNoiseReductionContrast",
+    "ColorNoiseReduction",
+    "ColorNoiseReductionDetail",
+    "ColorNoiseReductionSmoothness",
+  ].map((name) => slider(name, AMOUNT)),
   { name: "LensProfileEnable", kind: "enum", values: [0, 1], labels: ["off", "on"], photo: true },
   { name: "AutoLateralCA", kind: "enum", values: [0, 1], labels: ["off", "on"], photo: true },
   { ...geometry("DefringePurpleAmount", [0, 20]), note: B_AND_W_DEFRINGE },
@@ -69,8 +101,11 @@ export const DEVELOP_KEYS: readonly DevelopKey[] = [
   geometry("PerspectiveX", SLIDER, 0.1),
   geometry("PerspectiveY", SLIDER, 0.1),
   {
-    name: "PerspectiveUpright", kind: "enum", photo: true,
-    values: [0, 1, 2, 3, 4], labels: ["off", "auto", "full", "level", "vertical"],
+    name: "PerspectiveUpright",
+    kind: "enum",
+    photo: true,
+    values: [0, 1, 2, 3, 4],
+    labels: ["off", "auto", "full", "level", "vertical"],
     note: "Inspect the render after an Upright write: on an image without real structure Lightroom rotated the frame by about 35 degrees",
   },
   geometry("ReshapeAmount", AMOUNT),
@@ -99,12 +134,19 @@ export const DEVELOP_KEYS: readonly DevelopKey[] = [
   slider("ColorGradeGlobalLum"),
   slider("ColorGradeBlending", AMOUNT),
   slider("Glow", AMOUNT),
-  { name: "GlowStyle", kind: "enum", values: [0, 1, 2, 3, 4], labels: ["diffusion", "bloom", "halation", "motion", "streak"] },
+  {
+    name: "GlowStyle",
+    kind: "enum",
+    values: [0, 1, 2, 3, 4],
+    labels: ["diffusion", "bloom", "halation", "motion", "streak"],
+  },
   slider("GlowRange", AMOUNT),
   slider("GlowSpread", AMOUNT),
   slider("GlowWarmth"),
   slider("GlowDirection", [-180, 180]),
-  ...["ShadowTint", "RedHue", "RedSaturation", "GreenHue", "GreenSaturation", "BlueHue", "BlueSaturation"].map((name) => slider(name)),
+  ...["ShadowTint", "RedHue", "RedSaturation", "GreenHue", "GreenSaturation", "BlueHue", "BlueSaturation"].map((name) =>
+    slider(name),
+  ),
   ...["CropTop", "CropLeft", "CropBottom", "CropRight"].map((name) => geometry(name, [0, 1], 0.000001)),
   geometry("CropAngle", [-45, 45], 0.0001),
 ];
@@ -118,16 +160,24 @@ export interface LocalKey {
   neutral?: number;
 }
 
-const local = (name: string, stored: string, range: Bounds = SLIDER, scale = 100): LocalKey =>
-  ({ name, range, stored, scale });
+const local = (name: string, stored: string, range: Bounds = SLIDER, scale = 100): LocalKey => ({
+  name,
+  range,
+  stored,
+  scale,
+});
 const STORED_WHOLE_NUMBER = 0;
-const grade = (name: string, stored: string, range: Bounds): LocalKey =>
-  ({ ...local(name, stored, range, 1), storedDecimals: STORED_WHOLE_NUMBER });
+const grade = (name: string, stored: string, range: Bounds): LocalKey => ({
+  ...local(name, stored, range, 1),
+  storedDecimals: STORED_WHOLE_NUMBER,
+});
 const GRADE_WHEELS = ["Shadow", "Midtone", "Highlight", "Global"];
 
 export const LOCAL_KEYS: readonly LocalKey[] = [
   { name: "local_Exposure", range: [-4, 4], stored: "LocalExposure2012", scale: 4 },
-  ...["Contrast", "Highlights", "Shadows", "Whites", "Blacks"].map((name) => local(`local_${name}`, `Local${name}2012`)),
+  ...["Contrast", "Highlights", "Shadows", "Whites", "Blacks"].map((name) =>
+    local(`local_${name}`, `Local${name}2012`),
+  ),
   local("local_Texture", "LocalTexture"),
   local("local_Clarity", "LocalClarity2012"),
   ...["Dehaze", "Temperature", "Tint", "Saturation", "Sharpness"].map((name) => local(`local_${name}`, `Local${name}`)),
@@ -147,7 +197,9 @@ export const LOCAL_KEYS: readonly LocalKey[] = [
 export function localAdjustmentsSchema(keys: readonly LocalKey[] = LOCAL_KEYS): JSONObject {
   return {
     type: "object",
-    properties: Object.fromEntries(keys.map((key) => [key.name, { type: "number", minimum: key.range[0], maximum: key.range[1] }])),
+    properties: Object.fromEntries(
+      keys.map((key) => [key.name, { type: "number", minimum: key.range[0], maximum: key.range[1] }]),
+    ),
     additionalProperties: false,
     minProperties: 1,
   };
@@ -186,12 +238,16 @@ function described(schema: JSONObject, ...parts: (string | undefined)[]): JSONOb
 function valueSchema(key: DevelopKey): JSONObject {
   switch (key.kind) {
     case "number":
-      return described(key.range === "photo"
-        ? { type: "number" }
-        : { type: "number", minimum: key.range[0], maximum: key.range[1] }, key.note);
+      return described(
+        key.range === "photo" ? { type: "number" } : { type: "number", minimum: key.range[0], maximum: key.range[1] },
+        key.note,
+      );
     case "enum":
-      return described({ enum: [...key.values] },
-        key.labels && key.values.map((value, i) => `${value} ${key.labels?.[i]}`).join(", "), key.note);
+      return described(
+        { enum: [...key.values] },
+        key.labels && key.values.map((value, i) => `${value} ${key.labels?.[i]}`).join(", "),
+        key.note,
+      );
     case "boolean":
       return described({ type: "boolean" }, key.writtenBy && `Written by ${key.writtenBy}, not here`);
     case "text":
@@ -227,15 +283,20 @@ function atPrecision(value: number, precision: number): number {
   return Number((Math.round(value / precision) * precision).toFixed(decimals));
 }
 
-export function roundToPrecision(settings: Record<string, unknown>): { settings: Record<string, unknown>; rounded: Rounded[] } {
+export function roundToPrecision(settings: Record<string, unknown>): {
+  settings: Record<string, unknown>;
+  rounded: Rounded[];
+} {
   const rounded: Rounded[] = [];
-  const written = Object.fromEntries(Object.entries(settings).map(([key, value]) => {
-    const precision = PRECISION.get(key);
-    if (precision === undefined || typeof value !== "number") return [key, value];
-    const kept = atPrecision(value, precision);
-    if (kept !== value) rounded.push({ key, requested: value, written: kept });
-    return [key, kept];
-  }));
+  const written = Object.fromEntries(
+    Object.entries(settings).map(([key, value]) => {
+      const precision = PRECISION.get(key);
+      if (precision === undefined || typeof value !== "number") return [key, value];
+      const kept = atPrecision(value, precision);
+      if (kept !== value) rounded.push({ key, requested: value, written: kept });
+      return [key, kept];
+    }),
+  );
   return { settings: written, rounded };
 }
 
@@ -245,7 +306,9 @@ export interface OutOfRange {
   range: Bounds;
 }
 
-const RANGE = new Map(DEVELOP_KEYS.flatMap((key) => (key.kind === "number" && key.range !== "photo" ? [[key.name, key.range]] : [])));
+const RANGE = new Map(
+  DEVELOP_KEYS.flatMap((key) => (key.kind === "number" && key.range !== "photo" ? [[key.name, key.range]] : [])),
+);
 
 export function outOfRange(settings: Readonly<Record<string, unknown>>): OutOfRange[] {
   return Object.entries(settings).flatMap(([key, value]) => {
@@ -262,30 +325,42 @@ export interface DevelopRule {
 }
 
 const pair = (low: string, high: string, text: string, apart: (difference: number) => boolean): DevelopRule => ({
-  text, triggers: [low, high], reads: [low, high],
-  holds: (values) => typeof values[low] !== "number" || typeof values[high] !== "number"
-    || apart((values[high] as number) - (values[low] as number)),
+  text,
+  triggers: [low, high],
+  reads: [low, high],
+  holds: (values) =>
+    typeof values[low] !== "number" ||
+    typeof values[high] !== "number" ||
+    apart((values[high] as number) - (values[low] as number)),
 });
 
 export const DEVELOP_RULES: readonly DevelopRule[] = [
   pair("CropLeft", "CropRight", "CropLeft must be less than CropRight", (difference) => difference > 0),
   pair("CropTop", "CropBottom", "CropTop must be less than CropBottom", (difference) => difference > 0),
-  ...["Purple", "Green"].map((color) => pair(`Defringe${color}HueLo`, `Defringe${color}HueHi`,
-    `Defringe${color}HueHi must be at least 10 above Defringe${color}HueLo (Lightroom resets the pair otherwise)`,
-    (difference) => difference >= 10)),
+  ...["Purple", "Green"].map((color) =>
+    pair(
+      `Defringe${color}HueLo`,
+      `Defringe${color}HueHi`,
+      `Defringe${color}HueHi must be at least 10 above Defringe${color}HueLo (Lightroom resets the pair otherwise)`,
+      (difference) => difference >= 10,
+    ),
+  ),
   {
     text: "GlowStyle needs Glow above 0 (Lightroom resets the style otherwise)",
-    triggers: ["GlowStyle"], reads: ["Glow"],
+    triggers: ["GlowStyle"],
+    reads: ["Glow"],
     holds: (values) => typeof values.Glow === "number" && values.Glow > 0,
   },
   {
     text: "GrayMixer keys need a black and white photo (set_treatment black_and_white first); Lightroom keeps them only then",
-    triggers: COLORS.map((color) => `GrayMixer${color}`), reads: ["ConvertToGrayscale"],
+    triggers: COLORS.map((color) => `GrayMixer${color}`),
+    reads: ["ConvertToGrayscale"],
     holds: (values) => values.ConvertToGrayscale === true,
   },
   {
     text: "GlowDirection needs GlowStyle 3 (motion) or 4 (streak) (it renders nothing with the other styles)",
-    triggers: ["GlowDirection"], reads: ["GlowStyle"],
+    triggers: ["GlowDirection"],
+    reads: ["GlowStyle"],
     holds: (values) => values.GlowStyle === 3 || values.GlowStyle === 4,
   },
 ];

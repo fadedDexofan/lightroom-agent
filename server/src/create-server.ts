@@ -12,9 +12,7 @@ export function createMcpServer(callTool: ToolCaller, access: ToolAccess): Serve
     { capabilities: { tools: {}, prompts: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 
-  server.setRequestHandler("tools/list", async () =>
-    access.tools,
-  );
+  server.setRequestHandler("tools/list", async () => access.tools);
   server.setRequestHandler("prompts/list", async () => ({ prompts: [SKILL_PROMPT] }));
   server.setRequestHandler("prompts/get", async (request) => getSkillPrompt(request.params.name));
 
@@ -24,9 +22,14 @@ export function createMcpServer(callTool: ToolCaller, access: ToolAccess): Serve
     const progressToken = request.params._meta?.progressToken;
     return restricted(name, args, {
       signal: ctx.mcpReq.signal,
-      onProgress: progressToken === undefined ? undefined : (progress) => {
-        void ctx.mcpReq.notify({ method: "notifications/progress", params: { progressToken, ...progress } }).catch(() => {});
-      },
+      onProgress:
+        progressToken === undefined
+          ? undefined
+          : (progress) => {
+              void ctx.mcpReq
+                .notify({ method: "notifications/progress", params: { progressToken, ...progress } })
+                .catch(() => {});
+            },
     });
   });
 

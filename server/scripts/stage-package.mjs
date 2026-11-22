@@ -1,7 +1,10 @@
 import { cp, rm } from 'node:fs/promises';
 
 const staged = [
-  { root: '../LightroomAgent.lrplugin/', copies: [['../../plugin/LightroomAgent.lrplugin/', '../LightroomAgent.lrplugin/']] },
+  {
+    root: '../LightroomAgent.lrplugin/',
+    copies: [['../../plugin/LightroomAgent.lrplugin/', '../LightroomAgent.lrplugin/']],
+  },
   { root: '../skills/', copies: [['../../skills/lightroom-agent/', '../skills/lightroom-agent/']] },
 ];
 const removing = process.argv.includes('--remove');

@@ -19,18 +19,48 @@ const FIXTURE_LISTS = {
   FilterList: (settings) => settings.FilterList?.Filters,
 };
 const FIXTURE_VALUES = {
-  CropLeft: 0, CropTop: 0, CropRight: 1, CropBottom: 1, CropAngle: 0,
-  Exposure2012: 0, Contrast2012: 0, Highlights2012: 0, Shadows2012: 0, Whites2012: 0, Blacks2012: 0,
-  Texture: 0, Clarity2012: 0, Dehaze: 0, Vibrance: 0, Saturation: 0, WhiteBalance: "As Shot", ConvertToGrayscale: false,
-  PerspectiveVertical: 0, PerspectiveHorizontal: 0, PerspectiveRotate: 0, PerspectiveAspect: 0, PerspectiveScale: 100, PerspectiveUpright: 0,
-  ...Object.fromEntries(["Hue", "Saturation", "Luminance"].flatMap((part) =>
-    ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"].map((color) => [`${part}Adjustment${color}`, 0]))),
+  CropLeft: 0,
+  CropTop: 0,
+  CropRight: 1,
+  CropBottom: 1,
+  CropAngle: 0,
+  Exposure2012: 0,
+  Contrast2012: 0,
+  Highlights2012: 0,
+  Shadows2012: 0,
+  Whites2012: 0,
+  Blacks2012: 0,
+  Texture: 0,
+  Clarity2012: 0,
+  Dehaze: 0,
+  Vibrance: 0,
+  Saturation: 0,
+  WhiteBalance: "As Shot",
+  ConvertToGrayscale: false,
+  PerspectiveVertical: 0,
+  PerspectiveHorizontal: 0,
+  PerspectiveRotate: 0,
+  PerspectiveAspect: 0,
+  PerspectiveScale: 100,
+  PerspectiveUpright: 0,
+  ...Object.fromEntries(
+    ["Hue", "Saturation", "Luminance"].flatMap((part) =>
+      ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"].map((color) => [
+        `${part}Adjustment${color}`,
+        0,
+      ]),
+    ),
+  ),
 };
 export const FIXTURE_STATE_KEYS = [...Object.keys(FIXTURE_LISTS), ...Object.keys(FIXTURE_VALUES)];
 
 export function fixtureStateProblems(settings) {
-  const listed = Object.entries(FIXTURE_LISTS).filter(([, listOf]) => (listOf(settings) ?? []).length > 0).map(([key]) => key);
-  const valued = Object.entries(FIXTURE_VALUES).filter(([key, value]) => key in settings && settings[key] !== value).map(([key]) => key);
+  const listed = Object.entries(FIXTURE_LISTS)
+    .filter(([, listOf]) => (listOf(settings) ?? []).length > 0)
+    .map(([key]) => key);
+  const valued = Object.entries(FIXTURE_VALUES)
+    .filter(([key, value]) => key in settings && settings[key] !== value)
+    .map(([key]) => key);
   return [...listed, ...valued];
 }
 
@@ -45,14 +75,22 @@ export function uncertifiedFixtures(read, photoIds) {
 }
 
 export function fixturesNotProvenReset(answer, photoIds) {
-  const reset = new Set((answer.data?.results ?? []).filter((result) => result.status === "reset").map((result) => String(result.photo_id)));
+  const reset = new Set(
+    (answer.data?.results ?? []).filter((result) => result.status === "reset").map((result) => String(result.photo_id)),
+  );
   return photoIds.filter((photoId) => !reset.has(String(photoId)));
 }
 
 export const REGION_RENDERS = {
   "sky batch": {
-    regions: [{ name: "sky", x0: 0.06, y0: 0.02, x1: 0.2, y1: 0.12 }, { name: "ground", x0: 0.35, y0: 0.72, x1: 0.5, y1: 0.8 }],
-    changed: "sky", untouched: "ground", direction: -1, check: "region_contrast",
+    regions: [
+      { name: "sky", x0: 0.06, y0: 0.02, x1: 0.2, y1: 0.12 },
+      { name: "ground", x0: 0.35, y0: 0.72, x1: 0.5, y1: 0.8 },
+    ],
+    changed: "sky",
+    untouched: "ground",
+    direction: -1,
+    check: "region_contrast",
   },
 };
 
@@ -62,11 +100,13 @@ export function regionRender({ changed, untouched, direction, check }, deltas) {
 
 export const DEPTH_STEP = "depth range";
 export const NOT_EXERCISED = ["depth range (needs a photo with device depth)"];
-const LOCAL_SCALES_NOT_EXERCISED = "local slider stored scales (written and checked through the plug-in's own LOCAL_KEYS formula, so not observed independently)";
+const LOCAL_SCALES_NOT_EXERCISED =
+  "local slider stored scales (written and checked through the plug-in's own LOCAL_KEYS formula, so not observed independently)";
 const NO_DEPTH_MAP_READ = ["depth range (Lightroom found no depth map in the supplied depth photo)"];
 
 function depthCoverage(step, answer) {
-  if (answer?.outcome === "failed" && /found no depth map/.test(errorOf(answer))) return { step: null, notExercised: NO_DEPTH_MAP_READ };
+  if (answer?.outcome === "failed" && /found no depth map/.test(errorOf(answer)))
+    return { step: null, notExercised: NO_DEPTH_MAP_READ };
   return { step, notExercised: [] };
 }
 
@@ -104,9 +144,11 @@ export const THRESHOLDS = {
 const RENDER_CHECKS = {
   radial_iou: ({ iou }, t) => iou >= t.min_radial_iou,
   region_moves: ({ deltas, changed, untouched, direction }, t) =>
-    (direction > 0 ? deltas[changed] >= t.min_change : deltas[changed] <= -t.min_change) && Math.abs(deltas[untouched]) < t.max_untouched_change,
+    (direction > 0 ? deltas[changed] >= t.min_change : deltas[changed] <= -t.min_change) &&
+    Math.abs(deltas[untouched]) < t.max_untouched_change,
   region_contrast: ({ deltas, changed, untouched, direction }, t) =>
-    direction * deltas[changed] >= t.min_contrast_change && Math.abs(deltas[changed]) >= t.min_contrast_ratio * Math.abs(deltas[untouched]),
+    direction * deltas[changed] >= t.min_contrast_change &&
+    Math.abs(deltas[changed]) >= t.min_contrast_ratio * Math.abs(deltas[untouched]),
   region_means_kept: ({ region_mean_change, rest_mean_change }, t) =>
     Math.abs(region_mean_change) <= t.max_region_mean_change && Math.abs(rest_mean_change) <= t.max_region_mean_change,
   darkens: ({ darkened }, t) => darkened >= t.min_changed_share,
@@ -134,30 +176,61 @@ function onlyNothingFound(answer, allowed = []) {
     ...(answer.envelope?.failed ?? []).map((entry) => ({ ...entry, voided: false })),
     ...(answer.envelope?.unknown ?? []).map((entry) => ({ ...entry, voided: true })),
   ];
-  return answer.outcome === "partial" && stopped.length > 0
-    && stopped.every((entry) => allowed.includes(String(entry.photo_id)) && NOTHING_FOUND.test(entry.reason ?? "")
-      && (!entry.voided || VOIDED_BY_AI_UPDATE.test(entry.reason)));
+  return (
+    answer.outcome === "partial" &&
+    stopped.length > 0 &&
+    stopped.every(
+      (entry) =>
+        allowed.includes(String(entry.photo_id)) &&
+        NOTHING_FOUND.test(entry.reason ?? "") &&
+        (!entry.voided || VOIDED_BY_AI_UPDATE.test(entry.reason)),
+    )
+  );
 }
 
-function problemOf({ failure, added, expectRefusal, answer, before, after, admission, rendered, landed_ms: landedMs, render_cap_ms: capMs, unchangedEntry, nothingFoundAllowed }, thresholds) {
+function problemOf(
+  {
+    failure,
+    added,
+    expectRefusal,
+    answer,
+    before,
+    after,
+    admission,
+    rendered,
+    landed_ms: landedMs,
+    render_cap_ms: capMs,
+    unchangedEntry,
+    nothingFoundAllowed,
+  },
+  thresholds,
+) {
   if (failure) return failure;
   if (expectRefusal && !answer.isError) return "expected a refusal, the tool succeeded";
   if (expectRefusal && refusalClass(answer) === null) {
     return `expected a refusal with nothing changed (outcome failed, or unknown naming Update AI Settings), got ${answer.outcome}: ${errorOf(answer)}`;
   }
-  if (!expectRefusal && answer.isError && !onlyNothingFound(answer, nothingFoundAllowed)) return `tool failed: ${errorOf(answer)}`;
+  if (!expectRefusal && answer.isError && !onlyNothingFound(answer, nothingFoundAllowed))
+    return `tool failed: ${errorOf(answer)}`;
   const found = maskCount(after) - maskCount(before);
   if (found !== added) return `expected ${added} mask(s) added, found ${found}`;
-  if (expectRefusal && !isDeepStrictEqual(entriesOf(before), entriesOf(after))) return "the masks are not back exactly after the refusal";
+  if (expectRefusal && !isDeepStrictEqual(entriesOf(before), entriesOf(after)))
+    return "the masks are not back exactly after the refusal";
   const problems = admission?.photo?.schema_problems;
   if (!Array.isArray(problems)) return "the admission read returned no schema check for the photo";
   const written = writtenBy(before, after);
-  const judged = problems.filter((problem) => problemPosition(problem) === null || written.has(problemPosition(problem)));
+  const judged = problems.filter(
+    (problem) => problemPosition(problem) === null || written.has(problemPosition(problem)),
+  );
   if (judged.length > 0) return `masks left the pinned format: ${judged.join("; ")}`;
-  if (unchangedEntry !== undefined && !isDeepStrictEqual(entryOf(before, unchangedEntry), entryOf(after, unchangedEntry))) {
+  if (
+    unchangedEntry !== undefined &&
+    !isDeepStrictEqual(entryOf(before, unchangedEntry), entryOf(after, unchangedEntry))
+  ) {
     return `entry ${unchangedEntry} changed`;
   }
-  if (rendered && !Object.hasOwn(RENDER_CHECKS, rendered.check)) return `rendered check ${rendered.check} is not one this kit judges: ${JSON.stringify(rendered.measured)}`;
+  if (rendered && !Object.hasOwn(RENDER_CHECKS, rendered.check))
+    return `rendered check ${rendered.check} is not one this kit judges: ${JSON.stringify(rendered.measured)}`;
   if (rendered && !renderPasses(rendered, thresholds)) {
     const landing = landedMs === null ? `the expected change never landed within ${capMs / 1000} s; ` : "";
     return `${landing}rendered check ${rendered.check} failed: ${JSON.stringify(rendered.measured)}`;
@@ -168,7 +241,12 @@ function problemOf({ failure, added, expectRefusal, answer, before, after, admis
 export function evaluateStep(step, thresholds = THRESHOLDS) {
   const problem = problemOf(step, thresholds);
   if (problem) return { name: step.name, passed: false, problem };
-  const passed = { name: step.name, passed: true, rendered: Boolean(step.rendered), process_version: step.after.settings.ProcessVersion };
+  const passed = {
+    name: step.name,
+    passed: true,
+    rendered: Boolean(step.rendered),
+    process_version: step.after.settings.ProcessVersion,
+  };
   return step.expectRefusal ? { ...passed, refusal: refusalClass(step.answer) } : passed;
 }
 
@@ -188,7 +266,12 @@ export function judgeRun(evidence, thresholds = THRESHOLDS) {
   return { steps, notExercised };
 }
 
-export function buildCertificationRecord(status, steps, now, { kitCommit, notExercised = NOT_EXERCISED, ranges, thresholds = THRESHOLDS, judgedFrom } = {}) {
+export function buildCertificationRecord(
+  status,
+  steps,
+  now,
+  { kitCommit, notExercised = NOT_EXERCISED, ranges, thresholds = THRESHOLDS, judgedFrom } = {},
+) {
   if (!status.running.build) throw new Error("Lightroom reports no build number; nothing certified");
   if (steps.length === 0) throw new Error("no checks ran; nothing certified");
   const failed = steps.filter((step) => !step.passed);
@@ -196,12 +279,18 @@ export function buildCertificationRecord(status, steps, now, { kitCommit, notExe
     throw new Error(`certification failed: ${failed.map((step) => `${step.name}: ${step.problem}`).join("; ")}`);
   }
   return {
-    lightroom: { version: status.running.version, build: status.running.build, version_table: status.running.version_table },
+    lightroom: {
+      version: status.running.version,
+      build: status.running.build,
+      version_table: status.running.version_table,
+    },
     process_versions: [...new Set(steps.map((step) => step.process_version))].sort(),
     certified_at: now.toISOString(),
     checks: steps.map((step) => step.name),
     rendered_checks: steps.filter((step) => step.rendered).map((step) => step.name),
-    ...(steps.some((step) => step.refusal) ? { refusals: Object.fromEntries(steps.filter((step) => step.refusal).map((step) => [step.name, step.refusal])) } : {}),
+    ...(steps.some((step) => step.refusal)
+      ? { refusals: Object.fromEntries(steps.filter((step) => step.refusal).map((step) => [step.name, step.refusal])) }
+      : {}),
     not_exercised: [LOCAL_SCALES_NOT_EXERCISED, ...notExercised],
     kit_commit: kitCommit ?? null,
     thresholds,
@@ -213,8 +302,14 @@ export function buildCertificationRecord(status, steps, now, { kitCommit, notExe
 export function certificationResult(status, steps, now, options = {}) {
   const record = buildCertificationRecord(status, steps, now, options);
   const stale = record.ranges?.stale_ranges ?? [];
-  const lines = stale.map((entry) => `stale range ${entry.key}: table ${JSON.stringify(entry.table)}, Lightroom ${JSON.stringify(entry.live)}`);
-  if (lines.length) lines.push(`${lines.length} static range(s) in DEVELOP_KEYS differ from Lightroom ${record.lightroom.build}; the mask record was written, but correct the table before installing`);
+  const lines = stale.map(
+    (entry) =>
+      `stale range ${entry.key}: table ${JSON.stringify(entry.table)}, Lightroom ${JSON.stringify(entry.live)}`,
+  );
+  if (lines.length)
+    lines.push(
+      `${lines.length} static range(s) in DEVELOP_KEYS differ from Lightroom ${record.lightroom.build}; the mask record was written, but correct the table before installing`,
+    );
   return { record, exitCode: lines.length ? 1 : 0, lines };
 }
 

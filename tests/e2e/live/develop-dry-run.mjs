@@ -11,7 +11,8 @@ const keys = ["Exposure2012", "Contrast2012"];
 const targetStart = { Exposure2012: -0.3, Contrast2012: -7 };
 const tool = async (name, args) => (await session.toolOrThrow(name, args)).data;
 const settingsOf = (row) => parseLuaTable(row.text.slice(row.text.indexOf("{")));
-const holds = (values) => (row) => Object.entries(values).every(([key, value]) => isDeepStrictEqual(settingsOf(row)[key], value));
+const holds = (values) => (row) =>
+  Object.entries(values).every(([key, value]) => isDeepStrictEqual(settingsOf(row)[key], value));
 const read = async (id, until) => {
   const row = await readFlushedSettings(session, id, source_id, until);
   return { row, settings: settingsOf(row) };
@@ -33,7 +34,10 @@ try {
   const before = new Map();
   for (const id of target_ids) {
     const flushed = await read(id, holds(targetStart));
-    assert.ok(holds(targetStart)(flushed.row), `the stored row of ${id} never showed the write, so the flush proves nothing`);
+    assert.ok(
+      holds(targetStart)(flushed.row),
+      `the stored row of ${id} never showed the write, so the flush proves nothing`,
+    );
     before.set(id, { ...flushed, history: developHistory(catalogPath, id) });
   }
   const args = { source_id, target_ids, settings: keys };
@@ -41,7 +45,11 @@ try {
   assert.equal(preview.dry_run, true);
   assert.equal(preview.detail_truncated, false);
   for (const id of target_ids) {
-    assert.deepEqual((await read(id, (row) => row.text !== before.get(id).row.text)).row, before.get(id).row, "dry run changed stored row");
+    assert.deepEqual(
+      (await read(id, (row) => row.text !== before.get(id).row.text)).row,
+      before.get(id).row,
+      "dry run changed stored row",
+    );
     assert.deepEqual(developHistory(catalogPath, id), before.get(id).history, "dry run changed History");
     const detail = preview.details.find((entry) => entry.id === String(id));
     assert.deepEqual(detail.changes.map((change) => change.key).sort(), [...keys].sort());
@@ -51,7 +59,8 @@ try {
     const prior = before.get(id).settings;
     const after = (await read(id, (row) => !isDeepStrictEqual(settingsOf(row), prior))).settings;
     const changed = [...new Set([...Object.keys(prior), ...Object.keys(after)])]
-      .filter((key) => !isDeepStrictEqual(prior[key], after[key])).sort();
+      .filter((key) => !isDeepStrictEqual(prior[key], after[key]))
+      .sort();
     const detail = preview.details.find((entry) => entry.id === String(id));
     assert.deepEqual(changed, detail.changes.map((change) => change.key).sort(), "real copy differs from preview");
     for (const change of detail.changes) {

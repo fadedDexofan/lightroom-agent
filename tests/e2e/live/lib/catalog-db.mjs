@@ -9,7 +9,11 @@ const FIELD_SEPARATOR = "@@SEP@@";
 
 export function sqliteRows(catalogPath, query) {
   const out = execFileSync("sqlite3", ["-readonly", "-separator", "|", catalogPath, query], { encoding: "utf8" });
-  return out.trim().split("\n").filter(Boolean).map((line) => line.split("|"));
+  return out
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.split("|"));
 }
 
 export function developHistory(catalogPath, photoId) {
@@ -20,7 +24,10 @@ export function developHistory(catalogPath, photoId) {
 }
 
 export function lastExportTimestamp(catalogPath, photoId) {
-  const [row] = sqliteRows(catalogPath, `select lastExportTimestamp from AgLibraryImageAttributes where image=${Number(photoId)}`);
+  const [row] = sqliteRows(
+    catalogPath,
+    `select lastExportTimestamp from AgLibraryImageAttributes where image=${Number(photoId)}`,
+  );
   return row ? Number(row[0]) : null;
 }
 

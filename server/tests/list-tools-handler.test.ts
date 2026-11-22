@@ -6,15 +6,19 @@ import { validateToolArgs } from './helpers/validate.js';
 import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
 import { manifestTools } from '../src/manifest-tools.js';
 import { PLUGIN_ACTIONS, TOOL_CONTRACTS } from '../src/tool-contracts.js';
+import { MASK_CURVE_CHANNEL_NAMES, MASK_TYPE_NAMES } from '../src/lightroom-tables.js';
 import {
-  MASK_CURVE_CHANNEL_NAMES,
-  MASK_TYPE_NAMES,
-} from '../src/lightroom-tables.js';
-import { DEVELOP_KEYS, LOCAL_KEYS, developKeyNamesSchema, developSettingsSchema, localAdjustmentsSchema, type DevelopKey } from '../src/develop-keys.js';
+  DEVELOP_KEYS,
+  LOCAL_KEYS,
+  developKeyNamesSchema,
+  developSettingsSchema,
+  localAdjustmentsSchema,
+  type DevelopKey,
+} from '../src/develop-keys.js';
 
 describe('TOOL_DEFINITIONS', () => {
   it('get_photo_preview describes named sizes, the returned edge and how token cost grows', () => {
-    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'get_photo_preview');
+    const tool = TOOL_DEFINITIONS.find((tool) => tool.name === 'get_photo_preview');
     const sizeSchema = tool?.inputSchema.properties?.size as { description: string };
     const guidance = `${tool?.description} ${sizeSchema.description}`;
     expect(guidance).toMatch(/cull is 864.*review 1728.*default cull/);
@@ -30,7 +34,6 @@ describe('TOOL_DEFINITIONS', () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });
-
 
   it('rejects unknown top-level arguments for every tool', () => {
     for (const tool of TOOL_DEFINITIONS) {
@@ -51,12 +54,24 @@ describe('published schema', () => {
 
   it('states every argument rule in the published description', () => {
     const withRules = TOOL_CONTRACTS.filter((contract) => contract.rules?.length);
-    expect(withRules.map((contract) => contract.name)).toEqual(expect.arrayContaining([
-      'set_rating_and_flag', 'set_ai_metadata', 'create_smart_collection', 'export_photos',
-      'get_develop_preset', 'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments',
-      'create_gradient_mask', 'create_brush_mask', 'create_range_mask', 'create_mask',
-      'get_photo_preview', 'delete_masks',
-    ]));
+    expect(withRules.map((contract) => contract.name)).toEqual(
+      expect.arrayContaining([
+        'set_rating_and_flag',
+        'set_ai_metadata',
+        'create_smart_collection',
+        'export_photos',
+        'get_develop_preset',
+        'export_develop_preset',
+        'apply_develop_preset',
+        'apply_auto_adjustments',
+        'create_gradient_mask',
+        'create_brush_mask',
+        'create_range_mask',
+        'create_mask',
+        'get_photo_preview',
+        'delete_masks',
+      ]),
+    );
     for (const contract of withRules) {
       const description = TOOL_DEFINITIONS.find((tool) => tool.name === contract.name)!.description;
       for (const rule of contract.rules!) expect(description).toContain(rule.text);
@@ -65,7 +80,8 @@ describe('published schema', () => {
 
   it('keeps nested selector unions inside compare_develop_presets', () => {
     const validate = new Ajv({ strict: false }).compile(
-      TOOL_DEFINITIONS.find(tool => tool.name === 'compare_develop_presets')!.inputSchema);
+      TOOL_DEFINITIONS.find((tool) => tool.name === 'compare_develop_presets')!.inputSchema,
+    );
     expect(validate({ base: {}, candidate: { preset_uuid: 'uuid' } })).toBe(false);
     expect(validate({ base: { preset_name: 'base' }, candidate: { preset_uuid: 'uuid' } })).toBe(true);
   });
@@ -77,12 +93,14 @@ describe('listToolsHandler', () => {
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
   });
 
-  it.each(TOOL_DEFINITIONS.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => [tool.name, tool.description] as const))(
-    'upfront tool %s stays within the 4096-character description limit', (_name, description) => {
-      expect(description).toBeDefined();
-      expect(description!.length).toBeLessThanOrEqual(4096);
-    },
-  );
+  it.each(
+    TOOL_DEFINITIONS.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map(
+      (tool) => [tool.name, tool.description] as const,
+    ),
+  )('upfront tool %s stays within the 4096-character description limit', (_name, description) => {
+    expect(description).toBeDefined();
+    expect(description!.length).toBeLessThanOrEqual(4096);
+  });
 });
 
 describe('photo list schemas', () => {
@@ -106,11 +124,16 @@ describe('photo list schemas', () => {
 describe('develop setting schema', () => {
   const sample = (key: DevelopKey): unknown => {
     switch (key.kind) {
-      case 'number': return key.range === 'photo' ? 1 : key.range[0];
-      case 'enum': return key.values[0];
-      case 'boolean': return true;
-      case 'text': return 'Linear';
-      case 'curve': return [0, 0, 255, 255];
+      case 'number':
+        return key.range === 'photo' ? 1 : key.range[0];
+      case 'enum':
+        return key.values[0];
+      case 'boolean':
+        return true;
+      case 'text':
+        return 'Linear';
+      case 'curve':
+        return [0, 0, 255, 255];
     }
   };
   const settingsValid = new Ajv({ strict: false }).compile(developSettingsSchema());
@@ -120,7 +143,9 @@ describe('develop setting schema', () => {
     for (const key of DEVELOP_KEYS) expect([key.name, settable({ [key.name]: sample(key) })]).toEqual([key.name, true]);
     const names = DEVELOP_KEYS.map((key) => key.name);
     const copyable = DEVELOP_KEYS.filter((key) => key.writtenBy === undefined).map((key) => key.name);
-    expect(validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: copyable })).toBeNull();
+    expect(
+      validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: copyable }),
+    ).toBeNull();
     expect(validateToolArgs('create_develop_preset', { photo_id: 914, preset_name: 'p', settings: names })).toBeNull();
   });
 
@@ -152,10 +177,18 @@ describe('develop setting schema', () => {
   });
 
   it.each([
-    ['DefringePurpleAmount', 20, 21], ['DefringeGreenHueLo', 50, 51], ['DefringePurpleHueHi', 40, 39],
-    ['AutoLateralCA', 1, 0.5], ['SplitToningShadowHue', 360, 361], ['ColorGradeMidtoneSat', 100, 101],
-    ['ColorGradeBlending', 0, -1], ['Glow', 100, 101], ['GlowStyle', 4, 5], ['GlowDirection', -180, -181],
-    ['ReshapeAmount', 100, 101], ['PerspectiveUpright', 3, 5],
+    ['DefringePurpleAmount', 20, 21],
+    ['DefringeGreenHueLo', 50, 51],
+    ['DefringePurpleHueHi', 40, 39],
+    ['AutoLateralCA', 1, 0.5],
+    ['SplitToningShadowHue', 360, 361],
+    ['ColorGradeMidtoneSat', 100, 101],
+    ['ColorGradeBlending', 0, -1],
+    ['Glow', 100, 101],
+    ['GlowStyle', 4, 5],
+    ['GlowDirection', -180, -181],
+    ['ReshapeAmount', 100, 101],
+    ['PerspectiveUpright', 3, 5],
   ])('accepts %s at %s and refuses %s', (key, valid, invalid) => {
     expect(settable({ [key]: valid })).toBe(true);
     expect(settable({ [key]: invalid })).toBe(false);
@@ -169,7 +202,10 @@ describe('develop setting schema', () => {
   });
 
   it('publishes each numeric range in the schema and leaves photo-dependent ranges to Lightroom', () => {
-    const properties = developSettingsSchema().properties as Record<string, { minimum?: number; maximum?: number; description?: string }>;
+    const properties = developSettingsSchema().properties as Record<
+      string,
+      { minimum?: number; maximum?: number; description?: string }
+    >;
     expect(properties.Exposure2012).toMatchObject({ minimum: -5, maximum: 5 });
     expect(properties.Contrast2012).toMatchObject({ minimum: -100, maximum: 100 });
     expect(properties.ParametricShadowSplit).toMatchObject({ minimum: 10, maximum: 70 });
@@ -181,7 +217,10 @@ describe('develop setting schema', () => {
   });
 
   it('makes a key added to the table settable, copyable and capturable with no other edit', () => {
-    const keys: DevelopKey[] = [...DEVELOP_KEYS, { name: 'FixtureAmount', kind: 'number', range: [0, 10], precision: 1 }];
+    const keys: DevelopKey[] = [
+      ...DEVELOP_KEYS,
+      { name: 'FixtureAmount', kind: 'number', range: [0, 10], precision: 1 },
+    ];
     const ajv = new Ajv({ strict: false });
     expect(ajv.compile(developSettingsSchema(keys))({ FixtureAmount: 4 })).toBe(true);
     expect(ajv.compile(developSettingsSchema(keys))({ FixtureAmount: 11 })).toBe(false);
@@ -190,8 +229,8 @@ describe('develop setting schema', () => {
   });
 
   it('rejects malformed develop settings and point curve payloads before dispatch', () => {
-    const check = (curve: unknown[]) => validateToolArgs('set_develop_settings',
-      { photo_id: '1', settings: { ToneCurvePV2012: curve } }) === null;
+    const check = (curve: unknown[]) =>
+      validateToolArgs('set_develop_settings', { photo_id: '1', settings: { ToneCurvePV2012: curve } }) === null;
 
     expect(check([0, 0, 64, 48, 192, 210, 255, 255])).toBe(true);
     expect(check([0, 0, 255, 255])).toBe(true);
@@ -200,12 +239,20 @@ describe('develop setting schema', () => {
     expect(check([0, 0, 128, 300, 255, 255])).toBe(false);
     expect(check([0, 0, 128, -1, 255, 255])).toBe(false);
     expect(check([0, 0])).toBe(false);
-    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: 1 } })).toContain('ToneCurvePV2012');
-    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { Exposure2012: [0, 0, 255, 255] } })).toContain('Exposure2012');
+    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: 1 } })).toContain(
+      'ToneCurvePV2012',
+    );
+    expect(
+      validateToolArgs('set_develop_settings', { photo_id: 914, settings: { Exposure2012: [0, 0, 255, 255] } }),
+    ).toContain('Exposure2012');
     expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { NotAKey: 1 } })).toContain('NotAKey');
     expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: {} })).toContain('settings');
-    expect(validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: ['NotAKey'] })).toContain('settings');
-    expect(validateToolArgs('create_develop_preset', { photo_id: 914, preset_name: 'test', settings: ['NotAKey'] })).toContain('settings');
+    expect(
+      validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: ['NotAKey'] }),
+    ).toContain('settings');
+    expect(
+      validateToolArgs('create_develop_preset', { photo_id: 914, preset_name: 'test', settings: ['NotAKey'] }),
+    ).toContain('settings');
   });
 
   it('requires explicit allowlisted keys when creating a preset checkpoint', () => {
@@ -215,10 +262,13 @@ describe('develop setting schema', () => {
 
     expect(properties.settings.items?.enum).toEqual(DEVELOP_KEYS.map((key) => key.name));
     expect(validateToolArgs('create_develop_preset', { ...args, settings: ['Exposure2012'] })).toBeNull();
-    expect(validateToolArgs('create_develop_preset', { ...args, settings: [] })).toContain('settings must NOT have fewer than 1 items');
-    expect(validateToolArgs('create_develop_preset', { ...args, settings: ['Exposure2012', 'Exposure2012'] })).toContain('settings must NOT have duplicate items');
+    expect(validateToolArgs('create_develop_preset', { ...args, settings: [] })).toContain(
+      'settings must NOT have fewer than 1 items',
+    );
+    expect(
+      validateToolArgs('create_develop_preset', { ...args, settings: ['Exposure2012', 'Exposure2012'] }),
+    ).toContain('settings must NOT have duplicate items');
   });
-
 });
 
 describe('local adjustment schema', () => {
@@ -233,7 +283,10 @@ describe('local adjustment schema', () => {
   it('offers every local slider with its range to set_mask_adjustments and every creation tool', () => {
     for (const name of ['set_mask_adjustments', ...creations.map(([tool]) => tool)]) {
       const contract = TOOL_CONTRACTS.find((c) => c.name === name);
-      const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, { minimum?: number; maximum?: number }> }>;
+      const properties = contract?.inputSchema.properties as Record<
+        string,
+        { properties?: Record<string, { minimum?: number; maximum?: number }> }
+      >;
 
       expect(Object.keys(properties.adjustments.properties ?? {})).toEqual(LOCAL_KEYS.map((key) => key.name));
       expect(properties.adjustments.properties?.local_Exposure).toMatchObject({ minimum: -4, maximum: 4 });
@@ -290,7 +343,9 @@ describe('mcpb manifest tools', () => {
     const tools = manifestTools();
     expect(tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((contract) => contract.name));
     const crop = tools.find((tool) => tool.name === 'set_crop');
-    expect(TOOL_CONTRACTS.find((contract) => contract.name === 'set_crop')?.description.startsWith(crop?.description ?? '?')).toBe(true);
+    expect(
+      TOOL_CONTRACTS.find((contract) => contract.name === 'set_crop')?.description.startsWith(crop?.description ?? '?'),
+    ).toBe(true);
     expect(crop?.description).toMatch(/[.!?]$/);
   });
 });
@@ -315,7 +370,6 @@ describe('set_color_label schema', () => {
     expect(validate({ photo_ids: ['1'], label: 'pink' })).toBe(false);
   });
 });
-
 
 describe('create_smart_collection schema', () => {
   const smart = TOOL_DEFINITIONS.find((tool) => tool.name === 'create_smart_collection')!;
@@ -349,7 +403,6 @@ describe('keyword subtree description', () => {
   });
 });
 
-
 describe('Remove spot contracts', () => {
   it('accepts only the proven uppercase Opacity field', () => {
     const schema = TOOL_CONTRACTS.find((tool) => tool.name === 'update_spot')!.inputSchema;
@@ -363,8 +416,14 @@ describe('Remove spot contracts', () => {
 
 describe('Develop-driving reads', () => {
   it('say in their published description that they drive Develop and may commit a pending slider change', () => {
-    const reads = TOOL_CONTRACTS.filter((contract) => contract.develop === 'drives' && contract.annotations.readOnlyHint);
-    expect(reads.map((contract) => contract.name).sort()).toEqual(['describe_develop_keys', 'get_lens_blur', 'list_spots']);
+    const reads = TOOL_CONTRACTS.filter(
+      (contract) => contract.develop === 'drives' && contract.annotations.readOnlyHint,
+    );
+    expect(reads.map((contract) => contract.name).sort()).toEqual([
+      'describe_develop_keys',
+      'get_lens_blur',
+      'list_spots',
+    ]);
     for (const contract of reads) {
       const description = TOOL_DEFINITIONS.find((tool) => tool.name === contract.name)!.description;
       expect(description).toContain('Opens the photo in Develop');
@@ -372,7 +431,7 @@ describe('Develop-driving reads', () => {
     }
   });
 
-  it('and every other read of a photo\'s develop state say they wait for the Develop calls before them', () => {
+  it("and every other read of a photo's develop state say they wait for the Develop calls before them", () => {
     const reads = TOOL_CONTRACTS.filter((contract) => contract.develop === 'reads');
     expect(reads.map((contract) => contract.name)).toContain('get_develop_settings');
     for (const contract of reads) {

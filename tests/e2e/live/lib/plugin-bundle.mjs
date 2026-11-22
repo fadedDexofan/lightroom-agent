@@ -57,11 +57,15 @@ export function installCandidateBundle({
   backupsDirectory = BUNDLE_BACKUPS_DIR,
 } = {}) {
   assertOutsideTemporaryDirectory(backupsDirectory);
-  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:.TZ]/g, "")
+    .slice(0, 14);
   const backupDirectory = path.join(backupsDirectory, `${stamp}`, path.basename(installedDirectory));
   fs.mkdirSync(path.dirname(backupDirectory), { recursive: true });
   syncBundle(installedDirectory, backupDirectory);
-  if (!bundlesIdentical(installedDirectory, backupDirectory)) throw new Error("backup does not match the installed bundle");
+  if (!bundlesIdentical(installedDirectory, backupDirectory))
+    throw new Error("backup does not match the installed bundle");
   fs.writeFileSync(
     path.join(backupsDirectory, LATEST_BACKUP_FILE),
     JSON.stringify({ backupDirectory, installedDirectory, createdAt: new Date().toISOString() }, null, 2) + "\n",
@@ -69,7 +73,8 @@ export function installCandidateBundle({
 
   const newLuaFiles = addedLuaFiles(listLuaFiles(installedDirectory), listLuaFiles(candidateDirectory));
   syncBundle(candidateDirectory, installedDirectory);
-  if (!bundlesIdentical(candidateDirectory, installedDirectory)) throw new Error("installed bundle does not match the candidate");
+  if (!bundlesIdentical(candidateDirectory, installedDirectory))
+    throw new Error("installed bundle does not match the candidate");
   return { backupDirectory, addedLuaFiles: newLuaFiles, needsFullLightroomRestart: newLuaFiles.length > 0 };
 }
 
@@ -80,6 +85,7 @@ export function latestBackup(backupsDirectory = BUNDLE_BACKUPS_DIR) {
 export function restoreBundle({ backupDirectory, installedDirectory = INSTALLED_BUNDLE_DIR }) {
   if (!fs.existsSync(backupDirectory)) throw new Error(`backup not found: ${backupDirectory}`);
   syncBundle(backupDirectory, installedDirectory);
-  if (!bundlesIdentical(backupDirectory, installedDirectory)) throw new Error("restored bundle does not match the backup");
+  if (!bundlesIdentical(backupDirectory, installedDirectory))
+    throw new Error("restored bundle does not match the backup");
   return installedDirectory;
 }

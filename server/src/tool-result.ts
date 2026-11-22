@@ -92,9 +92,14 @@ interface ImagePayload {
 function isImagePayload(value: unknown): value is ImagePayload {
   if (typeof value !== "object" || value === null || !("image" in value)) return false;
   const { image } = value;
-  return typeof image === "object" && image !== null
-    && "data" in image && typeof image.data === "string"
-    && "mime_type" in image && typeof image.mime_type === "string";
+  return (
+    typeof image === "object" &&
+    image !== null &&
+    "data" in image &&
+    typeof image.data === "string" &&
+    "mime_type" in image &&
+    typeof image.mime_type === "string"
+  );
 }
 
 function withoutImages(data: unknown, images: ImageBlock[]): unknown {
@@ -104,20 +109,25 @@ function withoutImages(data: unknown, images: ImageBlock[]): unknown {
     return rest;
   }
   if (typeof data !== "object" || data === null || Array.isArray(data)) return data;
-  return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, !Array.isArray(value) ? value
-    : value.map((item: unknown) => {
-      if (!isImagePayload(item)) return item;
-      const { image, ...rest } = item;
-      images.push({ type: "image", data: image.data, mimeType: image.mime_type });
-      return { ...rest, image_index: images.length };
-    })]));
+  return Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [
+      key,
+      !Array.isArray(value)
+        ? value
+        : value.map((item: unknown) => {
+            if (!isImagePayload(item)) return item;
+            const { image, ...rest } = item;
+            images.push({ type: "image", data: image.data, mimeType: image.mime_type });
+            return { ...rest, image_index: images.length };
+          }),
+    ]),
+  );
 }
 
 export function toolResponse(result: ToolResult): ToolResponse {
   const images: ImageBlock[] = [];
-  const shown = "data" in result && result.data !== undefined
-    ? { ...result, data: withoutImages(result.data, images) }
-    : result;
+  const shown =
+    "data" in result && result.data !== undefined ? { ...result, data: withoutImages(result.data, images) } : result;
   return {
     content: [{ type: "text", text: JSON.stringify(shown) }, ...images],
     ...(result.outcome === "done" ? {} : { isError: true }),

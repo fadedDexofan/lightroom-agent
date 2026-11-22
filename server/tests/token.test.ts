@@ -41,8 +41,6 @@ describe('token', () => {
 
   it('falls back to ~/.config/lightroom-agent/token without override', () => {
     delete process.env.LIGHTROOM_AGENT_TOKEN_PATH;
-    expect(tokenFilePath()).toBe(
-      path.join(os.homedir(), '.config', 'lightroom-agent', 'token'),
-    );
+    expect(tokenFilePath()).toBe(path.join(os.homedir(), '.config', 'lightroom-agent', 'token'));
   });
 });

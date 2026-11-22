@@ -16,14 +16,19 @@ function info(tag) {
   const { version } = JSON.parse(fs.readFileSync(path.join(repoRoot, "server", "package.json"), "utf8"));
   if (tag !== undefined && tag !== `v${version}`) fail(`tag ${tag} does not match the package version ${version}`);
   const prerelease = version.includes("-");
-  process.stdout.write(`version=${version}\ntag=v${version}\nprerelease=${prerelease}\nnpm_tag=${prerelease ? "next" : "latest"}\n`);
+  process.stdout.write(
+    `version=${version}\ntag=v${version}\nprerelease=${prerelease}\nnpm_tag=${prerelease ? "next" : "latest"}\n`,
+  );
 }
 
 function section(lines, heading) {
   const start = lines.indexOf(heading);
   if (start === -1) return null;
   const end = lines.findIndex((line, index) => index > start && line.startsWith("# "));
-  return lines.slice(start + 1, end === -1 ? lines.length : end).join("\n").trim();
+  return lines
+    .slice(start + 1, end === -1 ? lines.length : end)
+    .join("\n")
+    .trim();
 }
 
 function notes(version, allowUnreleased) {
@@ -46,5 +51,9 @@ const option = (name) => {
 };
 
 if (command === "info") info(option("--tag"));
-else if (command === "notes") notes(rest.find((arg) => !arg.startsWith("--")), rest.includes("--allow-unreleased"));
+else if (command === "notes")
+  notes(
+    rest.find((arg) => !arg.startsWith("--")),
+    rest.includes("--allow-unreleased"),
+  );
 else fail("usage: release.mjs info [--tag <tag>] | notes <version> [--allow-unreleased]");

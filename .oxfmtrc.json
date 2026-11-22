@@ -1,0 +1,11 @@
+{
+  "printWidth": 120,
+  "ignorePatterns": ["server/src/skill-content.ts", "codex/**", "mcpb/**", "**/*.json", "**/*.md", "**/*.yml", "**/*.yaml", "**/*.toml"],
+  "overrides": [
+    {
+      "files": ["server/**"],
+      "excludeFiles": ["server/src/**"],
+      "options": { "singleQuote": true }
+    }
+  ]
+}

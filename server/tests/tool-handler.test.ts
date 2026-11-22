@@ -11,12 +11,14 @@ import { Dispatcher, PluginNotSentError, PluginTimeoutError, type PluginResponse
 import { PluginLiveness } from '../src/plugin-liveness.js';
 import jpeg from 'jpeg-js';
 
-function makeHandler(opts: {
-  ready?: boolean;
-  call?: (action: string, params: unknown, budget?: number) => Promise<PluginResponse>;
-} = {}) {
+function makeHandler(
+  opts: {
+    ready?: boolean;
+    call?: (action: string, params: unknown, budget?: number) => Promise<PluginResponse>;
+  } = {},
+) {
   return createCallToolHandler({
-    admitted: () => (opts.ready ?? true ? 0 : null),
+    admitted: () => ((opts.ready ?? true) ? 0 : null),
     dispatcher: {
       call: opts.call ?? (async () => ({ id: 'x', result: {} })),
     },
@@ -24,43 +26,70 @@ function makeHandler(opts: {
 }
 
 describe('createCallToolHandler', () => {
-  it.each([['cull', 864], ['review', 1728]] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
+  it.each([
+    ['cull', 864],
+    ['review', 1728],
+  ] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
     const args = { photo_id: 914, size };
     let captured: unknown;
-    await makeHandler({ call: async (_action, params) => {
-      captured = params;
-      return { id: '1', result: { not_found: [914] } };
-    } })('get_photo_preview', args);
+    await makeHandler({
+      call: async (_action, params) => {
+        captured = params;
+        return { id: '1', result: { not_found: [914] } };
+      },
+    })('get_photo_preview', args);
     expect(captured).toEqual({ photo_ids: [914], size: edge });
     expect(args.size).toBe(size);
   });
 
-  it.each([[undefined, 864], [64, 64], [512.5, 512], [1024, 1024], [2048, 2048]])('get_photo_preview sends size %s as edge %s', async (size, edge) => {
+  it.each([
+    [undefined, 864],
+    [64, 64],
+    [512.5, 512],
+    [1024, 1024],
+    [2048, 2048],
+  ])('get_photo_preview sends size %s as edge %s', async (size, edge) => {
     const args = size === undefined ? { photo_id: 914 } : { photo_id: 914, size };
     let captured: unknown;
-    await makeHandler({ call: async (_action, params) => {
-      captured = params;
-      return { id: '1', result: { not_found: [914] } };
-    } })('get_photo_preview', args);
+    await makeHandler({
+      call: async (_action, params) => {
+        captured = params;
+        return { id: '1', result: { not_found: [914] } };
+      },
+    })('get_photo_preview', args);
     expect(captured).toEqual({ photo_ids: [914], size: edge });
   });
 
   it('answers invalid arguments as failed without sending anything to Lightroom', async () => {
     let calls = 0;
-    const handler = makeHandler({ call: async () => { calls++; return { id: '1', result: {} }; } });
+    const handler = makeHandler({
+      call: async () => {
+        calls++;
+        return { id: '1', result: {} };
+      },
+    });
 
     const result = await handler('set_rating_and_flag', { photo_ids: [914], rating: 6 });
 
-    expect(envelopeOf(result)).toEqual({ outcome: 'failed', error: expect.stringContaining('Invalid arguments for set_rating_and_flag: rating') });
+    expect(envelopeOf(result)).toEqual({
+      outcome: 'failed',
+      error: expect.stringContaining('Invalid arguments for set_rating_and_flag: rating'),
+    });
     expect(calls).toBe(0);
   });
 
   it('refuses a name with no contract without sending it to Lightroom', async () => {
     let calls = 0;
-    const handler = makeHandler({ call: async () => { calls++; return { id: '1', result: {} }; } });
+    const handler = makeHandler({
+      call: async () => {
+        calls++;
+        return { id: '1', result: {} };
+      },
+    });
     for (const name of ['write_develop_settings', 'set_selection']) {
       expect(envelopeOf(await handler(name, {}))).toEqual({
-        outcome: 'failed', error: `Unknown tool "${name}". Only listed tools can be called.`,
+        outcome: 'failed',
+        error: `Unknown tool "${name}". Only listed tools can be called.`,
       });
     }
     expect(calls).toBe(0);
@@ -78,12 +107,18 @@ describe('createCallToolHandler', () => {
 
   it('treats missing arguments as an empty object', async () => {
     const sent: unknown[] = [];
-    const handler = makeHandler({ call: async (_action, params) => { sent.push(params); return { id: '1', result: { data: {} } }; } });
+    const handler = makeHandler({
+      call: async (_action, params) => {
+        sent.push(params);
+        return { id: '1', result: { data: {} } };
+      },
+    });
 
     expect((await handler('search_photos', undefined)).isError).toBeUndefined();
     expect(sent).toEqual([{}]);
     expect(envelopeOf(await handler('set_rating_and_flag', undefined))).toEqual({
-      outcome: 'failed', error: expect.stringContaining('required property'),
+      outcome: 'failed',
+      error: expect.stringContaining('required property'),
     });
   });
 
@@ -133,10 +168,12 @@ describe('createCallToolHandler', () => {
 
 describe('result envelope at the call boundary', () => {
   const outcomeOf = async (name: string, args: Record<string, unknown>, reply: PluginResponse | Error) => {
-    const result = await makeHandler({ call: async () => {
-      if (reply instanceof Error) throw reply;
-      return reply;
-    } })(name, args);
+    const result = await makeHandler({
+      call: async () => {
+        if (reply instanceof Error) throw reply;
+        return reply;
+      },
+    })(name, args);
     const body = JSON.parse(result.content[0].text) as { outcome: string; error?: string; data?: unknown };
     return { isError: result.isError === true, ...body };
   };
@@ -144,13 +181,19 @@ describe('result envelope at the call boundary', () => {
   const read = ['list_collections', {}] as const;
 
   it('reports a refusal from a write as failed', async () => {
-    expect(await outcomeOf(...write, { id: '1', error: 'Photo not found', effect: 'none' }))
-      .toEqual({ isError: true, outcome: 'failed', error: 'Photo not found' });
+    expect(await outcomeOf(...write, { id: '1', error: 'Photo not found', effect: 'none' })).toEqual({
+      isError: true,
+      outcome: 'failed',
+      error: 'Photo not found',
+    });
   });
 
   it('reports an unmarked error from a write as unknown', async () => {
-    expect(await outcomeOf(...write, { id: '1', error: 'Lightroom threw', effect: 'unknown' }))
-      .toEqual({ isError: true, outcome: 'unknown', error: 'Lightroom threw' });
+    expect(await outcomeOf(...write, { id: '1', error: 'Lightroom threw', effect: 'unknown' })).toEqual({
+      isError: true,
+      outcome: 'unknown',
+      error: 'Lightroom threw',
+    });
   });
 
   it('reports any error from a read as failed', async () => {
@@ -158,37 +201,53 @@ describe('result envelope at the call boundary', () => {
   });
 
   it('wraps a handler result without lists as done', async () => {
-    expect(await outcomeOf(...read, { id: '1', result: { data: { collections: [] } } }))
-      .toEqual({ isError: false, outcome: 'done', data: { collections: [] } });
+    expect(await outcomeOf(...read, { id: '1', result: { data: { collections: [] } } })).toEqual({
+      isError: false,
+      outcome: 'done',
+      data: { collections: [] },
+    });
   });
 
   it('reports a write timeout as unknown and a read timeout as failed', async () => {
     expect(await outcomeOf(...write, new PluginTimeoutError(30_000))).toEqual({
       isError: true,
       outcome: 'unknown',
-      error: 'Lightroom did not answer within 30s, so the result of set_rating_and_flag is unknown: it may have been applied'
-        + ' or may still be running. Read the current state before retrying.',
+      error:
+        'Lightroom did not answer within 30s, so the result of set_rating_and_flag is unknown: it may have been applied' +
+        ' or may still be running. Read the current state before retrying.',
     });
-    expect(await outcomeOf(...read, new PluginTimeoutError(30_000)))
-      .toEqual({ isError: true, outcome: 'failed', error: 'Plugin response timeout (30s)' });
+    expect(await outcomeOf(...read, new PluginTimeoutError(30_000))).toEqual({
+      isError: true,
+      outcome: 'failed',
+      error: 'Plugin response timeout (30s)',
+    });
   });
 
   it('reports a request that never left the server as failed', async () => {
-    expect((await outcomeOf(...write, new PluginNotSentError('Failed to send request to plugin (socket dropped)'))).outcome)
-      .toBe('failed');
+    expect(
+      (await outcomeOf(...write, new PluginNotSentError('Failed to send request to plugin (socket dropped)'))).outcome,
+    ).toBe('failed');
   });
 });
 
 describe('time budget', () => {
   it('gives every plug-in tool the budget of its contract duration', async () => {
     const budgets: [string, number | undefined][] = [];
-    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call: async (action, _params, budget) => {
-      budgets.push([action, budget]);
-      return { id: '1', result: { data: {} } };
-    } } });
+    const handler = createCallToolHandler({
+      admitted: () => 0,
+      dispatcher: {
+        call: async (action, _params, budget) => {
+          budgets.push([action, budget]);
+          return { id: '1', result: { data: {} } };
+        },
+      },
+    });
     await handler('export_photos', { photo_ids: [1], destination: '/tmp/out' });
     await handler('list_collections', {});
-    expect(budgets).toEqual([['export_photos', 300_000], ['list_collections', 30_000]]);
+    expect(budgets).toEqual([
+      ['export_photos', 300_000],
+      ['list_collections', 30_000],
+    ]);
   });
 
   it.each([
@@ -198,18 +257,34 @@ describe('time budget', () => {
     jest.useFakeTimers();
     try {
       const budgets: [string, number | undefined][] = [];
-      const handler = makeHandler({ call: async (action, _params, budget) => {
-        budgets.push([action, budget]);
-        if (action !== preRead) return { id: '2', result: { data: { photo_id: '914' } } };
-        jest.advanceTimersByTime(5_000);
-        if (action === 'plan_crop') {
-          return { id: '1', result: { data: { photo_id: '914', settings: { CropLeft: 0.1, CropTop: 0.1, CropRight: 0.9, CropBottom: 0.9, CropAngle: 0 }, rectangle: {}, angle: 0, size: {} } } };
-        }
-        return { id: '1', result: { data: { rows: [{ photo_id: '914', settings: { Glow: 60 } }] } } };
-      } });
+      const handler = makeHandler({
+        call: async (action, _params, budget) => {
+          budgets.push([action, budget]);
+          if (action !== preRead) return { id: '2', result: { data: { photo_id: '914' } } };
+          jest.advanceTimersByTime(5_000);
+          if (action === 'plan_crop') {
+            return {
+              id: '1',
+              result: {
+                data: {
+                  photo_id: '914',
+                  settings: { CropLeft: 0.1, CropTop: 0.1, CropRight: 0.9, CropBottom: 0.9, CropAngle: 0 },
+                  rectangle: {},
+                  angle: 0,
+                  size: {},
+                },
+              },
+            };
+          }
+          return { id: '1', result: { data: { rows: [{ photo_id: '914', settings: { Glow: 60 } }] } } };
+        },
+      });
 
       expect(envelopeOf(await handler(tool, args)).outcome).toBe('done');
-      expect(budgets).toEqual([[preRead, 30_000], ['write_develop_settings', 25_000]]);
+      expect(budgets).toEqual([
+        [preRead, 30_000],
+        ['write_develop_settings', 25_000],
+      ]);
     } finally {
       jest.useRealTimers();
     }
@@ -221,9 +296,13 @@ describe('Develop call queue', () => {
   function gatedDispatcher() {
     const pending: Pending[] = [];
     const call = async (action: string, _params: unknown, budget?: number) =>
-      new Promise<PluginResponse>((resolve) => { pending.push({ action, budget, resolve }); });
+      new Promise<PluginResponse>((resolve) => {
+        pending.push({ action, budget, resolve });
+      });
     const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
-    const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+    const settle = async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    };
     return { pending, handler, settle };
   }
   const done = (id: string): PluginResponse => ({ id, result: { data: {} } });
@@ -238,11 +317,19 @@ describe('Develop call queue', () => {
     const calls: string[] = [];
     const call = async (action: string) => {
       calls.push(action);
-      if (calls.length === 1) throw new PluginTimeoutError(30_000, new Promise<void>((resolve) => { finishLate = resolve; }));
+      if (calls.length === 1)
+        throw new PluginTimeoutError(
+          30_000,
+          new Promise<void>((resolve) => {
+            finishLate = resolve;
+          }),
+        );
       return { id: '2', result: { data: {} } };
     };
     const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
-    const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+    const settle = async () => {
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    };
 
     const first = await handler(...develop(1));
     const second = handler(...develop(2));
@@ -274,38 +361,55 @@ describe('Develop call queue', () => {
     expect((await third).isError).toBeUndefined();
   });
 
-  it.each(queuedKinds)('refuses %s queued until after the plug-in stopped being usable, sending nothing', async (_kind, queued) => {
-    const pending: Pending[] = [];
-    let ready = true;
-    const call = async (action: string, _params: unknown, budget?: number) =>
-      new Promise<PluginResponse>((resolve) => { pending.push({ action, budget, resolve }); });
-    const handler = createCallToolHandler({ admitted: () => (ready ? 0 : null), notReadyMessage: () => 'plug-in 0.0.1', dispatcher: { call } });
-    const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+  it.each(queuedKinds)(
+    'refuses %s queued until after the plug-in stopped being usable, sending nothing',
+    async (_kind, queued) => {
+      const pending: Pending[] = [];
+      let ready = true;
+      const call = async (action: string, _params: unknown, budget?: number) =>
+        new Promise<PluginResponse>((resolve) => {
+          pending.push({ action, budget, resolve });
+        });
+      const handler = createCallToolHandler({
+        admitted: () => (ready ? 0 : null),
+        notReadyMessage: () => 'plug-in 0.0.1',
+        dispatcher: { call },
+      });
+      const settle = async () => {
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      };
 
-    const first = handler(...develop(1));
-    const second = handler(queued[0], queued[1]);
-    await settle();
-    ready = false;
-    pending[0].resolve(done('1'));
-    await first;
+      const first = handler(...develop(1));
+      const second = handler(queued[0], queued[1]);
+      await settle();
+      ready = false;
+      pending[0].resolve(done('1'));
+      await first;
 
-    expect(envelopeOf(await second)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('was lost or replaced') });
-    expect(pending).toHaveLength(1);
-  });
+      expect(envelopeOf(await second)).toMatchObject({
+        outcome: 'failed',
+        error: expect.stringContaining('was lost or replaced'),
+      });
+      expect(pending).toHaveLength(1);
+    },
+  );
 
   it.each([
     ['list_collections', {}, 'list_collections'],
     ['set_rating_and_flag', { photo_ids: [2], rating: 3 }, 'set_rating_and_flag'],
     ['get_photo_preview', { photo_id: 2 }, 'render_preview'],
-  ] as const)('runs %s, which touches no develop state, alongside a queued Develop call', async (name, args, action) => {
-    const { pending, handler, settle } = gatedDispatcher();
-    void handler(...develop(1));
-    void handler(name, args);
-    await settle();
-    expect(pending.map((entry) => entry.action).sort()).toEqual([action, 'write_develop_settings'].sort());
-  });
+  ] as const)(
+    'runs %s, which touches no develop state, alongside a queued Develop call',
+    async (name, args, action) => {
+      const { pending, handler, settle } = gatedDispatcher();
+      void handler(...develop(1));
+      void handler(name, args);
+      await settle();
+      expect(pending.map((entry) => entry.action).sort()).toEqual([action, 'write_develop_settings'].sort());
+    },
+  );
 
-  it('sends a read of a photo\'s develop settings only after the running Develop call answered', async () => {
+  it("sends a read of a photo's develop settings only after the running Develop call answered", async () => {
     const { pending, handler, settle } = gatedDispatcher();
     const reset = handler('reset_develop_adjustments', { photo_ids: [1], confirm: true });
     const read = handler('get_develop_settings', { photo_ids: [1] });
@@ -319,7 +423,7 @@ describe('Develop call queue', () => {
     expect((await read).isError).toBeUndefined();
   });
 
-  it('queues get_photo_detail\'s crop read behind a running Develop call and renders outside the queue', async () => {
+  it("queues get_photo_detail's crop read behind a running Develop call and renders outside the queue", async () => {
     const { pending, handler, settle } = gatedDispatcher();
     const reset = handler('reset_develop_adjustments', { photo_ids: [1], confirm: true });
     void handler('get_photo_detail', { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] });
@@ -334,74 +438,111 @@ describe('Develop call queue', () => {
     void handler(...develop(2));
     await settle();
     expect(pending.map((entry) => entry.action)).toEqual([
-      'reset_develop_adjustments', 'get_crop', 'render_source', 'write_develop_settings',
+      'reset_develop_adjustments',
+      'get_crop',
+      'render_source',
+      'write_develop_settings',
     ]);
   });
 
   it('sends two simultaneous detail renders at once, after their crop reads', async () => {
     const { pending, handler } = gatedDispatcher();
-    const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+    const settle = async () => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    };
     const detail = { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] };
     void handler('get_photo_detail', detail);
     void handler('get_photo_detail', detail);
     for (let i = 0; i < 2; i++) {
       await settle();
-      pending.filter((entry) => entry.action === 'get_crop')[i]
-        .resolve({ id: String(i), result: { data: { size: { width: 6000, height: 4000 } } } });
+      pending
+        .filter((entry) => entry.action === 'get_crop')
+        [i].resolve({ id: String(i), result: { data: { size: { width: 6000, height: 4000 } } } });
     }
     await settle();
-    expect(pending.map((entry) => entry.action).sort()).toEqual(['get_crop', 'get_crop', 'render_source', 'render_source']);
+    expect(pending.map((entry) => entry.action).sort()).toEqual([
+      'get_crop',
+      'get_crop',
+      'render_source',
+      'render_source',
+    ]);
   });
 
   it.each([
     ['set_crop', 'plan_crop', { photo_id: 1, aspect: { width: 1, height: 1 } }],
     ['get_photo_detail', 'get_crop', { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] }],
-  ] as const)('keeps the Develop turn of %s after its %s timed out until the plug-in has finished it', async (name, action, args) => {
-    let finishLate!: () => void;
-    const calls: string[] = [];
-    const call = async (sent: string) => {
-      calls.push(sent);
-      if (sent === action) throw new PluginTimeoutError(30_000, new Promise<void>((resolve) => { finishLate = resolve; }));
-      return { id: '2', result: { data: {} } };
-    };
-    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
-    const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+  ] as const)(
+    'keeps the Develop turn of %s after its %s timed out until the plug-in has finished it',
+    async (name, action, args) => {
+      let finishLate!: () => void;
+      const calls: string[] = [];
+      const call = async (sent: string) => {
+        calls.push(sent);
+        if (sent === action)
+          throw new PluginTimeoutError(
+            30_000,
+            new Promise<void>((resolve) => {
+              finishLate = resolve;
+            }),
+          );
+        return { id: '2', result: { data: {} } };
+      };
+      const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
+      const settle = async () => {
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+      };
 
-    const first = await handler(name, args);
-    const next = handler(...develop(2));
-    await settle();
-
-    expect(envelopeOf(first)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('nothing was written') });
-    expect(calls).toEqual([action]);
-    finishLate();
-    await next;
-    expect(calls).toEqual([action, 'write_develop_settings']);
-  });
-
-  it.each(queuedKinds)('gives up on %s without sending anything when its turn does not come within the budget', async (_kind, queued) => {
-    jest.useFakeTimers();
-    try {
-      const { pending, handler, settle } = gatedDispatcher();
-      void handler(...develop(1));
-      const waiting = handler(queued[0], queued[1]);
+      const first = await handler(name, args);
+      const next = handler(...develop(2));
       await settle();
-      jest.advanceTimersByTime(30_000);
-      const result = await waiting;
-      expect(result.isError).toBe(true);
-      expect(envelopeOf(result)).toMatchObject({
-        outcome: 'failed', error: expect.stringContaining('busy with set_develop_settings'),
+
+      expect(envelopeOf(first)).toMatchObject({
+        outcome: 'failed',
+        error: expect.stringContaining('nothing was written'),
       });
-      expect(pending).toHaveLength(1);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
+      expect(calls).toEqual([action]);
+      finishLate();
+      await next;
+      expect(calls).toEqual([action, 'write_develop_settings']);
+    },
+  );
+
+  it.each(queuedKinds)(
+    'gives up on %s without sending anything when its turn does not come within the budget',
+    async (_kind, queued) => {
+      jest.useFakeTimers();
+      try {
+        const { pending, handler, settle } = gatedDispatcher();
+        void handler(...develop(1));
+        const waiting = handler(queued[0], queued[1]);
+        await settle();
+        jest.advanceTimersByTime(30_000);
+        const result = await waiting;
+        expect(result.isError).toBe(true);
+        expect(envelopeOf(result)).toMatchObject({
+          outcome: 'failed',
+          error: expect.stringContaining('busy with set_develop_settings'),
+        });
+        expect(pending).toHaveLength(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
 
   it('gives up without sending anything when the turn comes with under a second of the budget left', async () => {
     jest.useFakeTimers();
     try {
       const sent: string[] = [];
-      const dispatcher = new Dispatcher({ send: (line) => { sent.push(line); return true; }, getToken: () => 'token', log: () => {}, connectionGeneration: () => 0 });
+      const dispatcher = new Dispatcher({
+        send: (line) => {
+          sent.push(line);
+          return true;
+        },
+        getToken: () => 'token',
+        log: () => {},
+        connectionGeneration: () => 0,
+      });
       const handler = createCallToolHandler({ admitted: () => 0, dispatcher });
       const first = handler(...develop(1));
       const waiting = handler(...develop(2));
@@ -410,7 +551,12 @@ describe('Develop call queue', () => {
       dispatcher.handleResponseLine(JSON.stringify(done((JSON.parse(sent[0]) as { id: string }).id)));
       await first;
       const result = await waiting;
-      expect(envelopeOf(result)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('Only 500 ms of the time budget were left, so write_develop_settings was not sent') });
+      expect(envelopeOf(result)).toMatchObject({
+        outcome: 'failed',
+        error: expect.stringContaining(
+          'Only 500 ms of the time budget were left, so write_develop_settings was not sent',
+        ),
+      });
       expect(sent).toHaveLength(1);
     } finally {
       jest.useRealTimers();
@@ -431,7 +577,10 @@ describe('Develop call queue', () => {
       for (let i = 0; i < 10; i++) await Promise.resolve();
       jest.advanceTimersByTime(30_000);
       expect(envelopeOf(await waiting)).toMatchObject({
-        outcome: 'failed', error: expect.stringContaining('busy with set_develop_settings, still finishing in Lightroom after it timed out'),
+        outcome: 'failed',
+        error: expect.stringContaining(
+          'busy with set_develop_settings, still finishing in Lightroom after it timed out',
+        ),
       });
       expect(calls).toEqual(['write_develop_settings']);
     } finally {
@@ -443,7 +592,11 @@ describe('Develop call queue', () => {
     const { pending, handler, settle } = gatedDispatcher();
     void handler(...develop(1));
     const controller = new AbortController();
-    const waiting = handler('set_develop_settings', { photo_id: 2, settings: { Exposure2012: 0.2 } }, { signal: controller.signal });
+    const waiting = handler(
+      'set_develop_settings',
+      { photo_id: 2, settings: { Exposure2012: 0.2 } },
+      { signal: controller.signal },
+    );
     await settle();
     controller.abort();
     expect(envelopeOf(await waiting)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('cancelled') });
@@ -468,8 +621,10 @@ describe('Develop call queue', () => {
   });
 });
 
-describe('plug-in actions that touch a photo\'s develop state', () => {
-  const { accessOf, defines } = developAccessByHandler(path.resolve(process.cwd(), '..', 'plugin', 'LightroomAgent.lrplugin'));
+describe("plug-in actions that touch a photo's develop state", () => {
+  const { accessOf, defines } = developAccessByHandler(
+    path.resolve(process.cwd(), '..', 'plugin', 'LightroomAgent.lrplugin'),
+  );
 
   it('are found through the helper modules a handler reads with, and catalog work is not', () => {
     expect([...accessOf('HandlerCrop.read')]).toEqual(['reads']);
@@ -490,14 +645,16 @@ describe('plug-in actions that touch a photo\'s develop state', () => {
   });
 
   it('run in the Develop queue: every action whose handler reads, writes or opens Develop is marked', () => {
-    const unmarked = DISPATCHED_ACTIONS
-      .filter((action) => accessOf(action.plugin).size > 0 && action.develop === undefined)
-      .map((action) => `${action.name} (${[...accessOf(action.plugin)].join(', ')})`);
+    const unmarked = DISPATCHED_ACTIONS.filter(
+      (action) => accessOf(action.plugin).size > 0 && action.develop === undefined,
+    ).map((action) => `${action.name} (${[...accessOf(action.plugin)].join(', ')})`);
     expect(unmarked).toEqual([]);
   });
 
   it('are marked reads only where the handler reads develop state', () => {
-    const idle = DISPATCHED_ACTIONS.filter((action) => action.develop === 'reads' && !accessOf(action.plugin).has('reads'));
+    const idle = DISPATCHED_ACTIONS.filter(
+      (action) => action.develop === 'reads' && !accessOf(action.plugin).has('reads'),
+    );
     expect(idle.map((action) => action.name)).toEqual([]);
   });
 });
@@ -505,27 +662,47 @@ describe('plug-in actions that touch a photo\'s develop state', () => {
 describe('set_develop_settings precision', () => {
   it('writes a value finer than Lightroom keeps rounded to its precision and says so', async () => {
     const calls: [string, unknown][] = [];
-    const result = await makeHandler({ call: async (action, params) => {
-      calls.push([action, params]);
-      return { id: '1', result: { data: { photo_id: '914' } } };
-    } })('set_develop_settings', {
-      photo_id: 914, settings: { Exposure2012: 0.333333, Contrast2012: 10.4, SharpenRadius: 1.25, Texture: 6 },
+    const result = await makeHandler({
+      call: async (action, params) => {
+        calls.push([action, params]);
+        return { id: '1', result: { data: { photo_id: '914' } } };
+      },
+    })('set_develop_settings', {
+      photo_id: 914,
+      settings: { Exposure2012: 0.333333, Contrast2012: 10.4, SharpenRadius: 1.25, Texture: 6 },
     });
-    expect(calls).toEqual([['write_develop_settings', {
-      photo_id: 914, settings: { Exposure2012: 0.33, Contrast2012: 10, SharpenRadius: 1.3, Texture: 6 },
-    }]]);
-    expect(envelopeOf(result)).toEqual({ outcome: 'done', data: { photo_id: '914' }, warnings: [
-      'Rounded to the precision Lightroom keeps: Exposure2012 0.333333 -> 0.33, Contrast2012 10.4 -> 10, SharpenRadius 1.25 -> 1.3',
-    ] });
+    expect(calls).toEqual([
+      [
+        'write_develop_settings',
+        {
+          photo_id: 914,
+          settings: { Exposure2012: 0.33, Contrast2012: 10, SharpenRadius: 1.3, Texture: 6 },
+        },
+      ],
+    ]);
+    expect(envelopeOf(result)).toEqual({
+      outcome: 'done',
+      data: { photo_id: '914' },
+      warnings: [
+        'Rounded to the precision Lightroom keeps: Exposure2012 0.333333 -> 0.33, Contrast2012 10.4 -> 10, SharpenRadius 1.25 -> 1.3',
+      ],
+    });
   });
 
   it('writes values already at their precision unchanged and without a warning', async () => {
     const calls: unknown[] = [];
-    const result = await makeHandler({ call: async (_action, params) => {
-      calls.push(params);
-      return { id: '1', result: { data: { photo_id: '914' } } };
-    } })('set_develop_settings', { photo_id: 914, settings: { Exposure2012: -1.25, WhiteBalance: 'Auto', CropAngle: 1.25 } });
-    expect(calls).toEqual([{ photo_id: 914, settings: { Exposure2012: -1.25, WhiteBalance: 'Auto', CropAngle: 1.25 } }]);
+    const result = await makeHandler({
+      call: async (_action, params) => {
+        calls.push(params);
+        return { id: '1', result: { data: { photo_id: '914' } } };
+      },
+    })('set_develop_settings', {
+      photo_id: 914,
+      settings: { Exposure2012: -1.25, WhiteBalance: 'Auto', CropAngle: 1.25 },
+    });
+    expect(calls).toEqual([
+      { photo_id: 914, settings: { Exposure2012: -1.25, WhiteBalance: 'Auto', CropAngle: 1.25 } },
+    ]);
     expect(envelopeOf(result).warnings).toBeUndefined();
   });
 });
@@ -535,16 +712,25 @@ type StoredPhoto = Record<string, unknown> | 'unread' | 'remaining';
 function storedRead(stored: Record<string, StoredPhoto>, action: string, params: unknown): PluginResponse | undefined {
   const { photo_ids: inputs, keys } = params as { photo_ids: (string | number)[]; keys: string[] };
   const idOf = (input: string | number) => /^\/(\d+)\.arw$/.exec(String(input))?.[1] ?? String(input);
-  const valuesOf = (photo: Record<string, unknown>) => Object.fromEntries(keys.flatMap((key) => (key in photo ? [[key, photo[key]]] : [])));
+  const valuesOf = (photo: Record<string, unknown>) =>
+    Object.fromEntries(keys.flatMap((key) => (key in photo ? [[key, photo[key]]] : [])));
   if (action === 'read_settings_by_input') {
-    return { id: 'r', result: { data: { rows: inputs.map((input) => {
-      const id = idOf(input);
-      const photo = stored[id];
-      if (photo === undefined) return { not_found: true };
-      if (photo === 'remaining') return { remaining: true };
-      if (photo === 'unread') return { photo_id: id, failed: `Lightroom returned no saved settings for photo ${id}` };
-      return { photo_id: id, settings: valuesOf(photo) };
-    }) } } };
+    return {
+      id: 'r',
+      result: {
+        data: {
+          rows: inputs.map((input) => {
+            const id = idOf(input);
+            const photo = stored[id];
+            if (photo === undefined) return { not_found: true };
+            if (photo === 'remaining') return { remaining: true };
+            if (photo === 'unread')
+              return { photo_id: id, failed: `Lightroom returned no saved settings for photo ${id}` };
+            return { photo_id: id, settings: valuesOf(photo) };
+          }),
+        },
+      },
+    };
   }
   return undefined;
 }
@@ -552,34 +738,53 @@ function storedRead(stored: Record<string, StoredPhoto>, action: string, params:
 describe('set_develop_settings rules on stored values', () => {
   function photoWith(stored: Record<string, unknown>) {
     const calls: [string, unknown][] = [];
-    const handler = makeHandler({ call: async (action, params) => {
-      calls.push([action, params]);
-      return storedRead({ 914: stored }, action, params) ?? { id: '1', result: { data: { photo_id: '914' } } };
-    } });
-    return { calls, write: (settings: Record<string, unknown>) => handler('set_develop_settings', { photo_id: 914, settings }) };
+    const handler = makeHandler({
+      call: async (action, params) => {
+        calls.push([action, params]);
+        return storedRead({ 914: stored }, action, params) ?? { id: '1', result: { data: { photo_id: '914' } } };
+      },
+    });
+    return {
+      calls,
+      write: (settings: Record<string, unknown>) => handler('set_develop_settings', { photo_id: 914, settings }),
+    };
   }
 
   it('answers an input that is not in the catalog not_found, reading it and writing nothing', async () => {
     const calls: string[] = [];
-    const result = await makeHandler({ call: async (action, params) => {
-      calls.push(action);
-      return storedRead({}, action, params) ?? { id: '1', result: { data: {} } };
-    } })('set_develop_settings', { photo_id: 404, settings: { GlowStyle: 2 } });
+    const result = await makeHandler({
+      call: async (action, params) => {
+        calls.push(action);
+        return storedRead({}, action, params) ?? { id: '1', result: { data: {} } };
+      },
+    })('set_develop_settings', { photo_id: 404, settings: { GlowStyle: 2 } });
     expect(envelopeOf(result)).toMatchObject({ not_found: [404] });
     expect(calls).toHaveLength(1);
   });
 
   it.each<[string, StoredPhoto, Record<string, unknown>]>([
     ['not read within the time budget is remaining', 'remaining', { remaining: ['/914.arw'] }],
-    ['whose read returned nothing is failed under the id it was read as', 'unread', { failed: [{
-      photo_id: '914', reason: 'its stored settings were not read: Lightroom returned no saved settings for photo 914; nothing was written',
-    }] }],
+    [
+      'whose read returned nothing is failed under the id it was read as',
+      'unread',
+      {
+        failed: [
+          {
+            photo_id: '914',
+            reason:
+              'its stored settings were not read: Lightroom returned no saved settings for photo 914; nothing was written',
+          },
+        ],
+      },
+    ],
   ])('answers an input whose stored settings were %s, writing nothing', async (_what, stored, parts) => {
     const calls: string[] = [];
-    const result = await makeHandler({ call: async (action, params) => {
-      calls.push(action);
-      return storedRead({ 914: stored }, action, params) ?? { id: '1', result: { data: {} } };
-    } })('set_develop_settings', { photo_id: '/914.arw', settings: { GlowStyle: 2 } });
+    const result = await makeHandler({
+      call: async (action, params) => {
+        calls.push(action);
+        return storedRead({ 914: stored }, action, params) ?? { id: '1', result: { data: {} } };
+      },
+    })('set_develop_settings', { photo_id: '/914.arw', settings: { GlowStyle: 2 } });
     expect(envelopeOf(result)).toMatchObject(parts);
     expect(calls).toEqual(['read_settings_by_input']);
   });
@@ -587,7 +792,10 @@ describe('set_develop_settings rules on stored values', () => {
   it('refuses a Glow style while the photo has no Glow, reading the stored amount first', async () => {
     const { calls, write } = photoWith({ Glow: 0 });
     const result = await write({ GlowStyle: 2 });
-    expect(envelopeOf(result)).toEqual({ outcome: 'failed', error: expect.stringContaining('GlowStyle needs Glow above 0') });
+    expect(envelopeOf(result)).toEqual({
+      outcome: 'failed',
+      error: expect.stringContaining('GlowStyle needs Glow above 0'),
+    });
     expect(calls).toEqual([['read_settings_by_input', { photo_ids: [914], keys: ['Glow'] }]]);
   });
 
@@ -602,34 +810,43 @@ describe('set_develop_settings rules on stored values', () => {
 
   it('refuses a Glow direction unless the style is directional', async () => {
     const { calls, write } = photoWith({ Glow: 60, GlowStyle: 1 });
-    expect(envelopeOf(await write({ GlowDirection: 90 })).error).toContain('GlowDirection needs GlowStyle 3 (motion) or 4 (streak)');
+    expect(envelopeOf(await write({ GlowDirection: 90 })).error).toContain(
+      'GlowDirection needs GlowStyle 3 (motion) or 4 (streak)',
+    );
     expect(calls.map(([action]) => action)).toEqual(['read_settings_by_input']);
   });
 
-  it.each([
-    [[0, 0, 128, 140, 96, 90, 255, 255]], [[10, 0, 255, 255]], [[0, 0, 250, 255]],
-  ])('refuses the point curve %j, which does not start at 0, end at 255 and increase, before anything is sent', async (curve) => {
-    const { calls, write } = photoWith({});
-    expect(envelopeOf(await write({ ToneCurvePV2012: curve }))).toEqual({
-      outcome: 'failed', error: expect.stringContaining('a ToneCurvePV2012 curve must start at input 0, end at input 255 and have strictly increasing inputs'),
-    });
-    expect(calls).toEqual([]);
-  });
+  it.each([[[0, 0, 128, 140, 96, 90, 255, 255]], [[10, 0, 255, 255]], [[0, 0, 250, 255]]])(
+    'refuses the point curve %j, which does not start at 0, end at 255 and increase, before anything is sent',
+    async (curve) => {
+      const { calls, write } = photoWith({});
+      expect(envelopeOf(await write({ ToneCurvePV2012: curve }))).toEqual({
+        outcome: 'failed',
+        error: expect.stringContaining(
+          'a ToneCurvePV2012 curve must start at input 0, end at input 255 and have strictly increasing inputs',
+        ),
+      });
+      expect(calls).toEqual([]);
+    },
+  );
 
   it('refuses a Defringe hue pair closer than 10, against the stored endpoint when only one is written', async () => {
     const { calls, write } = photoWith({ DefringePurpleHueLo: 30, DefringePurpleHueHi: 60 });
-    expect(envelopeOf(await write({ DefringePurpleHueLo: 55 })).error)
-      .toContain('DefringePurpleHueHi must be at least 10 above DefringePurpleHueLo');
+    expect(envelopeOf(await write({ DefringePurpleHueLo: 55 })).error).toContain(
+      'DefringePurpleHueHi must be at least 10 above DefringePurpleHueLo',
+    );
     expect(envelopeOf(await write({ DefringePurpleHueLo: 50 })).outcome).toBe('done');
-    expect(envelopeOf(await write({ DefringeGreenHueLo: 45, DefringeGreenHueHi: 50 })).error)
-      .toContain('DefringeGreenHueHi must be at least 10 above DefringeGreenHueLo');
+    expect(envelopeOf(await write({ DefringeGreenHueLo: 45, DefringeGreenHueHi: 50 })).error).toContain(
+      'DefringeGreenHueHi must be at least 10 above DefringeGreenHueLo',
+    );
     expect(calls.filter(([action]) => action === 'write_develop_settings')).toHaveLength(1);
   });
 
   it('refuses a B&W mix on a color photo and writes it once the photo is black and white', async () => {
     const color = photoWith({ ConvertToGrayscale: false });
-    expect(envelopeOf(await color.write({ GrayMixerRed: -40 })).error)
-      .toContain('GrayMixer keys need a black and white photo');
+    expect(envelopeOf(await color.write({ GrayMixerRed: -40 })).error).toContain(
+      'GrayMixer keys need a black and white photo',
+    );
     expect(color.calls).toEqual([['read_settings_by_input', { photo_ids: [914], keys: ['ConvertToGrayscale'] }]]);
     const grey = photoWith({ ConvertToGrayscale: true });
     expect(envelopeOf(await grey.write({ GrayMixerRed: -40, GrayMixerBlue: 20 })).outcome).toBe('done');
@@ -644,22 +861,34 @@ describe('set_develop_settings rules on stored values', () => {
 
   it('publishes every rule in the tool description', () => {
     const tool = TOOL_CONTRACTS.find((contract) => contract.name === 'set_develop_settings');
-    for (const text of ['GlowStyle needs Glow above 0', 'GlowDirection needs GlowStyle 3 (motion) or 4 (streak)',
-      'DefringePurpleHueHi must be at least 10 above DefringePurpleHueLo', 'CropLeft must be less than CropRight',
-      'GrayMixer keys need a black and white photo']) {
+    for (const text of [
+      'GlowStyle needs Glow above 0',
+      'GlowDirection needs GlowStyle 3 (motion) or 4 (streak)',
+      'DefringePurpleHueHi must be at least 10 above DefringePurpleHueLo',
+      'CropLeft must be less than CropRight',
+      'GrayMixer keys need a black and white photo',
+    ]) {
       expect(tool?.description).toContain(text);
     }
   });
 });
 
 describe('a read before the write that does not come back', () => {
-  const lost = (action: string, failure: () => PluginResponse) => makeHandler({ call: async (called) => {
-    if (called === action) return failure();
-    throw new Error(`${called} must not be sent`);
-  } });
+  const lost = (action: string, failure: () => PluginResponse) =>
+    makeHandler({
+      call: async (called) => {
+        if (called === action) return failure();
+        throw new Error(`${called} must not be sent`);
+      },
+    });
 
   it.each([
-    ['times out', () => { throw new PluginTimeoutError(30_000); }],
+    [
+      'times out',
+      () => {
+        throw new PluginTimeoutError(30_000);
+      },
+    ],
     ['answers an error', () => ({ id: '1', error: 'Lightroom is busy', effect: 'unknown' as const })],
   ])('answers failed, nothing written, when the pre-read %s', async (_case, failure) => {
     const develop = lost('read_settings_by_input', failure);
@@ -669,7 +898,10 @@ describe('a read before the write that does not come back', () => {
       await develop('set_develop_settings', { photo_id: 914, settings: { GlowStyle: 2 } }),
       await crop('set_crop', { photo_id: 914, aspect: { width: 1, height: 1 } }),
     ]) {
-      expect(envelopeOf(result)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('nothing was written') });
+      expect(envelopeOf(result)).toMatchObject({
+        outcome: 'failed',
+        error: expect.stringContaining('nothing was written'),
+      });
     }
   });
 });
@@ -677,80 +909,152 @@ describe('a read before the write that does not come back', () => {
 describe('set_develop_settings_batch', () => {
   function batchWith(stored: Record<string, StoredPhoto>, write?: () => never) {
     const calls: [string, unknown][] = [];
-    const handler = makeHandler({ call: async (action, params) => {
-      calls.push([action, params]);
-      const read = storedRead(stored, action, params);
-      if (read) return read;
-      if (write) write();
-      return { id: '1', result: { data: { results: [{ photo_id: '1', settings: {} }] } } };
-    } });
+    const handler = makeHandler({
+      call: async (action, params) => {
+        calls.push([action, params]);
+        const read = storedRead(stored, action, params);
+        if (read) return read;
+        if (write) write();
+        return { id: '1', result: { data: { results: [{ photo_id: '1', settings: {} }] } } };
+      },
+    });
     return { calls, run: (photos: unknown[]) => handler('set_develop_settings_batch', { photos }) };
   }
 
   it('writes each photo its own rounded settings in one plug-in call, naming the photo in each rounding warning', async () => {
     const { calls, run } = batchWith({});
-    const result = await run([{ photo_id: 1, settings: { Exposure2012: 0.333333 } }, { photo_id: 2, settings: { Temperature: 5200 } }]);
-    expect(calls).toEqual([['write_develop_settings_batch', { photos: [
-      { photo_id: 1, settings: { Exposure2012: 0.33 } }, { photo_id: 2, settings: { Temperature: 5200 } },
-    ] }]]);
-    expect(envelopeOf(result).warnings).toEqual(['Rounded to the precision Lightroom keeps on photo 1: Exposure2012 0.333333 -> 0.33']);
+    const result = await run([
+      { photo_id: 1, settings: { Exposure2012: 0.333333 } },
+      { photo_id: 2, settings: { Temperature: 5200 } },
+    ]);
+    expect(calls).toEqual([
+      [
+        'write_develop_settings_batch',
+        {
+          photos: [
+            { photo_id: 1, settings: { Exposure2012: 0.33 } },
+            { photo_id: 2, settings: { Temperature: 5200 } },
+          ],
+        },
+      ],
+    ]);
+    expect(envelopeOf(result).warnings).toEqual([
+      'Rounded to the precision Lightroom keeps on photo 1: Exposure2012 0.333333 -> 0.33',
+    ]);
   });
 
   it('sends a photo refused on a rule against its stored values marked refused, so the plug-in still resolves every input', async () => {
     const { calls, run } = batchWith({ 1: { Glow: 0 }, 2: { Glow: 60 } });
-    await run([{ photo_id: 1, settings: { GlowStyle: 2 } }, { photo_id: 2, settings: { GlowStyle: 2 } }]);
-    expect(calls[0]).toEqual(['read_settings_by_input', { photo_ids: [1, 2], keys: ['Glow'] }]);
-    expect(calls[1]).toEqual(['write_develop_settings_batch', { photos: [
-      { photo_id: 1, refused: expect.stringContaining('Refused before writing: GlowStyle needs Glow above 0') },
+    await run([
+      { photo_id: 1, settings: { GlowStyle: 2 } },
       { photo_id: 2, settings: { GlowStyle: 2 } },
-    ] }]);
+    ]);
+    expect(calls[0]).toEqual(['read_settings_by_input', { photo_ids: [1, 2], keys: ['Glow'] }]);
+    expect(calls[1]).toEqual([
+      'write_develop_settings_batch',
+      {
+        photos: [
+          { photo_id: 1, refused: expect.stringContaining('Refused before writing: GlowStyle needs Glow above 0') },
+          { photo_id: 2, settings: { GlowStyle: 2 } },
+        ],
+      },
+    ]);
   });
 
   it('refuses a photo listed twice by the same identifier before sending anything', async () => {
     const { calls, run } = batchWith({});
-    const result = await run([{ photo_id: 1, settings: { Exposure2012: 1 } }, { photo_id: 1, settings: { Exposure2012: 2 } }]);
+    const result = await run([
+      { photo_id: 1, settings: { Exposure2012: 1 } },
+      { photo_id: 1, settings: { Exposure2012: 2 } },
+    ]);
     expect(envelopeOf(result).outcome).toBe('failed');
     expect(calls).toEqual([]);
   });
 
   it.each<[string, () => never, string, Record<string, unknown>]>([
-    ['lost after it was sent', () => { throw new Error('Plugin request timed out after 60000 ms'); }, 'unknown',
-      { failed: [{ photo_id: '1', reason: expect.stringContaining('Refused before writing') }],
-        unknown: [{ photo_id: '2', reason: 'the write was sent and its reply was lost (Plugin request timed out after 60000 ms)' }] }],
-    ['never sent', () => { throw new PluginNotSentError('Failed to send request to plugin (socket dropped)'); }, 'failed', {}],
+    [
+      'lost after it was sent',
+      () => {
+        throw new Error('Plugin request timed out after 60000 ms');
+      },
+      'unknown',
+      {
+        failed: [{ photo_id: '1', reason: expect.stringContaining('Refused before writing') }],
+        unknown: [
+          {
+            photo_id: '2',
+            reason: 'the write was sent and its reply was lost (Plugin request timed out after 60000 ms)',
+          },
+        ],
+      },
+    ],
+    [
+      'never sent',
+      () => {
+        throw new PluginNotSentError('Failed to send request to plugin (socket dropped)');
+      },
+      'failed',
+      {},
+    ],
   ])('answers a batch whose write was %s by photo', async (_what, write, outcome, lists) => {
     const { run } = batchWith({ 1: { Glow: 0 }, 2: { Glow: 60 } }, write);
-    const envelope = envelopeOf(await run([{ photo_id: 1, settings: { GlowStyle: 2 } }, { photo_id: 2, settings: { GlowStyle: 2 } }]));
+    const envelope = envelopeOf(
+      await run([
+        { photo_id: 1, settings: { GlowStyle: 2 } },
+        { photo_id: 2, settings: { GlowStyle: 2 } },
+      ]),
+    );
     expect(envelope.outcome).toBe(outcome);
     expect(envelope).toMatchObject(lists);
   });
 
   const STYLE = { GlowStyle: 2 };
-  const written = (calls: [string, unknown][]) => (calls.find(([action]) => action === 'write_develop_settings_batch')?.[1] as { photos: unknown[] } | undefined)?.photos;
+  const written = (calls: [string, unknown][]) =>
+    (calls.find(([action]) => action === 'write_develop_settings_batch')?.[1] as { photos: unknown[] } | undefined)
+      ?.photos;
 
   it('judges each input on the stored values of the photo it names, an id and a path of one photo included', async () => {
     const { calls, run } = batchWith({ 1: { Glow: 10 }, 2: { Glow: 0 }, 3: { Glow: 60 } });
-    await run([{ photo_id: 1, settings: STYLE }, { photo_id: '/1.arw', settings: STYLE }, { photo_id: 2, settings: STYLE }, { photo_id: 3, settings: STYLE }]);
+    await run([
+      { photo_id: 1, settings: STYLE },
+      { photo_id: '/1.arw', settings: STYLE },
+      { photo_id: 2, settings: STYLE },
+      { photo_id: 3, settings: STYLE },
+    ]);
     expect(written(calls)).toEqual([
-      { photo_id: 1, settings: STYLE }, { photo_id: '/1.arw', settings: STYLE },
-      { photo_id: 2, refused: expect.stringContaining('GlowStyle needs Glow above 0') }, { photo_id: 3, settings: STYLE },
+      { photo_id: 1, settings: STYLE },
+      { photo_id: '/1.arw', settings: STYLE },
+      { photo_id: 2, refused: expect.stringContaining('GlowStyle needs Glow above 0') },
+      { photo_id: 3, settings: STYLE },
     ]);
   });
 
   it('writes the other inputs when one input is not in the catalog, sending it for the plug-in to resolve', async () => {
     const { calls, run } = batchWith({ 2: { Glow: 60 } });
-    await run([{ photo_id: 404, settings: STYLE }, { photo_id: 2, settings: { Exposure2012: 1 } }]);
+    await run([
+      { photo_id: 404, settings: STYLE },
+      { photo_id: 2, settings: { Exposure2012: 1 } },
+    ]);
     expect(written(calls)).toEqual([
-      { photo_id: 404, refused: 'not found when its stored settings were read' }, { photo_id: 2, settings: { Exposure2012: 1 } },
+      { photo_id: 404, refused: 'not found when its stored settings were read' },
+      { photo_id: 2, settings: { Exposure2012: 1 } },
     ]);
   });
 
   it('holds back an input whose stored settings were not read in time and fails one whose read returned nothing', async () => {
     const { calls, run } = batchWith({ 1: 'remaining', 2: 'unread', 3: { Glow: 60 } });
-    await run([{ photo_id: 1, settings: STYLE }, { photo_id: 2, settings: STYLE }, { photo_id: 3, settings: STYLE }]);
+    await run([
+      { photo_id: 1, settings: STYLE },
+      { photo_id: 2, settings: STYLE },
+      { photo_id: 3, settings: STYLE },
+    ]);
     expect(written(calls)).toEqual([
       { photo_id: 1, remaining: true },
-      { photo_id: 2, refused: 'its stored settings were not read: Lightroom returned no saved settings for photo 2; nothing was written' },
+      {
+        photo_id: 2,
+        refused:
+          'its stored settings were not read: Lightroom returned no saved settings for photo 2; nothing was written',
+      },
       { photo_id: 3, settings: STYLE },
     ]);
   });
@@ -758,15 +1062,27 @@ describe('set_develop_settings_batch', () => {
   it('keeps the split by input when the write reply is lost after a cancel', async () => {
     const controller = new AbortController();
     const calls: string[] = [];
-    const handler = makeHandler({ call: async (action, params) => {
-      calls.push(action);
-      const read = storedRead({ 1: { Glow: 0 }, 2: { Glow: 60 } }, action, params);
-      if (read) return read;
-      controller.abort();
-      throw new Error('Lost link');
-    } });
-    const envelope = envelopeOf(await handler('set_develop_settings_batch',
-      { photos: [{ photo_id: 1, settings: STYLE }, { photo_id: 2, settings: STYLE }] }, { signal: controller.signal }));
+    const handler = makeHandler({
+      call: async (action, params) => {
+        calls.push(action);
+        const read = storedRead({ 1: { Glow: 0 }, 2: { Glow: 60 } }, action, params);
+        if (read) return read;
+        controller.abort();
+        throw new Error('Lost link');
+      },
+    });
+    const envelope = envelopeOf(
+      await handler(
+        'set_develop_settings_batch',
+        {
+          photos: [
+            { photo_id: 1, settings: STYLE },
+            { photo_id: 2, settings: STYLE },
+          ],
+        },
+        { signal: controller.signal },
+      ),
+    );
     expect(envelope).toMatchObject({
       outcome: 'unknown',
       failed: [{ photo_id: '1', reason: expect.stringContaining('GlowStyle needs Glow above 0') }],
@@ -775,8 +1091,15 @@ describe('set_develop_settings_batch', () => {
   });
 
   it('names a lost photo by the id its stored settings were read under, else by its path', async () => {
-    const { run } = batchWith({ 1: { Glow: 0 } }, () => { throw new Error('Lost link'); });
-    const envelope = envelopeOf(await run([{ photo_id: '/1.arw', settings: STYLE }, { photo_id: '/2.arw', settings: { Exposure2012: 1 } }]));
+    const { run } = batchWith({ 1: { Glow: 0 } }, () => {
+      throw new Error('Lost link');
+    });
+    const envelope = envelopeOf(
+      await run([
+        { photo_id: '/1.arw', settings: STYLE },
+        { photo_id: '/2.arw', settings: { Exposure2012: 1 } },
+      ]),
+    );
     expect(envelope).toMatchObject({
       failed: [{ photo_id: '1', reason: expect.stringContaining('GlowStyle needs Glow above 0') }],
       unknown: [{ path: '/2.arw', reason: 'the write was sent and its reply was lost (Lost link)' }],
@@ -784,22 +1107,37 @@ describe('set_develop_settings_batch', () => {
   });
 
   it('refuses a key another tool writes, naming the photo it is in', () => {
-    expect(validateToolArgs('set_develop_settings_batch', {
-      photos: [{ photo_id: 1, settings: { Exposure2012: 1 } }, { photo_id: 2, settings: { ConvertToGrayscale: true } }],
-    })).toContain('photo 2 (photos[1])');
+    expect(
+      validateToolArgs('set_develop_settings_batch', {
+        photos: [
+          { photo_id: 1, settings: { Exposure2012: 1 } },
+          { photo_id: 2, settings: { ConvertToGrayscale: true } },
+        ],
+      }),
+    ).toContain('photo 2 (photos[1])');
   });
 });
 
 describe('develop keys added from the installed parameter table', () => {
   const BOUNDS: [string, number, number][] = [
-    ['ShadowTint', -100, 100], ['RedHue', -100, 100], ['RedSaturation', -100, 100], ['GreenHue', -100, 100],
-    ['GreenSaturation', -100, 100], ['BlueHue', -100, 100], ['BlueSaturation', -100, 100],
-    ['PerspectiveX', -100, 100], ['PerspectiveY', -100, 100], ['VignetteAmount', -100, 100], ['VignetteMidpoint', 0, 100],
-    ['PostCropVignetteHighlightContrast', 0, 100], ['CurveRefineSaturation', 0, 100],
+    ['ShadowTint', -100, 100],
+    ['RedHue', -100, 100],
+    ['RedSaturation', -100, 100],
+    ['GreenHue', -100, 100],
+    ['GreenSaturation', -100, 100],
+    ['BlueHue', -100, 100],
+    ['BlueSaturation', -100, 100],
+    ['PerspectiveX', -100, 100],
+    ['PerspectiveY', -100, 100],
+    ['VignetteAmount', -100, 100],
+    ['VignetteMidpoint', 0, 100],
+    ['PostCropVignetteHighlightContrast', 0, 100],
+    ['CurveRefineSaturation', 0, 100],
   ];
 
   it.each(BOUNDS)('accepts %s from %d to %d and refuses a value just outside', (key, low, high) => {
-    const write = (value: number) => validateToolArgs('set_develop_settings', { photo_id: 914, settings: { [key]: value } });
+    const write = (value: number) =>
+      validateToolArgs('set_develop_settings', { photo_id: 914, settings: { [key]: value } });
     expect(write(low)).toBeNull();
     expect(write(high)).toBeNull();
     expect(write(low - 1)).toContain(key);
@@ -807,40 +1145,60 @@ describe('develop keys added from the installed parameter table', () => {
   });
 
   it('publishes the dependencies observed live as notes in the settings schema', () => {
-    const settings = (TOOL_CONTRACTS.find((contract) => contract.name === 'set_develop_settings')!.inputSchema as unknown as
-      { properties: { settings: { properties: Record<string, { description?: string }> } } }).properties.settings.properties;
+    const settings = (
+      TOOL_CONTRACTS.find((contract) => contract.name === 'set_develop_settings')!.inputSchema as unknown as {
+        properties: { settings: { properties: Record<string, { description?: string }> } };
+      }
+    ).properties.settings.properties;
     expect(settings.VignetteMidpoint.description).toContain('Renders nothing while VignetteAmount is 0');
-    expect(settings.PostCropVignetteHighlightContrast.description).toContain('PostCropVignetteStyle is 3 (Paint Overlay)');
+    expect(settings.PostCropVignetteHighlightContrast.description).toContain(
+      'PostCropVignetteStyle is 3 (Paint Overlay)',
+    );
   });
 
   it('refuses GlowDirectionalSoftness, which rendered nothing under GlowStyle 1 or 3 on Lightroom 16.0.1', () => {
-    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { GlowDirectionalSoftness: 80 } }))
-      .toContain('GlowDirectionalSoftness');
+    expect(
+      validateToolArgs('set_develop_settings', { photo_id: 914, settings: { GlowDirectionalSoftness: 80 } }),
+    ).toContain('GlowDirectionalSoftness');
   });
-
 });
 
 describe('the AI compute wait', () => {
-  it.each(['apply_develop_preset', 'create_mask', 'combine_mask', 'create_mask_batch', 'copy_develop_settings'])('%s states a wait of 30 s', (name) => {
-    expect(TOOL_CONTRACTS.find((contract) => contract.name === name)?.description).toMatch(/computing 30 s (after|later)/);
-  });
+  it.each(['apply_develop_preset', 'create_mask', 'combine_mask', 'create_mask_batch', 'copy_develop_settings'])(
+    '%s states a wait of 30 s',
+    (name) => {
+      expect(TOOL_CONTRACTS.find((contract) => contract.name === name)?.description).toMatch(
+        /computing 30 s (after|later)/,
+      );
+    },
+  );
 });
 
 describe('set_develop_settings and keys another tool writes', () => {
   it('refuses ConvertToGrayscale before anything is read or written and points to set_treatment', async () => {
     const calls: string[] = [];
-    const result = await makeHandler({ call: async (action) => {
-      calls.push(action);
-      return { id: '1', result: { data: {} } };
-    } })('set_develop_settings', { photo_id: 914, settings: { ConvertToGrayscale: true, Exposure2012: 1 } });
-    expect(envelopeOf(result)).toEqual({ outcome: 'failed', error: expect.stringContaining('ConvertToGrayscale is written by set_treatment') });
+    const result = await makeHandler({
+      call: async (action) => {
+        calls.push(action);
+        return { id: '1', result: { data: {} } };
+      },
+    })('set_develop_settings', { photo_id: 914, settings: { ConvertToGrayscale: true, Exposure2012: 1 } });
+    expect(envelopeOf(result)).toEqual({
+      outcome: 'failed',
+      error: expect.stringContaining('ConvertToGrayscale is written by set_treatment'),
+    });
     expect(calls).toEqual([]);
   });
 
   it('still reads the key but refuses it in a named copy list with the same words', () => {
     expect(validateToolArgs('get_develop_settings', { photo_ids: [914], keys: ['ConvertToGrayscale'] })).toBeNull();
-    expect(validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: ['ConvertToGrayscale', 'Exposure2012'] }))
-      .toContain('ConvertToGrayscale is written by set_treatment');
+    expect(
+      validateToolArgs('copy_develop_settings', {
+        source_id: 914,
+        target_ids: [915],
+        settings: ['ConvertToGrayscale', 'Exposure2012'],
+      }),
+    ).toContain('ConvertToGrayscale is written by set_treatment');
     expect(validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915] })).toBeNull();
   });
 });
@@ -854,27 +1212,40 @@ describe('set_crop', () => {
     size: { width: 1255, height: 631 },
   };
 
-  function photo(opts: { plan?: unknown; write?: (settings: Record<string, unknown>) => unknown; warnings?: string[] } = {}) {
+  function photo(
+    opts: { plan?: unknown; write?: (settings: Record<string, unknown>) => unknown; warnings?: string[] } = {},
+  ) {
     const calls: [string, unknown][] = [];
-    const handler = makeHandler({ call: async (action, params) => {
-      calls.push([action, params]);
-      if (action === 'plan_crop') {
-        return { id: '1', result: { data: opts.plan ?? planned, ...(opts.warnings ? { warnings: opts.warnings } : {}) } };
-      }
-      const { settings } = params as { settings: Record<string, unknown> };
-      return { id: '1', result: opts.write?.(settings) ?? { data: { photo_id: '914', settings } } };
-    } });
+    const handler = makeHandler({
+      call: async (action, params) => {
+        calls.push([action, params]);
+        if (action === 'plan_crop') {
+          return {
+            id: '1',
+            result: { data: opts.plan ?? planned, ...(opts.warnings ? { warnings: opts.warnings } : {}) },
+          };
+        }
+        const { settings } = params as { settings: Record<string, unknown> };
+        return { id: '1', result: opts.write?.(settings) ?? { data: { photo_id: '914', settings } } };
+      },
+    });
     return { calls, crop: (args: Record<string, unknown>) => handler('set_crop', { photo_id: 914, ...args }) };
   }
 
   it('answers failed with not_found and writes nothing for a photo the catalog does not have', async () => {
     const calls: string[] = [];
-    const handler = makeHandler({ call: async (action) => {
-      calls.push(action);
-      return { id: '1', result: { not_found: [914] } };
-    } });
+    const handler = makeHandler({
+      call: async (action) => {
+        calls.push(action);
+        return { id: '1', result: { not_found: [914] } };
+      },
+    });
 
-    expect(envelopeOf(await handler('set_crop', { photo_id: 914, aspect: { width: 1, height: 1 } }))).toEqual({ outcome: 'failed', error: '1 not found', not_found: [914] });
+    expect(envelopeOf(await handler('set_crop', { photo_id: 914, aspect: { width: 1, height: 1 } }))).toEqual({
+      outcome: 'failed',
+      error: '1 not found',
+      not_found: [914],
+    });
     expect(calls).toEqual(['plan_crop']);
   });
 
@@ -884,11 +1255,20 @@ describe('set_crop', () => {
     const result = await crop({ aspect: { width: 2, height: 1 }, center: { x: 0.5, y: 0.5 }, angle: 8 });
 
     expect(calls.map(([action]) => action)).toEqual(['plan_crop', 'write_develop_settings']);
-    expect(calls[1][1]).toEqual({ photo_id: 914, settings: { CropLeft: 0.15, CropTop: 0.1, CropRight: 0.92, CropBottom: 0.9, CropAngle: 8 } });
-    expect(envelopeOf(result)).toEqual({ outcome: 'done', data: {
-      photo_id: '914', rectangle: planned.rectangle, angle: 8, size: { width: 1255, height: 631 },
+    expect(calls[1][1]).toEqual({
+      photo_id: 914,
       settings: { CropLeft: 0.15, CropTop: 0.1, CropRight: 0.92, CropBottom: 0.9, CropAngle: 8 },
-    } });
+    });
+    expect(envelopeOf(result)).toEqual({
+      outcome: 'done',
+      data: {
+        photo_id: '914',
+        rectangle: planned.rectangle,
+        angle: 8,
+        size: { width: 1255, height: 631 },
+        settings: { CropLeft: 0.15, CropTop: 0.1, CropRight: 0.92, CropBottom: 0.9, CropAngle: 8 },
+      },
+    });
   });
 
   it('rounds the requested angle to the precision Lightroom keeps before planning and says so', async () => {
@@ -896,7 +1276,10 @@ describe('set_crop', () => {
 
     const result = await crop({ rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 8.00004 });
 
-    expect(calls[0]).toEqual(['plan_crop', { photo_id: 914, rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 8 }]);
+    expect(calls[0]).toEqual([
+      'plan_crop',
+      { photo_id: 914, rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 8 },
+    ]);
     expect(envelopeOf(result).warnings).toEqual(['Rounded to the precision Lightroom keeps: CropAngle 8.00004 -> 8']);
   });
 
@@ -905,7 +1288,10 @@ describe('set_crop', () => {
 
     const result = await crop({ rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 0.0037 });
 
-    expect(calls[0]).toEqual(['plan_crop', { photo_id: 914, rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 0.0037 }]);
+    expect(calls[0]).toEqual([
+      'plan_crop',
+      { photo_id: 914, rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 0.0037 },
+    ]);
     expect(envelopeOf(result).warnings).toBeUndefined();
   });
 
@@ -931,9 +1317,12 @@ describe('set_crop', () => {
 
   it('answers partial with what Lightroom stored when the write read back other crop keys', async () => {
     const adjusted = [{ photo_id: '914', key: 'CropLeft', requested: 0.15, stored: 0 }];
-    const { crop } = photo({ write: (settings) => ({
-      data: { photo_id: '914', settings: { ...settings, CropLeft: 0 }, adjusted }, problem: 'Lightroom stored other values than written',
-    }) });
+    const { crop } = photo({
+      write: (settings) => ({
+        data: { photo_id: '914', settings: { ...settings, CropLeft: 0 }, adjusted },
+        problem: 'Lightroom stored other values than written',
+      }),
+    });
 
     const result = envelopeOf(await crop({ aspect: { width: 2, height: 1 } }));
 
@@ -942,9 +1331,12 @@ describe('set_crop', () => {
   });
 
   it('answers unknown when Lightroom does not show the crop keys after the write', async () => {
-    const { crop } = photo({ write: () => ({
-      data: { photo_id: '914', settings: {} }, unknown: [{ photo_id: '914', reason: 'Lightroom shows no CropLeft after the write' }],
-    }) });
+    const { crop } = photo({
+      write: () => ({
+        data: { photo_id: '914', settings: {} },
+        unknown: [{ photo_id: '914', reason: 'Lightroom shows no CropLeft after the write' }],
+      }),
+    });
 
     expect(envelopeOf(await crop({ aspect: { width: 2, height: 1 } })).outcome).toBe('unknown');
   });
@@ -955,11 +1347,14 @@ describe('set_crop', () => {
     await crop({ aspect: { width: 4, height: 5 }, relative_to: 'crop' });
 
     expect(calls[0][1]).toMatchObject({ relative_to: 'crop', aspect: { width: 4, height: 5 } });
-    expect(validateToolArgs('set_crop', { photo_id: 1, aspect: { width: 4, height: 5 }, relative_to: 'frame' })).toContain('relative_to');
+    expect(
+      validateToolArgs('set_crop', { photo_id: 1, aspect: { width: 4, height: 5 }, relative_to: 'frame' }),
+    ).toContain('relative_to');
   });
 
   it('names the reference frame in every frame property instead of a fixed one', () => {
-    const properties = TOOL_CONTRACTS.find((contract) => contract.name === 'set_crop')?.inputSchema.properties as Record<string, { description: string }>;
+    const properties = TOOL_CONTRACTS.find((contract) => contract.name === 'set_crop')?.inputSchema
+      .properties as Record<string, { description: string }>;
     for (const name of ['rectangle', 'center', 'scale']) {
       expect(properties[name].description).toContain('reference frame relative_to selects');
     }
@@ -968,11 +1363,18 @@ describe('set_crop', () => {
 
   it('reads the current crop through get_crop', async () => {
     const calls: string[] = [];
-    const read = { photo_id: '914', rectangle: { left: 0.1, top: 0.2, right: 0.9, bottom: 0.8 }, angle: 2, size: { width: 1200, height: 600 } };
-    const result = await makeHandler({ call: async (action) => {
-      calls.push(action);
-      return { id: '1', result: { data: read } };
-    } })('get_crop', { photo_id: 914 });
+    const read = {
+      photo_id: '914',
+      rectangle: { left: 0.1, top: 0.2, right: 0.9, bottom: 0.8 },
+      angle: 2,
+      size: { width: 1200, height: 600 },
+    };
+    const result = await makeHandler({
+      call: async (action) => {
+        calls.push(action);
+        return { id: '1', result: { data: read } };
+      },
+    })('get_crop', { photo_id: 914 });
 
     expect(calls).toEqual(['get_crop']);
     expect(envelopeOf(result)).toEqual({ outcome: 'done', data: read });
@@ -988,19 +1390,36 @@ describe('describe_develop_keys', () => {
   it('answers failed with not_found for a photo the catalog does not have', async () => {
     const handler = makeHandler({ call: async () => ({ id: '1', result: { not_found: [914] } }) });
 
-    expect(envelopeOf(await handler('describe_develop_keys', { photo_id: 914 }))).toEqual({ outcome: 'failed', error: '1 not found', not_found: [914] });
+    expect(envelopeOf(await handler('describe_develop_keys', { photo_id: 914 }))).toEqual({
+      outcome: 'failed',
+      error: '1 not found',
+      not_found: [914],
+    });
   });
 
   function lightroom(ranges: Record<string, [number, number]>, localRanges: Record<string, [number, number]> = {}) {
     const calls: [string, unknown][] = [];
-    const handler = makeHandler({ call: async (action, params) => {
-      calls.push([action, params]);
-      return { id: '1', result: { data: {
-        photo_id: '914', lightroom: { version: '16.0', build: '16.0.0 build 202611041403' }, process_version: 'Version 6',
-        ranges, local_ranges: localRanges,
-      } } };
-    } });
-    return { calls, describe: (args: Record<string, unknown>) => handler('describe_develop_keys', { photo_id: 914, ...args }) };
+    const handler = makeHandler({
+      call: async (action, params) => {
+        calls.push([action, params]);
+        return {
+          id: '1',
+          result: {
+            data: {
+              photo_id: '914',
+              lightroom: { version: '16.0', build: '16.0.0 build 202611041403' },
+              process_version: 'Version 6',
+              ranges,
+              local_ranges: localRanges,
+            },
+          },
+        };
+      },
+    });
+    return {
+      calls,
+      describe: (args: Record<string, unknown>) => handler('describe_develop_keys', { photo_id: 914, ...args }),
+    };
   }
 
   type Described = {
@@ -1009,7 +1428,11 @@ describe('describe_develop_keys', () => {
   };
 
   it('asks Lightroom for the range of every number key and reports it beside the table range', async () => {
-    const { calls, describe } = lightroom({ Exposure2012: [-5, 5], Contrast2012: [-50, 50], Temperature: [1500, 50000] });
+    const { calls, describe } = lightroom({
+      Exposure2012: [-5, 5],
+      Contrast2012: [-50, 50],
+      Temperature: [1500, 50000],
+    });
 
     const result = await describe({});
 
@@ -1020,8 +1443,19 @@ describe('describe_develop_keys', () => {
     expect(data.process_version).toBe('Version 6');
     const byKey = new Map(data.keys.map((entry) => [entry.key, entry]));
     expect(byKey.get('Exposure2012')).toEqual({ key: 'Exposure2012', kind: 'number', range: [-5, 5], live: [-5, 5] });
-    expect(byKey.get('Contrast2012')).toEqual({ key: 'Contrast2012', kind: 'number', range: [-100, 100], live: [-50, 50], differs: true });
-    expect(byKey.get('Temperature')).toEqual({ key: 'Temperature', kind: 'number', range: 'photo', live: [1500, 50000] });
+    expect(byKey.get('Contrast2012')).toEqual({
+      key: 'Contrast2012',
+      kind: 'number',
+      range: [-100, 100],
+      live: [-50, 50],
+      differs: true,
+    });
+    expect(byKey.get('Temperature')).toEqual({
+      key: 'Temperature',
+      kind: 'number',
+      range: 'photo',
+      live: [1500, 50000],
+    });
     expect(byKey.get('Texture')).toEqual({ key: 'Texture', kind: 'number', range: [-100, 100], live: null });
     expect(byKey.get('WhiteBalance')).toMatchObject({ key: 'WhiteBalance', kind: 'enum' });
     expect(byKey.get('WhiteBalance')).not.toHaveProperty('live');
@@ -1033,16 +1467,36 @@ describe('describe_develop_keys', () => {
 
     const byKey = new Map((dataOf(await describe({})) as Described).keys.map((entry) => [entry.key, entry]));
 
-    expect(byKey.get('Contrast2012')).toEqual({ key: 'Contrast2012', kind: 'number', range: [-100, 100], live: [-100, 100.0000000001] });
-    expect(byKey.get('Texture')).toEqual({ key: 'Texture', kind: 'number', range: [-100, 100], live: [-100, 100.001], differs: true });
+    expect(byKey.get('Contrast2012')).toEqual({
+      key: 'Contrast2012',
+      kind: 'number',
+      range: [-100, 100],
+      live: [-100, 100.0000000001],
+    });
+    expect(byKey.get('Texture')).toEqual({
+      key: 'Texture',
+      kind: 'number',
+      range: [-100, 100],
+      live: [-100, 100.001],
+      differs: true,
+    });
   });
 
   it('reads local ranges only on a mask, and says so without one', async () => {
     const withMask = lightroom({}, { local_Exposure: [-4, 4], local_glow: [0, 100] });
     const local = (dataOf(await withMask.describe({ mask_id: 'M1' })) as Described).local;
     expect(withMask.calls[0][1]).toMatchObject({ mask_id: 'M1', local_keys: LOCAL_KEYS.map((key) => key.name) });
-    expect(local.find((entry) => entry.key === 'local_Exposure')).toEqual({ key: 'local_Exposure', range: [-4, 4], live: [-4, 4] });
-    expect(local.find((entry) => entry.key === 'local_glow')).toEqual({ key: 'local_glow', range: [-100, 100], live: [0, 100], differs: true });
+    expect(local.find((entry) => entry.key === 'local_Exposure')).toEqual({
+      key: 'local_Exposure',
+      range: [-4, 4],
+      live: [-4, 4],
+    });
+    expect(local.find((entry) => entry.key === 'local_glow')).toEqual({
+      key: 'local_glow',
+      range: [-100, 100],
+      live: [0, 100],
+      differs: true,
+    });
 
     const without = lightroom({});
     const result = await without.describe({});
@@ -1052,11 +1506,14 @@ describe('describe_develop_keys', () => {
 });
 
 describe('a call bound to the connection admitted on its arrival', () => {
-  const CONNECTION_CHANGED_MESSAGE = 'The Lightroom connection this call arrived on was lost or replaced, so nothing more of it was sent. '
-    + 'Read the state before calling again.';
+  const CONNECTION_CHANGED_MESSAGE =
+    'The Lightroom connection this call arrived on was lost or replaced, so nothing more of it was sent. ' +
+    'Read the state before calling again.';
   const IDENTITY = { version: '1.2.3', build: '0123456789abcdef' };
   type Frame = { generation: number; id: string; action: string; params: unknown };
-  const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  const flush = async () => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  };
   const develop = (id: number) => ['set_develop_settings', { photo_id: id, settings: { Exposure2012: 0.1 } }] as const;
 
   function connection() {
@@ -1089,7 +1546,8 @@ describe('a call bound to the connection admitted on its arrival', () => {
       notReadyMessage: () => liveness.incompatibility() ?? 'not connected',
       settleReadiness: () => liveness.settled(),
     });
-    const answer = (frame: Frame, result: unknown) => dispatcher.handleResponseLine(JSON.stringify({ id: frame.id, result }));
+    const answer = (frame: Frame, result: unknown) =>
+      dispatcher.handleResponseLine(JSON.stringify({ id: frame.id, result }));
     const connect = async (identity = IDENTITY) => {
       liveness.check();
       answer(frames.filter((frame) => frame.action === 'ping').at(-1)!, { data: { pong: true, ...identity } });
@@ -1099,35 +1557,39 @@ describe('a call bound to the connection admitted on its arrival', () => {
       liveness.reset();
       await connect(identity);
     };
-    const sentOn = (generation: number) => frames.filter((frame) => frame.generation === generation).map((frame) => frame.action);
+    const sentOn = (generation: number) =>
+      frames.filter((frame) => frame.generation === generation).map((frame) => frame.action);
     return { frames, logs, liveness, dispatcher, handler, answer, connect, reconnect, sentOn };
   }
 
   it.each([
     ['the new connection answers first', true],
     ['the restart is confirmed first', false],
-  ])('refuses a queued call whose turn comes after its connection was replaced (%s), sending it nothing, and serves a call that arrives later', async (_order, reconnectFirst) => {
-    const c = connection();
-    await c.connect();
-    const first = c.handler(...develop(1));
-    await flush();
-    const queued = c.handler(...develop(2));
-    await flush();
+  ])(
+    'refuses a queued call whose turn comes after its connection was replaced (%s), sending it nothing, and serves a call that arrives later',
+    async (_order, reconnectFirst) => {
+      const c = connection();
+      await c.connect();
+      const first = c.handler(...develop(1));
+      await flush();
+      const queued = c.handler(...develop(2));
+      await flush();
 
-    if (reconnectFirst) await c.reconnect();
-    else c.liveness.reset();
-    c.dispatcher.rejectPending('The Lightroom plug-in restarted during this call');
+      if (reconnectFirst) await c.reconnect();
+      else c.liveness.reset();
+      c.dispatcher.rejectPending('The Lightroom plug-in restarted during this call');
 
-    expect(envelopeOf(await first).outcome).toBe('unknown');
-    expect(envelopeOf(await queued)).toEqual({ outcome: 'failed', error: CONNECTION_CHANGED_MESSAGE });
-    if (!reconnectFirst) await c.connect();
-    expect(c.sentOn(1)).toEqual(['ping']);
-    const fresh = c.handler(...develop(3));
-    await flush();
-    expect(c.sentOn(1)).toEqual(['ping', 'write_develop_settings']);
-    c.answer(c.frames.at(-1)!, { data: {} });
-    expect((await fresh).isError).toBeUndefined();
-  });
+      expect(envelopeOf(await first).outcome).toBe('unknown');
+      expect(envelopeOf(await queued)).toEqual({ outcome: 'failed', error: CONNECTION_CHANGED_MESSAGE });
+      if (!reconnectFirst) await c.connect();
+      expect(c.sentOn(1)).toEqual(['ping']);
+      const fresh = c.handler(...develop(3));
+      await flush();
+      expect(c.sentOn(1)).toEqual(['ping', 'write_develop_settings']);
+      c.answer(c.frames.at(-1)!, { data: {} });
+      expect((await fresh).isError).toBeUndefined();
+    },
+  );
 
   it('refuses at once, without waiting for the held Develop turn, while the plug-in is of another build', async () => {
     const c = connection();
@@ -1137,7 +1599,10 @@ describe('a call bound to the connection admitted on its arrival', () => {
     await c.reconnect({ ...IDENTITY, build: 'fedcba9876543210' });
     let answered = false;
 
-    const refused = c.handler(...develop(2)).then((response) => { answered = true; return response; });
+    const refused = c.handler(...develop(2)).then((response) => {
+      answered = true;
+      return response;
+    });
     await flush();
 
     expect(answered).toBe(true);
@@ -1154,10 +1619,15 @@ describe('a call bound to the connection admitted on its arrival', () => {
     const plan = c.frames.find((frame) => frame.action === 'plan_crop')!;
 
     c.liveness.reset();
-    c.answer(plan, { data: {
-      photo_id: '914', settings: { CropLeft: 0.1, CropTop: 0.1, CropRight: 0.9, CropBottom: 0.9, CropAngle: 0 },
-      rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 }, angle: 0, size: { width: 100, height: 50 },
-    } });
+    c.answer(plan, {
+      data: {
+        photo_id: '914',
+        settings: { CropLeft: 0.1, CropTop: 0.1, CropRight: 0.9, CropBottom: 0.9, CropAngle: 0 },
+        rectangle: { left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 },
+        angle: 0,
+        size: { width: 100, height: 50 },
+      },
+    });
 
     expect(envelopeOf(await crop).outcome).toBe('failed');
     expect(c.frames.map((frame) => frame.action)).not.toContain('write_develop_settings');

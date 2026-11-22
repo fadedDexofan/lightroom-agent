@@ -56,19 +56,13 @@ const dstServer = path.join(stage, "server");
 fs.mkdirSync(dstServer, { recursive: true });
 copyDir(path.join(srcServer, "dist"), path.join(dstServer, "dist"));
 copyFile(path.join(srcServer, "package.json"), path.join(dstServer, "package.json"));
-copyFile(
-  path.join(srcServer, "package-lock.json"),
-  path.join(dstServer, "package-lock.json"),
-);
+copyFile(path.join(srcServer, "package-lock.json"), path.join(dstServer, "package-lock.json"));
 
 log("installing production node_modules into stage");
 run("npm ci --omit=dev --ignore-scripts", dstServer);
 
 log("staging Lightroom plugin");
-copyDir(
-  path.join(repoRoot, "plugin", "LightroomAgent.lrplugin"),
-  path.join(stage, "LightroomAgent.lrplugin"),
-);
+copyDir(path.join(repoRoot, "plugin", "LightroomAgent.lrplugin"), path.join(stage, "LightroomAgent.lrplugin"));
 
 log("copying manifest");
 copyFile(path.join(repoRoot, "mcpb", "manifest.json"), path.join(stage, "manifest.json"));
@@ -79,9 +73,16 @@ if (fs.existsSync(iconSrc)) {
 }
 
 const MCPB_CLI = "@anthropic-ai/mcpb@2.1.2";
-for (const args of [["validate", stage], ["pack", stage, outFile]]) {
+for (const args of [
+  ["validate", stage],
+  ["pack", stage, outFile],
+]) {
   log(`${args[0]} via ${MCPB_CLI}`);
-  const result = spawnSync("npx", ["--yes", MCPB_CLI, ...args], { stdio: "inherit", cwd: repoRoot, shell: process.platform === "win32" });
+  const result = spawnSync("npx", ["--yes", MCPB_CLI, ...args], {
+    stdio: "inherit",
+    cwd: repoRoot,
+    shell: process.platform === "win32",
+  });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }

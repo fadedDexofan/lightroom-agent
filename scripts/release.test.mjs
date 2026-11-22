@@ -18,7 +18,8 @@ function tree({ version, notes }) {
   return root;
 }
 
-const run = (root, ...args) => spawnSync(process.execPath, [path.join(root, "scripts", "release.mjs"), ...args], { encoding: "utf8" });
+const run = (root, ...args) =>
+  spawnSync(process.execPath, [path.join(root, "scripts", "release.mjs"), ...args], { encoding: "utf8" });
 
 const NOTES = [
   "# lightroom-agent 0.2.0",
@@ -37,8 +38,14 @@ const NOTES = [
 ].join("\n");
 
 test("info names the version, whether it is a prerelease and its npm dist-tag", () => {
-  assert.equal(run(tree({ version: "0.1.0", notes: NOTES }), "info").stdout, "version=0.1.0\ntag=v0.1.0\nprerelease=false\nnpm_tag=latest\n");
-  assert.equal(run(tree({ version: "0.1.0-rc.1", notes: NOTES }), "info").stdout, "version=0.1.0-rc.1\ntag=v0.1.0-rc.1\nprerelease=true\nnpm_tag=next\n");
+  assert.equal(
+    run(tree({ version: "0.1.0", notes: NOTES }), "info").stdout,
+    "version=0.1.0\ntag=v0.1.0\nprerelease=false\nnpm_tag=latest\n",
+  );
+  assert.equal(
+    run(tree({ version: "0.1.0-rc.1", notes: NOTES }), "info").stdout,
+    "version=0.1.0-rc.1\ntag=v0.1.0-rc.1\nprerelease=true\nnpm_tag=next\n",
+  );
 });
 
 test("info refuses a tag that is not v and the package version", () => {

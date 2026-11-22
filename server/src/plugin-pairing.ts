@@ -40,8 +40,9 @@ export const PLUGIN_BUILD_RECORD = "plugin-build.json";
 const NO_BUNDLED_PLUGIN = "This server has no bundled Lightroom plug-in; reinstall lightroom-agent.";
 
 const MISMATCH: Record<BundleLayout, string> = {
-  checkout: "This server's build does not match its plug-in folder; rebuild it (npm --prefix server run build in the "
-    + "checkout), then restart your client.",
+  checkout:
+    "This server's build does not match its plug-in folder; rebuild it (npm --prefix server run build in the " +
+    "checkout), then restart your client.",
   package: "This server's installation is damaged; reinstall lightroom-agent, then restart your client.",
 };
 

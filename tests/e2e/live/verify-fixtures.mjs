@@ -86,7 +86,8 @@ for (const orientation of [1, 2, 3, 4, 5, 6, 7, 8]) checkOrientation(`orient_${o
 for (const orientation of MARKER_ORIENTATIONS) checkOrientation(`markers_${orientation}.jpg`, orientation);
 
 for (const fileName of ["wide_plain.jpg", "pano.jpg"]) {
-  if (!fs.existsSync(path.join(GENERATED_DIR, fileName))) problems.push(`${fileName}: missing, run generate-fixtures.mjs`);
+  if (!fs.existsSync(path.join(GENERATED_DIR, fileName)))
+    problems.push(`${fileName}: missing, run generate-fixtures.mjs`);
 }
 
 if (problems.length > 0) {

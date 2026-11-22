@@ -15,7 +15,10 @@ export class McpSession {
   }
 
   async start() {
-    this.process = spawn("node", [SERVER_BIN], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, LIGHTROOM_AGENT_TOOLSETS: "all" } });
+    this.process = spawn("node", [SERVER_BIN], {
+      stdio: ["pipe", "pipe", "ignore"],
+      env: { ...process.env, LIGHTROOM_AGENT_TOOLSETS: "all" },
+    });
     this.process.stdout.setEncoding("utf8");
     this.process.stdout.on("data", (chunk) => this.onStdout(chunk));
     this.process.on("exit", (code) => {
@@ -85,7 +88,11 @@ export class McpSession {
     return new Promise((resolve, reject) => {
       const cancel = () => {
         if (!this.pending.has(id)) return;
-        this.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id, reason: "Live test cancellation" } });
+        this.send({
+          jsonrpc: "2.0",
+          method: "notifications/cancelled",
+          params: { requestId: id, reason: "Live test cancellation" },
+        });
         this.pending.get(id).reject(new Error("Request cancelled"));
         this.pending.delete(id);
       };
@@ -95,7 +102,8 @@ export class McpSession {
         reject(new Error(`rpc timeout after ${timeoutMs} ms: ${method}`));
       }, timeoutMs);
       this.pending.set(id, {
-        progressToken, onProgress,
+        progressToken,
+        onProgress,
         resolve: (value) => {
           clearTimeout(timer);
           signal?.removeEventListener("abort", cancel);
@@ -114,7 +122,11 @@ export class McpSession {
 
   async tool(name, args = {}, { timeoutMs = DEFAULT_TOOL_TIMEOUT_MS, signal, onProgress, progressToken } = {}) {
     const startedAt = Date.now();
-    const result = await this.rpc("tools/call", { name, arguments: args }, timeoutMs, { signal, onProgress, progressToken });
+    const result = await this.rpc("tools/call", { name, arguments: args }, timeoutMs, {
+      signal,
+      onProgress,
+      progressToken,
+    });
     const text = result?.content?.find((block) => block.type === "text")?.text ?? "";
     const images = (result?.content ?? []).filter((block) => block.type === "image");
     let envelope;
@@ -124,8 +136,14 @@ export class McpSession {
       envelope = { outcome: "failed", error: text };
     }
     return {
-      isError: Boolean(result?.isError), text, envelope, outcome: envelope.outcome, data: envelope.data,
-      image: images[0] ?? null, images, ms: Date.now() - startedAt,
+      isError: Boolean(result?.isError),
+      text,
+      envelope,
+      outcome: envelope.outcome,
+      data: envelope.data,
+      image: images[0] ?? null,
+      images,
+      ms: Date.now() - startedAt,
     };
   }
 

@@ -91,13 +91,19 @@ test("download stores a file whose hash matches", async () => {
 
 test("download refuses a hash mismatch and leaves nothing behind", async () => {
   const directory = path.join(workDirectory, "download-bad");
-  await assert.rejects(downloadSample(sample({ sha256: "0".repeat(64) }), directory, { allowedUrls: localUrls() }), /sha256 mismatch/);
+  await assert.rejects(
+    downloadSample(sample({ sha256: "0".repeat(64) }), directory, { allowedUrls: localUrls() }),
+    /sha256 mismatch/,
+  );
   assert.deepEqual(fs.readdirSync(directory), []);
 });
 
 test("download refuses an HTTP error", async () => {
   const directory = path.join(workDirectory, "download-404");
-  await assert.rejects(downloadSample(sample({ url: `${baseUrl}/missing` }), directory, { allowedUrls: localUrls() }), /HTTP 404/);
+  await assert.rejects(
+    downloadSample(sample({ url: `${baseUrl}/missing` }), directory, { allowedUrls: localUrls() }),
+    /HTTP 404/,
+  );
 });
 
 test("supplied files are resolved from environment variables, and a declared hash must match", async () => {
@@ -120,7 +126,13 @@ test("supplied files are resolved from environment variables, and a declared has
   });
   assert.deepEqual(
     resolved.map((entry) => [entry.status, entry.actual ?? null]),
-    [["present", null], ["missing-file", null], ["not-set", null], ["present", PAYLOAD_SHA256], ["mismatch", PAYLOAD_SHA256]],
+    [
+      ["present", null],
+      ["missing-file", null],
+      ["not-set", null],
+      ["present", PAYLOAD_SHA256],
+      ["mismatch", PAYLOAD_SHA256],
+    ],
   );
 });
 
@@ -133,7 +145,10 @@ test("a supplied slot with a bundled file uses it when its variable is unset, an
   const manifest = { supplied: [{ key: "p", envVar: "LRAGENT_LIVE_P", file: "portrait.jpg", sha256: PAYLOAD_SHA256 }] };
 
   const [byDefault] = await resolveSuppliedFiles(manifest, {}, bundled);
-  assert.deepEqual([byDefault.status, byDefault.filePath, byDefault.from], ["present", path.join(bundled, "portrait.jpg"), "bundled"]);
+  assert.deepEqual(
+    [byDefault.status, byDefault.filePath, byDefault.from],
+    ["present", path.join(bundled, "portrait.jpg"), "bundled"],
+  );
   const [overridden] = await resolveSuppliedFiles(manifest, { LRAGENT_LIVE_P: override }, bundled);
   assert.deepEqual([overridden.status, overridden.filePath, overridden.from], ["mismatch", override, "LRAGENT_LIVE_P"]);
 });
@@ -141,17 +156,27 @@ test("a supplied slot with a bundled file uses it when its variable is unset, an
 test("every bundled fixture in the manifest is in the repository with its pinned hash", async () => {
   const bundled = loadManifest(MANIFEST_PATH).supplied.filter((supplied) => supplied.file);
   assert.deepEqual(bundled.map((supplied) => supplied.key).sort(), ["depth_heic", "people_photo"]);
-  for (const supplied of bundled) assert.equal(await sha256File(path.join(BUNDLED_FIXTURES_DIR, supplied.file)), supplied.sha256, supplied.key);
+  for (const supplied of bundled)
+    assert.equal(await sha256File(path.join(BUNDLED_FIXTURES_DIR, supplied.file)), supplied.sha256, supplied.key);
 });
 
 test("validation reports a supplied hash that is not 64 lowercase hex characters", () => {
-  assert.deepEqual(validateManifest({ supplied: [{ key: "a", envVar: "LRAGENT_LIVE_A", sha256: PAYLOAD_SHA256 }] }), []);
-  assert.match(validateManifest({ supplied: [{ key: "a", envVar: "LRAGENT_LIVE_A", sha256: "ABC" }] }).join("\n"), /a: sha256 must be 64 lowercase hex characters/);
+  assert.deepEqual(
+    validateManifest({ supplied: [{ key: "a", envVar: "LRAGENT_LIVE_A", sha256: PAYLOAD_SHA256 }] }),
+    [],
+  );
+  assert.match(
+    validateManifest({ supplied: [{ key: "a", envVar: "LRAGENT_LIVE_A", sha256: "ABC" }] }).join("\n"),
+    /a: sha256 must be 64 lowercase hex characters/,
+  );
 });
 
 test("downloads outside the allowlist are refused before any request", async () => {
   const directory = path.join(workDirectory, "download-foreign");
-  await assert.rejects(downloadSample(sample({ url: "https://example.com/a.ARW" }), directory), /not in the downloader allowlist/);
+  await assert.rejects(
+    downloadSample(sample({ url: "https://example.com/a.ARW" }), directory),
+    /not in the downloader allowlist/,
+  );
   assert.equal(fs.existsSync(directory), false);
   assert.equal(allowlistedUrl(DOWNLOADABLE_URLS[0], DOWNLOADABLE_URLS), DOWNLOADABLE_URLS[0]);
   assert.throws(() => allowlistedUrl(`${DOWNLOADABLE_URLS[0]}.evil`, DOWNLOADABLE_URLS));

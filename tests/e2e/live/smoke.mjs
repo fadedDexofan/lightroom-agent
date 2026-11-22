@@ -57,7 +57,9 @@ try {
   );
 
   const listed = await session.toolOrThrow("list_masks", { photo_id: rotatedId });
-  check("list_masks answers on the rotated photo", Array.isArray(listed.data.masks), { masks: listed.data.masks?.length });
+  check("list_masks answers on the rotated photo", Array.isArray(listed.data.masks), {
+    masks: listed.data.masks?.length,
+  });
 
   const rotated = await measureChange(session, rotatedId, () =>
     addExposureMask(rotatedId, { shape: "linear", start: { x: 0.5, y: 0.05 }, end: { x: 0.5, y: 0.45 } }),
@@ -77,9 +79,17 @@ try {
   const iou = intersectionOverUnion(
     wide.before,
     wide.after,
-    ellipseInside({ center: radial.center, width: radial.width, height: radial.height, rotationDegrees: radial.rotation }),
+    ellipseInside({
+      center: radial.center,
+      width: radial.width,
+      height: radial.height,
+      rotationDegrees: radial.rotation,
+    }),
   );
-  check("radial gradient on wide_plain matches the analytic ellipse", iou >= MIN_RADIAL_IOU, { iou: Number(iou.toFixed(3)), ...describeSizes(wide.before, wide.after) });
+  check("radial gradient on wide_plain matches the analytic ellipse", iou >= MIN_RADIAL_IOU, {
+    iou: Number(iou.toFixed(3)),
+    ...describeSizes(wide.before, wide.after),
+  });
 
   const stored = await readFlushedSettings(session, rotatedId, wideId, (row) => storedMaskGroups(row.text).length > 0);
   const groups = summarizeMaskGroups(storedMaskGroups(stored.text));

@@ -14,7 +14,8 @@ try {
   assert.equal(ramp.error, undefined);
   assert.equal(plain.error, undefined);
   const quarters = Array.from({ length: 4 }, (_, quarter) =>
-    ramp.histogram.slice(quarter * 16, (quarter + 1) * 16).reduce((sum, mass) => sum + mass, 0));
+    ramp.histogram.slice(quarter * 16, (quarter + 1) * 16).reduce((sum, mass) => sum + mass, 0),
+  );
   for (const mass of quarters) assert.ok(Math.abs(mass - 0.25) <= 0.05, JSON.stringify({ quarters }));
   assert.ok(Math.abs(plain.mean_luminance - 110) <= 4, JSON.stringify(plain));
   assert.equal(plain.shadow_fraction, 0);

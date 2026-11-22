@@ -16,7 +16,13 @@ import {
   sleep,
   submitNewCatalogDialog,
 } from "./lib/ax.mjs";
-import { absentFixtureIds, fixturesToImport, markerPathFor, readCatalogMarker, writeCatalogMarker } from "./lib/live-catalog.mjs";
+import {
+  absentFixtureIds,
+  fixturesToImport,
+  markerPathFor,
+  readCatalogMarker,
+  writeCatalogMarker,
+} from "./lib/live-catalog.mjs";
 import { loadManifest, resolveSuppliedFiles, verifySample } from "./lib/manifest.mjs";
 import { McpSession } from "./lib/mcp.mjs";
 import { GENERATED_DIR, MANIFEST_PATH, SAMPLES_DIR } from "./lib/paths.mjs";
@@ -29,7 +35,10 @@ const option = (name, fallback) => {
 const adoptOpenCatalog = args.includes("--adopt-open-catalog");
 const addMissing = args.includes("--add-missing");
 const parentDirectory = path.resolve(option("--parent-dir", path.join(os.homedir(), "Documents")));
-const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+const stamp = new Date()
+  .toISOString()
+  .replace(/[-:.TZ]/g, "")
+  .slice(0, 14);
 const catalogName = option("--name", `lragent-live-${stamp}`);
 
 const NEW_CATALOG_RELAUNCH_TIMEOUT_MS = 240_000;
@@ -39,11 +48,14 @@ async function collectFixtureFiles() {
   const manifest = loadManifest(MANIFEST_PATH);
   const files = [];
   const generated = JSON.parse(fs.readFileSync(path.join(GENERATED_DIR, "generated.json"), "utf8"));
-  for (const [key, entry] of Object.entries(generated)) files.push({ key, source: path.join(GENERATED_DIR, entry.file) });
+  for (const [key, entry] of Object.entries(generated))
+    files.push({ key, source: path.join(GENERATED_DIR, entry.file) });
   for (const sample of manifest.samples) files.push({ key: sample.key, source: path.join(SAMPLES_DIR, sample.file) });
   for (const supplied of await resolveSuppliedFiles(manifest)) {
     if (supplied.status === "mismatch") {
-      throw new Error(`${supplied.key} (${supplied.from}) is ${supplied.filePath}, whose sha256 ${supplied.actual} is not the manifest's ${supplied.sha256}`);
+      throw new Error(
+        `${supplied.key} (${supplied.from}) is ${supplied.filePath}, whose sha256 ${supplied.actual} is not the manifest's ${supplied.sha256}`,
+      );
     }
     if (supplied.status === "present") {
       files.push({ key: supplied.key, source: supplied.filePath, extension: path.extname(supplied.filePath) });
@@ -64,7 +76,8 @@ async function assertFixturesReady(manifest) {
 
 async function createCatalogThroughMenu(expectedCatalogPath) {
   if (lightroomPid() === null) throw new Error("Lightroom is not running; start it and bring it to the front");
-  if (fs.existsSync(path.dirname(expectedCatalogPath))) throw new Error(`${path.dirname(expectedCatalogPath)} already exists`);
+  if (fs.existsSync(path.dirname(expectedCatalogPath)))
+    throw new Error(`${path.dirname(expectedCatalogPath)} already exists`);
   await ensureLightroomFrontmost();
   await dismissBlockingModals();
   await openNewCatalogDialog();
@@ -93,7 +106,9 @@ async function startSessionWhenPluginAnswers() {
       await sleep(3000);
     }
   }
-  throw new Error(`plugin did not answer (${lastError?.message}); open Plug-in Manager, Stop Server, Start Server, rerun with --adopt-open-catalog`);
+  throw new Error(
+    `plugin did not answer (${lastError?.message}); open Plug-in Manager, Stop Server, Start Server, rerun with --adopt-open-catalog`,
+  );
 }
 
 async function importFixtures(session, catalogPath, files) {
@@ -105,7 +120,8 @@ async function importFixtures(session, catalogPath, files) {
     const target = path.join(imagesDirectory, fileName);
     fs.copyFileSync(source, target);
     const imported = await session.toolOrThrow("import_photos", { source_path: target }, { timeoutMs: 180_000 });
-    if (imported.data.imported !== 1) throw new Error(`${key}: import_photos reported ${JSON.stringify(imported.data)}`);
+    if (imported.data.imported !== 1)
+      throw new Error(`${key}: import_photos reported ${JSON.stringify(imported.data)}`);
     const found = await session.toolOrThrow("search_photos", { filename: fileName, limit: 10 });
     const match = found.data.photos.find((photo) => photo.filename === fileName);
     if (!match) throw new Error(`${key}: ${fileName} not found after import`);
@@ -124,7 +140,8 @@ if (addMissing) {
   const session = await startSessionWhenPluginAnswers();
   try {
     const listed = Object.values(marker.fixtures ?? {}).map((fixture) => String(fixture.id));
-    const absent = listed.length === 0 ? [] : absentFixtureIds(await session.tool("get_photo_metadata", { photo_ids: listed }));
+    const absent =
+      listed.length === 0 ? [] : absentFixtureIds(await session.tool("get_photo_metadata", { photo_ids: listed }));
     const missing = fixturesToImport(files, marker, absent);
     if (missing.length === 0) {
       console.log("every fixture is already in the throwaway catalog");
@@ -157,7 +174,8 @@ const session = await startSessionWhenPluginAnswers();
 try {
   if (adoptOpenCatalog) {
     const existing = await session.toolOrThrow("search_photos", { limit: 1 });
-    if ((existing.data.photos ?? []).length > 0) throw new Error("refusing to adopt a catalog that already holds photos");
+    if ((existing.data.photos ?? []).length > 0)
+      throw new Error("refusing to adopt a catalog that already holds photos");
   }
   writeCatalogMarker(catalogPath, { createdAt: new Date().toISOString(), catalogPath, fixtures: {} });
   assertThrowawayCatalog(currentOpenCatalogs());

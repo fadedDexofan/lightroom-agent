@@ -83,10 +83,11 @@ test("ramp256 patch i is gray level i", () => {
   const canvas = buildRamp256();
   for (const index of [0, 1, 127, 128, 254, 255]) {
     const center = patchCenterFraction(RAMP256_LAYOUT, index);
-    assert.deepEqual(
-      pixelAt(canvas, Math.floor(center.x * canvas.width), Math.floor(center.y * canvas.height)),
-      [index, index, index],
-    );
+    assert.deepEqual(pixelAt(canvas, Math.floor(center.x * canvas.width), Math.floor(center.y * canvas.height)), [
+      index,
+      index,
+      index,
+    ]);
   }
 });
 
@@ -171,10 +172,16 @@ function centroidOf(canvas, color) {
 test("markers carry three coloured discs at their stated positions", () => {
   const markers = buildMarkers();
   assert.deepEqual([markers.width, markers.height], [1500, 1000]);
-  assert.deepEqual(MARKER_DISCS.map((disc) => disc.name), ["red", "blue", "green"]);
+  assert.deepEqual(
+    MARKER_DISCS.map((disc) => disc.name),
+    ["red", "blue", "green"],
+  );
   for (const disc of MARKER_DISCS) {
     const found = centroidOf(markers, disc.color);
-    assert.ok(Math.abs(found.x - disc.x) < 0.001 && Math.abs(found.y - disc.y) < 0.001, `${disc.name} ${JSON.stringify(found)}`);
+    assert.ok(
+      Math.abs(found.x - disc.x) < 0.001 && Math.abs(found.y - disc.y) < 0.001,
+      `${disc.name} ${JSON.stringify(found)}`,
+    );
   }
 });
 
@@ -185,8 +192,10 @@ test("a disc's displayed position follows the EXIF orientation", () => {
     for (const disc of MARKER_DISCS) {
       const expected = displayedFraction(disc, orientation);
       const found = centroidOf(displayed, disc.color);
-      assert.ok(Math.abs(found.x - expected.x) < 0.001 && Math.abs(found.y - expected.y) < 0.001,
-        `orientation ${orientation} ${disc.name}: ${JSON.stringify(found)} vs ${JSON.stringify(expected)}`);
+      assert.ok(
+        Math.abs(found.x - expected.x) < 0.001 && Math.abs(found.y - expected.y) < 0.001,
+        `orientation ${orientation} ${disc.name}: ${JSON.stringify(found)} vs ${JSON.stringify(expected)}`,
+      );
     }
   }
 });

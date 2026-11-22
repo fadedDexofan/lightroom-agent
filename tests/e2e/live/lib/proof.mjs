@@ -24,16 +24,28 @@ export function createReport(proof, argv = process.argv, now = () => new Date())
       fs.mkdirSync(previewsDirectory, { recursive: true });
       const bytes = Buffer.from(pixels.jpeg, "base64");
       previews += 1;
-      const file = path.join(path.basename(previewsDirectory), `${String(previews).padStart(2, "0")}-${name.replace(/[^a-z0-9]+/gi, "-")}.jpg`);
+      const file = path.join(
+        path.basename(previewsDirectory),
+        `${String(previews).padStart(2, "0")}-${name.replace(/[^a-z0-9]+/gi, "-")}.jpg`,
+      );
       fs.writeFileSync(path.join(path.dirname(evidenceFile), file), bytes);
       return { file, sha256: createHash("sha256").update(bytes).digest("hex") };
     },
     finish(extra = {}) {
       const finished = now();
-      const summary = { proof, passed: checks.every((entry) => entry.passed), started_at: started.toISOString(), finished_at: finished.toISOString(),
-        seconds: (finished - started) / 1000, checks, ...extra };
+      const summary = {
+        proof,
+        passed: checks.every((entry) => entry.passed),
+        started_at: started.toISOString(),
+        finished_at: finished.toISOString(),
+        seconds: (finished - started) / 1000,
+        checks,
+        ...extra,
+      };
       write(summary);
-      console.log(`${summary.passed ? "passed" : "FAILED"} ${proof}${evidenceFile ? `; evidence ${evidenceFile}` : ""}`);
+      console.log(
+        `${summary.passed ? "passed" : "FAILED"} ${proof}${evidenceFile ? `; evidence ${evidenceFile}` : ""}`,
+      );
       process.exitCode = summary.passed ? 0 : 1;
       return summary;
     },

@@ -27,17 +27,30 @@ try {
     offset += page.photos.length;
     assert.ok(!page.has_more || page.photos.length > 0);
   } while (page.has_more);
-  const ids = Object.values(marker.fixtures).map((fixture) => String(fixture.id)).sort();
+  const ids = Object.values(marker.fixtures)
+    .map((fixture) => String(fixture.id))
+    .sort();
   assert.deepEqual(photos.map((photo) => String(photo.photo_id)).sort(), ids);
   assert.equal(images.photo_count, ids.length);
   const batchIds = marker.batch?.ids ?? [];
   assert.ok(batchIds.length >= 200, "import the 200-photo batch before measuring folder counts");
-  const recursive = (await session.toolOrThrow("get_folder_photos", {
-    folder_path: images.path, include_subfolders: true, limit: 0,
-  })).data;
+  const recursive = (
+    await session.toolOrThrow("get_folder_photos", {
+      folder_path: images.path,
+      include_subfolders: true,
+      limit: 0,
+    })
+  ).data;
   assert.ok(recursive.count >= ids.length);
-  console.log(JSON.stringify({ passed: true, folders: folders.length, fixturePhotos: ids.length,
-    batchPhotos: batchIds.length, elapsedMs: performance.now() - started }));
+  console.log(
+    JSON.stringify({
+      passed: true,
+      folders: folders.length,
+      fixturePhotos: ids.length,
+      batchPhotos: batchIds.length,
+      elapsedMs: performance.now() - started,
+    }),
+  );
 } finally {
   await session.stop();
 }

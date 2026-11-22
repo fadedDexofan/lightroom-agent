@@ -3,10 +3,7 @@ import path from "node:path";
 import { configDir } from "./config-dir.js";
 
 export function tokenFilePath(): string {
-  return (
-    process.env.LIGHTROOM_AGENT_TOKEN_PATH ??
-    path.join(configDir(), "token")
-  );
+  return process.env.LIGHTROOM_AGENT_TOKEN_PATH ?? path.join(configDir(), "token");
 }
 
 export function readToken(): string {

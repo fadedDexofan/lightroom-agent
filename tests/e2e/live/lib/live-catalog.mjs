@@ -23,7 +23,9 @@ export function fixtureIdOrNull(marker, key) {
 export function absentFixtureIds(answer) {
   if (Array.isArray(answer.envelope.not_found)) return answer.envelope.not_found;
   if (answer.outcome === "done") return [];
-  throw new Error(`could not tell which fixtures the catalog still holds: get_photo_metadata answered ${answer.outcome}: ${answer.envelope.error ?? "no error given"}`);
+  throw new Error(
+    `could not tell which fixtures the catalog still holds: get_photo_metadata answered ${answer.outcome}: ${answer.envelope.error ?? "no error given"}`,
+  );
 }
 
 export function fixturesToImport(files, marker, absentIds) {

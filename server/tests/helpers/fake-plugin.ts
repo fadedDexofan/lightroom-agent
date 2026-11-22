@@ -11,7 +11,7 @@
 //     wait up to sendWaitMs, then drop with a "send socket disconnected" log
 //   - dispatch runs after token check; response carries the request id
 
-import net from "node:net";
+import net from 'node:net';
 
 export interface FakePluginOptions {
   requestPort?: number;
@@ -39,8 +39,8 @@ export interface FakePluginEvent {
 }
 
 export class FakePlugin {
-  private readonly host = "127.0.0.1";
-  private readonly opts: Required<Omit<FakePluginOptions, "log" | "exclusivePort" | "requestPort" | "responsePort">> & {
+  private readonly host = '127.0.0.1';
+  private readonly opts: Required<Omit<FakePluginOptions, 'log' | 'exclusivePort' | 'requestPort' | 'responsePort'>> & {
     log: (msg: string) => void;
     exclusivePort: boolean;
   };
@@ -51,7 +51,7 @@ export class FakePlugin {
   private responseServer: net.Server | null = null;
   private requestClient: net.Socket | null = null;
   private responseClient: net.Socket | null = null;
-  private requestBuf = "";
+  private requestBuf = '';
   private sendConnected = false;
   // Bumped on every rebind. Pending rebind tasks compare against this so
   // a stale rebind initiated for an old session does not race with a fresh
@@ -84,7 +84,7 @@ export class FakePlugin {
   private event(kind: string, detail?: string): void {
     const evt = { ts: Date.now(), kind, detail };
     this.events.push(evt);
-    this.opts.log(`[fake] ${kind}${detail ? ` ${detail}` : ""}`);
+    this.opts.log(`[fake] ${kind}${detail ? ` ${detail}` : ''}`);
   }
 
   async start(): Promise<void> {
@@ -99,26 +99,26 @@ export class FakePlugin {
       if (this.responseGen !== myGen) {
         // Stale listener accepted a connection between close() returning and
         // the kernel actually retiring the listen socket. Drop it.
-        this.event("response_stale_accept");
+        this.event('response_stale_accept');
         client.destroy();
         return;
       }
       this.responseClient = client;
       this.sendConnected = true;
-      this.event("response_connected");
-      client.on("close", () => {
+      this.event('response_connected');
+      client.on('close', () => {
         if (this.responseClient === client) {
           this.responseClient = null;
           this.sendConnected = false;
-          this.event("response_client_closed");
+          this.event('response_client_closed');
         }
       });
-      client.on("error", () => {
+      client.on('error', () => {
         // swallow — close handler covers cleanup
       });
     });
     return new Promise((resolve, reject) => {
-      srv.once("error", reject);
+      srv.once('error', reject);
       srv.listen(
         {
           port: this.boundResponsePort,
@@ -126,9 +126,9 @@ export class FakePlugin {
           exclusive: this.opts.exclusivePort,
         },
         () => {
-          srv.off("error", reject);
+          srv.off('error', reject);
           this.boundResponsePort = (srv.address() as net.AddressInfo).port;
-          this.event("response_bound", `gen=${myGen}`);
+          this.event('response_bound', `gen=${myGen}`);
           resolve(srv);
         },
       );
@@ -157,47 +157,47 @@ export class FakePlugin {
     }
     if (this.stopped) return;
     this.responseServer = await this.bindResponse();
-    this.event("response_rebound");
+    this.event('response_rebound');
   }
 
   private bindRequest(): Promise<net.Server> {
     const srv = net.createServer((client) => {
       if (this.requestClient) {
         // Plugin only accepts one request client at a time.
-        this.event("request_extra_rejected");
+        this.event('request_extra_rejected');
         client.destroy();
         return;
       }
       this.requestClient = client;
-      this.requestBuf = "";
-      client.setEncoding("utf8");
-      this.event("request_connected");
+      this.requestBuf = '';
+      client.setEncoding('utf8');
+      this.event('request_connected');
       // Mirror Lua plugin: every new request-side client triggers a
       // response-side rebind. This is the load-bearing fragile move that
       // issue #110 stress-tests on Windows.
       void this.rebindResponse();
 
-      client.on("data", (chunk: string) => {
+      client.on('data', (chunk: string) => {
         this.requestBuf += chunk;
         let idx: number;
-        while ((idx = this.requestBuf.indexOf("\n")) !== -1) {
+        while ((idx = this.requestBuf.indexOf('\n')) !== -1) {
           const line = this.requestBuf.slice(0, idx);
           this.requestBuf = this.requestBuf.slice(idx + 1);
           if (line.trim()) void this.handleMessage(line);
         }
       });
-      client.on("close", () => {
+      client.on('close', () => {
         if (this.requestClient === client) {
           this.requestClient = null;
-          this.event("request_client_closed");
+          this.event('request_client_closed');
         }
       });
-      client.on("error", () => {
+      client.on('error', () => {
         // swallow
       });
     });
     return new Promise((resolve, reject) => {
-      srv.once("error", reject);
+      srv.once('error', reject);
       srv.listen(
         {
           port: this.boundRequestPort,
@@ -205,9 +205,9 @@ export class FakePlugin {
           exclusive: this.opts.exclusivePort,
         },
         () => {
-          srv.off("error", reject);
+          srv.off('error', reject);
           this.boundRequestPort = (srv.address() as net.AddressInfo).port;
-          this.event("request_bound");
+          this.event('request_bound');
           resolve(srv);
         },
       );
@@ -219,14 +219,14 @@ export class FakePlugin {
     try {
       req = JSON.parse(line) as { hello?: string; id?: string; action?: string; params?: unknown };
     } catch {
-      this.event("bad_json");
+      this.event('bad_json');
       return;
     }
     if (req.hello !== this.opts.token) {
-      this.event("auth_fail", req.id ?? "");
+      this.event('auth_fail', req.id ?? '');
       return;
     }
-    if (typeof req.id !== "string" || typeof req.action !== "string") {
+    if (typeof req.id !== 'string' || typeof req.action !== 'string') {
       return;
     }
 
@@ -234,7 +234,7 @@ export class FakePlugin {
     try {
       reply = { id: req.id, result: { data: await this.opts.handler(req.action, req.params) } };
     } catch (e) {
-      reply = { id: req.id, error: e instanceof Error ? e.message : String(e), effect: "unknown" };
+      reply = { id: req.id, error: e instanceof Error ? e.message : String(e), effect: 'unknown' };
     }
 
     await this.sendResponse(req.id, reply);
@@ -246,14 +246,11 @@ export class FakePlugin {
       await new Promise((r) => setTimeout(r, 50));
     }
     if (!this.sendConnected || !this.responseClient) {
-      this.event(
-        "drop_response",
-        `id=${id} waited=${this.opts.sendWaitMs}ms`,
-      );
+      this.event('drop_response', `id=${id} waited=${this.opts.sendWaitMs}ms`);
       return;
     }
-    this.responseClient.write(JSON.stringify(payload) + "\n");
-    this.event("response_sent", `id=${id}`);
+    this.responseClient.write(JSON.stringify(payload) + '\n');
+    this.event('response_sent', `id=${id}`);
   }
 
   async stop(): Promise<void> {
@@ -261,12 +258,8 @@ export class FakePlugin {
     this.responseClient?.destroy();
     this.requestClient?.destroy();
     await Promise.all([
-      this.responseServer
-        ? new Promise<void>((r) => this.responseServer!.close(() => r()))
-        : Promise.resolve(),
-      this.requestServer
-        ? new Promise<void>((r) => this.requestServer!.close(() => r()))
-        : Promise.resolve(),
+      this.responseServer ? new Promise<void>((r) => this.responseServer!.close(() => r())) : Promise.resolve(),
+      this.requestServer ? new Promise<void>((r) => this.requestServer!.close(() => r())) : Promise.resolve(),
     ]);
     this.responseServer = null;
     this.requestServer = null;

@@ -50,13 +50,20 @@ const TASKLIST = [
 ].join('\r\n');
 
 const LSOF_ESTABLISHED = [
-  'p27120', 'cAdobe Lightroom Classic',
-  'f68', 'n127.0.0.1:58764->127.0.0.1:61146',
-  'p555', 'cMIDI2LR',
-  'f23', 'n127.0.0.1:61146->127.0.0.1:58764',
-  'p777', 'cnode',
-  'f24', 'n127.0.0.1:61200->127.0.0.1:58764',
-  'f25', 'n127.0.0.1:61201->127.0.0.1:58763',
+  'p27120',
+  'cAdobe Lightroom Classic',
+  'f68',
+  'n127.0.0.1:58764->127.0.0.1:61146',
+  'p555',
+  'cMIDI2LR',
+  'f23',
+  'n127.0.0.1:61146->127.0.0.1:58764',
+  'p777',
+  'cnode',
+  'f24',
+  'n127.0.0.1:61200->127.0.0.1:58764',
+  'f25',
+  'n127.0.0.1:61201->127.0.0.1:58763',
 ].join('\n');
 
 function fakeRun(outputs: Record<string, string>): RunCommand {
@@ -71,7 +78,14 @@ describe('parseLsofListeners', () => {
     ['one listener', 'p27120\ncAdobe Lightroom Classic\nf65\n', [LIGHTROOM]],
     ['no command field', 'p27120\nf65\n', [{ pid: 27120 }]],
     ['nothing listening', '', []],
-    ['two listeners', 'p1\ncfoo\np2\ncbar\n', [{ pid: 1, command: 'foo' }, { pid: 2, command: 'bar' }]],
+    [
+      'two listeners',
+      'p1\ncfoo\np2\ncbar\n',
+      [
+        { pid: 1, command: 'foo' },
+        { pid: 2, command: 'bar' },
+      ],
+    ],
     ['garbage pid, orphan command', 'pabc\ncfoo\n', []],
   ])('%s', (_name, output, expected) => {
     expect(parseLsofListeners(output)).toEqual(expected);
@@ -274,10 +288,22 @@ describe('UnresponsiveReporter', () => {
 
   function setup() {
     let clock = 0;
-    const diagnose = jest.fn(() => Promise.resolve({ message: `verdict ${diagnose.mock.calls.length}`, details: `verdict ${diagnose.mock.calls.length}` }));
+    const diagnose = jest.fn(() =>
+      Promise.resolve({
+        message: `verdict ${diagnose.mock.calls.length}`,
+        details: `verdict ${diagnose.mock.calls.length}`,
+      }),
+    );
     const log = jest.fn<(msg: string) => void>();
     const reporter = new UnresponsiveReporter({ diagnose, log, refreshMs: 1000, now: () => clock });
-    return { reporter, diagnose, log, advance: (ms: number) => { clock += ms; } };
+    return {
+      reporter,
+      diagnose,
+      log,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+    };
   }
 
   it('starts with the generic message', () => {
@@ -375,7 +401,10 @@ describe('system inspection', () => {
 
       expect(listener === null || listener.pid === process.pid).toBe(true);
       expect(clients === null || clients.length === 0).toBe(true);
-      await expect(diagnoseUnresponsive([port])).resolves.toEqual({ message: expect.any(String), details: expect.any(String) });
+      await expect(diagnoseUnresponsive([port])).resolves.toEqual({
+        message: expect.any(String),
+        details: expect.any(String),
+      });
     } finally {
       server.close();
     }

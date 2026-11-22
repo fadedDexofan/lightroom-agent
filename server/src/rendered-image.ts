@@ -24,7 +24,12 @@ const INTEGER_TOLERANCE = 1e-9;
 const FALLING_QUALITIES = [90, 80, 70, 60, 50, 40, 30];
 
 export function decodeJpeg(encoded: Buffer): RgbaImage {
-  return jpeg.decode(encoded, { useTArray: true, formatAsRGBA: true, maxResolutionInMP: 200, maxMemoryUsageInMB: 2048 });
+  return jpeg.decode(encoded, {
+    useTArray: true,
+    formatAsRGBA: true,
+    maxResolutionInMP: 200,
+    maxMemoryUsageInMB: 2048,
+  });
 }
 
 export function encodeWithin(image: RgbaImage, maxBytes: number): Buffer | undefined {
@@ -47,7 +52,8 @@ function cellSpans(size: number, cells: number): CellSpans {
   const offset = new Int32Array(cells + 1);
   const weights: number[] = [];
   for (let cell = 0; cell < cells; cell++) {
-    const low = cell * step, high = (cell + 1) * step;
+    const low = cell * step,
+      high = (cell + 1) * step;
     first[cell] = Math.floor(low);
     offset[cell] = weights.length;
     for (let source = first[cell]; source < Math.min(size, Math.ceil(high)); source++) {
@@ -59,16 +65,22 @@ function cellSpans(size: number, cells: number): CellSpans {
 }
 
 export function areaAverage(
-  width: number, height: number, targetWidth: number, targetHeight: number, valueAt: (pixel: number) => number,
+  width: number,
+  height: number,
+  targetWidth: number,
+  targetHeight: number,
+  valueAt: (pixel: number) => number,
 ): Float64Array {
-  const columns = cellSpans(width, targetWidth), rows = cellSpans(height, targetHeight);
+  const columns = cellSpans(width, targetWidth),
+    rows = cellSpans(height, targetHeight);
   const area = (width / targetWidth) * (height / targetHeight);
   const averages = new Float64Array(targetWidth * targetHeight);
   for (let y = 0; y < targetHeight; y++) {
     for (let x = 0; x < targetWidth; x++) {
       let total = 0;
       for (let row = rows.offset[y], sy = rows.first[y]; row < rows.offset[y + 1]; row++, sy++) {
-        const base = sy * width, wy = rows.weight[row];
+        const base = sy * width,
+          wy = rows.weight[row];
         for (let column = columns.offset[x], sx = columns.first[x]; column < columns.offset[x + 1]; column++, sx++) {
           total += valueAt(base + sx) * columns.weight[column] * wy;
         }

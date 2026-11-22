@@ -26,7 +26,10 @@ function writePreset(name, settings, { root = USER_ROOT, title = name } = {}) {
   fs.mkdirSync(directory, { recursive: true });
   const value = `exportServiceProvider = "com.adobe.ag.export.file", format = "JPEG", jpeg_quality = 0.6, collisionHandling = "ask", export_colorSpace = "sRGB", renamingTokensOn = true, tokens = "live_{{image_name}}", ${settings}`;
   const file = path.join(directory, `${name}.lrtemplate`);
-  fs.writeFileSync(file, `s = { id = "live-${name}", title = "${title}", type = "Export", value = { ${value} }, version = 0 }`);
+  fs.writeFileSync(
+    file,
+    `s = { id = "live-${name}", title = "${title}", type = "Export", value = { ${value} }, version = 0 }`,
+  );
   return file;
 }
 
@@ -47,7 +50,8 @@ function filesIn(directory) {
 function exportTo(args, timeoutMs = 60000) {
   const destination = newDestination();
   const preset = args.export_preset && !args.export_preset.startsWith("/") ? { export_preset_folder: FOLDER } : {};
-  return session.tool("export_photos", { photo_ids: [chart], destination, ...preset, ...args }, { timeoutMs })
+  return session
+    .tool("export_photos", { photo_ids: [chart], destination, ...preset, ...args }, { timeoutMs })
     .then((result) => ({ result, destination, files: filesIn(destination) }));
 }
 
@@ -59,24 +63,39 @@ function check(label, passed, detail) {
 async function checkSize(label, args, expected) {
   const { result, destination, files } = await exportTo(args);
   const actual = files.map((file) => dimensions(path.join(destination, file)));
-  check(label, !result.isError && actual.length === 1 && actual[0] === expected, { expected, actual, text: result.isError ? result.text : undefined });
+  check(label, !result.isError && actual.length === 1 && actual[0] === expected, {
+    expected,
+    actual,
+    text: result.isError ? result.text : undefined,
+  });
 }
 
 async function checkLongEdge(label, args, expected) {
   const { result, destination, files } = await exportTo(args);
-  const edge = files.length === 1 ? Math.max(...dimensions(path.join(destination, files[0])).split("x").map(Number)) : null;
-  check(label, !result.isError && edge !== null && Math.abs(edge - expected) <= 1, { expected, edge, data: result.data });
+  const edge =
+    files.length === 1 ? Math.max(...dimensions(path.join(destination, files[0])).split("x").map(Number)) : null;
+  check(label, !result.isError && edge !== null && Math.abs(edge - expected) <= 1, {
+    expected,
+    edge,
+    data: result.data,
+  });
 }
 
 try {
-  writePreset("Seq", `tokens = "live_{{naming_sequenceNumber_3Digits}}", ${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 500, size_maxHeight = 500`);
+  writePreset(
+    "Seq",
+    `tokens = "live_{{naming_sequenceNumber_3Digits}}", ${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 500, size_maxHeight = 500`,
+  );
   writePreset("SeqFrom5", `tokens = "live_{{naming_sequenceNumber_3Digits}}", initialSequenceNumber = 5`);
   writePreset("SeqTotal", `tokens = "live_{{naming_sequenceNumber_2Digits}}_of_{{naming_sequenceTotal_2Digits}}"`);
   const three = [chart, ramp, wide];
   const numbered = ["live_001.jpg", "live_002.jpg", "live_003.jpg"];
   for (const onExisting of ["rename", "overwrite", "skip"]) {
     const { result, files } = await exportTo({ photo_ids: three, export_preset: "Seq", on_existing: onExisting });
-    check(`sequence with ${onExisting}`, result.data?.files.length === 3 && files.join() === numbered.join(), { files, exported: result.data?.files.length });
+    check(`sequence with ${onExisting}`, result.data?.files.length === 3 && files.join() === numbered.join(), {
+      files,
+      exported: result.data?.files.length,
+    });
   }
   const from5 = await exportTo({ photo_ids: three, export_preset: "SeqFrom5" });
   check("sequence from start number", from5.files.join() === "live_005.jpg,live_006.jpg,live_007.jpg", from5.files);
@@ -85,10 +104,19 @@ try {
 
   writePreset("Le500", `${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 500, size_maxHeight = 500`);
   writePreset("Wh", `${CONSTRAIN} size_resizeType = "wh", size_maxWidth = 300, size_maxHeight = 600`);
-  writePreset("Inch", `${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 5, size_maxHeight = 5, size_units = "inch", size_resolution = 72`);
-  writePreset("Cm", `${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 10, size_maxHeight = 10, size_units = "cm", size_resolution = 72, size_resolutionUnits = "cm"`);
+  writePreset(
+    "Inch",
+    `${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 5, size_maxHeight = 5, size_units = "inch", size_resolution = 72`,
+  );
+  writePreset(
+    "Cm",
+    `${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 10, size_maxHeight = 10, size_units = "cm", size_resolution = 72, size_resolutionUnits = "cm"`,
+  );
   writePreset("Free", "size_doConstrain = false, size_userWantsConstrain = false");
-  writePreset("Enlarge", `${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 500, size_maxHeight = 500, size_doNotEnlarge = false`);
+  writePreset(
+    "Enlarge",
+    `${CONSTRAIN} size_resizeType = "longEdge", size_maxWidth = 500, size_maxHeight = 500, size_doNotEnlarge = false`,
+  );
   await checkSize("preset long edge alone", { export_preset: "Le500" }, "500x400");
   await checkSize("width over long edge", { export_preset: "Le500", width: 200 }, "200x160");
   await checkSize("height over long edge", { export_preset: "Le500", height: 400 }, "500x400");
@@ -103,7 +131,13 @@ try {
   await checkSize("no preset height", { height: 400 }, "500x400");
   await checkSize("no preset never enlarges", { width: 5000 }, "1000x800");
 
-  for (const [megapixels, edge] of [[0.25, 559], [0.5, 791], [0.9, 1061], [1, 1118], [1.5, 1369]]) {
+  for (const [megapixels, edge] of [
+    [0.25, 559],
+    [0.5, 791],
+    [0.9, 1061],
+    [1, 1118],
+    [1.5, 1369],
+  ]) {
     const name = `Mp${String(megapixels).replace(".", "_")}`;
     writePreset(name, `${CONSTRAIN} size_resizeType = "megapixels", size_megapixels = ${megapixels}`);
     await checkLongEdge(`${megapixels} megapixels`, { export_preset: name }, edge);
@@ -116,27 +150,60 @@ try {
   writePreset("Plain", "");
   const readOnly = newDestination();
   fs.mkdirSync(readOnly, { mode: 0o555 });
-  const denied = await session.tool("export_photos", { photo_ids: [chart], export_preset: "Plain", export_preset_folder: FOLDER, destination: readOnly }, { timeoutMs: 60000 });
+  const denied = await session.tool(
+    "export_photos",
+    { photo_ids: [chart], export_preset: "Plain", export_preset_folder: FOLDER, destination: readOnly },
+    { timeoutMs: 60000 },
+  );
   fs.chmodSync(readOnly, 0o755);
   check("read-only destination is not counted", denied.isError && !denied.data, denied.text);
   const first = await exportTo({ export_preset: "Plain" });
-  const skipped = await session.tool("export_photos", { photo_ids: [chart], export_preset: "Plain", export_preset_folder: FOLDER, destination: first.destination, on_existing: "skip" }, { timeoutMs: 60000 });
-  check("skip is not counted as exported", skipped.data?.files.length === 0 && skipped.data?.skipped?.length === 1, skipped.data);
+  const skipped = await session.tool(
+    "export_photos",
+    {
+      photo_ids: [chart],
+      export_preset: "Plain",
+      export_preset_folder: FOLDER,
+      destination: first.destination,
+      on_existing: "skip",
+    },
+    { timeoutMs: 60000 },
+  );
+  check(
+    "skip is not counted as exported",
+    skipped.data?.files.length === 0 && skipped.data?.skipped?.length === 1,
+    skipped.data,
+  );
 
   for (const usePreset of [true, false]) {
     const destination = newDestination();
     const args = usePreset ? { export_preset: "Plain", export_preset_folder: FOLDER } : {};
-    const results = await Promise.all(Array.from({ length: 6 }, () => session.tool("export_photos", { photo_ids: [chart], destination, ...args }, { timeoutMs: 120000 })));
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        session.tool("export_photos", { photo_ids: [chart], destination, ...args }, { timeoutMs: 120000 }),
+      ),
+    );
     const reported = results.reduce((sum, result) => sum + (result.data?.files.length ?? 0), 0);
     const files = filesIn(destination);
     const refused = results.filter((result) => result.isError && result.text.includes("already running")).length;
-    check(`parallel exports run one at a time (preset ${usePreset})`, reported >= 1 && reported === files.length && reported + refused === 6, { reported, refused, files: files.length });
+    check(
+      `parallel exports run one at a time (preset ${usePreset})`,
+      reported >= 1 && reported === files.length && reported + refused === 6,
+      { reported, refused, files: files.length },
+    );
   }
   const parallelDestinations = [newDestination(), newDestination()];
-  const twoFolders = await Promise.all(parallelDestinations.map((destination) => session.tool("export_photos", { photo_ids: [chart], destination }, { timeoutMs: 120000 })));
+  const twoFolders = await Promise.all(
+    parallelDestinations.map((destination) =>
+      session.tool("export_photos", { photo_ids: [chart], destination }, { timeoutMs: 120000 }),
+    ),
+  );
   const twoFoldersReported = twoFolders.reduce((sum, result) => sum + (result.data?.files.length ?? 0), 0);
   const twoFoldersWritten = parallelDestinations.reduce((sum, destination) => sum + filesIn(destination).length, 0);
-  check("parallel exports to two folders", twoFoldersReported === 1 && twoFoldersWritten === 1, { twoFoldersReported, twoFoldersWritten });
+  check("parallel exports to two folders", twoFoldersReported === 1 && twoFoldersWritten === 1, {
+    twoFoldersReported,
+    twoFoldersWritten,
+  });
 
   for (const [name, settings, reason] of [
     ["QText", 'jpeg_quality = "high"', "jpeg_quality must be a number"],
@@ -146,9 +213,15 @@ try {
     ["ConstrainText", 'size_doConstrain = "yes"', "size_doConstrain must be true or false"],
   ]) {
     writePreset(name, settings);
-    const listed = (await session.tool("list_export_presets", { folder: FOLDER })).data.presets.find((preset) => preset.name === name);
+    const listed = (await session.tool("list_export_presets", { folder: FOLDER })).data.presets.find(
+      (preset) => preset.name === name,
+    );
     const { result, files } = await exportTo({ export_preset: name }, 20000);
-    check(`malformed preset ${name} is refused`, listed.usable === false && listed.unusable_reason.includes(reason) && result.isError && files.length === 0, { reason: listed.unusable_reason, text: result.text.slice(0, 120) });
+    check(
+      `malformed preset ${name} is refused`,
+      listed.usable === false && listed.unusable_reason.includes(reason) && result.isError && files.length === 0,
+      { reason: listed.unusable_reason, text: result.text.slice(0, 120) },
+    );
   }
 
   writePreset("Limit", "jpeg_useLimitSize = true, jpeg_limitSize = 20");
@@ -161,13 +234,28 @@ try {
   const userFile = writePreset("Clash", "");
   const catalogFile = writePreset("Clash", "", { root: catalogRoot });
   const ambiguous = await exportTo({ export_preset: "Clash" });
-  check("same preset in two scopes explains itself", ambiguous.result.isError && ambiguous.result.text.includes("file path"), ambiguous.result.text);
-  for (const [scope, file] of [["user", userFile], ["catalog", catalogFile]]) {
+  check(
+    "same preset in two scopes explains itself",
+    ambiguous.result.isError && ambiguous.result.text.includes("file path"),
+    ambiguous.result.text,
+  );
+  for (const [scope, file] of [
+    ["user", userFile],
+    ["catalog", catalogFile],
+  ]) {
     const { result, files } = await exportTo({ export_preset: file });
-    check(`select the ${scope} copy by path`, result.data?.preset?.scope === scope && files.length === 1, result.isError ? result.text : result.data.preset);
+    check(
+      `select the ${scope} copy by path`,
+      result.data?.preset?.scope === scope && files.length === 1,
+      result.isError ? result.text : result.data.preset,
+    );
   }
   const byFileName = await exportTo({ export_preset: "Plain.lrtemplate" });
-  check("file name with extension", byFileName.files.length === 1, byFileName.result.isError ? byFileName.result.text : byFileName.files);
+  check(
+    "file name with extension",
+    byFileName.files.length === 1,
+    byFileName.result.isError ? byFileName.result.text : byFileName.files,
+  );
 
   writePreset("Lodz", "", { title: "ŁÓDŹ" });
   writePreset("Cafe", "", { title: "Café" });
@@ -177,8 +265,13 @@ try {
   }
 
   const crlfFile = path.join(USER_ROOT, FOLDER, "Crlf.lrtemplate");
-  fs.writeFileSync(crlfFile, 's = {\r\n title = "Crlf\\\r\nName",\r\n type = "Export",\r\n value = { format = "JPEG" },\r\n}\r\n');
-  const crlf = (await session.tool("list_export_presets", { folder: FOLDER })).data.presets.find((preset) => preset.file === crlfFile);
+  fs.writeFileSync(
+    crlfFile,
+    's = {\r\n title = "Crlf\\\r\nName",\r\n type = "Export",\r\n value = { format = "JPEG" },\r\n}\r\n',
+  );
+  const crlf = (await session.tool("list_export_presets", { folder: FOLDER })).data.presets.find(
+    (preset) => preset.file === crlfFile,
+  );
   check("Windows line ends", crlf.usable === true && crlf.name === "Crlf\nName", crlf);
 } finally {
   await session.stop();

@@ -7,10 +7,16 @@ test("progress notifications stay associated with the live request", async () =>
   const sent = [];
   session.send = (message) => sent.push(message);
   const progress = [];
-  const pending = session.rpc("tools/call", { name: "export_photos" }, 1000, { onProgress: (value) => progress.push(value) });
+  const pending = session.rpc("tools/call", { name: "export_photos" }, 1000, {
+    onProgress: (value) => progress.push(value),
+  });
 
-  session.onStdout('{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"unrelated","progress":9}}\n');
-  session.onStdout('{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"live-1","progress":1,"total":2}}\n');
+  session.onStdout(
+    '{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"unrelated","progress":9}}\n',
+  );
+  session.onStdout(
+    '{"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"live-1","progress":1,"total":2}}\n',
+  );
   session.onStdout('{"jsonrpc":"2.0","id":1,"result":{"exported":2}}\n');
 
   assert.deepEqual(await pending, { exported: 2 });
@@ -30,7 +36,11 @@ test("client cancel sends the request id and ignores a late result", async () =>
   await rejected;
   session.onStdout('{"jsonrpc":"2.0","id":1,"result":{"imported":1}}\n');
 
-  assert.deepEqual(sent[1], { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1, reason: "Live test cancellation" } });
+  assert.deepEqual(sent[1], {
+    jsonrpc: "2.0",
+    method: "notifications/cancelled",
+    params: { requestId: 1, reason: "Live test cancellation" },
+  });
   assert.equal(session.pending.size, 0);
 });
 
@@ -46,7 +56,10 @@ test("a tool answer keeps every image block in order beside the envelope", async
   session.onStdout(`${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { content } })}\n`);
 
   const answer = await pending;
-  assert.deepEqual(answer.images.map((image) => image.data), ["AAA", "BBB"]);
+  assert.deepEqual(
+    answer.images.map((image) => image.data),
+    ["AAA", "BBB"],
+  );
   assert.equal(answer.image.data, "AAA");
   assert.equal(answer.data.regions.length, 2);
 });

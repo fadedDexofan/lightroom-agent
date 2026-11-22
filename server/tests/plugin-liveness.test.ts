@@ -7,7 +7,8 @@ import { createCallToolHandler } from '../src/tool-handler.js';
 
 type Ping = { timeoutMs: number; answer: (version?: string | null, build?: string) => void; fail: () => void };
 
-const INSTALL_FIX = "Lightroom has loaded a different plug-in build. If the intended build was installed or repaired, restart Lightroom to load it. Otherwise quit the connected clients, run this build's install-plugin, check its result, restart Lightroom, and reconnect.";
+const INSTALL_FIX =
+  "Lightroom has loaded a different plug-in build. If the intended build was installed or repaired, restart Lightroom to load it. Otherwise quit the connected clients, run this build's install-plugin, check its result, restart Lightroom, and reconnect.";
 
 const SERVER_VERSION = '1.2.3';
 const SERVER_BUILD = '0123456789abcdef';
@@ -21,7 +22,10 @@ function setup(opts: { connected?: () => boolean } = {}) {
         pings.push({
           timeoutMs,
           answer: (version = SERVER_VERSION, build = SERVER_BUILD) =>
-            resolve({ id: 'ping', result: { data: version === null ? { pong: true } : { pong: true, version, build } } }),
+            resolve({
+              id: 'ping',
+              result: { data: version === null ? { pong: true } : { pong: true, version, build } },
+            }),
           fail: () => reject(new Error('timeout')),
         });
       });
@@ -176,7 +180,7 @@ describe('PluginLiveness', () => {
     liveness.stop();
   });
 
-  it('accepts a plug-in that answers with the version and build of the server\'s bundled plug-in', async () => {
+  it("accepts a plug-in that answers with the version and build of the server's bundled plug-in", async () => {
     const { liveness, pings } = setup();
     liveness.check();
     pings[0].answer();
@@ -196,7 +200,9 @@ describe('PluginLiveness', () => {
     await flush();
 
     expect(liveness.admitted()).toBeNull();
-    expect(liveness.incompatibility()).toBe(`${INSTALL_FIX} Loaded: ${loaded}; this server's: version 1.2.3, build 0123456789abcdef.`);
+    expect(liveness.incompatibility()).toBe(
+      `${INSTALL_FIX} Loaded: ${loaded}; this server's: version 1.2.3, build 0123456789abcdef.`,
+    );
     expect(reporter.report).not.toHaveBeenCalled();
   });
 

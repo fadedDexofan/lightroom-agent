@@ -26,8 +26,7 @@ export interface BridgeOptions {
   log?: (msg: string) => void;
 }
 
-export const NO_OWNER_MESSAGE =
-  "No Lightroom Agent bridge owns the plugin connection yet. Retry in a few seconds.";
+export const NO_OWNER_MESSAGE = "No Lightroom Agent bridge owns the plugin connection yet. Retry in a few seconds.";
 
 export function unreachableOwnerMessage(pid: number): string {
   return (

@@ -20,10 +20,13 @@ function readManifestPrompts(): ManifestPrompt[] {
 }
 
 async function connect(): Promise<Client> {
-  const server = createMcpServer(createCallToolHandler({
-    admitted: () => null,
-    dispatcher: { call: async () => ({ id: 'x', result: {} }) },
-  }), createToolAccess({ toolsets: ['core'], readOnly: false }));
+  const server = createMcpServer(
+    createCallToolHandler({
+      admitted: () => null,
+      dispatcher: { call: async () => ({ id: 'x', result: {} }) },
+    }),
+    createToolAccess({ toolsets: ['core'], readOnly: false }),
+  );
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -36,18 +39,23 @@ describe('served prompts vs mcpb manifest', () => {
     const { prompts } = await client.listPrompts();
     await client.close();
 
-    expect(readManifestPrompts().map((prompt) => [prompt.name, prompt.description]))
-      .toEqual(prompts.map((prompt) => [prompt.name, prompt.description]));
+    expect(readManifestPrompts().map((prompt) => [prompt.name, prompt.description])).toEqual(
+      prompts.map((prompt) => [prompt.name, prompt.description]),
+    );
   });
 
   it('declares the joined, trimmed text Claude Desktop compares with each served prompt', async () => {
     const client = await connect();
     const declared = readManifestPrompts();
-    const served = await Promise.all(declared.map(async (prompt) => {
-      const { messages } = await client.getPrompt({ name: prompt.name });
-      return messages.map((message) => (message.content.type === 'text' ? message.content.text : ''))
-        .join('\n').trim();
-    }));
+    const served = await Promise.all(
+      declared.map(async (prompt) => {
+        const { messages } = await client.getPrompt({ name: prompt.name });
+        return messages
+          .map((message) => (message.content.type === 'text' ? message.content.text : ''))
+          .join('\n')
+          .trim();
+      }),
+    );
     await client.close();
 
     expect(declared.length).toBeGreaterThan(0);

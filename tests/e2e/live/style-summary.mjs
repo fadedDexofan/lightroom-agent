@@ -39,8 +39,14 @@ try {
   assert.equal(summary.groups[0].count, 1);
   console.log(JSON.stringify({ check: "single-photo", summary }));
   exportDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "lightroom-agent-style-export-"));
-  const exported = await tool("export_photos", { photo_ids: [photoId], destination: exportDirectory,
-    format: "jpeg", quality: 80, width: 1200, on_existing: "rename" });
+  const exported = await tool("export_photos", {
+    photo_ids: [photoId],
+    destination: exportDirectory,
+    format: "jpeg",
+    quality: 80,
+    width: 1200,
+    on_existing: "rename",
+  });
   assert.equal(exported.files.length, 1);
   const exportedSummary = await tool("summarize_develop_settings", { min_rating: 5, exported_only: true });
   assert.equal(exportedSummary.scanned, 1);
@@ -53,10 +59,15 @@ try {
     }
   } finally {
     try {
-      if (originalRating !== undefined) await tool("set_rating_and_flag", { photo_ids: [photoId], rating: originalRating });
+      if (originalRating !== undefined)
+        await tool("set_rating_and_flag", { photo_ids: [photoId], rating: originalRating });
       if (changedRatings.length) await tool("set_rating_and_flag", { photo_ids: changedRatings, rating: 5 });
       if (originalRating !== undefined) assert.equal((await session.photoMetadata(photoId)).rating, originalRating);
-      if (initial) assert.equal((await session.developSettings(photoId, ["Exposure2012"])).settings.Exposure2012, initial.Exposure2012);
+      if (initial)
+        assert.equal(
+          (await session.developSettings(photoId, ["Exposure2012"])).settings.Exposure2012,
+          initial.Exposure2012,
+        );
     } finally {
       if (exportDirectory) fs.rmSync(exportDirectory, { recursive: true });
       await session.stop();

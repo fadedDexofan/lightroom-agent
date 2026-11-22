@@ -128,20 +128,26 @@ describe('read-only mode', () => {
     }
   });
 
-  it.each([undefined, 'core', 'develop', 'masks', 'all'])('lists exactly enabled read tools for %p', async (toolsets) => {
-    pair = await connect({ toolsets, readOnly: true });
-    const listed = await pair.client.listTools();
-    const enabled = new Set(parseToolsets(toolsets));
-    expect(listed.tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS
-      .filter((tool) => enabled.has(tool.toolset) && TOOL_CLASSES[tool.name] === 'read-only')
-      .map((tool) => tool.name));
-  });
+  it.each([undefined, 'core', 'develop', 'masks', 'all'])(
+    'lists exactly enabled read tools for %p',
+    async (toolsets) => {
+      pair = await connect({ toolsets, readOnly: true });
+      const listed = await pair.client.listTools();
+      const enabled = new Set(parseToolsets(toolsets));
+      expect(listed.tools.map((tool) => tool.name)).toEqual(
+        TOOL_CONTRACTS.filter((tool) => enabled.has(tool.toolset) && TOOL_CLASSES[tool.name] === 'read-only').map(
+          (tool) => tool.name,
+        ),
+      );
+    },
+  );
 
   it('rejects every write, hidden read, unknown and test-only call before dispatch', async () => {
     const call = jest.fn<CallFn>();
     pair = await connect({ readOnly: true, call });
-    const names = TOOL_CONTRACTS.filter((tool) => !tool.annotations.readOnlyHint || tool.toolset !== 'core')
-      .map((tool) => tool.name);
+    const names = TOOL_CONTRACTS.filter((tool) => !tool.annotations.readOnlyHint || tool.toolset !== 'core').map(
+      (tool) => tool.name,
+    );
     for (const name of [...names, 'set_rating', 'set_selection', 'not_a_tool']) {
       const result = asToolResult(await pair.client.callTool({ name, arguments: {} }));
       expect(result.isError).toBe(true);
@@ -173,7 +179,9 @@ describe('read-only mode', () => {
   it('refuses open_in_develop as an unknown property before dispatch', async () => {
     const call = jest.fn<CallFn>();
     pair = await connect({ readOnly: true, call });
-    const refused = asToolResult(await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_id: 914, open_in_develop: 'fail' } }));
+    const refused = asToolResult(
+      await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_id: 914, open_in_develop: 'fail' } }),
+    );
     expect(refused.isError).toBe(true);
     expect(refused.content[0].text).toContain('unknown property \\"open_in_develop\\"');
     expect(call).not.toHaveBeenCalled();
@@ -189,7 +197,9 @@ describe('read-only mode', () => {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
     const before = await client.listTools();
     options.readOnly = false;
-    const blocked = asToolResult(await client.callTool({ name: 'set_rating_and_flag', arguments: { photo_ids: [914], rating: 3 } }));
+    const blocked = asToolResult(
+      await client.callTool({ name: 'set_rating_and_flag', arguments: { photo_ids: [914], rating: 3 } }),
+    );
     expect(blocked.isError).toBe(true);
     expect(callTool).not.toHaveBeenCalled();
     const read = asToolResult(await client.callTool({ name: 'list_collections', arguments: {} }));
@@ -214,13 +224,18 @@ describe('read-only mode', () => {
   });
 });
 
-async function connect(opts: { ready?: boolean; call?: CallFn; toolsets?: string; readOnly?: boolean } = {}): Promise<Pair> {
-  const server = createMcpServer(createCallToolHandler({
-    admitted: () => (opts.ready ?? true ? 0 : null),
-    dispatcher: {
-      call: opts.call ?? (async () => ({ id: 'x', result: {} })),
-    },
-  }), createToolAccess({ toolsets: parseToolsets(opts.toolsets), readOnly: opts.readOnly ?? false }));
+async function connect(
+  opts: { ready?: boolean; call?: CallFn; toolsets?: string; readOnly?: boolean } = {},
+): Promise<Pair> {
+  const server = createMcpServer(
+    createCallToolHandler({
+      admitted: () => ((opts.ready ?? true) ? 0 : null),
+      dispatcher: {
+        call: opts.call ?? (async () => ({ id: 'x', result: {} })),
+      },
+    }),
+    createToolAccess({ toolsets: parseToolsets(opts.toolsets), readOnly: opts.readOnly ?? false }),
+  );
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -229,7 +244,6 @@ async function connect(opts: { ready?: boolean; call?: CallFn; toolsets?: string
 
 describe('createMcpServer', () => {
   let pair: Pair | null = null;
-
 
   it.each(['set_selection', 'cancel', 'ping', 'not_a_tool'])(
     'refuses unpublished tool %s before forwarding to a broker',
@@ -242,9 +256,16 @@ describe('createMcpServer', () => {
       await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
       const result = asToolResult(await client.callTool({ name, arguments: {} }));
       expect(result).toEqual({
-        isError: true, content: [{ type: 'text', text: JSON.stringify({
-          outcome: 'failed', error: `Unknown tool "${name}". Only listed tools can be called.`,
-        }) }],
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              outcome: 'failed',
+              error: `Unknown tool "${name}". Only listed tools can be called.`,
+            }),
+          },
+        ],
       });
       expect(callTool).not.toHaveBeenCalled();
     },
@@ -254,17 +275,32 @@ describe('createMcpServer', () => {
     pair = await connect();
     const instructions = pair.client.getInstructions();
     for (const phrase of [
-      'run one at a time in arrival order', 'fails without effect if its turn does not come',
-      'certification run', 'process version', 'read back', 'roll back',
-      'normalized 0 to 1', 'top-left', 'y increasing down', 'rendered preview',
-      'after the develop crop, straighten and displayed orientation', 'about 0.05 of the frame',
-      'Photo ids the catalog resolved are strings', 'get_develop_settings is the one develop read', 'listed in adjusted',
-      'set_crop', 'set_treatment', 'get_photo_detail', 'collapsed stack',
-      'describe_develop_keys with mask_id reports where Lightroom\'s live range differs',
-      'Every catalog write waits up to 10 s', 'a call that had written nothing is failed',
+      'run one at a time in arrival order',
+      'fails without effect if its turn does not come',
+      'certification run',
+      'process version',
+      'read back',
+      'roll back',
+      'normalized 0 to 1',
+      'top-left',
+      'y increasing down',
+      'rendered preview',
+      'after the develop crop, straighten and displayed orientation',
+      'about 0.05 of the frame',
+      'Photo ids the catalog resolved are strings',
+      'get_develop_settings is the one develop read',
+      'listed in adjusted',
+      'set_crop',
+      'set_treatment',
+      'get_photo_detail',
+      'collapsed stack',
+      "describe_develop_keys with mask_id reports where Lightroom's live range differs",
+      'Every catalog write waits up to 10 s',
+      'a call that had written nothing is failed',
       'keeps the turn until Lightroom has finished it or 60 s have passed since the timeout',
       'a call still running after that can overlap the next one, and its outcome stays unknown',
-    ]) expect(instructions).toContain(phrase);
+    ])
+      expect(instructions).toContain(phrase);
     const second = await connect();
     try {
       expect(second.client.getInstructions()).toBe(instructions);
@@ -278,20 +314,83 @@ describe('createMcpServer', () => {
     pair = await connect();
     const instructions = pair.client.getInstructions() ?? '';
     const required: Record<string, string[]> = {
-      create_range_mask: ['sRGB', 'copy_sample_from', 'second sample point', 'Lightroom crashes', '0.01', 'different colors'],
-      create_mask: ['ErrorReason', 'no alert to dismiss', 'omitted sliders are neutral', 'AI process is running', 'single-person', 'writes nothing more', 'does not prove'],
-      create_mask_batch: ['saved settings', 'does not prove', 'reports finding nothing', 'compare previews', 'remaining', 'would not fit its time budget'],
+      create_range_mask: [
+        'sRGB',
+        'copy_sample_from',
+        'second sample point',
+        'Lightroom crashes',
+        '0.01',
+        'different colors',
+      ],
+      create_mask: [
+        'ErrorReason',
+        'no alert to dismiss',
+        'omitted sliders are neutral',
+        'AI process is running',
+        'single-person',
+        'writes nothing more',
+        'does not prove',
+      ],
+      create_mask_batch: [
+        'saved settings',
+        'does not prove',
+        'reports finding nothing',
+        'compare previews',
+        'remaining',
+        'would not fit its time budget',
+      ],
       invert_mask: ['only one component', 'returned mask_id'],
       combine_mask: ['intersect', 'inverted true', 'ErrorReason', 'saved settings'],
-      get_photo_detail: ['render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}', 'a string ("export" today)', 'a list of phrases', '"the exported mark"'],
-      export_photos: ['get_photo_detail or another export', 'refused, not queued', 'separator between names (/ on macOS'],
-      render_photo: ['unchecked renders the existing AI computation', 'which can visibly change the photo', 'Cancel stops before rendering', 'a timeout while the dialog is open is unknown', 'not re-encoded', 'once per edit', 'lapses 300 s'],
-      set_mask_adjustments: ['saved settings by mask_id', 'six decimal places', 'pending in Develop are committed before a call reads or writes', 'one history step', 'naming what Lightroom stored'],
-      set_mask_curves: ['saved settings by mask_id', 'at most 16 points', 'pending in Develop are committed before a call reads or writes', 'naming what Lightroom stored'],
-      edit_mask_point_colors: ['stores the source rounded to two decimals', 'centred on the rounded source', 'already holds', 'six decimals', 'saved settings by mask_id'],
+      get_photo_detail: [
+        'render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}',
+        'a string ("export" today)',
+        'a list of phrases',
+        '"the exported mark"',
+      ],
+      export_photos: [
+        'get_photo_detail or another export',
+        'refused, not queued',
+        'separator between names (/ on macOS',
+      ],
+      render_photo: [
+        'unchecked renders the existing AI computation',
+        'which can visibly change the photo',
+        'Cancel stops before rendering',
+        'a timeout while the dialog is open is unknown',
+        'not re-encoded',
+        'once per edit',
+        'lapses 300 s',
+      ],
+      set_mask_adjustments: [
+        'saved settings by mask_id',
+        'six decimal places',
+        'pending in Develop are committed before a call reads or writes',
+        'one history step',
+        'naming what Lightroom stored',
+      ],
+      set_mask_curves: [
+        'saved settings by mask_id',
+        'at most 16 points',
+        'pending in Develop are committed before a call reads or writes',
+        'naming what Lightroom stored',
+      ],
+      edit_mask_point_colors: [
+        'stores the source rounded to two decimals',
+        'centred on the rounded source',
+        'already holds',
+        'six decimals',
+        'saved settings by mask_id',
+      ],
       get_photo_preview: ['enlargement of a smaller cached preview', 'cropped photo', 'get_photo_detail'],
       get_photo_previews: ['enlargement of a smaller cached preview', 'cropped photo', 'get_photo_detail'],
-      list_masks: ['saved settings, without opening Develop', 'newest first', 'subtype subject, sky, background, people or landscape', 'add part', 'stored kind as type and no subtype', 'empty list means'],
+      list_masks: [
+        'saved settings, without opening Develop',
+        'newest first',
+        'subtype subject, sky, background, people or landscape',
+        'add part',
+        'stored kind as type and no subtype',
+        'empty list means',
+      ],
     };
     for (const [name, phrases] of Object.entries(required)) {
       const tool = TOOL_CONTRACTS.find((entry) => entry.name === name);
@@ -299,7 +398,13 @@ describe('createMcpServer', () => {
       const reachable = `${tool ? publishedDescription(tool) : ''} ${JSON.stringify(tool?.inputSchema)} ${instructions}`;
       for (const phrase of phrases) expect(reachable).toContain(phrase);
     }
-    for (const name of ['create_gradient_mask', 'update_gradient_mask', 'create_brush_mask', 'add_brush_strokes', 'create_range_mask']) {
+    for (const name of [
+      'create_gradient_mask',
+      'update_gradient_mask',
+      'create_brush_mask',
+      'add_brush_strokes',
+      'create_range_mask',
+    ]) {
       const tool = TOOL_CONTRACTS.find((entry) => entry.name === name);
       expect(tool?.description).toContain('coordinate rules');
       expect(instructions).toContain('Positions for gradient, brush and range masks');
@@ -324,14 +429,41 @@ describe('createMcpServer', () => {
     });
 
     const coreNames = [
-      'search_photos', 'get_selected_photos', 'get_photo_metadata', 'get_photo_preview',
-      'get_photo_detail', 'render_photo', 'get_photo_previews', 'find_duplicate_groups', 'get_photo_stats', 'set_gps',
-      'set_location', 'set_metadata', 'set_ai_metadata', 'get_ai_metadata', 'list_folders',
-      'get_folder_photos', 'list_collections', 'create_collection', 'create_smart_collection',
-      'add_to_collection', 'get_collection_photos', 'remove_from_collection', 'delete_collection',
-      'set_keywords', 'remove_keyword_subtree', 'list_keywords', 'rename_keyword', 'undo_last_step',
-      'set_rating_and_flag', 'set_color_label', 'remove_photos_from_catalog', 'import_photos',
-      'export_photos', 'export_photo_metadata', 'list_export_presets',
+      'search_photos',
+      'get_selected_photos',
+      'get_photo_metadata',
+      'get_photo_preview',
+      'get_photo_detail',
+      'render_photo',
+      'get_photo_previews',
+      'find_duplicate_groups',
+      'get_photo_stats',
+      'set_gps',
+      'set_location',
+      'set_metadata',
+      'set_ai_metadata',
+      'get_ai_metadata',
+      'list_folders',
+      'get_folder_photos',
+      'list_collections',
+      'create_collection',
+      'create_smart_collection',
+      'add_to_collection',
+      'get_collection_photos',
+      'remove_from_collection',
+      'delete_collection',
+      'set_keywords',
+      'remove_keyword_subtree',
+      'list_keywords',
+      'rename_keyword',
+      'undo_last_step',
+      'set_rating_and_flag',
+      'set_color_label',
+      'remove_photos_from_catalog',
+      'import_photos',
+      'export_photos',
+      'export_photo_metadata',
+      'list_export_presets',
     ];
 
     it.each([undefined, '', '   ', 'core'])('toolset %p lists only approved core tools', async (toolsets) => {
@@ -360,11 +492,18 @@ describe('createMcpServer', () => {
     });
 
     it.each([
-      ['set_develop_settings', 'develop'], ['create_virtual_copies', 'develop'],
-      ['summarize_develop_settings', 'develop'], ['list_masks', 'masks'],
+      ['set_develop_settings', 'develop'],
+      ['create_virtual_copies', 'develop'],
+      ['summarize_develop_settings', 'develop'],
+      ['list_masks', 'masks'],
     ])('toolset default refuses hidden %s before dispatcher', async (name, group) => {
       let called = false;
-      pair = await connect({ call: async () => { called = true; return { id: '1', result: {} }; } });
+      pair = await connect({
+        call: async () => {
+          called = true;
+          return { id: '1', result: {} };
+        },
+      });
       const result = asToolResult(await pair.client.callTool({ name, arguments: {} }));
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('LIGHTROOM_AGENT_TOOLSETS');
@@ -374,7 +513,10 @@ describe('createMcpServer', () => {
 
     it('toolset selection copies options at startup and ignores later env changes', async () => {
       const toolsets: Array<'core' | 'develop' | 'masks'> = ['core'];
-      const server = createMcpServer(async () => ({ content: [{ type: 'text', text: '{}' }] }), createToolAccess({ toolsets, readOnly: false }));
+      const server = createMcpServer(
+        async () => ({ content: [{ type: 'text', text: '{}' }] }),
+        createToolAccess({ toolsets, readOnly: false }),
+      );
       const client = new Client({ name: 'fixed-toolsets', version: '1.0.0' });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -395,8 +537,13 @@ describe('createMcpServer', () => {
 
     it('toolset gate refuses hidden tools before a forwarding caller', async () => {
       let called = false;
-      const server = createMcpServer(async () => { called = true; return { content: [{ type: 'text', text: '{}' }] }; },
-        createToolAccess({ toolsets: ['core'], readOnly: false }));
+      const server = createMcpServer(
+        async () => {
+          called = true;
+          return { content: [{ type: 'text', text: '{}' }] };
+        },
+        createToolAccess({ toolsets: ['core'], readOnly: false }),
+      );
       const client = new Client({ name: 'forwarding-toolsets', version: '1.0.0' });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -414,7 +561,9 @@ describe('createMcpServer', () => {
     pair = await connect();
     const { tools } = await pair.client.listTools();
     const hotNames = ['search_photos', 'get_photo_preview', 'set_rating_and_flag'];
-    expect(tools.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => tool.name)).toEqual(hotNames);
+    expect(tools.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => tool.name)).toEqual(
+      hotNames,
+    );
     for (const tool of tools) {
       if (hotNames.includes(tool.name)) expect(tool._meta).toEqual({ 'anthropic/alwaysLoad': true });
       else expect(tool).not.toHaveProperty('_meta');
@@ -433,18 +582,28 @@ describe('createMcpServer', () => {
     }
   });
 
-
   it('sends progress to the connected client without resolving the tool early', async () => {
-    pair = await connect({ call: async (_action, _params, _timeout, options) => {
-      options?.onProgress?.({ progress: 1, total: 2, message: 'a.jpg' });
-      options?.onProgress?.({ progress: 2, total: 2, message: 'b.jpg' });
-      return { id: '1', result: { data: { exported: 2 } } };
-    } });
+    pair = await connect({
+      call: async (_action, _params, _timeout, options) => {
+        options?.onProgress?.({ progress: 1, total: 2, message: 'a.jpg' });
+        options?.onProgress?.({ progress: 2, total: 2, message: 'b.jpg' });
+        return { id: '1', result: { data: { exported: 2 } } };
+      },
+    });
     const progress: unknown[] = [];
 
-    const result = asToolResult(await pair.client.callTool({ name: 'export_photos', arguments: {
-      photo_ids: ['1', '2'], destination: '/out',
-    } }, { onprogress: (value) => progress.push(value) }));
+    const result = asToolResult(
+      await pair.client.callTool(
+        {
+          name: 'export_photos',
+          arguments: {
+            photo_ids: ['1', '2'],
+            destination: '/out',
+          },
+        },
+        { onprogress: (value) => progress.push(value) },
+      ),
+    );
 
     expect(progress).toEqual([
       { progress: 1, total: 2, message: 'a.jpg' },
@@ -455,14 +614,22 @@ describe('createMcpServer', () => {
 
   it('no progressToken leaves the result unchanged and requests no progress', async () => {
     let reporting = true;
-    pair = await connect({ call: async (_action, _params, _timeout, options) => {
-      reporting = options?.onProgress !== undefined;
-      return { id: '1', result: { data: { exported: 2 } } };
-    } });
+    pair = await connect({
+      call: async (_action, _params, _timeout, options) => {
+        reporting = options?.onProgress !== undefined;
+        return { id: '1', result: { data: { exported: 2 } } };
+      },
+    });
 
-    const result = asToolResult(await pair.client.callTool({ name: 'export_photos', arguments: {
-      photo_ids: ['1', '2'], destination: '/out',
-    } }));
+    const result = asToolResult(
+      await pair.client.callTool({
+        name: 'export_photos',
+        arguments: {
+          photo_ids: ['1', '2'],
+          destination: '/out',
+        },
+      }),
+    );
 
     expect(reporting).toBe(false);
     expect(dataOf(result)).toEqual({ exported: 2 });
@@ -470,20 +637,40 @@ describe('createMcpServer', () => {
 
   it('forwards client cancel to the running dispatcher request', async () => {
     let entered: () => void = () => {};
-    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     let cancelled: () => void = () => {};
-    const stopped = new Promise<void>((resolve) => { cancelled = resolve; });
-    pair = await connect({ call: async (_action, _params, _timeout, options) => {
-      entered();
-      await new Promise<void>((resolve) => options?.signal?.addEventListener('abort', () => {
-        cancelled(); resolve();
-      }, { once: true }));
-      return { id: '1', result: { data: { complete: false } } };
-    } });
+    const stopped = new Promise<void>((resolve) => {
+      cancelled = resolve;
+    });
+    pair = await connect({
+      call: async (_action, _params, _timeout, options) => {
+        entered();
+        await new Promise<void>((resolve) =>
+          options?.signal?.addEventListener(
+            'abort',
+            () => {
+              cancelled();
+              resolve();
+            },
+            { once: true },
+          ),
+        );
+        return { id: '1', result: { data: { complete: false } } };
+      },
+    });
     const controller = new AbortController();
-    const pending = pair.client.callTool({ name: 'export_photos', arguments: {
-      photo_ids: ['1', '2'], destination: '/out',
-    } }, { signal: controller.signal });
+    const pending = pair.client.callTool(
+      {
+        name: 'export_photos',
+        arguments: {
+          photo_ids: ['1', '2'],
+          destination: '/out',
+        },
+      },
+      { signal: controller.signal },
+    );
     const rejection = expect(pending).rejects.toThrow();
 
     await started;
@@ -506,9 +693,10 @@ describe('createMcpServer', () => {
         });
         expect({ name: tool.name, annotations: tool.annotations }).toEqual({
           name: tool.name,
-          annotations: classification === 'read-only'
-            ? { readOnlyHint: true, openWorldHint: false }
-            : { readOnlyHint: false, destructiveHint: classification === 'destructive', openWorldHint: false },
+          annotations:
+            classification === 'read-only'
+              ? { readOnlyHint: true, openWorldHint: false }
+              : { readOnlyHint: false, destructiveHint: classification === 'destructive', openWorldHint: false },
         });
       }
     });
@@ -525,32 +713,68 @@ describe('createMcpServer', () => {
 
   it('preserves preview image blocks over MCP', async () => {
     const image = jpeg.encode({ width: 2, height: 1, data: Buffer.alloc(8, 255) }, 90).data.toString('base64');
-    pair = await connect({ call: async () => ({
-      id: '1', result: { data: { photo_id: 914, image: { mime_type: 'image/jpeg', data: image } } },
-    }) });
+    pair = await connect({
+      call: async () => ({
+        id: '1',
+        result: { data: { photo_id: 914, image: { mime_type: 'image/jpeg', data: image } } },
+      }),
+    });
 
     const result = await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_id: 914 } });
 
     expect(result.isError).toBeUndefined();
     expect(result.content).toEqual([
-      { type: 'text', text: JSON.stringify({ outcome: 'done', data: {
-        photo_id: '914', requested_size: 864, width: 2, height: 1, bytes: Buffer.from(image, 'base64').length,
-        scaled_by_server: false } }) },
+      {
+        type: 'text',
+        text: JSON.stringify({
+          outcome: 'done',
+          data: {
+            photo_id: '914',
+            requested_size: 864,
+            width: 2,
+            height: 1,
+            bytes: Buffer.from(image, 'base64').length,
+            scaled_by_server: false,
+          },
+        }),
+      },
       { type: 'image', data: image, mimeType: 'image/jpeg' },
     ]);
   });
 
   it('preserves all batch preview image blocks over MCP', async () => {
     const image = jpeg.encode({ width: 2, height: 1, data: Buffer.alloc(8, 255) }, 90).data.toString('base64');
-    pair = await connect({ call: async (_action, params) => ({ id: '1', result: { data: {
-      photo_id: (params as { photo_ids: number[] }).photo_ids[0], image: { mime_type: 'image/jpeg', data: image },
-    } } }) });
+    pair = await connect({
+      call: async (_action, params) => ({
+        id: '1',
+        result: {
+          data: {
+            photo_id: (params as { photo_ids: number[] }).photo_ids[0],
+            image: { mime_type: 'image/jpeg', data: image },
+          },
+        },
+      }),
+    });
     const result = await pair.client.callTool({ name: 'get_photo_previews', arguments: { photo_ids: [1, 2, 3] } });
     expect(result.isError).toBeUndefined();
     expect(result.content).toEqual([
-      { type: 'text', text: JSON.stringify({ outcome: 'done', data: { previews: [1, 2, 3].map(id => ({
-        photo_id: String(id), requested_size: 256, width: 2, height: 1, bytes: Buffer.from(image, 'base64').length,
-        scaled_by_server: false, image_index: id })) } }) },
+      {
+        type: 'text',
+        text: JSON.stringify({
+          outcome: 'done',
+          data: {
+            previews: [1, 2, 3].map((id) => ({
+              photo_id: String(id),
+              requested_size: 256,
+              width: 2,
+              height: 1,
+              bytes: Buffer.from(image, 'base64').length,
+              scaled_by_server: false,
+              image_index: id,
+            })),
+          },
+        }),
+      },
       ...[1, 2, 3].map(() => ({ type: 'image', data: image, mimeType: 'image/jpeg' })),
     ]);
   });
@@ -562,17 +786,25 @@ describe('createMcpServer', () => {
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toMatchObject({ name: 'lightroom-agent', title: 'Lightroom agent' });
     const result = await pair.client.getPrompt({ name: prompts[0].name });
-    expect(result.messages).toEqual([{
-      role: 'user',
-      content: { type: 'text', text: expect.stringContaining('# SKILL.md\n\n---\nname: lightroom-agent\n') },
-    }]);
+    expect(result.messages).toEqual([
+      {
+        role: 'user',
+        content: { type: 'text', text: expect.stringContaining('# SKILL.md\n\n---\nname: lightroom-agent\n') },
+      },
+    ]);
     const text = (result.messages[0].content as { text: string }).text;
     expect(text).toContain('\n# references/tools/tools.md\n\n# Tools: mechanics');
     expect([...text.matchAll(/^# (references\/.+\.md)$/gm)].map((m) => m[1])).toEqual([
-      'references/tools/masks.md', 'references/tools/tools.md',
-      'references/workflow/cull.md', 'references/workflow/development.md', 'references/workflow/foundations.md',
-      'references/workflow/looks.md', 'references/workflow/publishing.md',
-      'references/genres/architecture-landscape.md', 'references/genres/portrait-product.md', 'references/genres/wildlife.md',
+      'references/tools/masks.md',
+      'references/tools/tools.md',
+      'references/workflow/cull.md',
+      'references/workflow/development.md',
+      'references/workflow/foundations.md',
+      'references/workflow/looks.md',
+      'references/workflow/publishing.md',
+      'references/genres/architecture-landscape.md',
+      'references/genres/portrait-product.md',
+      'references/genres/wildlife.md',
     ]);
     expect(text).toContain('](SKILL.md#read-every-replys-outcome)');
     expect(text).toContain('](references/workflow/cull.md#the-procedure)');

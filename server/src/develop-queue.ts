@@ -18,13 +18,17 @@ export class DevelopQueue {
     const startedAt = Date.now();
     const previous = this.tail;
     let release!: () => void;
-    this.tail = new Promise<void>((resolve) => { release = resolve; });
+    this.tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
 
     let timer: NodeJS.Timeout | undefined;
     let onAbort: (() => void) | undefined;
     const waited = await Promise.race([
       previous.then(() => "turn" as const),
-      new Promise<"timeout">((resolve) => { timer = setTimeout(() => resolve("timeout"), budgetMs); }),
+      new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), budgetMs);
+      }),
       new Promise<"aborted">((resolve) => {
         if (signal?.aborted) resolve("aborted");
         onAbort = () => resolve("aborted");
@@ -40,15 +44,24 @@ export class DevelopQueue {
       void previous.then(release);
       return {
         ran: false,
-        reason: waited === "aborted"
-          ? `Request cancelled while waiting for ${busy}; nothing was done.`
-          : `Lightroom was busy with ${busy} for ${Math.round((Date.now() - startedAt) / 1000)} s; nothing was done.`,
+        reason:
+          waited === "aborted"
+            ? `Request cancelled while waiting for ${busy}; nothing was done.`
+            : `Lightroom was busy with ${busy} for ${Math.round((Date.now() - startedAt) / 1000)} s; nothing was done.`,
       };
     }
     this.running = name;
     const finishing: Promise<void>[] = [];
     try {
-      return { ran: true, value: await work({ remainingMs, outlive: (late) => { finishing.push(late); } }) };
+      return {
+        ran: true,
+        value: await work({
+          remainingMs,
+          outlive: (late) => {
+            finishing.push(late);
+          },
+        }),
+      };
     } finally {
       if (finishing.length) {
         this.running = `${name}, still finishing in Lightroom after it timed out`;

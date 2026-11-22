@@ -24,7 +24,13 @@ import { serverIdentity } from "./server-identity.js";
 import { refusedResponse } from "./tool-result.js";
 import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
-import { acquireInstanceLock, LockHeldError, lockHolder, lockHolderUnresponsive, type InstanceLock } from "./instance-lock.js";
+import {
+  acquireInstanceLock,
+  LockHeldError,
+  lockHolder,
+  lockHolderUnresponsive,
+  type InstanceLock,
+} from "./instance-lock.js";
 import { admitLeader, describeInstall, installPlugin } from "./install-plugin.js";
 
 const PING_TIMEOUT_MS = 10_000;
@@ -122,20 +128,21 @@ async function main() {
   const pairing = pairingOf(here);
   if (pairing.kind === "unpaired") console.error(pairing.reason);
 
-  const bridge: Backend = pairing.kind === "unpaired" ? refusing(pairing.reason) : new Bridge({
-    ipcPath: brokerPath(REQUEST_PORT, RESPONSE_PORT),
-    server: serverIdentity(here, pairing.plugin.build),
-    acquireLock: () => acquireInstanceLock(REQUEST_PORT, RESPONSE_PORT),
-    startLeader: () => startLeader(pairing, REQUEST_PORT, RESPONSE_PORT, cli.command === "stdio"),
-    readToken: tryReadToken,
-    holderUnresponsive: () => lockHolderUnresponsive(REQUEST_PORT, RESPONSE_PORT),
-    lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
-  });
+  const bridge: Backend =
+    pairing.kind === "unpaired"
+      ? refusing(pairing.reason)
+      : new Bridge({
+          ipcPath: brokerPath(REQUEST_PORT, RESPONSE_PORT),
+          server: serverIdentity(here, pairing.plugin.build),
+          acquireLock: () => acquireInstanceLock(REQUEST_PORT, RESPONSE_PORT),
+          startLeader: () => startLeader(pairing, REQUEST_PORT, RESPONSE_PORT, cli.command === "stdio"),
+          readToken: tryReadToken,
+          holderUnresponsive: () => lockHolderUnresponsive(REQUEST_PORT, RESPONSE_PORT),
+          lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
+        });
 
   if (cli.command === "call") {
-    const callTool = access.restrict(
-      (name, args, options) => bridge.callTool(name, args, options),
-    );
+    const callTool = access.restrict((name, args, options) => bridge.callTool(name, args, options));
     try {
       const result = await callTool(cli.name, cli.args);
       process.stdout.write(JSON.stringify(result) + "\n");
@@ -261,8 +268,7 @@ function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: numbe
   });
   requestSocket.connect();
 
-  const socketsConnected = () =>
-    requestSocket.isConnected() && (responseSocket?.isConnected() ?? false);
+  const socketsConnected = () => requestSocket.isConnected() && (responseSocket?.isConnected() ?? false);
 
   liveness.start();
   let loggedIncompatibility: string | null = null;
@@ -309,16 +315,19 @@ function runInstallPlugin(pairing: Pairing): void {
   try {
     lock = acquireInstanceLock(requestPort(), responsePort());
   } catch (err) {
-    console.error(err instanceof LockHeldError
-      ? `A running lightroom-agent server owns the plug-in (pid ${err.pid}); quit its clients, then install again`
-      : `Install failed: ${(err as Error).message}`);
+    console.error(
+      err instanceof LockHeldError
+        ? `A running lightroom-agent server owns the plug-in (pid ${err.pid}); quit its clients, then install again`
+        : `Install failed: ${(err as Error).message}`,
+    );
     process.exitCode = 1;
     return;
   }
   try {
     const result = installPlugin(pairing);
     console.error(describeInstall(result));
-    if (result.status === "conflict" || result.status === "foreign" || result.status === "invalid") process.exitCode = 1;
+    if (result.status === "conflict" || result.status === "foreign" || result.status === "invalid")
+      process.exitCode = 1;
   } catch (err) {
     console.error(`Install failed: ${(err as Error).message}`);
     process.exitCode = 1;

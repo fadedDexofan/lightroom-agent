@@ -34,10 +34,17 @@ function rendered(image: string, photoId: number | string = 914): PluginResponse
   return { id: 'preview', result: { data: { photo_id: photoId, image: { mime_type: 'image/jpeg', data: image } } } };
 }
 
-const OPEN_IN_DEVELOP_REASON = (id: number | string) => `This tool takes no thumbnail of photo ${id} while it is the photo open in Develop: Lightroom's thumbnail there can be stale or an enlarged low-resolution copy`;
-const WAY_OUT = ' Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode).';
+const OPEN_IN_DEVELOP_REASON = (id: number | string) =>
+  `This tool takes no thumbnail of photo ${id} while it is the photo open in Develop: Lightroom's thumbnail there can be stale or an enlarged low-resolution copy`;
+const WAY_OUT =
+  ' Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode).';
 function blockedInDevelop(id: number | string): PluginResponse {
-  return { id: 'preview', result: { failed: [{ photo_id: String(id), reason: OPEN_IN_DEVELOP_REASON(id), cause: 'active_in_develop' } as never] } };
+  return {
+    id: 'preview',
+    result: {
+      failed: [{ photo_id: String(id), reason: OPEN_IN_DEVELOP_REASON(id), cause: 'active_in_develop' } as never],
+    },
+  };
 }
 
 function makeHandler(response: PluginResponse = rendered(halves(32, 16))) {
@@ -61,7 +68,12 @@ describe('get_photo_preview', () => {
     const { encoded } = returnedImage(result);
     expect(encoded.toString('base64')).toBe(source);
     expect(dataOf(result)).toEqual({
-      photo_id: '914', requested_size: 1024, width: 32, height: 16, bytes: encoded.length, scaled_by_server: false,
+      photo_id: '914',
+      requested_size: 1024,
+      width: 32,
+      height: 16,
+      bytes: encoded.length,
+      scaled_by_server: false,
     });
   });
 
@@ -71,7 +83,12 @@ describe('get_photo_preview', () => {
     const { encoded, decoded } = returnedImage(result);
     expect([decoded.width, decoded.height]).toEqual([64, 32]);
     expect(dataOf(result)).toEqual({
-      photo_id: '914', requested_size: 64, width: 64, height: 32, bytes: encoded.length, scaled_by_server: true,
+      photo_id: '914',
+      requested_size: 64,
+      width: 64,
+      height: 32,
+      bytes: encoded.length,
+      scaled_by_server: true,
     });
     const at = (x: number) => Array.from(decoded.data.subarray((16 * 64 + x) * 4, (16 * 64 + x) * 4 + 3));
     expect(at(8)[0]).toBeGreaterThan(250);
@@ -94,7 +111,8 @@ describe('get_photo_preview', () => {
     await handler('get_photo_preview', { photo_id: 914 });
     await handler('get_photo_preview', { photo_id: 914, size: 512.5 });
     expect(call.mock.calls.map(([, params]) => params)).toEqual([
-      { photo_ids: [914], size: 864 }, { photo_ids: [914], size: 512 },
+      { photo_ids: [914], size: 864 },
+      { photo_ids: [914], size: 512 },
     ]);
   });
 
@@ -107,9 +125,15 @@ describe('get_photo_preview', () => {
   });
 
   it('answers an image Lightroom could not render as failed for that photo', async () => {
-    const { handler } = makeHandler({ id: 'preview', result: { failed: [{ photo_id: '914', reason: 'Preview failed: file is offline' }] } });
+    const { handler } = makeHandler({
+      id: 'preview',
+      result: { failed: [{ photo_id: '914', reason: 'Preview failed: file is offline' }] },
+    });
     const result = await handler('get_photo_preview', { photo_id: 914 });
-    expect(envelopeOf(result)).toMatchObject({ outcome: 'failed', failed: [{ photo_id: '914', reason: 'Preview failed: file is offline' }] });
+    expect(envelopeOf(result)).toMatchObject({
+      outcome: 'failed',
+      failed: [{ photo_id: '914', reason: 'Preview failed: file is offline' }],
+    });
   });
 });
 
@@ -117,7 +141,8 @@ describe('get_photo_preview region', () => {
   it('returns only the requested pixels and reports encoded dimensions and bytes', async () => {
     const { handler, call } = makeHandler();
     const result = await handler('get_photo_preview', {
-      photo_id: 914, region: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
+      photo_id: 914,
+      region: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
     });
 
     expect(result.isError).toBeUndefined();
@@ -125,7 +150,12 @@ describe('get_photo_preview region', () => {
     const { encoded, decoded: cropped } = returnedImage(result);
     expect([cropped.width, cropped.height]).toEqual([16, 8]);
     expect(dataOf(result)).toEqual({
-      photo_id: '914', requested_size: 1728, width: 16, height: 8, bytes: encoded.length, scaled_by_server: false,
+      photo_id: '914',
+      requested_size: 1728,
+      width: 16,
+      height: 8,
+      bytes: encoded.length,
+      scaled_by_server: false,
     });
     for (let i = 0; i < cropped.data.length; i += 4) {
       expect(cropped.data[i]).toBeLessThan(5);
@@ -137,7 +167,8 @@ describe('get_photo_preview region', () => {
   it('crops a source over 2000 pixels after scaling it to a 2000 pixel edge', async () => {
     const { handler } = makeHandler(rendered(halves(2400, 1600)));
     const result = await handler('get_photo_preview', {
-      photo_id: 914, region: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
+      photo_id: 914,
+      region: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
     });
     const { decoded } = returnedImage(result);
     expect([decoded.width, decoded.height]).toEqual([1000, 667]);
@@ -151,10 +182,16 @@ describe('get_photo_preview region', () => {
   ])('requests a larger source for a small region (size=$size)', async ({ size, expected }) => {
     const { handler, call } = makeHandler();
     await handler('get_photo_preview', {
-      photo_id: '/photo.raw', ...(size === undefined ? {} : { size }),
+      photo_id: '/photo.raw',
+      ...(size === undefined ? {} : { size }),
       region: { x: 0, y: 0, width: 0.1, height: 0.1 },
     });
-    expect(call).toHaveBeenCalledWith('render_preview', { photo_ids: ['/photo.raw'], size: expected }, 30_000, undefined);
+    expect(call).toHaveBeenCalledWith(
+      'render_preview',
+      { photo_ids: ['/photo.raw'], size: expected },
+      30_000,
+      undefined,
+    );
   });
 
   it.each([
@@ -163,7 +200,9 @@ describe('get_photo_preview region', () => {
   ])('normalizes named size $size before applying region source scaling', async ({ size, expected }) => {
     const { handler, call } = makeHandler();
     const result = await handler('get_photo_preview', {
-      photo_id: 914, size, region: { x: 0, y: 0, width: 0.5, height: 0.5 },
+      photo_id: 914,
+      size,
+      region: { x: 0, y: 0, width: 0.5, height: 0.5 },
     });
     expect(result.isError).toBeUndefined();
     expect(call).toHaveBeenCalledWith('render_preview', { photo_ids: [914], size: expected }, 30_000, undefined);
@@ -172,7 +211,8 @@ describe('get_photo_preview region', () => {
   it('rounds a subpixel region outward to at least one pixel', async () => {
     const { handler } = makeHandler();
     const result = await handler('get_photo_preview', {
-      photo_id: 914, region: { x: 0.999, y: 0.999, width: 0.001, height: 0.001 },
+      photo_id: 914,
+      region: { x: 0.999, y: 0.999, width: 0.001, height: 0.001 },
     });
     expect(result.isError).toBeUndefined();
     expect(dataOf(result)).toMatchObject({ width: 1, height: 1 });
@@ -181,7 +221,8 @@ describe('get_photo_preview region', () => {
   it('returns a valid pixel when a positive region is smaller than floating-point spacing', async () => {
     const { handler } = makeHandler();
     const result = await handler('get_photo_preview', {
-      photo_id: 914, region: { x: 0.5, y: 0.5, width: 1e-20, height: 1e-20 },
+      photo_id: 914,
+      region: { x: 0.5, y: 0.5, width: 1e-20, height: 1e-20 },
     });
     expect(result.isError).toBeUndefined();
     expect(dataOf(result)).toMatchObject({ width: 1, height: 1 });
@@ -190,7 +231,10 @@ describe('get_photo_preview region', () => {
   });
 
   it.each([
-    {}, { x: 0, y: 0, width: 0.2 }, null, [],
+    {},
+    { x: 0, y: 0, width: 0.2 },
+    null,
+    [],
     { x: 0, y: 0, width: 0, height: 1 },
     { x: 0, y: 0, width: 1, height: -0.1 },
     { x: -0.1, y: 0, width: 0.1, height: 1 },
@@ -209,7 +253,8 @@ describe('get_photo_preview region', () => {
   it('passes an unknown photo through as not_found instead of cropping nothing', async () => {
     const { handler } = makeHandler({ id: 'preview', result: { not_found: [914] } });
     const result = await handler('get_photo_preview', {
-      photo_id: 914, region: { x: 0, y: 0, width: 0.1, height: 0.1 },
+      photo_id: 914,
+      region: { x: 0, y: 0, width: 0.1, height: 0.1 },
     });
     expect(envelopeOf(result)).toEqual({ outcome: 'failed', error: '1 not found', not_found: [914] });
   });
@@ -232,7 +277,8 @@ describe('get_photo_previews', () => {
   type Answer = (id: unknown) => PluginResponse;
   function batch(answer: Answer) {
     const call = jest.fn(async (_action: string, params: unknown, _timeout?: number, _options?: unknown) =>
-      answer((params as { photo_ids: unknown[] }).photo_ids[0]));
+      answer((params as { photo_ids: unknown[] }).photo_ids[0]),
+    );
     return { handler: createCallToolHandler({ admitted: () => 0, dispatcher: { call } }), call };
   }
   const images = (result: Awaited<ReturnType<ReturnType<typeof batch>['handler']>>) =>
@@ -246,13 +292,27 @@ describe('get_photo_previews', () => {
     const { handler, call } = batch((id) => rendered(source, id as number));
     const result = await handler('get_photo_previews', { photo_ids: [3, 1, 2] });
     expect(call.mock.calls.map(([action, params]) => [action, params])).toEqual(
-      [3, 1, 2].map((id) => ['render_preview', { photo_ids: [id], size: 256 }]));
+      [3, 1, 2].map((id) => ['render_preview', { photo_ids: [id], size: 256 }]),
+    );
     const data = dataOf(result) as { previews: Record<string, unknown>[] };
-    expect(data.previews.map(({ photo_id, image_index, width, height, scaled_by_server }) =>
-      [photo_id, image_index, width, height, scaled_by_server])).toEqual([
-      ['3', 1, 256, 128, true], ['1', 2, 256, 128, true], ['2', 3, 256, 128, true],
+    expect(
+      data.previews.map(({ photo_id, image_index, width, height, scaled_by_server }) => [
+        photo_id,
+        image_index,
+        width,
+        height,
+        scaled_by_server,
+      ]),
+    ).toEqual([
+      ['3', 1, 256, 128, true],
+      ['1', 2, 256, 128, true],
+      ['2', 3, 256, 128, true],
     ]);
-    expect(images(result).map(({ width, height }) => [width, height])).toEqual([[256, 128], [256, 128], [256, 128]]);
+    expect(images(result).map(({ width, height }) => [width, height])).toEqual([
+      [256, 128],
+      [256, 128],
+      [256, 128],
+    ]);
   });
 
   it('takes the same named sizes as get_photo_preview', async () => {
@@ -266,14 +326,17 @@ describe('get_photo_previews', () => {
   it('keeps the good images and lists unknown photos as not_found and unrenderable ones as failed', async () => {
     const { handler } = batch((id) => {
       if (id === 2) return { id: 'preview', result: { not_found: [2] } };
-      if (id === 3) return { id: 'preview', result: { failed: [{ photo_id: '3', reason: 'Preview failed: file is offline' }] } };
+      if (id === 3)
+        return { id: 'preview', result: { failed: [{ photo_id: '3', reason: 'Preview failed: file is offline' }] } };
       if (id === 4) return rendered(Buffer.from('broken').toString('base64'), 4);
       return rendered(halves(32, 16), id as number);
     });
     const result = await handler('get_photo_previews', { photo_ids: [1, 2, 3, 4, 5] });
     const envelope = envelopeOf(result);
     expect(envelope.outcome).toBe('partial');
-    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(['1', '5']);
+    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(
+      ['1', '5'],
+    );
     expect(envelope.not_found).toEqual([2]);
     expect(envelope.failed).toEqual([
       { photo_id: '3', reason: 'Preview failed: file is offline' },
@@ -290,7 +353,10 @@ describe('get_photo_previews', () => {
     const { handler, call } = batch((id) => rendered(source, id as number));
     const result = await handler('get_photo_previews', { photo_ids: [1, 2, 3, 4], size: 2048 });
     const envelope = envelopeOf(result);
-    expect((envelope.data as { previews: { bytes: number }[] }).previews.map((preview) => preview.bytes)).toEqual([bytes, bytes]);
+    expect((envelope.data as { previews: { bytes: number }[] }).previews.map((preview) => preview.bytes)).toEqual([
+      bytes,
+      bytes,
+    ]);
     expect(envelope.remaining).toEqual([3, 4]);
     expect(envelope.failed).toBeUndefined();
     expect(call).toHaveBeenCalledTimes(3);
@@ -304,7 +370,9 @@ describe('get_photo_previews', () => {
         return rendered(halves(32, 16), id as number);
       });
       const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [1, 2, 3, 4] }));
-      expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(['1', '2']);
+      expect(
+        (envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id),
+      ).toEqual(['1', '2']);
       expect(envelope.remaining).toEqual([3, 4]);
       expect(call).toHaveBeenCalledTimes(2);
     } finally {
@@ -318,7 +386,10 @@ describe('get_photo_previews', () => {
       const { handler, call } = batch((id) => {
         if (id !== 2) return rendered(halves(32, 16), id as number);
         jest.advanceTimersByTime(20_001);
-        return { id: 'preview', result: { failed: [{ photo_id: '2', reason: "Preview not ready before the request's time ran out" }] } };
+        return {
+          id: 'preview',
+          result: { failed: [{ photo_id: '2', reason: "Preview not ready before the request's time ran out" }] },
+        };
       });
       const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [1, 2, 3] }));
       expect(envelope.remaining).toEqual([2, 3]);
@@ -344,12 +415,18 @@ describe('get_photo_previews', () => {
   });
 
   it.each<[string, PluginResponse, string]>([
-    ['an error', { id: 'preview', error: 'attempt to call a nil value', effect: 'unknown' }, 'attempt to call a nil value'],
+    [
+      'an error',
+      { id: 'preview', error: 'attempt to call a nil value', effect: 'unknown' },
+      'attempt to call a nil value',
+    ],
     ['no preview', { id: 'preview', result: {} }, 'Plugin returned no preview'],
   ])('lists a photo the plug-in answered with %s as failed and goes on to the next', async (_name, answer, reason) => {
     const { handler, call } = batch((id) => (id === 2 ? answer : rendered(halves(32, 16), id as number)));
     const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [1, 2, 3] }));
-    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(['1', '3']);
+    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(
+      ['1', '3'],
+    );
     expect(envelope.failed).toEqual([{ photo_id: '2', reason }]);
     expect(envelope.remaining).toBeUndefined();
     expect(envelope.warnings).toBeUndefined();
@@ -360,7 +437,9 @@ describe('get_photo_previews', () => {
     const source = noise(1000, 800);
     const { handler } = batch((id) => (id === 7 ? blockedInDevelop(7) : rendered(source, id as number)));
     const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [1, 7, 2, 3, 4], size: 2048 }));
-    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(['1', '2']);
+    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(
+      ['1', '2'],
+    );
     expect(envelope.failed).toEqual([{ photo_id: '7', reason: `${OPEN_IN_DEVELOP_REASON(7)}.${WAY_OUT}` }]);
     expect(envelope.remaining).toEqual([3, 4]);
   });
@@ -371,7 +450,9 @@ describe('get_photo_previews', () => {
       return rendered(halves(32, 16), id as number);
     });
     const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [1, 2, 3] }));
-    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(['1']);
+    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(
+      ['1'],
+    );
     expect(envelope.remaining).toEqual([2, 3]);
     expect(envelope.warnings).toEqual([expect.stringContaining('Plugin request timed out')]);
   });
@@ -379,7 +460,8 @@ describe('get_photo_previews', () => {
 
 describe('the batch preview tools', () => {
   it.each(['get_photo_previews', 'find_duplicate_groups', 'get_photo_stats'])(
-    '%s stops starting renders at the time its description names', async (name) => {
+    '%s stops starting renders at the time its description names',
+    async (name) => {
       const description = TOOL_CONTRACTS.find((tool) => tool.name === name)?.description ?? '';
       const stated = [...description.matchAll(/(\d+) s\b/g)].map((match) => Number(match[1]));
       expect(stated).toHaveLength(1);
@@ -397,43 +479,63 @@ describe('the batch preview tools', () => {
       } finally {
         jest.useRealTimers();
       }
-    });
+    },
+  );
 
   it.each([
     ['get_photo_previews', 'render_preview'],
     ['get_photo_stats', 'render_preview'],
     ['find_duplicate_groups', 'render_duplicate_preview'],
-  ])('%s answers the photo open in Develop failed with the way out, in input order, and asks for nothing more', async (name, action) => {
-    const call = jest.fn(async (_action: string, params: unknown): Promise<PluginResponse> => {
-      const id = (params as { photo_ids: number[] }).photo_ids[0];
-      return id === 7 ? blockedInDevelop(7) : rendered(halves(32, 16), id);
-    });
-    const envelope = envelopeOf(await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })(name, { photo_ids: [1, 7, 2] }));
-    expect(envelope.failed).toEqual([{ photo_id: '7', reason: `${OPEN_IN_DEVELOP_REASON(7)}.${WAY_OUT}` }]);
-    expect(envelope.unknown).toBeUndefined();
-    expect(envelope.remaining).toBeUndefined();
-    expect(call.mock.calls.map(([sent, params]) => [sent, (params as { photo_ids: number[] }).photo_ids[0]]))
-      .toEqual([[action, 1], [action, 7], [action, 2]]);
-  });
+  ])(
+    '%s answers the photo open in Develop failed with the way out, in input order, and asks for nothing more',
+    async (name, action) => {
+      const call = jest.fn(async (_action: string, params: unknown): Promise<PluginResponse> => {
+        const id = (params as { photo_ids: number[] }).photo_ids[0];
+        return id === 7 ? blockedInDevelop(7) : rendered(halves(32, 16), id);
+      });
+      const envelope = envelopeOf(
+        await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })(name, { photo_ids: [1, 7, 2] }),
+      );
+      expect(envelope.failed).toEqual([{ photo_id: '7', reason: `${OPEN_IN_DEVELOP_REASON(7)}.${WAY_OUT}` }]);
+      expect(envelope.unknown).toBeUndefined();
+      expect(envelope.remaining).toBeUndefined();
+      expect(call.mock.calls.map(([sent, params]) => [sent, (params as { photo_ids: number[] }).photo_ids[0]])).toEqual(
+        [
+          [action, 1],
+          [action, 7],
+          [action, 2],
+        ],
+      );
+    },
+  );
 });
 
 describe('area-weighted downsample', () => {
   it.each([
     {
       name: 'a 5x3 ramp to 2x2, splitting source pixels at both cell edges',
-      width: 5, height: 3, targetWidth: 2, targetHeight: 2,
+      width: 5,
+      height: 3,
+      targetWidth: 2,
+      targetHeight: 2,
       valueAt: (pixel: number) => (pixel % 5) + 10 * Math.floor(pixel / 5),
       expected: [0.8 + 10 / 3, 3.2 + 10 / 3, 0.8 + 50 / 3, 3.2 + 50 / 3],
     },
     {
       name: 'a 2x1 row up to 4x1',
-      width: 2, height: 1, targetWidth: 4, targetHeight: 1,
+      width: 2,
+      height: 1,
+      targetWidth: 4,
+      targetHeight: 1,
       valueAt: (pixel: number) => [10, 30][pixel],
       expected: [10, 10, 30, 30],
     },
     {
       name: 'a 25x1 row down to 11x1, whose last cell ends past 25 in floating point',
-      width: 25, height: 1, targetWidth: 11, targetHeight: 1,
+      width: 25,
+      height: 1,
+      targetWidth: 11,
+      targetHeight: 1,
       valueAt: (pixel: number) => Array<number>(25).fill(7)[pixel],
       expected: Array<number>(11).fill(7),
     },

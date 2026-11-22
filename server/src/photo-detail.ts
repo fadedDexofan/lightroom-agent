@@ -32,12 +32,17 @@ function overLimit(regions: NormalizedRegion[], width: number, height: number, l
   const boxes = regions.map((region) => pixelBox(region, width, height));
   const over = boxes.findIndex((box) => Math.max(box.width, box.height) > limit);
   if (over < 0) return undefined;
-  return `region ${over + 1} is ${boxes[over].width}x${boxes[over].height} px, over max_edge ${limit}; `
-    + `this photo allows regions up to width ${floor4((limit - 1) / width)} and height ${floor4((limit - 1) / height)}`;
+  return (
+    `region ${over + 1} is ${boxes[over].width}x${boxes[over].height} px, over max_edge ${limit}; ` +
+    `this photo allows regions up to width ${floor4((limit - 1) / width)} and height ${floor4((limit - 1) / height)}`
+  );
 }
 
 export async function getPhotoDetail(
-  args: DetailArgs, dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
+  args: DetailArgs,
+  dispatcher: Pick<Dispatcher, "call">,
+  budgetMs: number,
+  options?: CallOptions,
 ): Promise<PluginReply> {
   const deadline = performance.now() + budgetMs;
   const limit = args.max_edge ?? DEFAULT_DETAIL_EDGE;
@@ -46,10 +51,17 @@ export async function getPhotoDetail(
   if (crop.error !== undefined || !frame) return crop;
   const predicted = overLimit(args.regions, frame.width, frame.height, limit);
   if (predicted) {
-    return { error: `${predicted} (cropped frame ${frame.width}x${frame.height}); nothing was rendered`, effect: "none" };
+    return {
+      error: `${predicted} (cropped frame ${frame.width}x${frame.height}); nothing was rendered`,
+      effect: "none",
+    };
   }
-  const reply = await dispatcher.call("render_source", { photo_id: args.photo_id, tool: "get_photo_detail" },
-    deadline - performance.now(), options);
+  const reply = await dispatcher.call(
+    "render_source",
+    { photo_id: args.photo_id, tool: "get_photo_detail" },
+    deadline - performance.now(),
+    options,
+  );
   return withRenderedFile(reply, (file, source) => {
     const image = decodeJpeg(file);
     const rendered = overLimit(args.regions, image.width, image.height, limit);
@@ -59,14 +71,19 @@ export async function getPhotoDetail(
       box,
       image: {
         mime_type: "image/jpeg",
-        data: jpeg.encode({ width: box.width, height: box.height, data: cutPixels(image, box) }, CROP_JPEG_QUALITY)
+        data: jpeg
+          .encode({ width: box.width, height: box.height, data: cutPixels(image, box) }, CROP_JPEG_QUALITY)
           .data.toString("base64"),
       },
     }));
     return {
       photo_id: String(source.photo_id),
       render: {
-        width: image.width, height: image.height, ...RENDER, source: source.source, left_on_photo: source.left_on_photo,
+        width: image.width,
+        height: image.height,
+        ...RENDER,
+        source: source.source,
+        left_on_photo: source.left_on_photo,
       },
       crop_jpeg_quality: CROP_JPEG_QUALITY,
       regions,
@@ -93,6 +110,8 @@ export async function withRenderedFile(
     return used;
   } catch (error) {
     const warning = `Could not remove the render folder ${folder}: ${reasonOf(error)}`;
-    return used.error !== undefined ? { error: `${used.error}; ${warning}` } : { result: { ...used.result, warnings: [warning] } };
+    return used.error !== undefined
+      ? { error: `${used.error}; ${warning}` }
+      : { result: { ...used.result, warnings: [warning] } };
   }
 }

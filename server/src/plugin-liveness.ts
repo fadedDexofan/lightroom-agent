@@ -38,14 +38,16 @@ export interface LivenessOptions {
 
 type PingAnswer = { answered: false } | { answered: true; identity: BuildIdentity };
 
-const INSTALL_FIX = "Lightroom has loaded a different plug-in build. If the intended build was installed or repaired, "
-  + "restart Lightroom to load it. Otherwise quit the connected clients, run this build's install-plugin, check its result, "
-  + "restart Lightroom, and reconnect.";
+const INSTALL_FIX =
+  "Lightroom has loaded a different plug-in build. If the intended build was installed or repaired, " +
+  "restart Lightroom to load it. Otherwise quit the connected clients, run this build's install-plugin, check its result, " +
+  "restart Lightroom, and reconnect.";
 
 function pluginMismatch(plugin: BuildIdentity, expected: PluginIdentity): string {
-  const loaded = plugin.version === null
-    ? "an older build that reports no version"
-    : `version ${plugin.version}, build ${plugin.build ?? "unknown"}`;
+  const loaded =
+    plugin.version === null
+      ? "an older build that reports no version"
+      : `version ${plugin.version}, build ${plugin.build ?? "unknown"}`;
   return `${INSTALL_FIX} Loaded: ${loaded}; this server's: version ${expected.version}, build ${expected.build}.`;
 }
 
@@ -127,9 +129,12 @@ export class PluginLiveness {
   }
 
   private ping(timeoutMs: number): Promise<PingAnswer> {
-    return this.opts.dispatcher.call("ping", {}, timeoutMs).then((reply) => {
-      return { answered: true, identity: identityIn(reply.result?.data, BUILD_FIELDS) };
-    }, () => ({ answered: false }));
+    return this.opts.dispatcher.call("ping", {}, timeoutMs).then(
+      (reply) => {
+        return { answered: true, identity: identityIn(reply.result?.data, BUILD_FIELDS) };
+      },
+      () => ({ answered: false }),
+    );
   }
 
   private stopRecovery(): void {

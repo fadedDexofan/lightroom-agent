@@ -35,7 +35,19 @@ export function generateBatchImages({ rawPath, outputDirectory, count = DEFAULT_
     const basePath = path.join(scratch, "base.jpg");
     execFileSync(
       "sips",
-      ["-Z", String(BATCH_BASE_LONG_EDGE), "-s", "format", "jpeg", "-s", "formatOptions", "85", rawPath, "--out", basePath],
+      [
+        "-Z",
+        String(BATCH_BASE_LONG_EDGE),
+        "-s",
+        "format",
+        "jpeg",
+        "-s",
+        "formatOptions",
+        "85",
+        rawPath,
+        "--out",
+        basePath,
+      ],
       { stdio: "ignore" },
     );
     const info = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", basePath], { encoding: "utf8" });
@@ -46,10 +58,15 @@ export function generateBatchImages({ rawPath, outputDirectory, count = DEFAULT_
       execFileSync(
         "sips",
         [
-          "-c", String(BATCH_CROP_HEIGHT), String(BATCH_CROP_WIDTH),
-          "--cropOffset", String(y), String(x),
+          "-c",
+          String(BATCH_CROP_HEIGHT),
+          String(BATCH_CROP_WIDTH),
+          "--cropOffset",
+          String(y),
+          String(x),
           basePath,
-          "--out", path.join(outputDirectory, batchFileName(index)),
+          "--out",
+          path.join(outputDirectory, batchFileName(index)),
         ],
         { stdio: "ignore" },
       );

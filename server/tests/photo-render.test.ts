@@ -35,7 +35,8 @@ function renderedFile(contents: Buffer): string {
 const LEFT_ON_PHOTO = ['one Export history step', 'the exported mark'];
 const LEFT = '; the render left one Export history step and the exported mark on the photo';
 const source = (path: string): PluginResponse => ({
-  id: 'r', result: { data: { photo_id: '914', path, source: 'export', left_on_photo: LEFT_ON_PHOTO } },
+  id: 'r',
+  result: { data: { photo_id: '914', path, source: 'export', left_on_photo: LEFT_ON_PHOTO } },
 });
 
 type Call = (action: string, params: unknown, timeoutMs?: number, options?: CallOptions) => Promise<PluginResponse>;
@@ -58,16 +59,22 @@ describe('render_photo', () => {
     expect(contract?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, openWorldHint: false });
   });
 
-  it.each<[unknown, number]>([[undefined, 1728], ['review', 1728], ['cull', 864], [640.5, 640]])(
+  it.each<[unknown, number]>([
+    [undefined, 1728],
+    ['review', 1728],
+    ['cull', 864],
+    [640.5, 640],
+  ])(
     'asks the plug-in for one export rendition of size %p at a long edge of %p, naming itself for the lock',
     async (size, edge) => {
       const path = renderedFile(jpegOf(48, 32));
       const { handler, calls } = handlerFor(async () => source(path));
       await handler('render_photo', { photo_id: '/p/a.arw', ...(size === undefined ? {} : { size }) });
       expect(calls).toEqual([['render_source', { photo_id: '/p/a.arw', long_edge: edge, tool: 'render_photo' }]]);
-    });
+    },
+  );
 
-  it('returns Lightroom\'s JPEG byte for byte with the canonical photo id and what the render left, and removes the folder', async () => {
+  it("returns Lightroom's JPEG byte for byte with the canonical photo id and what the render left, and removes the folder", async () => {
     const file = jpegOf(48, 32);
     const path = renderedFile(file);
     const { handler } = handlerFor(async () => source(path));
@@ -77,7 +84,14 @@ describe('render_photo', () => {
     const envelope = envelopeOf(response);
     expect(envelope).toEqual({
       outcome: 'done',
-      data: { photo_id: '914', width: 48, height: 32, bytes: file.length, jpeg_quality: 80, left_on_photo: LEFT_ON_PHOTO },
+      data: {
+        photo_id: '914',
+        width: 48,
+        height: 32,
+        bytes: file.length,
+        jpeg_quality: 80,
+        left_on_photo: LEFT_ON_PHOTO,
+      },
     });
     const image = response.content[1];
     expect(image?.type === 'image' && Buffer.from(image.data, 'base64').equals(file)).toBe(true);
@@ -85,16 +99,50 @@ describe('render_photo', () => {
   });
 
   it.each<[string, PluginResponse, string, Record<string, unknown>]>([
-    ['an error with a possible effect', { id: 'r', error: 'socket closed mid-render', effect: 'unknown' }, 'unknown',
-      { error: 'socket closed mid-render' }],
-    ['an error with no effect', { id: 'r', error: 'Unknown action: render_source', effect: 'none' }, 'failed',
-      { error: 'Unknown action: render_source' }],
-    ['the photo unknown after its export started', { id: 'r', result: { unknown: [{ photo_id: '914', reason: 'AI Updates Recommended: Cancel; written before this stopped: Export photo 914' }] } },
-      'unknown', { unknown: [{ photo_id: '914', reason: 'AI Updates Recommended: Cancel; written before this stopped: Export photo 914' }] }],
-    ['the refusal while another export runs', { id: 'r', error: 'export_photos is already running; wait for it to finish, then call again', effect: 'none' },
-      'failed', { error: 'export_photos is already running; wait for it to finish, then call again' }],
-    ['the photo failed when its render left nothing', { id: 'r', result: { failed: [{ photo_id: '914', reason: 'Lightroom rendered no file' }] } },
-      'failed', { failed: [{ photo_id: '914', reason: 'Lightroom rendered no file' }] }],
+    [
+      'an error with a possible effect',
+      { id: 'r', error: 'socket closed mid-render', effect: 'unknown' },
+      'unknown',
+      { error: 'socket closed mid-render' },
+    ],
+    [
+      'an error with no effect',
+      { id: 'r', error: 'Unknown action: render_source', effect: 'none' },
+      'failed',
+      { error: 'Unknown action: render_source' },
+    ],
+    [
+      'the photo unknown after its export started',
+      {
+        id: 'r',
+        result: {
+          unknown: [
+            {
+              photo_id: '914',
+              reason: 'AI Updates Recommended: Cancel; written before this stopped: Export photo 914',
+            },
+          ],
+        },
+      },
+      'unknown',
+      {
+        unknown: [
+          { photo_id: '914', reason: 'AI Updates Recommended: Cancel; written before this stopped: Export photo 914' },
+        ],
+      },
+    ],
+    [
+      'the refusal while another export runs',
+      { id: 'r', error: 'export_photos is already running; wait for it to finish, then call again', effect: 'none' },
+      'failed',
+      { error: 'export_photos is already running; wait for it to finish, then call again' },
+    ],
+    [
+      'the photo failed when its render left nothing',
+      { id: 'r', result: { failed: [{ photo_id: '914', reason: 'Lightroom rendered no file' }] } },
+      'failed',
+      { failed: [{ photo_id: '914', reason: 'Lightroom rendered no file' }] },
+    ],
   ])('answers %s as the plug-in classed it', async (_what, reply, outcome, expected) => {
     const { handler } = handlerFor(async () => reply);
     const envelope = envelopeOf(await handler('render_photo', { photo_id: 914 }));
@@ -119,7 +167,9 @@ describe('render_photo', () => {
     const response = await handler('render_photo', { photo_id: 914, size: 2048 });
     const envelope = envelopeOf(response);
     expect(envelope.outcome).toBe('unknown');
-    expect(envelope.error).toBe(`Lightroom's rendition is ${file.length} bytes, over the 3.5 MiB image limit; ask for a smaller size${LEFT}`);
+    expect(envelope.error).toBe(
+      `Lightroom's rendition is ${file.length} bytes, over the 3.5 MiB image limit; ask for a smaller size${LEFT}`,
+    );
     expect(response.content).toHaveLength(1);
   });
 
@@ -136,9 +186,22 @@ describe('render_photo', () => {
   });
 
   it.each<[string, string, () => never, string]>([
-    ['cancelled before it was sent', 'failed', () => { throw new PluginNotSentError('Request cancelled'); }, 'Request cancelled'],
-    ['timed out after it was sent', 'unknown', () => { throw new PluginTimeoutError(30_000); },
-      'Lightroom did not answer within 30s, so the result of render_photo is unknown: it may have been applied or may still be running. Read the current state before retrying.'],
+    [
+      'cancelled before it was sent',
+      'failed',
+      () => {
+        throw new PluginNotSentError('Request cancelled');
+      },
+      'Request cancelled',
+    ],
+    [
+      'timed out after it was sent',
+      'unknown',
+      () => {
+        throw new PluginTimeoutError(30_000);
+      },
+      'Lightroom did not answer within 30s, so the result of render_photo is unknown: it may have been applied or may still be running. Read the current state before retrying.',
+    ],
   ])('answers a call %s as %s', async (_what, outcome, raise, error) => {
     const { handler } = handlerFor(async () => raise());
     expect(envelopeOf(await handler('render_photo', { photo_id: 914 }))).toEqual({ outcome, error });
@@ -152,7 +215,9 @@ describe('render_photo', () => {
       const { handler } = handlerFor(async () => source(path));
       const envelope = envelopeOf(await handler('render_photo', { photo_id: 914 }));
       expect(envelope.outcome).toBe('done');
-      expect(envelope.warnings).toEqual([expect.stringContaining(`Could not remove the render folder ${dirname(path)}`)]);
+      expect(envelope.warnings).toEqual([
+        expect.stringContaining(`Could not remove the render folder ${dirname(path)}`),
+      ]);
     } finally {
       chmodSync(base, 0o755);
     }

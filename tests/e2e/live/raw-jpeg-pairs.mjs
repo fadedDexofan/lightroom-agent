@@ -24,14 +24,23 @@ function makeFolder(name, files) {
 }
 
 function catalogFiles(folder) {
-  const rows = execFileSync("sqlite3", ["-readonly", "-json", catalogPath, `
+  const rows = execFileSync(
+    "sqlite3",
+    [
+      "-readonly",
+      "-json",
+      catalogPath,
+      `
     select f.idx_filename as file, coalesce(f.sidecarExtensions, '') as sidecars, i.id_local as id
     from AgLibraryFile f
     join AgLibraryFolder d on f.folder = d.id_local
     join AgLibraryRootFolder r on d.rootFolder = r.id_local
     left join Adobe_images i on i.rootFile = f.id_local
     where r.absolutePath || d.pathFromRoot = '${folder.replaceAll("'", "''")}/'
-    order by f.idx_filename`], { encoding: "utf8" });
+    order by f.idx_filename`,
+    ],
+    { encoding: "utf8" },
+  );
   return rows.trim() ? JSON.parse(rows) : [];
 }
 
@@ -48,7 +57,14 @@ const results = {};
 try {
   requireThrowawayCatalog();
 
-  const paired = makeFolder("paired", { "P1.ARW": rawSource, "P1.JPG": jpegSource, "P2.ARW": rawSource, "P2.jpeg": jpegSource, "alone.jpg": jpegSource, "rawonly.ARW": rawSource });
+  const paired = makeFolder("paired", {
+    "P1.ARW": rawSource,
+    "P1.JPG": jpegSource,
+    "P2.ARW": rawSource,
+    "P2.jpeg": jpegSource,
+    "alone.jpg": jpegSource,
+    "rawonly.ARW": rawSource,
+  });
   const folderResult = await session.toolOrThrow("import_photos", { source_path: paired }, { timeoutMs: 300_000 });
   const pairedFiles = await waitForFiles(paired, 4);
   results.folder = { result: folderResult.data, files: pairedFiles };
@@ -107,11 +123,16 @@ try {
   assert.deepEqual(catalogFiles(unicode), []);
 
   const unicodeCase = makeFolder("unicode-case", { "caf\u00e9.ARW": rawSource, "Caf\u00e9.jpg": jpegSource });
-  const caseOtherForm = await session.toolOrThrow("import_photos", { source_path: path.join(unicodeCase, "Cafe\u0301.jpg") });
+  const caseOtherForm = await session.toolOrThrow("import_photos", {
+    source_path: path.join(unicodeCase, "Cafe\u0301.jpg"),
+  });
   results.unicodeCase = caseOtherForm.data;
   assert.equal(caseOtherForm.data.imported, 1);
   const unicodeCaseFiles = await waitForFiles(unicodeCase, 1);
-  assert.deepEqual(unicodeCaseFiles.filter((row) => row.id !== null).map((row) => row.file.normalize("NFC")), ["Caf\u00e9.jpg"]);
+  assert.deepEqual(
+    unicodeCaseFiles.filter((row) => row.id !== null).map((row) => row.file.normalize("NFC")),
+    ["Caf\u00e9.jpg"],
+  );
 
   const separate = await session.toolOrThrow("import_photos", { source_path: jpegPath, separate_jpegs: true });
   assert.equal(separate.data.imported, 1);
@@ -119,7 +140,11 @@ try {
   results.singleSeparate = singleFiles;
 
   const optOut = makeFolder("optout", { "O1.ARW": rawSource, "O1.JPG": jpegSource });
-  const optOutResult = await session.toolOrThrow("import_photos", { source_path: optOut, separate_jpegs: true }, { timeoutMs: 300_000 });
+  const optOutResult = await session.toolOrThrow(
+    "import_photos",
+    { source_path: optOut, separate_jpegs: true },
+    { timeoutMs: 300_000 },
+  );
   const optOutFiles = await waitForFiles(optOut, 2);
   results.optOut = { result: optOutResult.data, files: optOutFiles };
   assert.equal(optOutResult.data.imported, 2);
@@ -142,7 +167,10 @@ try {
   throw error;
 } finally {
   requireThrowawayCatalog();
-  const ids = folders.flatMap(catalogFiles).map((row) => row.id).filter((id) => id !== null);
+  const ids = folders
+    .flatMap(catalogFiles)
+    .map((row) => row.id)
+    .filter((id) => id !== null);
   if (ids.length > 0) await session.tool("remove_photos_from_catalog", { photo_ids: ids, confirm: true });
   await session.stop();
 }

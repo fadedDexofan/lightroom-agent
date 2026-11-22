@@ -6,9 +6,22 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { batchCropOffsets, batchFileName } from "../lib/batch.mjs";
-import { activeModule, catalogWindowState, chooseModalButton, parseModalWindows, watchModalsWhile } from "../lib/ax.mjs";
+import {
+  activeModule,
+  catalogWindowState,
+  chooseModalButton,
+  parseModalWindows,
+  watchModalsWhile,
+} from "../lib/ax.mjs";
 import { absentFixtureIds, fixturesToImport } from "../lib/live-catalog.mjs";
-import { lastExportTimestamp, maskGroupsText, parseLuaTable, pollCatalog, storedMaskGroups, summarizeMaskGroups } from "../lib/catalog-db.mjs";
+import {
+  lastExportTimestamp,
+  maskGroupsText,
+  parseLuaTable,
+  pollCatalog,
+  storedMaskGroups,
+  summarizeMaskGroups,
+} from "../lib/catalog-db.mjs";
 import { addedLuaFiles, assertOutsideTemporaryDirectory, listLuaFiles } from "../lib/plugin-bundle.mjs";
 import { jpegQuantTables } from "../lib/jpeg.mjs";
 import { createReport } from "../lib/proof.mjs";
@@ -40,7 +53,13 @@ function solidPixels(w, h, level) {
 }
 
 function brightenWhere(pixels, inside, amount) {
-  const copy = { ...pixels, L: Float32Array.from(pixels.L), R: Float32Array.from(pixels.R), G: Float32Array.from(pixels.G), B: Float32Array.from(pixels.B) };
+  const copy = {
+    ...pixels,
+    L: Float32Array.from(pixels.L),
+    R: Float32Array.from(pixels.R),
+    G: Float32Array.from(pixels.G),
+    B: Float32Array.from(pixels.B),
+  };
   for (let y = 0; y < pixels.h; y++) {
     for (let x = 0; x < pixels.w; x++) {
       if (inside((x + 0.5) / pixels.w, (y + 0.5) / pixels.h, pixels.w, pixels.h)) {
@@ -67,7 +86,10 @@ test("modal windows are parsed and the safe button is chosen", () => {
 
 test("the active module is the last part of Lightroom's main window title", () => {
   assert.equal(activeModule(["", "x.lrcat - Adobe Photoshop Lightroom Classic - Library"]), "Library");
-  assert.equal(activeModule(["Lightroom Plug-in Manager", "x.lrcat - Adobe Photoshop Lightroom Classic - Develop"]), "Develop");
+  assert.equal(
+    activeModule(["Lightroom Plug-in Manager", "x.lrcat - Adobe Photoshop Lightroom Classic - Develop"]),
+    "Develop",
+  );
   assert.equal(activeModule(["Lightroom Plug-in Manager"]), null);
 });
 
@@ -106,7 +128,10 @@ test("region deltas measure the brightened area only", () => {
 test("patch deltas report per channel changes", () => {
   const before = solidPixels(100, 100, 0.2);
   const after = brightenWhere(before, rectangleInside({ x0: 0, y0: 0, x1: 0.5, y1: 1 }), 0.1);
-  const [left, right] = patchDeltas(before, after, [{ x: 0.25, y: 0.5 }, { x: 0.75, y: 0.5 }]);
+  const [left, right] = patchDeltas(before, after, [
+    { x: 0.25, y: 0.5 },
+    { x: 0.75, y: 0.5 },
+  ]);
   assert.ok(Math.abs(left.deltaR - 0.1) < 1e-6);
   assert.equal(left.deltaG, 0);
   assert.equal(right.deltaL, 0);
@@ -129,7 +154,10 @@ test("the region one change moved bounds where a later change moves, by directio
   const restored = brightenWhere(base, left, 0.1);
 
   assert.deepEqual(changedShare(base, restored, subject, { direction: "brighter" }), { changed: 0.5, inside: 1 });
-  assert.deepEqual(changedShare(base, restored, (fx, fy) => !subject(fx, fy), { direction: "brighter" }), { changed: 0.5, inside: 0 });
+  assert.deepEqual(
+    changedShare(base, restored, (fx, fy) => !subject(fx, fy), { direction: "brighter" }),
+    { changed: 0.5, inside: 0 },
+  );
   assert.deepEqual(changedShare(base, restored, subject, { direction: "darker" }), { changed: 0, inside: 0 });
   assert.equal(changedWhere(base, brightenWhere(base, left, 0.03))(0.25, 0.5), false);
 });
@@ -160,7 +188,7 @@ test("a BMP is decoded bottom-up with BGR order", () => {
 test("stored mask groups are extracted from a develop settings row", () => {
   const settings = [
     "s = {",
-    '  Exposure2012 = 0.5,',
+    "  Exposure2012 = 0.5,",
     "  MaskGroupBasedCorrections = {",
     "    {",
     '      CorrectionID = "AB",',
@@ -210,7 +238,10 @@ test("Lua files are listed recursively and sorted", () => {
     fs.writeFileSync(path.join(directory, "a.lua"), "");
     fs.writeFileSync(path.join(directory, "notes.txt"), "");
     fs.writeFileSync(path.join(directory, "sub", "c.lua"), "");
-    assert.deepEqual(listLuaFiles(directory).map((file) => file.split(path.sep).join("/")), ["a.lua", "b.lua", "sub/c.lua"]);
+    assert.deepEqual(
+      listLuaFiles(directory).map((file) => file.split(path.sep).join("/")),
+      ["a.lua", "b.lua", "sub/c.lua"],
+    );
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -218,7 +249,10 @@ test("Lua files are listed recursively and sorted", () => {
 
 test("bundle backups under the temporary directory are refused", () => {
   const temporary = os.tmpdir();
-  assert.throws(() => assertOutsideTemporaryDirectory(path.join(temporary, "backups"), temporary), /outside the temporary directory/);
+  assert.throws(
+    () => assertOutsideTemporaryDirectory(path.join(temporary, "backups"), temporary),
+    /outside the temporary directory/,
+  );
   assert.throws(() => assertOutsideTemporaryDirectory(temporary, temporary), /outside the temporary directory/);
   assert.doesNotThrow(() => assertOutsideTemporaryDirectory(path.join(os.homedir(), ".cache", "x"), temporary));
 });
@@ -257,7 +291,12 @@ test("the change centroid is the centre of the brightened area", () => {
 
 test("a colour's centroid ignores pixels of other colours", () => {
   const pixels = solidPixels(100, 100, 0.5);
-  for (const [x, y] of [[20, 30], [21, 30], [20, 31], [21, 31]]) {
+  for (const [x, y] of [
+    [20, 30],
+    [21, 30],
+    [20, 31],
+    [21, 31],
+  ]) {
     const i = y * 100 + x;
     pixels.R[i] = 0.86;
     pixels.G[i] = 0.12;
@@ -294,7 +333,10 @@ test("a proof report passes only when every check passed and writes its evidence
     report.check("size", false, { width: 2 });
     const summary = report.finish({ photo: "1" });
     assert.equal(summary.passed, false);
-    assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).checks.map((entry) => entry.passed), [true, false]);
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(file, "utf8")).checks.map((entry) => entry.passed),
+      [true, false],
+    );
     assert.equal(process.exitCode, 1);
   } finally {
     console.log = log;
@@ -326,16 +368,37 @@ test("a proof report keeps its evidence after every check and saves the previews
 test("JPEG quantisation tables are read from every DQT segment", () => {
   const table = (id, value) => [id, ...Array(64).fill(value)];
   const segment = (body) => [0xff, 0xdb, (body.length + 2) >> 8, (body.length + 2) & 0xff, ...body];
-  const jpeg = Buffer.from([0xff, 0xd8, ...segment(table(0, 1)), ...segment([...table(1, 2), ...table(2, 3)]), 0xff, 0xda, 0, 2, 0xff, 0xd9]);
+  const jpeg = Buffer.from([
+    0xff,
+    0xd8,
+    ...segment(table(0, 1)),
+    ...segment([...table(1, 2), ...table(2, 3)]),
+    0xff,
+    0xda,
+    0,
+    2,
+    0xff,
+    0xd9,
+  ]);
 
-  assert.deepEqual(jpegQuantTables(jpeg).map(({ id, precision, values }) => [id, precision, values.length, values[0]]), [[0, 8, 64, 1], [1, 8, 64, 2], [2, 8, 64, 3]]);
+  assert.deepEqual(
+    jpegQuantTables(jpeg).map(({ id, precision, values }) => [id, precision, values.length, values[0]]),
+    [
+      [0, 8, 64, 1],
+      [1, 8, 64, 2],
+      [2, 8, 64, 3],
+    ],
+  );
 });
 
 test("the export mark is read from the photo's image attributes row", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lragent-catalog-"));
   const catalog = path.join(directory, "t.lrcat");
   try {
-    execFileSync("sqlite3", [catalog, "create table AgLibraryImageAttributes (id_local integer, image integer, lastExportTimestamp, lastPublishTimestamp); insert into AgLibraryImageAttributes values (1, 10, 0.0, 0.0), (2, 11, 816176651.5, 0.0);"]);
+    execFileSync("sqlite3", [
+      catalog,
+      "create table AgLibraryImageAttributes (id_local integer, image integer, lastExportTimestamp, lastPublishTimestamp); insert into AgLibraryImageAttributes values (1, 10, 0.0, 0.0), (2, 11, 816176651.5, 0.0);",
+    ]);
     assert.equal(lastExportTimestamp(catalog, 10), 0);
     assert.equal(lastExportTimestamp(catalog, 11), 816176651.5);
     assert.equal(lastExportTimestamp(catalog, 12), null);
@@ -351,16 +414,40 @@ test("a held modal records whether it was still listed when the call settled", a
   const timing = { holdMs: 200, pollMs: 5 };
   const cases = [
     { name: "settles alone while it is open", settlesAfterMs: 20, result: "alone", pressed: [], open: true },
-    { name: "closes by itself before the call settles", closesAfterMs: 20, settlesAfterMs: 60, result: "alone", pressed: [], open: false },
-    { name: "a press closes it and the call settles", pressCloses: true, result: "after press", pressed: ["Export"], open: false },
-    { name: "a press leaves it listed and the call settles", pressCloses: false, result: "after press", pressed: ["Export"], open: true },
+    {
+      name: "closes by itself before the call settles",
+      closesAfterMs: 20,
+      settlesAfterMs: 60,
+      result: "alone",
+      pressed: [],
+      open: false,
+    },
+    {
+      name: "a press closes it and the call settles",
+      pressCloses: true,
+      result: "after press",
+      pressed: ["Export"],
+      open: false,
+    },
+    {
+      name: "a press leaves it listed and the call settles",
+      pressCloses: false,
+      result: "after press",
+      pressed: ["Export"],
+      open: true,
+    },
   ];
   for (const scenario of cases) {
     let open = [failure, other];
     let release;
-    const call = new Promise((resolve) => { release = resolve; });
+    const call = new Promise((resolve) => {
+      release = resolve;
+    });
     if (scenario.settlesAfterMs !== undefined) setTimeout(() => release("alone"), scenario.settlesAfterMs);
-    if (scenario.closesAfterMs !== undefined) setTimeout(() => { open = open.filter((candidate) => candidate !== failure); }, scenario.closesAfterMs);
+    if (scenario.closesAfterMs !== undefined)
+      setTimeout(() => {
+        open = open.filter((candidate) => candidate !== failure);
+      }, scenario.closesAfterMs);
     const pressed = [];
     const press = async (window) => {
       pressed.push(window.title);
@@ -371,10 +458,21 @@ test("a held modal records whether it was still listed when the call settled", a
     assert.equal(watched.result, scenario.result, scenario.name);
     assert.deepEqual(pressed, scenario.pressed, scenario.name);
     const [held, unheld] = watched.modals;
-    assert.deepEqual({ title: held.title, held: held.held, settled_while_open: held.settled_while_open },
-      { title: "Export", held: true, settled_while_open: scenario.open }, scenario.name);
-    assert.deepEqual({ title: unheld.title, held: unheld.held, pressed_at_seconds: unheld.pressed_at_seconds, settled_while_open: unheld.settled_while_open },
-      { title: "Note", held: false, pressed_at_seconds: null, settled_while_open: undefined }, scenario.name);
+    assert.deepEqual(
+      { title: held.title, held: held.held, settled_while_open: held.settled_while_open },
+      { title: "Export", held: true, settled_while_open: scenario.open },
+      scenario.name,
+    );
+    assert.deepEqual(
+      {
+        title: unheld.title,
+        held: unheld.held,
+        pressed_at_seconds: unheld.pressed_at_seconds,
+        settled_while_open: unheld.settled_while_open,
+      },
+      { title: "Note", held: false, pressed_at_seconds: null, settled_while_open: undefined },
+      scenario.name,
+    );
     if (scenario.pressed.length === 0) assert.equal(held.pressed_at_seconds, null, scenario.name);
     else assert.ok(held.pressed_at_seconds >= timing.holdMs / 1000, scenario.name);
   }
@@ -383,8 +481,14 @@ test("a held modal records whether it was still listed when the call settled", a
 test("fixtures to import are those the marker does not list and those whose listed photo the catalog no longer holds", () => {
   const files = ["pano", "chart80", "people_photo"].map((key) => ({ key, source: `/fixtures/${key}` }));
   const marker = { fixtures: { pano: { id: 535 }, chart80: { id: 49 } } };
-  assert.deepEqual(fixturesToImport(files, marker, []).map(({ key }) => key), ["people_photo"]);
-  assert.deepEqual(fixturesToImport(files, marker, ["535"]).map(({ key }) => key), ["pano", "people_photo"]);
+  assert.deepEqual(
+    fixturesToImport(files, marker, []).map(({ key }) => key),
+    ["people_photo"],
+  );
+  assert.deepEqual(
+    fixturesToImport(files, marker, ["535"]).map(({ key }) => key),
+    ["pano", "people_photo"],
+  );
 });
 
 test("measureChange returns once the render after the change is stable, without waiting out the settle time", async () => {
@@ -392,7 +496,14 @@ test("measureChange returns once the render after the change is stable, without 
   let changed = false;
   const fetch = async () => (changed ? flat(0.8) : flat(0.2));
   const started = Date.now();
-  const { before, after } = await measureChange({}, "1", async () => { changed = true; }, { settleMs: 1500, pauseMs: 20, fetch });
+  const { before, after } = await measureChange(
+    {},
+    "1",
+    async () => {
+      changed = true;
+    },
+    { settleMs: 1500, pauseMs: 20, fetch },
+  );
   assert.ok(Math.abs(before.L[0] - 0.2) < 1e-6);
   assert.ok(Math.abs(after.L[0] - 0.8) < 1e-6);
   assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
@@ -401,7 +512,11 @@ test("measureChange returns once the render after the change is stable, without 
 test("measureChange still waits the settle time for a change that never shows", async () => {
   const flat = { w: 4, h: 4, L: new Float32Array(16).fill(0.2) };
   const started = Date.now();
-  const { after } = await measureChange({}, "1", async () => {}, { settleMs: 300, pauseMs: 20, fetch: async () => flat });
+  const { after } = await measureChange({}, "1", async () => {}, {
+    settleMs: 300,
+    pauseMs: 20,
+    fetch: async () => flat,
+  });
   assert.ok(Math.abs(after.L[0] - 0.2) < 1e-6);
   assert.ok(Date.now() - started >= 300);
 });
@@ -411,22 +526,45 @@ test("measureChange polls until the change it is told to expect shows and report
   const started = Date.now();
   const fetch = async () => flat(Date.now() - started >= 200 ? 0.8 : Date.now() - started >= 60 ? 0.5 : 0.2);
   const shows = (before, current) => current.L[0] - before.L[0] > 0.5;
-  const { after, landedMs } = await measureChange({}, "1", async () => {}, { settleMs: 1000, shows, pauseMs: 20, fetch });
+  const { after, landedMs } = await measureChange({}, "1", async () => {}, {
+    settleMs: 1000,
+    shows,
+    pauseMs: 20,
+    fetch,
+  });
   assert.ok(Math.abs(after.L[0] - 0.8) < 1e-6);
   assert.ok(landedMs >= 150 && landedMs < 1000, `landed at ${landedMs}`);
 });
 
 test("measureChange reports no landing when the expected change never shows within the settle time", async () => {
   const flat = { w: 4, h: 4, L: new Float32Array(16).fill(0.2) };
-  const { landedMs } = await measureChange({}, "1", async () => {}, { settleMs: 100, shows: () => false, pauseMs: 20, fetch: async () => flat });
+  const { landedMs } = await measureChange({}, "1", async () => {}, {
+    settleMs: 100,
+    shows: () => false,
+    pauseMs: 20,
+    fetch: async () => flat,
+  });
   assert.equal(landedMs, null);
 });
 
 test("measureChange with a detail floor passes over equal interim renders softer than the render before the change", async () => {
-  const pattern = (amplitude) => ({ w: 4, h: 4, L: Float32Array.from({ length: 16 }, (_, i) => 0.5 + ((i + Math.floor(i / 4)) % 2 ? amplitude : -amplitude)) });
+  const pattern = (amplitude) => ({
+    w: 4,
+    h: 4,
+    L: Float32Array.from({ length: 16 }, (_, i) => 0.5 + ((i + Math.floor(i / 4)) % 2 ? amplitude : -amplitude)),
+  });
   let fetches = 0;
-  const fetch = async () => { fetches += 1; return fetches <= 2 ? pattern(0.2) : fetches <= 5 ? pattern(0.01) : pattern(0.15); };
-  const { after } = await measureChange({}, "1", async () => {}, { settleMs: 0, shows: () => true, pauseMs: 5, minDetailRatio: 0.5, fetch });
+  const fetch = async () => {
+    fetches += 1;
+    return fetches <= 2 ? pattern(0.2) : fetches <= 5 ? pattern(0.01) : pattern(0.15);
+  };
+  const { after } = await measureChange({}, "1", async () => {}, {
+    settleMs: 0,
+    shows: () => true,
+    pauseMs: 5,
+    minDetailRatio: 0.5,
+    fetch,
+  });
   assert.ok(detailLevel(after) > 0.5 * detailLevel(pattern(0.2)), `accepted detail ${detailLevel(after)}`);
   assert.ok(detailLevel(pattern(0.01)) < 0.1 * detailLevel(pattern(0.2)));
 });
@@ -451,7 +589,11 @@ test("the sampled maximum luminance difference reads every seventh pixel", () =>
 test("pollCatalog returns the read as soon as the expected change shows, without waiting out the window", async () => {
   const started = Date.now();
   let reads = 0;
-  const value = await pollCatalog(() => ++reads, (count) => count >= 3, { withinMs: 1500, pollMs: 20 });
+  const value = await pollCatalog(
+    () => ++reads,
+    (count) => count >= 3,
+    { withinMs: 1500, pollMs: 20 },
+  );
   assert.equal(value, 3);
   assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
 });
@@ -459,7 +601,11 @@ test("pollCatalog returns the read as soon as the expected change shows, without
 test("pollCatalog waits the whole window for a change that never shows and returns the last read", async () => {
   const started = Date.now();
   let reads = 0;
-  const value = await pollCatalog(() => ++reads, () => false, { withinMs: 300, pollMs: 20 });
+  const value = await pollCatalog(
+    () => ++reads,
+    () => false,
+    { withinMs: 300, pollMs: 20 },
+  );
   assert.ok(Date.now() - started >= 300);
   assert.ok(value > 1, `read ${value} times`);
 });
@@ -488,8 +634,19 @@ test("a proof's evidence records when it started and when it finished", () => {
 
 test("absent fixtures come from a metadata answer that settled, and a failed lookup is an error, not an empty list", () => {
   assert.deepEqual(absentFixtureIds({ outcome: "done", envelope: { outcome: "done" } }), []);
-  assert.deepEqual(absentFixtureIds({ outcome: "partial", envelope: { outcome: "partial", not_found: ["535"] } }), ["535"]);
-  assert.deepEqual(absentFixtureIds({ outcome: "failed", envelope: { outcome: "failed", not_found: ["535", "536"] } }), ["535", "536"]);
-  assert.throws(() => absentFixtureIds({ outcome: "failed", envelope: { outcome: "failed", error: "bridge timed out" } }), /bridge timed out/);
-  assert.throws(() => absentFixtureIds({ outcome: "unknown", envelope: { outcome: "unknown", error: "no answer" } }), /no answer/);
+  assert.deepEqual(absentFixtureIds({ outcome: "partial", envelope: { outcome: "partial", not_found: ["535"] } }), [
+    "535",
+  ]);
+  assert.deepEqual(
+    absentFixtureIds({ outcome: "failed", envelope: { outcome: "failed", not_found: ["535", "536"] } }),
+    ["535", "536"],
+  );
+  assert.throws(
+    () => absentFixtureIds({ outcome: "failed", envelope: { outcome: "failed", error: "bridge timed out" } }),
+    /bridge timed out/,
+  );
+  assert.throws(
+    () => absentFixtureIds({ outcome: "unknown", envelope: { outcome: "unknown", error: "no answer" } }),
+    /no answer/,
+  );
 });

@@ -43,9 +43,15 @@ write("chart80", "chart80.png", encodePng(chart80), { width: chart80.width, heig
 const ramp256 = buildRamp256();
 write("ramp256", "ramp256.png", encodePng(ramp256), { width: ramp256.width, height: ramp256.height });
 const checkerboard = buildCheckerboard();
-write("checkerboard", "checkerboard.png", encodePng(checkerboard), { width: checkerboard.width, height: checkerboard.height });
+write("checkerboard", "checkerboard.png", encodePng(checkerboard), {
+  width: checkerboard.width,
+  height: checkerboard.height,
+});
 for (const card of [...STACK_CARDS, FLAT_FIELD]) {
-  write(card.key, `${card.key}.png`, encodePng(createCanvas(card.width, card.height, card.color)), { width: card.width, height: card.height });
+  write(card.key, `${card.key}.png`, encodePng(createCanvas(card.width, card.height, card.color)), {
+    width: card.width,
+    height: card.height,
+  });
 }
 
 if (skipJpeg) {
@@ -54,7 +60,10 @@ if (skipJpeg) {
 }
 
 const widePlain = buildWidePlain();
-write("wide_plain", "wide_plain.jpg", encodeJpegWithSips(widePlain), { width: widePlain.width, height: widePlain.height });
+write("wide_plain", "wide_plain.jpg", encodeJpegWithSips(widePlain), {
+  width: widePlain.width,
+  height: widePlain.height,
+});
 const pano = buildPano();
 write("pano", "pano.jpg", encodeJpegWithSips(pano), { width: pano.width, height: pano.height });
 

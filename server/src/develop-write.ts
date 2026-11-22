@@ -29,20 +29,33 @@ const NOT_FOUND_WHEN_READ = "not found when its stored settings were read";
 export async function beforeWrite(read: Promise<PluginReply>): Promise<PluginReply> {
   try {
     const reply = await read;
-    return reply.error === undefined ? reply : { ...reply, error: `${reply.error}; nothing was written`, effect: "none" };
+    return reply.error === undefined
+      ? reply
+      : { ...reply, error: `${reply.error}; nothing was written`, effect: "none" };
   } catch (error) {
     return { error: `${error instanceof Error ? error.message : String(error)}; nothing was written`, effect: "none" };
   }
 }
 
 async function storedRows(
-  inputs: Input[], keys: string[], dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
+  inputs: Input[],
+  keys: string[],
+  dispatcher: Pick<Dispatcher, "call">,
+  budgetMs: number,
+  options?: CallOptions,
 ): Promise<{ rows: StoredRow[] } | { reply: PluginReply }> {
-  const reply = await beforeWrite(dispatcher.call("read_settings_by_input", { photo_ids: inputs, keys }, budgetMs, options));
+  const reply = await beforeWrite(
+    dispatcher.call("read_settings_by_input", { photo_ids: inputs, keys }, budgetMs, options),
+  );
   if (reply.error !== undefined) return { reply };
   const rows = (reply.result?.data as { rows?: StoredRow[] } | undefined)?.rows;
   if (rows?.length !== inputs.length) {
-    return { reply: { error: "Lightroom did not return one row of stored settings per photo; nothing was written", effect: "none" } };
+    return {
+      reply: {
+        error: "Lightroom did not return one row of stored settings per photo; nothing was written",
+        effect: "none",
+      },
+    };
   }
   return { rows };
 }
@@ -51,10 +64,16 @@ function judged(photoId: Input, settings: Record<string, unknown>, row: StoredRo
   if ("remaining" in row) return { photo_id: photoId, remaining: true };
   if ("not_found" in row) return { photo_id: photoId, notFound: true };
   if ("failed" in row) {
-    return { photo_id: photoId, unread: `its stored settings were not read: ${row.failed}; nothing was written`, known: row.photo_id };
+    return {
+      photo_id: photoId,
+      unread: `its stored settings were not read: ${row.failed}; nothing was written`,
+      known: row.photo_id,
+    };
   }
   const refused = refusalFor(settings, row.settings);
-  return refused ? { photo_id: photoId, refused, known: row.photo_id } : { photo_id: photoId, settings, known: row.photo_id };
+  return refused
+    ? { photo_id: photoId, refused, known: row.photo_id }
+    : { photo_id: photoId, settings, known: row.photo_id };
 }
 
 function judgedWithoutRead(photoId: Input, settings: Record<string, unknown>): Judged {
@@ -63,26 +82,38 @@ function judgedWithoutRead(photoId: Input, settings: Record<string, unknown>): J
 }
 
 async function judgedAll(
-  items: { photo_id: Input; settings: Record<string, unknown> }[], dispatcher: Pick<Dispatcher, "call">, budgetMs: number,
+  items: { photo_id: Input; settings: Record<string, unknown> }[],
+  dispatcher: Pick<Dispatcher, "call">,
+  budgetMs: number,
   options?: CallOptions,
 ): Promise<{ judged: Judged[] } | { reply: PluginReply }> {
   const unread = items.map(({ settings }) => unreadKeys(settings));
   const reading = items.flatMap((item, index) => (unread[index].length ? [index] : []));
   const stored = reading.length
-    ? await storedRows(reading.map((index) => items[index].photo_id), [...new Set(unread.flat())], dispatcher, budgetMs, options)
+    ? await storedRows(
+        reading.map((index) => items[index].photo_id),
+        [...new Set(unread.flat())],
+        dispatcher,
+        budgetMs,
+        options,
+      )
     : { rows: [] };
   if ("reply" in stored) return stored;
   const rowOf = new Map(reading.map((index, at) => [index, stored.rows[at]]));
-  return { judged: items.map(({ photo_id, settings }, index) => {
-    const row = rowOf.get(index);
-    return row ? judged(photo_id, settings, row) : judgedWithoutRead(photo_id, settings);
-  }) };
+  return {
+    judged: items.map(({ photo_id, settings }, index) => {
+      const row = rowOf.get(index);
+      return row ? judged(photo_id, settings, row) : judgedWithoutRead(photo_id, settings);
+    }),
+  };
 }
 
 export function roundingNote(rounded: Rounded[], photoId?: Input): string[] {
   if (!rounded.length) return [];
-  return [`Rounded to the precision Lightroom keeps${photoId === undefined ? "" : ` on photo ${photoId}`}: `
-    + rounded.map(({ key, requested, written }) => `${key} ${requested} -> ${written}`).join(", ")];
+  return [
+    `Rounded to the precision Lightroom keeps${photoId === undefined ? "" : ` on photo ${photoId}`}: ` +
+      rounded.map(({ key, requested, written }) => `${key} ${requested} -> ${written}`).join(", "),
+  ];
 }
 
 function unreadKeys(settings: Record<string, unknown>): string[] {
@@ -102,7 +133,10 @@ export function withWarnings(reply: PluginReply, warnings: string[]): PluginRepl
 }
 
 export async function writeDevelopSettings(
-  photoId: Input, settings: Record<string, unknown>, dispatcher: Pick<Dispatcher, "call">, budgetMs: number,
+  photoId: Input,
+  settings: Record<string, unknown>,
+  dispatcher: Pick<Dispatcher, "call">,
+  budgetMs: number,
   options?: CallOptions,
 ): Promise<PluginReply> {
   const deadline = performance.now() + budgetMs;
@@ -113,12 +147,19 @@ export async function writeDevelopSettings(
   if ("notFound" in item) return { result: { not_found: [photoId] } };
   if ("unread" in item) return { result: { failed: [{ photo_id: item.known, reason: item.unread }] } };
   if ("refused" in item) return { error: item.refused, effect: "none" };
-  return await dispatcher.call("write_develop_settings", { photo_id: photoId, settings }, deadline - performance.now(),
-    options);
+  return await dispatcher.call(
+    "write_develop_settings",
+    { photo_id: photoId, settings },
+    deadline - performance.now(),
+    options,
+  );
 }
 
 export async function setDevelopSettings(
-  args: DevelopWriteArgs, dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
+  args: DevelopWriteArgs,
+  dispatcher: Pick<Dispatcher, "call">,
+  budgetMs: number,
+  options?: CallOptions,
 ): Promise<PluginReply> {
   const { settings, rounded } = roundToPrecision(args.settings);
   const reply = await writeDevelopSettings(args.photo_id, settings, dispatcher, budgetMs, options);
@@ -137,15 +178,19 @@ function lostSplit(photos: Judged[], reason: string): PluginReply {
     if ("refused" in photo) return [lostItem(photo, photo.refused)];
     return "unread" in photo ? [lostItem(photo, photo.unread)] : [];
   });
-  const unknown = photos.flatMap((photo) => ("settings" in photo
-    ? [lostItem(photo, `the write was sent and its reply was lost (${reason})`)] : []));
+  const unknown = photos.flatMap((photo) =>
+    "settings" in photo ? [lostItem(photo, `the write was sent and its reply was lost (${reason})`)] : [],
+  );
   const notFound = photos.flatMap((photo) => ("notFound" in photo ? [photo.photo_id] : []));
   const remaining = photos.flatMap((photo) => ("remaining" in photo ? [photo.photo_id] : []));
   return { result: { failed, unknown, not_found: notFound, remaining } };
 }
 
 export async function setDevelopSettingsBatch(
-  args: DevelopBatchArgs, dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
+  args: DevelopBatchArgs,
+  dispatcher: Pick<Dispatcher, "call">,
+  budgetMs: number,
+  options?: CallOptions,
 ): Promise<PluginReply> {
   const deadline = performance.now() + budgetMs;
   const items = args.photos.map(({ photo_id, settings }) => ({ photo_id, ...roundToPrecision(settings) }));
