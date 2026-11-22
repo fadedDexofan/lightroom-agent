@@ -1068,9 +1068,6 @@ local function autoPhoto(context, catalog, photo, args)
 end
 
 function DevelopHandler.applyAutoAdjustments(args, context)
-    local autoFunctions = {}
-    if args.tone then autoFunctions[#autoFunctions + 1] = "setAutoTone" end
-    if args.white_balance then autoFunctions[#autoFunctions + 1] = "setAutoWhiteBalance" end
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
