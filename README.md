@@ -64,7 +64,7 @@ Codex, Claude Desktop and other clients are under [Installation](#installation).
 
 ## What an agent can do
 
-- **Cull.** Search by rating, date, camera, lens, keyword or folder, compare frames on previews, and judge sharpness on 1:1 crops of a full-resolution render rather than on a scaled preview.
+- **Cull.** Search by rating, date, camera, lens, keyword or folder, compare frames on previews, and judge sharpness on 1:1 crops of a full-resolution render rather than on a scaled preview. The photo open in Develop gets no preview; `render_photo` renders it, or any photo, by a short export.
 - **Develop.** Set develop sliders by their Lightroom SDK names; ranges are checked before the write and values are read back after Lightroom normalises them. Crop and straighten in the frame the agent sees, apply presets, match one photo's look on others, and keep the previous edit recoverable with snapshots and named virtual copies.
 - **Mask.** Subject, Sky, Background, People and Landscape masks; linear and radial gradients, brushes, colour, luminance and depth ranges (depth photos only); per-mask sliders, curves and Point Color. If Lightroom finds no sky or subject, the call removes the empty mask and says so. Building a mask needs a [certification](docs/reference.md#mask-construction-and-certification) on this machine that covers your Lightroom build and the photo's process version, rerun after each Lightroom update; slider, curve and Point Color edits work without it.
 - **Organise.** Ratings, flags, colour labels, keywords, collections, metadata and GPS, plus a private score and reason per photo, kept out of IPTC and XMP.
