@@ -1,5 +1,6 @@
 local LrApplication = import 'LrApplication'
 
+local DevelopReadBack = require 'DevelopReadBack'
 local Log = require 'Log'
 local PhotoLookup = require 'PhotoLookup'
 local Reply = require 'Reply'
@@ -39,7 +40,7 @@ function LensProfileHandler.read(args)
         for i, photo in ipairs(found) do
             photos[i] = {
                 photo_id = tostring(photo.localIdentifier),
-                lens_profile = lensProfileOf(photo:getDevelopSettings() or {}),
+                lens_profile = lensProfileOf(DevelopReadBack.saved(photo)),
             }
         end
     end)

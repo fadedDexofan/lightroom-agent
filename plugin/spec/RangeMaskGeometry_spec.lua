@@ -2,7 +2,8 @@ local helper = require 'spec_helper'
 
 local RangeMaskGeometry
 
-local UPRIGHT = require('ImageFrame').of({ orientation = "AB", dimensions = { width = 3000, height = 2000 } })
+helper.installImport({})
+local UPRIGHT = require('ImageFrame').of({ orientation = "AB", dimensions = { width = 3000, height = 2000 }, settings = {} })
 
 local function sample(overrides)
     local value = { x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }

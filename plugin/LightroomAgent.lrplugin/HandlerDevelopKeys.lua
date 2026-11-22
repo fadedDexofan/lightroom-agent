@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
+local DevelopReadBack = require 'DevelopReadBack'
 local DevelopSession = require 'DevelopSession'
 local MaskSelection = require 'MaskSelection'
 local PhotoLookup = require 'PhotoLookup'
@@ -27,7 +28,7 @@ function Handler.ranges(args, context)
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local photoId = tostring(photo.localIdentifier)
     local processVersion
-    catalog:withReadAccessDo(function() processVersion = photo:getDevelopSettings().ProcessVersion end)
+    catalog:withReadAccessDo(function() processVersion = DevelopReadBack.saved(photo).ProcessVersion end)
     local running = RunningLightroom.describe()
     return DevelopSession.withPhoto(context, catalog, photo, function()
         local result = {

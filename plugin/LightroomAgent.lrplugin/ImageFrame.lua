@@ -1,3 +1,4 @@
+local DevelopReadBack = require 'DevelopReadBack'
 local Log = require 'Log'
 local Reply = require 'Reply'
 
@@ -86,7 +87,7 @@ function ImageFrame.of(photo)
     local storedWidth, storedHeight = pixelSizeOf(photo.dimensions)
     if swapsAxes then storedWidth, storedHeight = storedHeight, storedWidth end
 
-    local settings = photo.settings or {}
+    local settings = photo.settings
     local radians = math.rad(settingOf(settings, "CropAngle"))
     local cosine, sine = math.cos(radians), math.sin(radians)
     local originX = settingOf(settings, "CropLeft") * storedWidth
@@ -192,7 +193,7 @@ function ImageFrame.cropSettingsFor(photo, crop)
             tostring(crop.angle), largest.left, largest.top, largest.right, largest.bottom))
     end
     local displayedFromCrop = inverseOf(orientationMapOf(photo.orientation))
-    local uncropped = ImageFrame.of({ orientation = photo.orientation, dimensions = photo.dimensions })
+    local uncropped = ImageFrame.of({ orientation = photo.orientation, dimensions = photo.dimensions, settings = {} })
     local radians = math.rad(crop.angle)
     local cosine, sine = math.cos(radians), math.sin(radians)
     local function corner(p, q)
@@ -219,7 +220,7 @@ end
 function ImageFrame.currentCrop(photo)
     local width, height = pixelSizeOf(photo.dimensions)
     local cropped = ImageFrame.of(photo)
-    local uncropped = ImageFrame.of({ orientation = photo.orientation, dimensions = photo.dimensions })
+    local uncropped = ImageFrame.of({ orientation = photo.orientation, dimensions = photo.dimensions, settings = {} })
     local function corner(u, v)
         local x, y = uncropped.toDisplayed(cropped.toStored(u, v))
         return x * width, y * height
@@ -255,7 +256,7 @@ function ImageFrame.read(catalog, photo)
     catalog:withReadAccessDo(function()
         read.orientation = photo:getRawMetadata("orientation")
         read.dimensions = photo:getRawMetadata("dimensions")
-        read.settings = photo:getDevelopSettings()
+        read.settings = DevelopReadBack.saved(photo)
     end)
     Log.info("Photo " .. tostring(photo.localIdentifier) .. " reports orientation " .. tostring(read.orientation))
     return read

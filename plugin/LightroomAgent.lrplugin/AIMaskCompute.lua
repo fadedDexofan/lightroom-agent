@@ -3,6 +3,7 @@ local LrTasks = import 'LrTasks'
 local AIMaskData = require 'AIMaskData'
 local Contract = require 'Contract'
 local CatalogWrite = require 'CatalogWrite'
+local DevelopReadBack = require 'DevelopReadBack'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local JsonValue = require 'JsonValue'
 local Reply = require 'Reply'
@@ -68,9 +69,9 @@ local MAX_NAMED_KEYS = 10
 
 local function keysOutsideMasksChangedSince(catalog, photo, settings)
     local now
-    catalog:withReadAccessDo(function() now = photo:getDevelopSettings() end)
+    catalog:withReadAccessDo(function() now = DevelopReadBack.saved(photo) end)
     local seen, keys = {}, {}
-    for _, path in ipairs(JsonValue.differences(settings or {}, now or {})) do
+    for _, path in ipairs(JsonValue.differences(settings or {}, now)) do
         local key = path:match("^[^.]+")
         if key ~= "MaskGroupBasedCorrections" and not seen[key] then
             seen[key] = true

@@ -1039,6 +1039,21 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
 
+    it("fails a target whose saved settings Lightroom does not return, writes nothing to it and copies the others", function()
+        local source = helper.fakePhoto({ id = "10", developSettings = { Exposure2012 = 1 } })
+        local first = helper.fakePhoto({ id = "11" })
+        local unread = helper.fakePhoto({ id = "12" })
+        local last = helper.fakePhoto({ id = "13" })
+        unread.getDevelopSettings = function() return nil end
+        local _, Handler = setup({ photos = { source, first, unread, last } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12", "13" } })
+
+        assert.are.equal(2, r.data.copied)
+        assert.is_nil(unread:getRawMetadata("__appliedSettings"))
+        assert.are.same({ { photo_id = "12", reason = "Lightroom returned no saved settings for photo 12" } }, r.failed)
+    end)
+
     it("copies all settings from source to targets", function()
         local source = helper.fakePhoto({
             id = "10", path = "/s.jpg",
@@ -1542,6 +1557,7 @@ local function denoiseSetup(opts)
                 if switched then active = switched end
             end
             if opts.nilAfterReset and calls.resetAt and calls.resetAt[spec.id] then return nil end
+            if opts.nilRead and opts.nilRead[spec.id] then return nil end
             return deepCopy(settings)
         end
         if spec.denoise then
@@ -1871,6 +1887,16 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
 end)
 
 describe("HandlerDevelop.applyDenoise", function()
+    it("fails a photo whose saved settings Lightroom does not return, before any Denoise, and goes on", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" } }, nilRead = { ["2"] = true } })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1", "2" }, amount = 45 }, helper.requestContext())
+
+        assert.are.same({ "1:applied" }, statuses(r))
+        assert.are.same({ "2:Lightroom returned no saved settings for photo 2" }, reasonsOf(r.failed))
+        assert.are.same({ { id = "1", name = "denoise", on = true, amount = 45 } }, calls.enhance)
+    end)
+
     it("cancel keeps completed denoise and restores the module and selection", function()
         local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" }, { id = "3" } } })
         local context = helper.requestContext(nil, { isCanceled = function() return #calls.enhance >= 1 end })

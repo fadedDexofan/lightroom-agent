@@ -101,6 +101,15 @@ describe('reference style matching', function()
         assert.is_false(catalog:getQueriedInsideReadAccess())
     end)
 
+    it('fails a target whose saved settings Lightroom does not return, writes nothing to it and continues', function()
+        targets[2].getDevelopSettings = function() return nil end
+        local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3', '4' } })
+        assert.is_nil(applied['3'])
+        assert.truthy(applied['2'] and applied['4'])
+        assert.equals(2, result.data.matched)
+        assert.same({ { photo_id = '3', reason = 'Lightroom returned no saved settings for photo 3' } }, result.failed)
+    end)
+
     it('fails a target whose snapshot step raised inside its gate, writes nothing to it and continues', function()
         targets[2].createDevelopSnapshot = function() error('snapshot interrupted') end
         local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3', '4', '999' } })

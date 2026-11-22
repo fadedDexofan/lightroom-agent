@@ -1,4 +1,5 @@
 local helper = require 'spec_helper'
+helper.installImport({})
 local ImageFrame = require 'ImageFrame'
 
 local function near(expected, actual, tolerance)
@@ -8,7 +9,7 @@ end
 local SIZE = { width = 3000, height = 2000 }
 
 local function frameOf(orientation, settings, dimensions)
-    return ImageFrame.of({ orientation = orientation, dimensions = dimensions or SIZE, settings = settings })
+    return ImageFrame.of({ orientation = orientation, dimensions = dimensions or SIZE, settings = settings or {} })
 end
 
 describe("ImageFrame orientation", function()
@@ -175,6 +176,18 @@ describe("ImageFrame warning for corrections it cannot invert", function()
 end)
 
 describe("ImageFrame.forPhoto", function()
+    it("refuses a photo whose saved settings Lightroom does not return instead of taking it as uncropped", function()
+        local catalog = { withReadAccessDo = function(_, fn) fn() end }
+        local photo = {
+            localIdentifier = 7,
+            getRawMetadata = function(_, key) return ({ orientation = "AB", dimensions = SIZE })[key] end,
+            getDevelopSettings = function() return nil end,
+        }
+
+        assert.has_error(function() ImageFrame.forPhoto(catalog, photo) end,
+            "Lightroom returned no saved settings for photo 7")
+    end)
+
     it("reads the orientation, pixel size and develop settings inside the read gate", function()
         local insideGate = false
         local readOutsideGate = false

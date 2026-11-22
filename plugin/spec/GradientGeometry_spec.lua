@@ -366,7 +366,7 @@ describe("GradientGeometry frame conversion", function()
     end)
 
     local function frameOf(orientation, settings)
-        return ImageFrame.of({ orientation = orientation, dimensions = { width = 3000, height = 2000 }, settings = settings })
+        return ImageFrame.of({ orientation = orientation, dimensions = { width = 3000, height = 2000 }, settings = settings or {} })
     end
 
     local radial = { center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = 30, feather = 40, area = "outside" }
