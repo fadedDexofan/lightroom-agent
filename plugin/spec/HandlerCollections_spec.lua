@@ -88,6 +88,7 @@ describe("HandlerCollections.createCollection", function()
         assert.are.same({ "failed", helper.catalogBusy("Create Collection") }, { helper.outcomeOf(function(context)
             Handler.createCollection({ name = "Album" }, context)
         end) })
+        assert.are.same({}, catalog.getCreatedCollections())
 
         catalog, Handler = setup({ writeAccessAborts = function(name) return name == "Create Collection Sets" end })
         assert.are.same({ "failed", helper.catalogBusy("Create Collection Sets") }, { helper.outcomeOf(function(context)

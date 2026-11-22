@@ -1,0 +1,104 @@
+---
+base: lightroom
+
+globals:
+  describe:
+    args:
+      - type: string
+      - type: function
+  it:
+    args:
+      - type: string
+      - required: false
+        type: function
+  pending:
+    args:
+      - type: string
+      - required: false
+        type: function
+  before_each:
+    args:
+      - type: function
+  after_each:
+    args:
+      - type: function
+  finally:
+    args:
+      - type: function
+  assert:
+    args:
+      - type: any
+      - required: false
+        type: any
+  assert.are.equal:
+    args:
+      - type: "..."
+  assert.are.same:
+    args:
+      - type: "..."
+  assert.are_not.equal:
+    args:
+      - type: "..."
+  assert.are_not.same:
+    args:
+      - type: "..."
+  assert.equals:
+    args:
+      - type: "..."
+  assert.error_matches:
+    args:
+      - type: "..."
+  assert.has_error:
+    args:
+      - type: "..."
+  assert.has_no.errors:
+    args:
+      - type: "..."
+  assert.is_false:
+    args:
+      - type: "..."
+  assert.is_falsy:
+    args:
+      - type: "..."
+  assert.is_function:
+    args:
+      - type: "..."
+  assert.is_nil:
+    args:
+      - type: "..."
+  assert.is_not_nil:
+    args:
+      - type: "..."
+  assert.is_string:
+    args:
+      - type: "..."
+  assert.is_table:
+    args:
+      - type: "..."
+  assert.is_true:
+    args:
+      - type: "..."
+  assert.is_truthy:
+    args:
+      - type: "..."
+  assert.matches:
+    args:
+      - type: "..."
+  assert.same:
+    args:
+      - type: "..."
+  assert.truthy:
+    args:
+      - type: "..."
+  io.open:
+    any: true
+  table.sort:
+    any: true
+  require:
+    any: true
+  package.config:
+    any: true
+  package.searchpath:
+    args:
+      - type: string
+      - type: string

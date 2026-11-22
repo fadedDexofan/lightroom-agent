@@ -77,8 +77,8 @@ local function setup(opts)
     }
     local catalog = helper.fakeCatalog({ photos = photos })
     local recordSelection = catalog.setSelectedPhotos
-    catalog.setSelectedPhotos = function(self, photo, selected)
-        recordSelection(self, photo, selected)
+    catalog.setSelectedPhotos = function(self, photo, others)
+        recordSelection(self, photo, others)
         active = photo
         calls.selections[#calls.selections + 1] = photo.localIdentifier
     end
@@ -310,7 +310,7 @@ local function copySetup(opts)
     local store = Store.attach(photo, { entries = opts.entries or sourceEntries(), transformWrite = opts.transformWrite })
     local catalog = helper.fakeCatalog({ photos = { photo } })
     Store.trackGates(store, catalog)
-    local module, tool, selected = "library", opts.tool or "loupe", "m-2"
+    local module, selectedTool, selected = "library", opts.tool or "loupe", "m-2"
     local calls = { duplicate = {}, deleted = {}, modules = {}, tools = {} }
     local unsaved, readsUntilSaved = nil, opts.copySavedAfterReads or 0
     local listedOnly, duplicated = {}, false
@@ -340,13 +340,13 @@ local function copySetup(opts)
         end,
         getSelectedMask = function() return selected end,
         selectMask = function(id) selected = id end,
-        getSelectedTool = function() return tool end,
+        getSelectedTool = function() return selectedTool end,
         selectTool = function(name)
-            tool = name
+            selectedTool = name
             calls.tools[#calls.tools + 1] = name
         end,
         selectMaskTool = function() end,
-        goToMasking = function() tool = "masking" end,
+        goToMasking = function() selectedTool = "masking" end,
         invertMask = function() return true end,
         deleteMask = function(id)
             calls.deleted[#calls.deleted + 1] = id
@@ -396,7 +396,7 @@ local function copySetup(opts)
         package.loaded[name] = nil
     end
     calls.selected = function() return selected end
-    calls.tool = function() return tool end
+    calls.tool = function() return selectedTool end
     return require 'HandlerMaskInvert', store, calls
 end
 

@@ -1,12 +1,12 @@
 [tools]
 node = "26.13.1"
 lua = "5.1.5"
-# selene (Rust) is the Lua linter — see lua:lint. A native binary, so unlike
-# luacheck it does not run on the Lua above and is immune to Lua-version breaks.
+# selene (Rust) and luacheck (a rock in lua_modules/ on the Lua above) lint the
+# plug-in and its specs — see lua:lint.
 "aqua:Kampfkarren/selene" = "0.32.0"
 
 [env]
-# Project-local LuaRocks tree (busted) installed by `lua:deps`.
+# Project-local LuaRocks tree (busted, luacheck) installed by `lua:deps`.
 _.path = ["lua_modules/bin"]
 
 [tasks.install]
@@ -35,8 +35,11 @@ depends = ["build"]
 run = "node scripts/build-mcpb.mjs"
 
 [tasks."lua:deps"]
-description = "Install the pinned busted rock into lua_modules/"
-run = "test -d lua_modules/lib/luarocks/rocks-$(luarocks config lua_version)/busted/2.3.0-1 || luarocks install --tree lua_modules busted 2.3.0-1"
+description = "Install the pinned Lua rocks (busted, luacheck) into lua_modules/"
+run = [
+  "test -d lua_modules/lib/luarocks/rocks-$(luarocks config lua_version)/busted/2.3.0-1 || luarocks install --tree lua_modules busted 2.3.0-1",
+  "test -d lua_modules/lib/luarocks/rocks-$(luarocks config lua_version)/luacheck/1.2.0-1 || luarocks install --tree lua_modules luacheck 1.2.0-1",
+]
 
 [tasks."lua:test"]
 description = "Run busted specs for the Lightroom plugin"
@@ -44,8 +47,13 @@ depends = ["lua:deps"]
 run = "lua_modules/bin/busted"
 
 [tasks."lua:lint"]
-description = "Lint the Lightroom plugin with selene"
-run = "selene plugin/LightroomAgent.lrplugin"
+description = "Lint the Lightroom plugin and its specs with selene and luacheck"
+depends = ["lua:deps"]
+run = [
+  "selene plugin/LightroomAgent.lrplugin",
+  "selene --config selene-spec.toml plugin/spec",
+  "lua_modules/bin/luacheck plugin",
+]
 
 [tasks."live:fixtures"]
 description = "Generate the live-test fixtures, download the CC0 raw samples and verify both"

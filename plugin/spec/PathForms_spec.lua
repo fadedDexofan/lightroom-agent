@@ -39,8 +39,6 @@ describe("PathForms", function()
 end)
 
 describe("PathForms.relative", function()
-    local PathForms = require 'PathForms'
-
     it("finds a file under a root spelled with or without macOS's /private prefix", function()
         assert.are.equal("d/eb_fringe.png", PathForms.relative("/private/tmp/src", "/tmp/src/d/eb_fringe.png"))
         assert.are.equal("a.png", PathForms.relative("/tmp/src", "/private/tmp/src/a.png"))

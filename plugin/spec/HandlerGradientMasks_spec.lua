@@ -358,7 +358,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
             MaskID = "C1T3",
             Masks = { { What = "Mask/Paint", Dabs = { "d 0.1 0.1" }, Radius = 0.1, Flow = 1, CenterWeight = 0 } },
         }
-        local Handler, stores, calls = setup({ photos = { { id = "1", entries = entries } } })
+        local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
 
         local unknown = helper.failedOf(function()
             Handler.updateGradientMask({ photo_id = "1", tool_id = "NOPE", feather = 5 })

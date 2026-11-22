@@ -488,7 +488,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         })
         local _, Handler, state = setup({ photos = { photo } })
 
-        local r = Handler.createDevelopPreset({
+        Handler.createDevelopPreset({
             photo_id = "7",
             preset_name = "Clipped v1",
             settings = { "ToneCurvePV2012" },

@@ -32,7 +32,7 @@ describe("JSON", function()
         it("decodes control code points that have no short escape", function()
             local decoded = JSON:decode('{"s":"a\\u0000b\\u001fc"}')
 
-            assert.are.equal("a\0b\31c", decoded.s)
+            assert.are.equal("a\0b\031c", decoded.s)
         end)
 
         it("pairs surrogates into one code point", function()
@@ -79,7 +79,7 @@ describe("JSON", function()
     end)
 
     it("escapes control characters when encoding so the server can parse back", function()
-        local encoded = JSON:encode({ s = "a\0b\1c\31d\8e" })
+        local encoded = JSON:encode({ s = "a\0b\1c\031d\8e" })
 
         assert.is_not_nil(encoded:find('\\u0000', 1, true))
         assert.is_not_nil(encoded:find('\\u0001', 1, true))

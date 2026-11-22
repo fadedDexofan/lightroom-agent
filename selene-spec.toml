@@ -1,0 +1,6 @@
+std = "busted"
+
+[lints]
+multiple_statements = "allow"
+global_usage = "allow"
+mixed_table = "allow"
