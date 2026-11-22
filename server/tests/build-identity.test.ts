@@ -18,10 +18,13 @@ describe('compareVersions', () => {
     expect(compareVersions(higher, lower)).toBe(order === 0 ? 0 : 1);
   });
 
-  it.each([['rc.1', '0.1.0'], ['0.1.0', null], [null, null], ['1.0', '1.0.0'], ['01.0.0', '1.0.0']] as const)(
-    'gives no order for %o and %o',
-    (left, right) => {
-      expect(compareVersions(left, right)).toBeNull();
-    },
-  );
+  it.each([
+    ['rc.1', '0.1.0'],
+    ['0.1.0', null],
+    [null, null],
+    ['1.0', '1.0.0'],
+    ['01.0.0', '1.0.0'],
+  ] as const)('gives no order for %o and %o', (left, right) => {
+    expect(compareVersions(left, right)).toBeNull();
+  });
 });

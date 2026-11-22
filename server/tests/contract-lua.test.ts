@@ -16,14 +16,18 @@ describe('generated Lua contract module', () => {
 describe('constants shared with the plug-in', () => {
   it('names the detail render folder the server cleans up', async () => {
     const { DETAIL_RENDER_FOLDER } = await import('../src/photo-detail.js');
-    expect(renderContractLua(expectedIdentity(PLUGIN_DIR))).toContain(`DETAIL_RENDER_FOLDER = "${DETAIL_RENDER_FOLDER}"`);
+    expect(renderContractLua(expectedIdentity(PLUGIN_DIR))).toContain(
+      `DETAIL_RENDER_FOLDER = "${DETAIL_RENDER_FOLDER}"`,
+    );
   });
 });
 
 describe('preview reply reserve', () => {
   it('reaches the plug-in from the one constant the server adds to a preview timeout', async () => {
     const { PREVIEW_REPLY_RESERVE_MS } = await import('../src/preview-item.js');
-    expect(renderContractLua(expectedIdentity(PLUGIN_DIR))).toContain(`PREVIEW_REPLY_RESERVE_SECONDS = ${PREVIEW_REPLY_RESERVE_MS / 1000}`);
+    expect(renderContractLua(expectedIdentity(PLUGIN_DIR))).toContain(
+      `PREVIEW_REPLY_RESERVE_SECONDS = ${PREVIEW_REPLY_RESERVE_MS / 1000}`,
+    );
   });
 });
 

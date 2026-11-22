@@ -25,7 +25,10 @@ const MIN_CALL_MS = 1_000;
 export const LATE_REPLY_GRACE_MS = 60_000;
 
 export class PluginTimeoutError extends Error {
-  constructor(readonly timeoutMs: number, readonly settled: Promise<void> = Promise.resolve()) {
+  constructor(
+    readonly timeoutMs: number,
+    readonly settled: Promise<void> = Promise.resolve(),
+  ) {
     super(`Plugin response timeout (${timeoutMs / 1000}s)`);
     this.name = "PluginTimeoutError";
   }
@@ -105,7 +108,9 @@ export class Dispatcher {
 
     if (options?.signal?.aborted) throw new PluginNotSentError("Request cancelled");
     if (timeoutMs < MIN_CALL_MS) {
-      throw new PluginNotSentError(`Only ${Math.max(0, Math.round(timeoutMs))} ms of the time budget were left, so ${action} was not sent`);
+      throw new PluginNotSentError(
+        `Only ${Math.max(0, Math.round(timeoutMs))} ms of the time budget were left, so ${action} was not sent`,
+      );
     }
     const generation = this.connectionGeneration();
     const cancel = () => {
@@ -120,22 +125,34 @@ export class Dispatcher {
         this.pending.delete(id);
         reject(new PluginTimeoutError(timeoutMs, this.lingerFor(id)));
       }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, onProgress: options?.onProgress,
-        cleanup: () => options?.signal?.removeEventListener("abort", cancel) });
+      this.pending.set(id, {
+        resolve,
+        reject,
+        timer,
+        onProgress: options?.onProgress,
+        cleanup: () => options?.signal?.removeEventListener("abort", cancel),
+      });
       options?.signal?.addEventListener("abort", cancel, { once: true });
     });
 
     const cleanup = () => {
       const p = this.pending.get(id);
-      if (p) { clearTimeout(p.timer); p.cleanup(); }
+      if (p) {
+        clearTimeout(p.timer);
+        p.cleanup();
+      }
       this.pending.delete(id);
     };
 
     let payload: string;
     try {
       payload = JSON.stringify({
-        hello: this.getToken(), id, action, params,
-        reportProgress: Boolean(options?.onProgress), budget_ms: timeoutMs,
+        hello: this.getToken(),
+        id,
+        action,
+        params,
+        reportProgress: Boolean(options?.onProgress),
+        budget_ms: timeoutMs,
       });
     } catch (err) {
       cleanup();
@@ -172,5 +189,4 @@ export class Dispatcher {
       p.reject(new Error(reason));
     }
   }
-
 }

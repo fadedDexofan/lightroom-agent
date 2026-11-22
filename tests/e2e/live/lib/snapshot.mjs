@@ -24,7 +24,10 @@ function copyPassesQuickCheck(catalogPath) {
 
 export function snapshotThrowawayCatalog(label, options = {}) {
   const catalogPath = options.catalogPath ?? requireThrowawayCatalog();
-  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:.TZ]/g, "")
+    .slice(0, 14);
   const directory = path.join(SNAPSHOTS_DIR, `${label}-${stamp}`);
   fs.mkdirSync(directory, { recursive: true });
   const snapshotPath = path.join(directory, path.basename(catalogPath));
@@ -44,7 +47,8 @@ export function listSnapshots() {
 export function restoreSnapshot(snapshotDirectoryName, options = {}) {
   const catalogPath = options.catalogPath;
   if (!catalogPath) throw new Error("restore needs the throwaway catalog path");
-  if (!isThrowawayCatalog(catalogPath)) throw new Error(`refusing to overwrite ${catalogPath}: not a throwaway catalog`);
+  if (!isThrowawayCatalog(catalogPath))
+    throw new Error(`refusing to overwrite ${catalogPath}: not a throwaway catalog`);
   if (lightroomPid() !== null) throw new Error("quit Lightroom before restoring a snapshot");
   const directory = path.join(SNAPSHOTS_DIR, snapshotDirectoryName);
   const snapshotPath = path.join(directory, path.basename(catalogPath));

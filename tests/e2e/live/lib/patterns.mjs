@@ -189,9 +189,7 @@ export const RAMP256_LAYOUT = { columns: 16, rows: 16, patchSize: 64 };
 
 export function chart80Patches() {
   const colorPatches = CHART80_HSV_VARIANTS.flatMap(([saturation, value]) =>
-    Array.from({ length: CHART80_HUE_COUNT }, (_, hue) =>
-      hsvToRgb(hue * CHART80_HUE_STEP_DEGREES, saturation, value),
-    ),
+    Array.from({ length: CHART80_HUE_COUNT }, (_, hue) => hsvToRgb(hue * CHART80_HUE_STEP_DEGREES, saturation, value)),
   );
   const grayPatches = Array.from({ length: CHART80_GRAY_COUNT }, (_, i) => {
     const level = Math.round(

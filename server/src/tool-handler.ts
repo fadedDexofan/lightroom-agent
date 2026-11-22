@@ -2,7 +2,14 @@ import { PluginNotSentError, PluginTimeoutError, type CallOptions, type Dispatch
 import { DevelopQueue, type DevelopTurn } from "./develop-queue.js";
 import { developUseOf, type ToolArgs } from "./tool-contracts.js";
 import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
-import { finishLost, finishReply, refusedResponse, toolResponse, unknownToolResponse, type ToolResponse } from "./tool-result.js";
+import {
+  finishLost,
+  finishReply,
+  refusedResponse,
+  toolResponse,
+  unknownToolResponse,
+  type ToolResponse,
+} from "./tool-result.js";
 import { CHECKED_CONTRACTS, validateToolArgs } from "./validate-args.js";
 
 export interface ToolHandlerDeps {
@@ -21,8 +28,9 @@ export const NOT_CONNECTED_DETAILS =
   "in the background has not started the server yet. Otherwise open Lightroom and click 'Start Server' " +
   "in Plug-in Manager.";
 
-const CONNECTION_CHANGED_MESSAGE = "The Lightroom connection this call arrived on was lost or replaced, so nothing more "
-  + "of it was sent. Read the state before calling again.";
+const CONNECTION_CHANGED_MESSAGE =
+  "The Lightroom connection this call arrived on was lost or replaced, so nothing more " +
+  "of it was sent. Read the state before calling again.";
 
 export function createCallToolHandler(deps: ToolHandlerDeps) {
   const queue = new DevelopQueue();
@@ -40,7 +48,13 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     if (generation === null) return refusedResponse(notReady());
     const withdrawn = (): string | null => (deps.admitted() === generation ? null : CONNECTION_CHANGED_MESSAGE);
     let held: DevelopTurn | null = null;
-    const sendWithin = (turn: DevelopTurn, action: string, params: unknown, timeoutMs: number, callOptions?: CallOptions) =>
+    const sendWithin = (
+      turn: DevelopTurn,
+      action: string,
+      params: unknown,
+      timeoutMs: number,
+      callOptions?: CallOptions,
+    ) =>
       deps.dispatcher.call(action, params, timeoutMs, callOptions).catch((error: unknown) => {
         if (error instanceof PluginTimeoutError) turn.outlive(error.settled);
         throw error;
@@ -65,8 +79,10 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     const { run } = contract;
     const budgetMs = TIMEOUT_MS_BY_DURATION[contract.duration ?? "quick"];
     try {
-      if (!("server" in run)) return toolResponse(finishReply(readOnly, await fenced.call(name, values, budgetMs, options)));
-      if (!contract.develop) return toolResponse(finishReply(readOnly, await run.server(values, fenced, budgetMs, options)));
+      if (!("server" in run))
+        return toolResponse(finishReply(readOnly, await fenced.call(name, values, budgetMs, options)));
+      if (!contract.develop)
+        return toolResponse(finishReply(readOnly, await run.server(values, fenced, budgetMs, options)));
       const turn = await queue.run(name, budgetMs, options?.signal, async (own) => {
         const reason = withdrawn();
         if (reason !== null) return refusedResponse(reason);
@@ -75,16 +91,19 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
       });
       return turn.ran ? turn.value : refusedResponse(turn.reason);
     } catch (error) {
-      return toolResponse(finishLost(readOnly, failureText(name, readOnly, error), !(error instanceof PluginNotSentError)));
+      return toolResponse(
+        finishLost(readOnly, failureText(name, readOnly, error), !(error instanceof PluginNotSentError)),
+      );
     }
   };
 }
 
-
 function failureText(name: string, readOnly: boolean, error: unknown): string {
   if (error instanceof PluginTimeoutError && !readOnly) {
-    return `Lightroom did not answer within ${error.timeoutMs / 1000}s, so the result of ${name} is unknown:`
-      + " it may have been applied or may still be running. Read the current state before retrying.";
+    return (
+      `Lightroom did not answer within ${error.timeoutMs / 1000}s, so the result of ${name} is unknown:` +
+      " it may have been applied or may still be running. Read the current state before retrying."
+    );
   }
   return error instanceof Error ? error.message : String(error);
 }

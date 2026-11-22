@@ -11,7 +11,9 @@ if (command === "install") {
   console.log(`backup: ${result.backupDirectory}`);
   console.log("installed bundle verified identical to the candidate (diff -rq)");
   if (result.needsFullLightroomRestart) {
-    console.log(`added Lua files need a full Lightroom restart (Reload Plug-in does not see them): ${result.addedLuaFiles.join(", ")}`);
+    console.log(
+      `added Lua files need a full Lightroom restart (Reload Plug-in does not see them): ${result.addedLuaFiles.join(", ")}`,
+    );
   } else {
     console.log("no added Lua files: mise run plugin:reload is enough");
   }

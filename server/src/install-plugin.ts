@@ -25,14 +25,7 @@ const CONTRACT_BUILD = /\n    BUILD = "([^"]+)",\n/;
 
 export function lightroomModulesDir(): string {
   if (process.platform === "darwin") {
-    return path.join(
-      os.homedir(),
-      "Library",
-      "Application Support",
-      "Adobe",
-      "Lightroom",
-      "Modules",
-    );
+    return path.join(os.homedir(), "Library", "Application Support", "Adobe", "Lightroom", "Modules");
   }
   if (process.platform === "win32") {
     const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
@@ -43,14 +36,7 @@ export function lightroomModulesDir(): string {
 
 export function lightroomPluginsDir(): string {
   if (process.platform === "darwin") {
-    return path.join(
-      os.homedir(),
-      "Library",
-      "Application Support",
-      "Adobe",
-      "Lightroom",
-      "Plugins",
-    );
+    return path.join(os.homedir(), "Library", "Application Support", "Adobe", "Lightroom", "Plugins");
   }
   if (process.platform === "win32") {
     const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
@@ -61,13 +47,15 @@ export function lightroomPluginsDir(): string {
 
 function installedBundle(folder: string): string | null {
   const targets = [path.join(lightroomModulesDir(), folder), path.join(lightroomPluginsDir(), folder)];
-  return targets.find((p) => {
-    try {
-      return fs.statSync(path.join(p, "Info.lua")).isFile();
-    } catch {
-      return false;
-    }
-  }) ?? null;
+  return (
+    targets.find((p) => {
+      try {
+        return fs.statSync(path.join(p, "Info.lua")).isFile();
+      } catch {
+        return false;
+      }
+    }) ?? null
+  );
 }
 
 function readMatch(file: string, pattern: RegExp): string | null {
@@ -103,8 +91,10 @@ export function describeInstall(result: InstallResult): string {
     case "current":
       return `${result.destination} is already this build`;
     case "foreign":
-      return `${result.destination} holds another plug-in (${result.toolkitId ?? "no toolkit id"}) and was left alone. `
-        + "Remove it, then install again.";
+      return (
+        `${result.destination} holds another plug-in (${result.toolkitId ?? "no toolkit id"}) and was left alone. ` +
+        "Remove it, then install again."
+      );
     case "conflict":
       return `The installed ${result.conflicting} binds the same ports. Quit Lightroom, remove that folder, then install again.`;
     case "repaired":
@@ -151,15 +141,22 @@ function planInstall(pairing: Paired, recovering: boolean): InstallPlan {
   return { kind: standing(installed, pairing.plugin), destination, installed };
 }
 
-function installedRefusal(plan: { kind: "newer" | "unordered"; installed: BuildIdentity }, own: Paired["plugin"]): string {
+function installedRefusal(
+  plan: { kind: "newer" | "unordered"; installed: BuildIdentity },
+  own: Paired["plugin"],
+): string {
   const leaves = "so this server leaves it alone and does not connect to Lightroom.";
   if (plan.kind === "newer") {
-    return `Lightroom's installed plug-in is version ${plan.installed.version}, newer than this server's version ${own.version}, `
-      + `${leaves} Update lightroom-agent in this client, or remove an outdated server entry, then restart the client.`;
+    return (
+      `Lightroom's installed plug-in is version ${plan.installed.version}, newer than this server's version ${own.version}, ` +
+      `${leaves} Update lightroom-agent in this client, or remove an outdated server entry, then restart the client.`
+    );
   }
-  return `Lightroom's installed plug-in is another build (installed: version ${plan.installed.version ?? "unknown"}, `
-    + `build ${plan.installed.build ?? "unknown"}; this server's: version ${own.version}, build ${own.build}), ${leaves} `
-    + "To use this build, quit the other clients, run this build's install-plugin, restart Lightroom, then start the clients again.";
+  return (
+    `Lightroom's installed plug-in is another build (installed: version ${plan.installed.version ?? "unknown"}, ` +
+    `build ${plan.installed.build ?? "unknown"}; this server's: version ${own.version}, build ${own.build}), ${leaves} ` +
+    "To use this build, quit the other clients, run this build's install-plugin, restart Lightroom, then start the clients again."
+  );
 }
 
 function performInstall(pairing: Paired, plan: InstallPlan): InstallResult {

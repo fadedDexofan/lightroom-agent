@@ -2,11 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  LIGHTROOM_PROCESS_NAME,
-  THROWAWAY_CATALOG_ENV,
-  THROWAWAY_MARKER_FILE,
-} from "./paths.mjs";
+import { LIGHTROOM_PROCESS_NAME, THROWAWAY_CATALOG_ENV, THROWAWAY_MARKER_FILE } from "./paths.mjs";
 
 const CATALOG_EXTENSION = ".lrcat";
 
@@ -44,7 +40,9 @@ export function isThrowawayCatalog(catalogPath, options = {}) {
 
 export function assertThrowawayCatalog(openCatalogs, options = {}) {
   if (openCatalogs.length !== 1) {
-    throw new Error(`expected exactly one open catalog, found ${openCatalogs.length}: ${openCatalogs.join(", ") || "none"}`);
+    throw new Error(
+      `expected exactly one open catalog, found ${openCatalogs.length}: ${openCatalogs.join(", ") || "none"}`,
+    );
   }
   const [catalogPath] = openCatalogs;
   if (isRealCatalog(catalogPath, options.home)) {

@@ -35,7 +35,9 @@ describe('photo stats', () => {
       return preview(flat, String(idOf(params)));
     })('get_photo_stats', { photo_ids: [1, 2, 3] });
     const envelope = envelopeOf(response);
-    expect((envelope.data as { results: { photo_id: string }[] }).results.map((result) => result.photo_id)).toEqual(['1']);
+    expect((envelope.data as { results: { photo_id: string }[] }).results.map((result) => result.photo_id)).toEqual([
+      '1',
+    ]);
     expect(envelope.remaining).toEqual([2, 3]);
     expect(envelope.warnings).toEqual([expect.stringContaining('Plugin request timed out')]);
   });
@@ -71,12 +73,14 @@ describe('photo stats', () => {
   });
 
   it('sharpness ranks a checkerboard at least twice its box blur', () => {
-    const checker = (x: number, y: number) => (Math.floor(x / 16) + Math.floor(y / 16)) % 2 * 255;
-    const rowSums = Array.from({ length: 516 }, (_, y) => Array.from({ length: 512 }, (_, x) => {
-      let total = 0;
-      for (let dx = -4; dx <= 4; dx++) total += checker(Math.max(0, x + dx), y);
-      return total;
-    }));
+    const checker = (x: number, y: number) => ((Math.floor(x / 16) + Math.floor(y / 16)) % 2) * 255;
+    const rowSums = Array.from({ length: 516 }, (_, y) =>
+      Array.from({ length: 512 }, (_, x) => {
+        let total = 0;
+        for (let dx = -4; dx <= 4; dx++) total += checker(Math.max(0, x + dx), y);
+        return total;
+      }),
+    );
     const blurred = (x: number, y: number) => {
       let total = 0;
       for (let dy = -4; dy <= 4; dy++) total += rowSums[Math.max(0, y + dy)][x];
@@ -90,10 +94,11 @@ describe('photo stats', () => {
   });
 
   it('scale keeps scores within 25 percent at 512 and 1024 pixels', () => {
-    const smaller = image(512, 256, (x, y) => (Math.floor(x / 16) + Math.floor(y / 16)) % 2 * 255);
-    const larger = image(1024, 512, (x, y) => (Math.floor(x / 32) + Math.floor(y / 32)) % 2 * 255);
+    const smaller = image(512, 256, (x, y) => ((Math.floor(x / 16) + Math.floor(y / 16)) % 2) * 255);
+    const larger = image(1024, 512, (x, y) => ((Math.floor(x / 32) + Math.floor(y / 32)) % 2) * 255);
 
-    const ratio = photoStats(Buffer.from(larger, 'base64')).sharpness / photoStats(Buffer.from(smaller, 'base64')).sharpness;
+    const ratio =
+      photoStats(Buffer.from(larger, 'base64')).sharpness / photoStats(Buffer.from(smaller, 'base64')).sharpness;
 
     expect(ratio).toBeGreaterThanOrEqual(0.75);
     expect(ratio).toBeLessThanOrEqual(1.25);
@@ -103,17 +108,21 @@ describe('photo stats', () => {
     const encoded = image(8, 8, () => 128);
     const call = handler(async (_action, params) => {
       const { photo_ids } = params as { photo_ids: number[] };
-      return photo_ids[0] === 2 ? { id: 'missing', result: { not_found: [2] } } : preview(encoded, String(photo_ids[0]));
+      return photo_ids[0] === 2
+        ? { id: 'missing', result: { not_found: [2] } }
+        : preview(encoded, String(photo_ids[0]));
     });
 
     const response = await call('get_photo_stats', { photo_ids: [1, 2, 3] });
     const envelope = envelopeOf(response);
 
     expect(envelope.outcome).toBe('partial');
-    expect(envelope.data).toEqual({ results: [
-      expect.objectContaining({ photo_id: '1', mean_luminance: 128 }),
-      expect.objectContaining({ photo_id: '3', mean_luminance: 128 }),
-    ] });
+    expect(envelope.data).toEqual({
+      results: [
+        expect.objectContaining({ photo_id: '1', mean_luminance: 128 }),
+        expect.objectContaining({ photo_id: '3', mean_luminance: 128 }),
+      ],
+    });
     expect(envelope.not_found).toEqual([2]);
   });
 
@@ -121,7 +130,9 @@ describe('photo stats', () => {
     { name: 'too many ids', photo_ids: Array<number>(21).fill(1), message: /20/ },
     { name: 'no ids', photo_ids: [], message: /1/ },
   ])('batch rejects $name', async ({ photo_ids, message }) => {
-    const call = handler(async () => { throw new Error('unexpected dispatch'); });
+    const call = handler(async () => {
+      throw new Error('unexpected dispatch');
+    });
 
     const response = await call('get_photo_stats', { photo_ids });
 

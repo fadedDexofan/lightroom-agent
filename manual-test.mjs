@@ -30,8 +30,7 @@ import path from "node:path";
 const REQUEST_PORT = Number(process.env.LIGHTROOM_AGENT_REQUEST_PORT ?? 58763);
 const RESPONSE_PORT = Number(process.env.LIGHTROOM_AGENT_RESPONSE_PORT ?? 58764);
 const TOKEN_PATH =
-  process.env.LIGHTROOM_AGENT_TOKEN_PATH ??
-  path.join(os.homedir(), ".config", "lightroom-agent", "token");
+  process.env.LIGHTROOM_AGENT_TOKEN_PATH ?? path.join(os.homedir(), ".config", "lightroom-agent", "token");
 const TIMEOUT_MS = 30_000;
 
 const action = process.argv[2] ?? "list_collections";

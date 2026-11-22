@@ -79,9 +79,7 @@ export class LockHeldError extends Error {
     requestPort: number,
     responsePort: number,
   ) {
-    super(
-      `Another Lightroom Agent bridge is already running for ports ${requestPort}/${responsePort} (pid ${pid})`,
-    );
+    super(`Another Lightroom Agent bridge is already running for ports ${requestPort}/${responsePort} (pid ${pid})`);
   }
 }
 
@@ -124,11 +122,7 @@ export function lockHolder(requestPort: number, responsePort: number, baseDir = 
 }
 
 /** True when the bridge holding the lock for these ports stopped beating. */
-export function lockHolderUnresponsive(
-  requestPort: number,
-  responsePort: number,
-  baseDir = configDir(),
-): boolean {
+export function lockHolderUnresponsive(requestPort: number, responsePort: number, baseDir = configDir()): boolean {
   return ownerUnresponsive(lockPath(baseDir, requestPort, responsePort));
 }
 
@@ -171,11 +165,7 @@ function reclaimStale(lockFile: string, stalePid: number | null): boolean {
  * reclaimed like a dead one. Throws LockHeldError when a live, beating bridge
  * holds it.
  */
-export function acquireInstanceLock(
-  requestPort: number,
-  responsePort: number,
-  baseDir = configDir(),
-): InstanceLock {
+export function acquireInstanceLock(requestPort: number, responsePort: number, baseDir = configDir()): InstanceLock {
   fs.mkdirSync(baseDir, { recursive: true, mode: 0o700 });
   const lockFile = lockPath(baseDir, requestPort, responsePort);
 

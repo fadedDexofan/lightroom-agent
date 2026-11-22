@@ -44,12 +44,16 @@ function describeLocal(key: LocalKey, ranges: Record<string, Range>) {
 }
 
 export async function describeDevelopKeys(
-  args: DescribeArgs, dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
+  args: DescribeArgs,
+  dispatcher: Pick<Dispatcher, "call">,
+  budgetMs: number,
+  options?: CallOptions,
 ): Promise<PluginReply> {
   const keys = DEVELOP_KEYS.filter((key) => key.kind === "number").map((key) => key.name);
-  const request = args.mask_id === undefined
-    ? { photo_id: args.photo_id, keys }
-    : { photo_id: args.photo_id, keys, mask_id: args.mask_id, local_keys: LOCAL_KEYS.map((key) => key.name) };
+  const request =
+    args.mask_id === undefined
+      ? { photo_id: args.photo_id, keys }
+      : { photo_id: args.photo_id, keys, mask_id: args.mask_id, local_keys: LOCAL_KEYS.map((key) => key.name) };
   const reply = await dispatcher.call("read_develop_ranges", request, budgetMs, options);
   if (reply.error !== undefined || reply.result?.data === undefined) return reply;
   const live = reply.result?.data as LiveRanges;

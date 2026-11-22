@@ -67,7 +67,9 @@ describe('Dispatcher', () => {
     const pending = dispatcher.call('export_photos', {}, 1000, { onProgress: (value) => progress.push(value) });
     const id = parseSent(sent[0]).id;
 
-    dispatcher.handleResponseLine(JSON.stringify({ progressFor: id, progress: { progress: 1, total: 2, message: 'a.jpg' } }));
+    dispatcher.handleResponseLine(
+      JSON.stringify({ progressFor: id, progress: { progress: 1, total: 2, message: 'a.jpg' } }),
+    );
 
     expect(progress).toEqual([{ progress: 1, total: 2, message: 'a.jpg' }]);
     dispatcher.handleResponseLine(JSON.stringify({ id, result: { exported: 2 } }));
@@ -147,12 +149,14 @@ describe('Dispatcher', () => {
   it('asks the plug-in to stop a request that timed out and settles when its late reply arrives', async () => {
     const promise = dispatcher.call('slow', {}, 1000);
     const id = JSON.parse(sent[0]).id as string;
-    const error = await promise.catch((caught: unknown) => caught) as PluginTimeoutError;
+    const error = (await promise.catch((caught: unknown) => caught)) as PluginTimeoutError;
 
     expect(error).toBeInstanceOf(PluginTimeoutError);
     expect(JSON.parse(sent[1])).toEqual({ hello: 'test-token', action: 'cancel', params: { request_id: id } });
     let settled = false;
-    void error.settled.then(() => { settled = true; });
+    void error.settled.then(() => {
+      settled = true;
+    });
     await Promise.resolve();
     expect(settled).toBe(false);
     dispatcher.handleResponseLine(JSON.stringify({ id, result: { data: {} } }));
@@ -163,13 +167,21 @@ describe('Dispatcher', () => {
   it('settles a timed-out request after the late-reply grace when no reply comes', async () => {
     jest.useFakeTimers();
     try {
-      const graced = new Dispatcher({ send: () => true, getToken: () => 'test-token', log: () => {}, lateReplyGraceMs: 50, connectionGeneration: () => 0 });
+      const graced = new Dispatcher({
+        send: () => true,
+        getToken: () => 'test-token',
+        log: () => {},
+        lateReplyGraceMs: 50,
+        connectionGeneration: () => 0,
+      });
       const pending = graced.call('slow', {}, 1000);
       const caught = pending.catch((error: unknown) => error);
       jest.advanceTimersByTime(1000);
-      const error = await caught as PluginTimeoutError;
+      const error = (await caught) as PluginTimeoutError;
       let settled = false;
-      void error.settled.then(() => { settled = true; });
+      void error.settled.then(() => {
+        settled = true;
+      });
       jest.advanceTimersByTime(49);
       await Promise.resolve();
       expect(settled).toBe(false);
@@ -187,9 +199,11 @@ describe('Dispatcher', () => {
       const pending = dispatcher.call('slow', {}, 1000);
       const caught = pending.catch((error: unknown) => error);
       jest.advanceTimersByTime(1000);
-      const error = await caught as PluginTimeoutError;
+      const error = (await caught) as PluginTimeoutError;
       let settled = false;
-      void error.settled.then(() => { settled = true; });
+      void error.settled.then(() => {
+        settled = true;
+      });
       await Promise.resolve();
       expect(settled).toBe(false);
       dispatcher.rejectPending('connection lost');
@@ -229,7 +243,9 @@ describe('Dispatcher', () => {
     try {
       const pending = dispatcher.call('export_photos', {}, 60_000);
       let settled = false;
-      void pending.catch(() => { settled = true; });
+      void pending.catch(() => {
+        settled = true;
+      });
       jest.advanceTimersByTime(59_999);
       await Promise.resolve();
       expect(settled).toBe(false);
@@ -246,15 +262,24 @@ describe('Dispatcher cancels', () => {
     let generation = 0;
     const sent: SentRequest[] = [];
     const dispatcher = new Dispatcher({
-      send: (line) => { sent.push(parseSent(line)); return true; },
+      send: (line) => {
+        sent.push(parseSent(line));
+        return true;
+      },
       getToken: () => 't',
       log: () => {},
       connectionGeneration: () => generation,
     });
-    return { dispatcher, sent, reconnect: () => { generation += 1; } };
+    return {
+      dispatcher,
+      sent,
+      reconnect: () => {
+        generation += 1;
+      },
+    };
   }
 
-  it('writes a caller\'s cancel to the connection its request went to, and not to a newer one', () => {
+  it("writes a caller's cancel to the connection its request went to, and not to a newer one", () => {
     const same = dispatcherOn();
     const kept = new AbortController();
     void same.dispatcher.call('set_rating', {}, 5_000, { signal: kept.signal }).catch(() => {});
@@ -269,7 +294,7 @@ describe('Dispatcher cancels', () => {
     expect(moved.sent.map((frame) => frame.action)).toEqual(['set_rating']);
   });
 
-  it('writes no timeout cancel, a ping\'s included, to a newer connection', async () => {
+  it("writes no timeout cancel, a ping's included, to a newer connection", async () => {
     jest.useFakeTimers();
     try {
       const { dispatcher, sent, reconnect } = dispatcherOn();

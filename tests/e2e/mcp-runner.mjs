@@ -84,11 +84,7 @@ class McpClient {
     const deadline = Date.now() + 20_000;
     while (Date.now() < deadline) {
       try {
-        const r = await this._rpc(
-          "tools/call",
-          { name: "list_collections", arguments: { limit: 1 } },
-          5_000,
-        );
+        const r = await this._rpc("tools/call", { name: "list_collections", arguments: { limit: 1 } }, 5_000);
         const text = r?.content?.[0]?.text ?? "";
         if (!r.isError && !text.includes("not connected")) return;
       } catch {}
@@ -190,10 +186,10 @@ function checkTrue(label, cond, ctx) {
 
 function exactPresetSelector(preset, presets) {
   if (preset.uuid) return { preset_uuid: preset.uuid };
-  const matches = presets.filter((candidate) =>
-    candidate.name === preset.name
-    && candidate.folder === preset.folder
-    && candidate.scope === preset.scope);
+  const matches = presets.filter(
+    (candidate) =>
+      candidate.name === preset.name && candidate.folder === preset.folder && candidate.scope === preset.scope,
+  );
   if (matches.length !== 1) return null;
   return {
     preset_name: preset.name,
@@ -296,7 +292,10 @@ async function main() {
   const ctx = {};
 
   if (mode === "preset-roundtrip") {
-    const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+    const stamp = new Date()
+      .toISOString()
+      .replace(/[-:.TZ]/g, "")
+      .slice(0, 14);
     const checkpointName = `LRAGENT_E2E_PresetRoundtrip_${stamp}`;
     const outputRoot = process.env.LIGHTROOM_AGENT_E2E_PRESET_DIR ?? os.tmpdir();
     const destinationDir = path.join(outputRoot, checkpointName);
@@ -433,10 +432,12 @@ async function main() {
       checkTrue("count is number", typeof r.parsed.count === "number");
       checkTrue("page is bounded", r.parsed.presets.length <= 100);
       checkEq("has_more matches total", r.parsed.has_more, r.parsed.presets.length < r.parsed.count);
-      checkTrue("list omits backing files", r.parsed.presets.every((preset) => !("file" in preset)));
+      checkTrue(
+        "list omits backing files",
+        r.parsed.presets.every((preset) => !("file" in preset)),
+      );
       ctx.presets = r.parsed.presets;
-      ctx.exactPresets = r.parsed.presets.filter((preset) =>
-        exactPresetSelector(preset, r.parsed.presets));
+      ctx.exactPresets = r.parsed.presets.filter((preset) => exactPresetSelector(preset, r.parsed.presets));
       ctx.firstPreset = ctx.exactPresets[0];
       return `count=${r.parsed.count}, exact=${ctx.exactPresets.length}`;
     });
@@ -535,7 +536,11 @@ async function main() {
         const r = await c.callTool("get_photo_metadata", {
           photo_ids: [ctx.firstPhoto.photo_id],
         });
-        checkTrue("keyword present", r.parsed.photos[0].keywords.includes(tag), JSON.stringify(r.parsed.photos[0].keywords));
+        checkTrue(
+          "keyword present",
+          r.parsed.photos[0].keywords.includes(tag),
+          JSON.stringify(r.parsed.photos[0].keywords),
+        );
       });
 
       await run(`set_keywords remove "${tag}"`, async () => {
@@ -579,7 +584,8 @@ async function main() {
         });
         checkTrue("first not error", !r1.isError, r1.text);
         const meta = await c.callTool("get_develop_settings", {
-          photo_ids: [ctx.firstPhoto.photo_id], keys: ["Exposure2012"],
+          photo_ids: [ctx.firstPhoto.photo_id],
+          keys: ["Exposure2012"],
         });
         const exposure = meta.parsed.photos[0].settings.Exposure2012;
         checkTrue("exposure ~0.5", Math.abs((exposure ?? 0) - 0.5) < 1e-6, `got ${exposure}`);
@@ -665,8 +671,11 @@ async function main() {
         // the photo's source folder (in case destinationType was ignored).
         const allInDest = execFileSync("find", [dest, "-type", "f"], { encoding: "utf8" }).trim();
         const jpegs = allInDest.split("\n").filter((p) => /\.(jpe?g)$/i.test(p));
-        checkTrue("at least one jpeg", jpegs.length >= 1,
-          `dest tree: [${allInDest}], srcDir: ${path.dirname(photo.path)}`);
+        checkTrue(
+          "at least one jpeg",
+          jpegs.length >= 1,
+          `dest tree: [${allInDest}], srcDir: ${path.dirname(photo.path)}`,
+        );
         const out = jpegs[0];
         const sips = execFileSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", out], {
           encoding: "utf8",

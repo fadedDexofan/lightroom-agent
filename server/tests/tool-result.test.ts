@@ -13,13 +13,23 @@ const cases: Array<[string, boolean, PluginReply, ToolResult['outcome']]> = [
   ['data with a failed item', false, { result: { data: [1], failed: [photo('2')] } }, 'partial'],
   ['data with not found inputs', true, { result: { data: [1], not_found: ['x'] } }, 'partial'],
   ['data with remaining inputs', false, { result: { data: [1], remaining: [3] } }, 'partial'],
-  ['data with a single-target problem', false, { result: { data: { written: 2 }, problem: 'third slider not kept' } }, 'partial'],
+  [
+    'data with a single-target problem',
+    false,
+    { result: { data: { written: 2 }, problem: 'third slider not kept' } },
+    'partial',
+  ],
   ['failed items without data', false, { result: { failed: [photo('1')] } }, 'failed'],
   ['only not found inputs', false, { result: { not_found: ['x'] } }, 'failed'],
   ['only remaining inputs', false, { result: { remaining: ['1'] } }, 'failed'],
   ['an unknown item with data', false, { result: { data: [1], unknown: [photo('2')] } }, 'unknown'],
   ['an unknown item alone', false, { result: { unknown: [photo('2')], failed: [photo('3')] } }, 'unknown'],
-  ['a write left by the call with only remaining inputs', false, { result: { remaining: ['1'], written: ['/out/new'] } }, 'unknown'],
+  [
+    'a write left by the call with only remaining inputs',
+    false,
+    { result: { remaining: ['1'], written: ['/out/new'] } },
+    'unknown',
+  ],
 ];
 
 describe('finishReply', () => {
@@ -29,41 +39,59 @@ describe('finishReply', () => {
     const response = toolResponse(result);
     expect(response.isError === true).toBe(outcome !== 'done');
     if (result.outcome === 'done') {
-      for (const key of ['error', 'failed', 'unknown', 'not_found', 'remaining']) expect(result).not.toHaveProperty(key);
+      for (const key of ['error', 'failed', 'unknown', 'not_found', 'remaining'])
+        expect(result).not.toHaveProperty(key);
     } else {
       expect(result.error.length).toBeGreaterThan(0);
     }
   });
 
   it('composes the error from the lists and the problem', () => {
-    const result = finishReply(false, { result: {
-      data: [1], failed: [photo('2')], remaining: [3, 4], problem: 'stopped on cancel',
-    } });
+    const result = finishReply(false, {
+      result: {
+        data: [1],
+        failed: [photo('2')],
+        remaining: [3, 4],
+        problem: 'stopped on cancel',
+      },
+    });
     expect(result).toEqual({
-      outcome: 'partial', data: [1], failed: [photo('2')], remaining: [3, 4],
+      outcome: 'partial',
+      data: [1],
+      failed: [photo('2')],
+      remaining: [3, 4],
       error: '1 failed, 2 still to process (resend remaining); stopped on cancel',
     });
   });
 
   it('names the writes the call left beside the lists when no item claims them', () => {
-    expect(finishReply(false, { result: { failed: [photo('2')], remaining: [3], written: ['/out/new', 'Undo'] } }))
-      .toEqual({
-        outcome: 'unknown', failed: [photo('2')], remaining: [3],
-        error: '1 failed, 1 still to process (resend remaining); written before this stopped: /out/new, Undo',
-      });
+    expect(
+      finishReply(false, { result: { failed: [photo('2')], remaining: [3], written: ['/out/new', 'Undo'] } }),
+    ).toEqual({
+      outcome: 'unknown',
+      failed: [photo('2')],
+      remaining: [3],
+      error: '1 failed, 1 still to process (resend remaining); written before this stopped: /out/new, Undo',
+    });
   });
 
   it('omits empty lists and keeps warnings with any outcome', () => {
-    expect(finishReply(false, { result: { data: 1, failed: [], warnings: ['view not restored'] } }))
-      .toEqual({ outcome: 'done', data: 1, warnings: ['view not restored'] });
+    expect(finishReply(false, { result: { data: 1, failed: [], warnings: ['view not restored'] } })).toEqual({
+      outcome: 'done',
+      data: 1,
+      warnings: ['view not restored'],
+    });
   });
 });
 
 describe('copy_develop_settings replies the plug-in produces', () => {
-  const fixture = JSON.parse(fs.readFileSync('tests/fixtures/copy-replies.json', 'utf8')) as Array<{ case: string; reply: PluginReply }>;
+  const fixture = JSON.parse(fs.readFileSync('tests/fixtures/copy-replies.json', 'utf8')) as Array<{
+    case: string;
+    reply: PluginReply;
+  }>;
   const expected: Record<string, ToolResult['outcome']> = {
     'all refused': 'failed',
-    'mixed': 'partial',
+    mixed: 'partial',
     'unknown read-back': 'unknown',
     'unknown and adjusted on one target': 'unknown',
     'all not found': 'failed',
@@ -80,7 +108,9 @@ describe('copy_develop_settings replies the plug-in produces', () => {
 
     expect(result.outcome).toBe(expected[name]);
     if (name === 'unknown and adjusted on one target') {
-      expect(result).toMatchObject({ error: expect.stringContaining('Lightroom stored other values than written: Exposure2012') });
+      expect(result).toMatchObject({
+        error: expect.stringContaining('Lightroom stored other values than written: Exposure2012'),
+      });
     }
   });
 });
@@ -97,7 +127,10 @@ describe('finishLost', () => {
 
 describe('toolResponse', () => {
   it('moves a preview image out of data into an image block', () => {
-    const response = toolResponse({ outcome: 'done', data: { width: 2, image: { data: 'abc', mime_type: 'image/jpeg' } } });
+    const response = toolResponse({
+      outcome: 'done',
+      data: { width: 2, image: { data: 'abc', mime_type: 'image/jpeg' } },
+    });
     expect(JSON.parse(response.content[0].text)).toEqual({ outcome: 'done', data: { width: 2 } });
     expect(response.content[1]).toEqual({ type: 'image', data: 'abc', mimeType: 'image/jpeg' });
     expect(response.isError).toBeUndefined();

@@ -15,8 +15,9 @@ export function createToolAccess({ toolsets, readOnly }: ToolAccessOptions) {
   const enabledToolsets = new Set<Toolset>(toolsets);
   const tools = listToolsHandler(enabledToolsets, readOnly);
   const allowedTools = new Set(tools.tools.map((tool) => tool.name));
-  const hiddenTools = new Map(TOOL_CONTRACTS.filter((tool) => !enabledToolsets.has(tool.toolset))
-    .map((tool) => [tool.name, tool.toolset]));
+  const hiddenTools = new Map(
+    TOOL_CONTRACTS.filter((tool) => !enabledToolsets.has(tool.toolset)).map((tool) => [tool.name, tool.toolset]),
+  );
 
   return {
     tools,
@@ -24,11 +25,15 @@ export function createToolAccess({ toolsets, readOnly }: ToolAccessOptions) {
     restrict(callTool: ToolCaller): ToolCaller {
       return async (name, args, options) => {
         if (readOnly && !allowedTools.has(name)) {
-          return refusedResponse(`Tool "${name}" is unavailable with LIGHTROOM_AGENT_READ_ONLY enabled and the selected LIGHTROOM_AGENT_TOOLSETS. Only listed read tools can be called. Change the settings and restart the server to enable other tools.`);
+          return refusedResponse(
+            `Tool "${name}" is unavailable with LIGHTROOM_AGENT_READ_ONLY enabled and the selected LIGHTROOM_AGENT_TOOLSETS. Only listed read tools can be called. Change the settings and restart the server to enable other tools.`,
+          );
         }
         const toolset = hiddenTools.get(name);
         if (toolset) {
-          return refusedResponse(`Tool "${name}" is disabled. Enable "${toolset}" in LIGHTROOM_AGENT_TOOLSETS and restart the server.`);
+          return refusedResponse(
+            `Tool "${name}" is disabled. Enable "${toolset}" in LIGHTROOM_AGENT_TOOLSETS and restart the server.`,
+          );
         }
         if (!allowedTools.has(name)) return unknownToolResponse(name);
         return callTool(name, args, options);

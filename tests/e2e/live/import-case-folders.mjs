@@ -28,14 +28,23 @@ function assertCaseSensitive() {
 }
 
 function catalogRows() {
-  const rows = execFileSync("sqlite3", ["-readonly", "-json", catalogPath, `
+  const rows = execFileSync(
+    "sqlite3",
+    [
+      "-readonly",
+      "-json",
+      catalogPath,
+      `
     select r.absolutePath || d.pathFromRoot as folder, f.idx_filename as file, i.id_local as id
     from AgLibraryFile f
     join AgLibraryFolder d on f.folder = d.id_local
     join AgLibraryRootFolder r on d.rootFolder = r.id_local
     left join Adobe_images i on i.rootFile = f.id_local
     where r.absolutePath || d.pathFromRoot like '${root.replaceAll("'", "''")}%'
-    order by 1, 2`], { encoding: "utf8" });
+    order by 1, 2`,
+    ],
+    { encoding: "utf8" },
+  );
   return rows.trim() ? JSON.parse(rows) : [];
 }
 

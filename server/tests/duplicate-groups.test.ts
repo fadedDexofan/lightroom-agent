@@ -15,9 +15,13 @@ function image(reverse = false) {
   }
   return jpeg.encode({ width: 90, height: 80, data }, 100).data.toString('base64');
 }
-const forward = image(), reversed = image(true);
+const forward = image(),
+  reversed = image(true);
 function preview(id: number, time: number = id, data = forward): PluginResponse {
-  return { id: 'test', result: { data: { photo_id: String(id), capture_time: time, image: { mime_type: 'image/jpeg', data } } } };
+  return {
+    id: 'test',
+    result: { data: { photo_id: String(id), capture_time: time, image: { mime_type: 'image/jpeg', data } } },
+  };
 }
 function failed(id: number, reason: string): PluginResponse {
   return { id: 'test', result: { failed: [{ photo_id: String(id), reason }] } };
@@ -99,7 +103,9 @@ describe('duplicate groups', () => {
       return preview(id, (id - 1) * 5);
     });
     const response = await call('find_duplicate_groups', {
-      photo_ids: [1, 1, 2, 3], time_window_seconds: 5, max_hamming_distance: 0,
+      photo_ids: [1, 1, 2, 3],
+      time_window_seconds: 5,
+      max_hamming_distance: 0,
     });
     const result = dataOf(response) as Result;
     expect(result.groups).toEqual([{ photo_ids: ['1', '2'] }]);

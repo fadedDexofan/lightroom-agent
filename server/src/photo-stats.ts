@@ -12,7 +12,9 @@ export function photoStats(encoded: Buffer) {
   const { width, height, data } = decodeJpeg(encoded);
   const luma = new Float64Array(width * height);
   const histogram = Array<number>(BINS).fill(0);
-  let shadows = 0, highlights = 0, sum = 0;
+  let shadows = 0,
+    highlights = 0,
+    sum = 0;
   for (let i = 0; i < luma.length; i++) {
     const value = 0.2126 * data[i * 4] + 0.7152 * data[i * 4 + 1] + 0.0722 * data[i * 4 + 2];
     luma[i] = value;
@@ -25,19 +27,22 @@ export function photoStats(encoded: Buffer) {
   const targetWidth = Math.max(3, Math.round(width * scale));
   const targetHeight = Math.max(3, Math.round(height * scale));
   const resized = areaAverage(width, height, targetWidth, targetHeight, (pixel) => luma[pixel]);
-  let laplacianSum = 0, squares = 0, count = 0;
+  let laplacianSum = 0,
+    squares = 0,
+    count = 0;
   for (let y = 1; y < targetHeight - 1; y++) {
     for (let x = 1; x < targetWidth - 1; x++) {
       const i = y * targetWidth + x;
-      const value = resized[i - 1] + resized[i + 1] + resized[i - targetWidth]
-        + resized[i + targetWidth] - 4 * resized[i];
+      const value =
+        resized[i - 1] + resized[i + 1] + resized[i - targetWidth] + resized[i + targetWidth] - 4 * resized[i];
       laplacianSum += value;
       squares += value * value;
       count++;
     }
   }
   return {
-    width, height,
+    width,
+    height,
     histogram: histogram.map((value) => rounded(value / luma.length)),
     mean_luminance: rounded(sum / luma.length),
     shadow_fraction: rounded(shadows / luma.length),
@@ -53,13 +58,18 @@ export async function getPhotoStats(
   options?: CallOptions,
 ): Promise<PluginReply> {
   const results: ({ photo_id: string } & ReturnType<typeof photoStats>)[] = [];
-  const batch = await previewBatch(dispatcher, photoIds, { action: "render_preview", size: STATS_PREVIEW_SIZE, budgetMs }, options,
+  const batch = await previewBatch(
+    dispatcher,
+    photoIds,
+    { action: "render_preview", size: STATS_PREVIEW_SIZE, budgetMs },
+    options,
     (preview, fail) => {
       try {
         results.push({ photo_id: preview.photo_id, ...photoStats(jpegOf(preview)) });
       } catch (error) {
         fail({ photo_id: preview.photo_id, reason: reasonOf(error) });
       }
-    });
+    },
+  );
   return batchReply(batch, results.length ? { results } : undefined);
 }

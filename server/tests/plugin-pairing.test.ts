@@ -12,7 +12,8 @@ afterEach(() => {
   while (roots.length > 0) fs.rmSync(roots.pop()!, { recursive: true, force: true });
 });
 
-const CHECKOUT_FIX = "This server's build does not match its plug-in folder; rebuild it (npm --prefix server run build in the checkout), then restart your client.";
+const CHECKOUT_FIX =
+  "This server's build does not match its plug-in folder; rebuild it (npm --prefix server run build in the checkout), then restart your client.";
 const PACKAGE_FIX = "This server's installation is damaged; reinstall lightroom-agent, then restart your client.";
 const NO_BUNDLE = 'This server has no bundled Lightroom plug-in; reinstall lightroom-agent.';
 
@@ -27,7 +28,10 @@ function built(layout: Layout = 'checkout'): { dist: string; bundle: string; bui
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-pairing-'));
   roots.push(root);
   const dist = layout === 'checkout' ? path.join(root, 'server', 'dist') : path.join(root, 'dist');
-  const bundle = layout === 'checkout' ? path.join(root, 'plugin', 'LightroomAgent.lrplugin') : path.join(root, 'LightroomAgent.lrplugin');
+  const bundle =
+    layout === 'checkout'
+      ? path.join(root, 'plugin', 'LightroomAgent.lrplugin')
+      : path.join(root, 'LightroomAgent.lrplugin');
   fs.mkdirSync(bundle, { recursive: true });
   fs.mkdirSync(dist, { recursive: true });
   fs.writeFileSync(path.join(bundle, 'Info.lua'), "return { LrToolkitIdentifier = 'io.test.agent' }\n");
@@ -38,11 +42,14 @@ function built(layout: Layout = 'checkout'): { dist: string; bundle: string; bui
 }
 
 describe('pairingOf', () => {
-  it.each(['checkout', 'package'] as const)('pairs a %s with the plug-in build its own build step recorded', (layout) => {
-    const { dist, bundle, build } = built(layout);
+  it.each(['checkout', 'package'] as const)(
+    'pairs a %s with the plug-in build its own build step recorded',
+    (layout) => {
+      const { dist, bundle, build } = built(layout);
 
-    expect(pairingOf(dist)).toEqual({ kind: 'paired', plugin: { version: VERSION, build }, source: bundle, layout });
-  });
+      expect(pairingOf(dist)).toEqual({ kind: 'paired', plugin: { version: VERSION, build }, source: bundle, layout });
+    },
+  );
 
   it('refuses a checkout whose plug-in Lua was pulled and regenerated after this server was built', () => {
     const { dist, bundle } = built();
@@ -52,7 +59,7 @@ describe('pairingOf', () => {
     expect(pairingOf(dist)).toEqual({ kind: 'unpaired', reason: CHECKOUT_FIX });
   });
 
-  it('refuses a bundle whose Contract.lua carries this build\'s stamp over another contract row', () => {
+  it("refuses a bundle whose Contract.lua carries this build's stamp over another contract row", () => {
     const { dist, bundle } = built();
     const file = path.join(bundle, 'Contract.lua');
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/DEFAULT_PAGE_LIMIT = \d+/, 'DEFAULT_PAGE_LIMIT = 7'));
@@ -73,7 +80,10 @@ describe('pairingOf', () => {
     ['malformed', '[1]'],
     ['without a build', '{}'],
   ])('refuses, by layout, when the recorded plug-in build is %s', (_what, json) => {
-    for (const [layout, reason] of [['checkout', CHECKOUT_FIX], ['package', PACKAGE_FIX]] as const) {
+    for (const [layout, reason] of [
+      ['checkout', CHECKOUT_FIX],
+      ['package', PACKAGE_FIX],
+    ] as const) {
       const { dist } = built(layout);
       const record = path.join(dist, 'plugin-build.json');
       if (json === null) fs.rmSync(record);
@@ -93,15 +103,18 @@ describe('pairingOf', () => {
     expect(pairingOf(dist)).toMatchObject({ kind: 'paired', plugin: { build } });
   });
 
-  it.each(['Contract.lua', 'Info.lua'])('does not select a bundle whose %s is a link, even to the right bytes', (file) => {
-    const { dist, bundle } = built();
-    const target = path.join(bundle, file);
-    const real = path.join(path.dirname(bundle), file);
-    fs.renameSync(target, real);
-    fs.symlinkSync(real, target);
+  it.each(['Contract.lua', 'Info.lua'])(
+    'does not select a bundle whose %s is a link, even to the right bytes',
+    (file) => {
+      const { dist, bundle } = built();
+      const target = path.join(bundle, file);
+      const real = path.join(path.dirname(bundle), file);
+      fs.renameSync(target, real);
+      fs.symlinkSync(real, target);
 
-    expect(pairingOf(dist)).toEqual({ kind: 'unpaired', reason: NO_BUNDLE });
-  });
+      expect(pairingOf(dist)).toEqual({ kind: 'unpaired', reason: NO_BUNDLE });
+    },
+  );
 
   it('pairs past a dangling extra Lua link in the bundle', () => {
     const { dist, bundle, build } = built();
@@ -133,7 +146,7 @@ describe('findBundledPlugin', () => {
     return dir;
   }
 
-  it('takes the checkout\'s plugin folder over a copy staged into server/ for packing', () => {
+  it("takes the checkout's plugin folder over a copy staged into server/ for packing", () => {
     const dir = root();
     const checkout = bundleIn(path.join(dir, 'plugin'));
     bundleIn(path.join(dir, 'server'));

@@ -12,7 +12,8 @@ export function sameIdentity<K extends string>(left: Identity<K>, right: Identit
   return (Object.keys(left) as K[]).every((key) => left[key] !== null && left[key] === right[key]);
 }
 
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/;
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z.-]+)?$/;
 
 function compareIdentifiers(left: string, right: string): number {
   const numeric = /^\d+$/;
@@ -31,7 +32,8 @@ export function compareVersions(left: string | null, right: string | null): -1 |
     if (order !== 0) return order as -1 | 1;
   }
   if (a[4] === undefined || b[4] === undefined) return a[4] === b[4] ? 0 : a[4] === undefined ? 1 : -1;
-  const pa = a[4].split("."), pb = b[4].split(".");
+  const pa = a[4].split("."),
+    pb = b[4].split(".");
   for (let index = 0; index < Math.min(pa.length, pb.length); index++) {
     const order = compareIdentifiers(pa[index], pb[index]);
     if (order !== 0) return order as -1 | 1;
@@ -40,11 +42,13 @@ export function compareVersions(left: string | null, right: string | null): -1 |
 }
 
 export function identityIn<K extends string>(value: unknown, fields: readonly K[]): Identity<K> {
-  const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
-  return Object.fromEntries(fields.map((field) => {
-    const item = record[field];
-    return [field, typeof item === "string" ? item : null];
-  })) as Identity<K>;
+  const record = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  return Object.fromEntries(
+    fields.map((field) => {
+      const item = record[field];
+      return [field, typeof item === "string" ? item : null];
+    }),
+  ) as Identity<K>;
 }
 
 function filesUnder(dir: string, accept: (file: string) => boolean, prefix = ""): string[] {

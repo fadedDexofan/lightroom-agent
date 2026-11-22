@@ -34,6 +34,7 @@ Run what CI runs, after your last edit:
 cd server
 npm run check          # type check
 npm run lint
+npm run format:check   # npm run format rewrites
 npm run build          # regenerates generated files; commit them if they change
 npm run test:coverage
 cd ..

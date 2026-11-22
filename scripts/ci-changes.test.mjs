@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const script = path.join(path.dirname(fileURLToPath(import.meta.url)), "ci-changes.mjs");
 
-const classify = (...files) => spawnSync(process.execPath, [script], { input: files.join("\n"), encoding: "utf8" }).stdout;
+const classify = (...files) =>
+  spawnSync(process.execPath, [script], { input: files.join("\n"), encoding: "utf8" }).stdout;
 
 test("a change made only of documentation needs no build or test", () => {
   assert.equal(

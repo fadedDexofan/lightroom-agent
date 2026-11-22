@@ -25,7 +25,9 @@ try {
     marker.aiMetadataCheck = { before, original: original.photos };
     writeCatalogMarker(catalogPath, marker);
     const { data } = await session.toolOrThrow("set_ai_metadata", {
-      photo_ids: photoIds, score: 72, reason: "eyes closed",
+      photo_ids: photoIds,
+      score: 72,
+      reason: "eyes closed",
     });
     assert.equal(data.updated, 2);
   }
@@ -49,7 +51,9 @@ try {
     }
     for (const photo of marker.aiMetadataCheck.original) {
       await session.toolOrThrow("set_ai_metadata", {
-        photo_ids: [photo.photo_id], score: photo.score ?? "", reason: photo.reason ?? "",
+        photo_ids: [photo.photo_id],
+        score: photo.score ?? "",
+        reason: photo.reason ?? "",
       });
     }
     assert.deepEqual(await standardMetadata(), marker.aiMetadataCheck.before);

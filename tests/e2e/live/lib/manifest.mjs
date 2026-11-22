@@ -22,15 +22,24 @@ export function validateManifest(manifest) {
   for (const sample of manifest.samples ?? []) {
     if (keys.has(sample.key)) problems.push(`${sample.key}: duplicate key`);
     keys.add(sample.key);
-    if (!SHA256_PATTERN.test(sample.sha256 ?? "")) problems.push(`${sample.key}: sha256 must be 64 lowercase hex characters`);
+    if (!SHA256_PATTERN.test(sample.sha256 ?? ""))
+      problems.push(`${sample.key}: sha256 must be 64 lowercase hex characters`);
     if (!String(sample.url ?? "").startsWith("https://")) problems.push(`${sample.key}: url must be https`);
-    if (sample.license !== ALLOWED_SAMPLE_LICENSE) problems.push(`${sample.key}: only ${ALLOWED_SAMPLE_LICENSE} samples may be downloaded`);
-    if (path.basename(sample.file ?? "") !== sample.file || !sample.file) problems.push(`${sample.key}: file must be a bare file name`);
+    if (sample.license !== ALLOWED_SAMPLE_LICENSE)
+      problems.push(`${sample.key}: only ${ALLOWED_SAMPLE_LICENSE} samples may be downloaded`);
+    if (path.basename(sample.file ?? "") !== sample.file || !sample.file)
+      problems.push(`${sample.key}: file must be a bare file name`);
   }
   for (const supplied of manifest.supplied ?? []) {
-    if (!/^LRAGENT_LIVE_[A-Z_]+$/.test(supplied.envVar ?? "")) problems.push(`${supplied.key}: envVar must look like LRAGENT_LIVE_NAME`);
-    if (supplied.sha256 !== undefined && !SHA256_PATTERN.test(supplied.sha256)) problems.push(`${supplied.key}: sha256 must be 64 lowercase hex characters`);
-    if (supplied.file !== undefined && (path.basename(supplied.file) !== supplied.file || supplied.sha256 === undefined)) problems.push(`${supplied.key}: a bundled file must be a bare file name with a sha256`);
+    if (!/^LRAGENT_LIVE_[A-Z_]+$/.test(supplied.envVar ?? ""))
+      problems.push(`${supplied.key}: envVar must look like LRAGENT_LIVE_NAME`);
+    if (supplied.sha256 !== undefined && !SHA256_PATTERN.test(supplied.sha256))
+      problems.push(`${supplied.key}: sha256 must be 64 lowercase hex characters`);
+    if (
+      supplied.file !== undefined &&
+      (path.basename(supplied.file) !== supplied.file || supplied.sha256 === undefined)
+    )
+      problems.push(`${supplied.key}: a bundled file must be a bare file name with a sha256`);
   }
   return problems;
 }
@@ -68,7 +77,8 @@ export async function downloadSample(
   try {
     await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(partialPath));
     const actual = await sha256File(partialPath);
-    if (actual !== sample.sha256) throw new Error(`${sample.key}: sha256 mismatch, expected ${sample.sha256}, got ${actual}`);
+    if (actual !== sample.sha256)
+      throw new Error(`${sample.key}: sha256 mismatch, expected ${sample.sha256}, got ${actual}`);
     fs.renameSync(partialPath, filePath);
   } finally {
     fs.rmSync(partialPath, { force: true });
@@ -77,13 +87,21 @@ export async function downloadSample(
 }
 
 export function resolveSuppliedFiles(manifest, environment = process.env, bundledDirectory = BUNDLED_FIXTURES_DIR) {
-  return Promise.all((manifest.supplied ?? []).map(async (supplied) => {
-    const from = environment[supplied.envVar] ? supplied.envVar : supplied.file ? "bundled" : null;
-    if (!from) return { ...supplied, status: "not-set" };
-    const value = from === "bundled" ? path.join(bundledDirectory, supplied.file) : environment[supplied.envVar];
-    if (!fs.existsSync(value)) return { ...supplied, status: "missing-file", filePath: value, from };
-    if (supplied.sha256 === undefined) return { ...supplied, status: "present", filePath: value, from };
-    const actual = await sha256File(value);
-    return { ...supplied, status: actual === supplied.sha256 ? "present" : "mismatch", filePath: value, from, actual };
-  }));
+  return Promise.all(
+    (manifest.supplied ?? []).map(async (supplied) => {
+      const from = environment[supplied.envVar] ? supplied.envVar : supplied.file ? "bundled" : null;
+      if (!from) return { ...supplied, status: "not-set" };
+      const value = from === "bundled" ? path.join(bundledDirectory, supplied.file) : environment[supplied.envVar];
+      if (!fs.existsSync(value)) return { ...supplied, status: "missing-file", filePath: value, from };
+      if (supplied.sha256 === undefined) return { ...supplied, status: "present", filePath: value, from };
+      const actual = await sha256File(value);
+      return {
+        ...supplied,
+        status: actual === supplied.sha256 ? "present" : "mismatch",
+        filePath: value,
+        from,
+        actual,
+      };
+    }),
+  );
 }

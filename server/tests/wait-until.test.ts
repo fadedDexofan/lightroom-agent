@@ -4,9 +4,15 @@ import { waitUntil } from '../src/wait-until.js';
 describe('waitUntil', () => {
   it('returns immediately when the predicate already holds', async () => {
     let sleeps = 0;
-    const held = await waitUntil(() => true, 3_000, 50, () => 0, async () => {
-      sleeps += 1;
-    });
+    const held = await waitUntil(
+      () => true,
+      3_000,
+      50,
+      () => 0,
+      async () => {
+        sleeps += 1;
+      },
+    );
 
     expect(held).toBe(true);
     expect(sleeps).toBe(0);
@@ -30,7 +36,9 @@ describe('waitUntil', () => {
 
   it('polls with real timers when no clock is injected', async () => {
     let ready = false;
-    setTimeout(() => { ready = true; }, 30);
+    setTimeout(() => {
+      ready = true;
+    }, 30);
 
     const held = await waitUntil(() => ready, 2_000, 10);
 

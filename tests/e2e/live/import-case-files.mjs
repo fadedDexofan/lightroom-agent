@@ -28,13 +28,22 @@ function assertCaseSensitive() {
 }
 
 function catalogFiles() {
-  const rows = execFileSync("sqlite3", ["-readonly", "-json", catalogPath, `
+  const rows = execFileSync(
+    "sqlite3",
+    [
+      "-readonly",
+      "-json",
+      catalogPath,
+      `
     select r.absolutePath || d.pathFromRoot as folder, f.idx_filename as file
     from AgLibraryFile f
     join AgLibraryFolder d on f.folder = d.id_local
     join AgLibraryRootFolder r on d.rootFolder = r.id_local
     where r.absolutePath || d.pathFromRoot like '${root.replaceAll("'", "''")}%'
-    order by 1, 2`], { encoding: "utf8" });
+    order by 1, 2`,
+    ],
+    { encoding: "utf8" },
+  );
   return rows.trim() ? JSON.parse(rows).map((row) => `${path.basename(row.folder)}/${row.file}`) : [];
 }
 
@@ -99,7 +108,10 @@ try {
   const files = catalogFiles();
   assert.equal(files.filter((file) => file.startsWith("one/")).length, 1);
   assert.equal(files.filter((file) => file.startsWith("two/")).length, 1);
-  assert.deepEqual(files.filter((file) => file.startsWith("dest/")), ["dest/C.jpg"]);
+  assert.deepEqual(
+    files.filter((file) => file.startsWith("dest/")),
+    ["dest/C.jpg"],
+  );
   console.log(JSON.stringify({ single: single.text, folder: folder.data, fresh: fresh.data, files }, null, 2));
 } finally {
   await session.stop();

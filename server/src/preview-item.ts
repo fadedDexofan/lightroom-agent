@@ -7,10 +7,7 @@ export interface RenderedPreview {
   [key: string]: unknown;
 }
 
-export type PreviewItem =
-  | { preview: RenderedPreview }
-  | { notFound: Input }
-  | { failed: ItemFailure };
+export type PreviewItem = { preview: RenderedPreview } | { notFound: Input } | { failed: ItemFailure };
 
 const OPEN_IN_DEVELOP = "active_in_develop";
 
@@ -22,8 +19,9 @@ export interface PreviewRequest {
   size?: number;
 }
 
-const WAY_OUT = " Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image"
-  + " by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode).";
+const WAY_OUT =
+  " Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image" +
+  " by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode).";
 
 export function jpegOf(preview: RenderedPreview): Buffer {
   if (preview.image?.mime_type !== "image/jpeg" || typeof preview.image.data !== "string") {
@@ -70,7 +68,9 @@ export function batchReply(batch: PreviewBatch, data: unknown): PluginReply {
   return {
     result: {
       ...(data !== undefined ? { data } : {}),
-      failed: batch.failed, not_found: batch.notFound, remaining: batch.remaining,
+      failed: batch.failed,
+      not_found: batch.notFound,
+      remaining: batch.remaining,
       ...(batch.warnings.length ? { warnings: batch.warnings } : {}),
     },
   };
@@ -85,7 +85,9 @@ export async function previewBatch(
 ): Promise<PreviewBatch> {
   const deadline = performance.now() + previewStartLimitMs(request.budgetMs);
   const batch: PreviewBatch = { failed: [], notFound: [], remaining: [], warnings: [] };
-  const fail = (failure: ItemFailure) => { batch.failed.push(failure); };
+  const fail = (failure: ItemFailure) => {
+    batch.failed.push(failure);
+  };
   let reached = 0;
   for (; reached < inputs.length; reached++) {
     if (options?.signal?.aborted) throw new Error("Request cancelled");
@@ -93,8 +95,12 @@ export async function previewBatch(
     if (left <= 0) break;
     let item: PreviewItem;
     try {
-      item = await previewItem(dispatcher, { action: request.action, input: inputs[reached], size: request.size },
-        left + PREVIEW_REPLY_RESERVE_MS, options);
+      item = await previewItem(
+        dispatcher,
+        { action: request.action, input: inputs[reached], size: request.size },
+        left + PREVIEW_REPLY_RESERVE_MS,
+        options,
+      );
     } catch (error) {
       if (options?.signal?.aborted) throw error;
       batch.warnings.push(`Stopped at ${String(inputs[reached])}: ${reasonOf(error)}`);

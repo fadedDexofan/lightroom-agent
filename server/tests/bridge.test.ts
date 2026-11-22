@@ -7,7 +7,16 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Bridge, NO_OWNER_MESSAGE, unreachableOwnerMessage, type Leader } from '../src/bridge.js';
-import { BrokerClient, BrokerServer, MAX_FRAME_BYTES, NOT_CONNECTED_TO_OWNER_MESSAGE, OWNER_LOST_MESSAGE, brokerPath, signNonce, type ToolCaller } from '../src/broker.js';
+import {
+  BrokerClient,
+  BrokerServer,
+  MAX_FRAME_BYTES,
+  NOT_CONNECTED_TO_OWNER_MESSAGE,
+  OWNER_LOST_MESSAGE,
+  brokerPath,
+  signNonce,
+  type ToolCaller,
+} from '../src/broker.js';
 import { acquireInstanceLock, LockHeldError, type InstanceLock } from '../src/instance-lock.js';
 import type { ToolResponse } from '../src/tool-result.js';
 import type { ServerIdentity } from '../src/server-identity.js';
@@ -144,85 +153,137 @@ describe('broker', () => {
     return p;
   }
 
-  const refusal = (differences: string) => 'This server and the server that owns the Lightroom connection differ in '
-    + `${differences}, so nothing was sent. Use one lightroom-agent build in every client, then restart them.`;
+  const refusal = (differences: string) =>
+    'This server and the server that owns the Lightroom connection differ in ' +
+    `${differences}, so nothing was sent. Use one lightroom-agent build in every client, then restart them.`;
 
   it.each([
     [{ ...SERVER, build: 's2' }, 'server build (s1 here, s2 there)'],
-    [{ ...SERVER, version: '0.9.0', build: 's0' }, 'version (1.0.0 here, 0.9.0 there), server build (s1 here, s0 there)'],
-  ])('refuses a follower\'s calls, sending nothing, while the owner is another server build (%o)', async (owner, described) => {
-    const calls: string[] = [];
-    const { p } = await serve(async (name) => { calls.push(name); return ok('x'); }, 't', () => {}, owner);
-    const client = await connect(p);
+    [
+      { ...SERVER, version: '0.9.0', build: 's0' },
+      'version (1.0.0 here, 0.9.0 there), server build (s1 here, s0 there)',
+    ],
+  ])(
+    "refuses a follower's calls, sending nothing, while the owner is another server build (%o)",
+    async (owner, described) => {
+      const calls: string[] = [];
+      const { p } = await serve(
+        async (name) => {
+          calls.push(name);
+          return ok('x');
+        },
+        't',
+        () => {},
+        owner,
+      );
+      const client = await connect(p);
 
-    const resp = await client.callTool('list_masks', {});
+      const resp = await client.callTool('list_masks', {});
 
-    expect(envelopeOf(resp).outcome).toBe('failed');
-    expect(errorText(resp)).toBe(refusal(described));
-    expect(calls).toEqual([]);
-  });
+      expect(envelopeOf(resp).outcome).toBe('failed');
+      expect(errorText(resp)).toBe(refusal(described));
+      expect(calls).toEqual([]);
+    },
+  );
 
   it.each([
     ['carries no identity', undefined],
     ['carries an identity without a build', { version: '1.0.0' }],
-  ])('refuses a follower\'s calls when the owner\'s greeting %s', async (_what, server) => {
+  ])("refuses a follower's calls when the owner's greeting %s", async (_what, server) => {
     const client = await connect(await serveRawOwner(server));
 
     const resp = await client.callTool('list_masks', {});
 
-    expect(errorText(resp)).toBe(refusal(server === undefined
-      ? 'version (1.0.0 here, none there), server build (s1 here, none there), plug-in build (b1 here, none there)'
-      : 'server build (s1 here, none there), plug-in build (b1 here, none there)'));
+    expect(errorText(resp)).toBe(
+      refusal(
+        server === undefined
+          ? 'version (1.0.0 here, none there), server build (s1 here, none there), plug-in build (b1 here, none there)'
+          : 'server build (s1 here, none there), plug-in build (b1 here, none there)',
+      ),
+    );
   });
 
   it('answers an older follower whose hello carries no identity with the refusal, never calling the tool', async () => {
     const calls: string[] = [];
-    const { p } = await serve(async (name) => { calls.push(name); return ok('x'); });
+    const { p } = await serve(async (name) => {
+      calls.push(name);
+      return ok('x');
+    });
     const { sock, hello, lines } = await rawHandshake(p, 't');
 
-    sock.write(JSON.stringify({ id: 1, auth: signNonce('t', `follower:${hello.nonce}`), name: 'list_masks', args: {} }) + '\n');
+    sock.write(
+      JSON.stringify({ id: 1, auth: signNonce('t', `follower:${hello.nonce}`), name: 'list_masks', args: {} }) + '\n',
+    );
     await waitFor(() => lines.length > 0);
 
     const reply = JSON.parse(lines.shift()!) as { result: ToolResponse };
     expect(errorText(reply.result)).toBe(
-      refusal('version (none here, 1.0.0 there), server build (none here, s1 there), plug-in build (none here, b1 there)'));
+      refusal(
+        'version (none here, 1.0.0 there), server build (none here, s1 there), plug-in build (none here, b1 there)',
+      ),
+    );
     expect(calls).toEqual([]);
   });
 
   it.each([
     ['of another plug-in build', { ...SERVER, plugin: 'b2' }, 'plug-in build (b2 here, b1 there)'],
-    ['without a plug-in build', { version: SERVER.version, build: SERVER.build }, 'plug-in build (none here, b1 there)'],
-  ])('refuses, never calling the tool, a follower whose hello names a server %s', async (_what, follower, differences) => {
-    const calls: string[] = [];
-    const { p } = await serve(async (name) => { calls.push(name); return ok('x'); });
-    const { sock, hello, lines } = await rawHandshake(p, 't', follower);
+    [
+      'without a plug-in build',
+      { version: SERVER.version, build: SERVER.build },
+      'plug-in build (none here, b1 there)',
+    ],
+  ])(
+    'refuses, never calling the tool, a follower whose hello names a server %s',
+    async (_what, follower, differences) => {
+      const calls: string[] = [];
+      const { p } = await serve(async (name) => {
+        calls.push(name);
+        return ok('x');
+      });
+      const { sock, hello, lines } = await rawHandshake(p, 't', follower);
 
-    sock.write(JSON.stringify({ id: 1, auth: signNonce('t', `follower:${hello.nonce}`), name: 'list_masks', args: {} }) + '\n');
-    await waitFor(() => lines.length > 0);
+      sock.write(
+        JSON.stringify({ id: 1, auth: signNonce('t', `follower:${hello.nonce}`), name: 'list_masks', args: {} }) + '\n',
+      );
+      await waitFor(() => lines.length > 0);
 
-    const reply = JSON.parse(lines.shift()!) as { result: ToolResponse };
-    expect(envelopeOf(reply.result).outcome).toBe('failed');
-    expect(errorText(reply.result)).toBe(refusal(differences));
-    expect(calls).toEqual([]);
-  });
+      const reply = JSON.parse(lines.shift()!) as { result: ToolResponse };
+      expect(envelopeOf(reply.result).outcome).toBe('failed');
+      expect(errorText(reply.result)).toBe(refusal(differences));
+      expect(calls).toEqual([]);
+    },
+  );
 
   it.each([
     ['of another plug-in build', { ...SERVER, plugin: 'b2' }, 'plug-in build (b1 here, b2 there)'],
-    ['without a plug-in build', { version: SERVER.version, build: SERVER.build }, 'plug-in build (b1 here, none there)'],
-  ])('refuses a follower\'s calls, sending nothing, when the owner\'s greeting names a server %s', async (_what, owner, differences) => {
-    const client = await connect(await serveRawOwner(owner));
+    [
+      'without a plug-in build',
+      { version: SERVER.version, build: SERVER.build },
+      'plug-in build (b1 here, none there)',
+    ],
+  ])(
+    "refuses a follower's calls, sending nothing, when the owner's greeting names a server %s",
+    async (_what, owner, differences) => {
+      const client = await connect(await serveRawOwner(owner));
 
-    const resp = await client.callTool('list_masks', {});
+      const resp = await client.callTool('list_masks', {});
 
-    expect(envelopeOf(resp).outcome).toBe('failed');
-    expect(errorText(resp)).toBe(refusal(differences));
-  });
+      expect(envelopeOf(resp).outcome).toBe('failed');
+      expect(errorText(resp)).toBe(refusal(differences));
+    },
+  );
 
   it('queues a forwarded Develop call behind a Develop call of the owning bridge', async () => {
     const pending: Array<{ action: string; resolve: (reply: PluginResponse) => void }> = [];
-    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: {
-      call: async (action: string) => new Promise<PluginResponse>((resolve) => { pending.push({ action, resolve }); }),
-    } });
+    const handler = createCallToolHandler({
+      admitted: () => 0,
+      dispatcher: {
+        call: async (action: string) =>
+          new Promise<PluginResponse>((resolve) => {
+            pending.push({ action, resolve });
+          }),
+      },
+    });
     const { p } = await serve((name, args) => handler(name, args));
     const client = await connect(p);
 
@@ -255,10 +316,22 @@ describe('broker', () => {
   it('returns an error instead of dropping the connection for an oversized reply', async () => {
     const dir = tmpDir();
     const huge = 'x'.repeat(MAX_FRAME_BYTES + 1);
-    const server = new BrokerServer({ server: SERVER, path: ipcPath(dir), callTool: async () => ok(huge), readToken: () => 't' });
+    const server = new BrokerServer({
+      server: SERVER,
+      path: ipcPath(dir),
+      callTool: async () => ok(huge),
+      readToken: () => 't',
+    });
     await server.listen();
     let closed = false;
-    const client = new BrokerClient({ server: SERVER, path: ipcPath(dir), readToken: () => 't', onClose: () => { closed = true; } });
+    const client = new BrokerClient({
+      server: SERVER,
+      path: ipcPath(dir),
+      readToken: () => 't',
+      onClose: () => {
+        closed = true;
+      },
+    });
     await client.connect();
 
     const reply = await client.callTool('search_photos', {});
@@ -346,7 +419,10 @@ describe('broker', () => {
 
   it('refuses a follower when neither side has a token', async () => {
     const calls: string[] = [];
-    const { p } = await serve(async (name) => { calls.push(name); return ok('x'); }, null);
+    const { p } = await serve(async (name) => {
+      calls.push(name);
+      return ok('x');
+    }, null);
     const client = new BrokerClient({ server: SERVER, path: p, readToken: () => null });
     closers.push(() => client.close());
 
@@ -358,7 +434,11 @@ describe('broker', () => {
     'survives a malformed request line %s',
     async (line) => {
       const logs: string[] = [];
-      const { p } = await serve(async () => ok('x'), 't', (m) => logs.push(m));
+      const { p } = await serve(
+        async () => ok('x'),
+        't',
+        (m) => logs.push(m),
+      );
       const { sock } = await rawHandshake(p, 't');
 
       sock.write(line + '\n');
@@ -372,7 +452,11 @@ describe('broker', () => {
 
   it('drops a follower that opens without a challenge', async () => {
     const logs: string[] = [];
-    const { p } = await serve(async () => ok('x'), 't', (m) => logs.push(m));
+    const { p } = await serve(
+      async () => ok('x'),
+      't',
+      (m) => logs.push(m),
+    );
     const sock = net.createConnection(p);
     closers.push(() => sock.destroy());
     const closed = new Promise<void>((resolve) => sock.once('close', () => resolve()));
@@ -444,13 +528,7 @@ describe('Bridge', () => {
     while (bridges.length > 0) bridges.pop()!.stop();
   });
 
-  function makeBridge(
-    dir: string,
-    label: string,
-    started: string[],
-    stopped: string[] = [],
-    call?: ToolCaller,
-  ) {
+  function makeBridge(dir: string, label: string, started: string[], stopped: string[] = [], call?: ToolCaller) {
     const bridge = new Bridge({
       server: SERVER,
       ipcPath: ipcPath(dir),
@@ -473,15 +551,21 @@ describe('Bridge', () => {
     return bridge;
   }
 
-
   it('forwards progress and cancel from a follower across the broker', async () => {
     const dir = tmpDir();
     let cancelled = false;
     const a = makeBridge(dir, 'a', [], [], async (_name, _args, options) => {
       options?.onProgress?.({ progress: 1, total: 2, message: 'a.jpg' });
-      await new Promise<void>((resolve) => options?.signal?.addEventListener('abort', () => {
-        cancelled = true; resolve();
-      }, { once: true }));
+      await new Promise<void>((resolve) =>
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            cancelled = true;
+            resolve();
+          },
+          { once: true },
+        ),
+      );
       return ok('stopped after first photo');
     });
     const b = makeBridge(dir, 'b', []);
@@ -490,9 +574,17 @@ describe('Bridge', () => {
     const controller = new AbortController();
     const progress: unknown[] = [];
 
-    const pending = b.callTool('export_photos', {}, { signal: controller.signal, onProgress: (value) => {
-      progress.push(value); controller.abort();
-    } });
+    const pending = b.callTool(
+      'export_photos',
+      {},
+      {
+        signal: controller.signal,
+        onProgress: (value) => {
+          progress.push(value);
+          controller.abort();
+        },
+      },
+    );
 
     expect(text(await pending)).toBe('stopped after first photo');
     expect(cancelled).toBe(true);
@@ -535,8 +627,12 @@ describe('Bridge', () => {
     const started: string[] = [];
     const stopped: string[] = [];
     let release: (() => void) | undefined;
-    const a = makeBridge(dir, 'a', started, stopped, (name) =>
-      new Promise<ToolResponse>((resolve) => (release = () => resolve(ok(`a:${name}`)))),
+    const a = makeBridge(
+      dir,
+      'a',
+      started,
+      stopped,
+      (name) => new Promise<ToolResponse>((resolve) => (release = () => resolve(ok(`a:${name}`)))),
     );
     const b = makeBridge(dir, 'b', started, stopped);
     await a.start();

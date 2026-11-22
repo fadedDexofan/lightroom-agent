@@ -167,9 +167,17 @@ export async function clickWindowButton(windowTitle, buttonName) {
   onElement(windowTitle, "AXButton", buttonName, 'perform action "AXPress" of e\n      return "pressed"');
 }
 
-export async function watchModalsWhile(call, isTarget, {
-  holdMs, pollMs, list = listModalWindows, press = (window) => clickWindowButton(window.title, "OK"), now = Date.now,
-}) {
+export async function watchModalsWhile(
+  call,
+  isTarget,
+  {
+    holdMs,
+    pollMs,
+    list = listModalWindows,
+    press = (window) => clickWindowButton(window.title, "OK"),
+    now = Date.now,
+  },
+) {
   const started = now();
   const seconds = () => (now() - started) / 1000;
   const sameWindow = (entry, window) => entry.title === window.title && entry.text === window.text;
@@ -183,10 +191,22 @@ export async function watchModalsWhile(call, isTarget, {
     for (const window of list()) {
       let entry = modals.find((known) => sameWindow(known, window));
       if (entry === undefined) {
-        entry = { at_seconds: seconds(), title: window.title, text: window.text, buttons: window.buttons, held: isTarget(window), pressed_at_seconds: null };
+        entry = {
+          at_seconds: seconds(),
+          title: window.title,
+          text: window.text,
+          buttons: window.buttons,
+          held: isTarget(window),
+          pressed_at_seconds: null,
+        };
         modals.push(entry);
       }
-      if (entry.held && entry.pressed_at_seconds === null && settledAt === null && seconds() - entry.at_seconds >= holdMs / 1000) {
+      if (
+        entry.held &&
+        entry.pressed_at_seconds === null &&
+        settledAt === null &&
+        seconds() - entry.at_seconds >= holdMs / 1000
+      ) {
         entry.pressed_at_seconds = seconds();
         await press(window);
       }
@@ -246,9 +266,16 @@ export async function submitNewCatalogDialog(folderName, expectedParentName) {
   const parentName = onElement(NEW_CATALOG_DIALOG, "AXPopUpButton", "Where:", "return value of e");
   if (parentName !== expectedParentName) {
     await clickWindowButton(NEW_CATALOG_DIALOG, "Cancel");
-    throw new Error(`New Catalog dialog proposes the folder "${parentName}", expected "${expectedParentName}"; create the catalog by hand and use --adopt-open-catalog`);
+    throw new Error(
+      `New Catalog dialog proposes the folder "${parentName}", expected "${expectedParentName}"; create the catalog by hand and use --adopt-open-catalog`,
+    );
   }
-  onElement(NEW_CATALOG_DIALOG, "AXTextField", "Save As:", `set focused of e to true\n      set value of e to ${quote(folderName)}\n      return "set"`);
+  onElement(
+    NEW_CATALOG_DIALOG,
+    "AXTextField",
+    "Save As:",
+    `set focused of e to true\n      set value of e to ${quote(folderName)}\n      return "set"`,
+  );
   await sleep(500);
   await clickWindowButton(NEW_CATALOG_DIALOG, "Create");
 }
@@ -290,7 +317,10 @@ end tell`);
 
 export async function quitLightroom({ timeoutMs = 120_000 } = {}) {
   await ensureLightroomFrontmost();
-  spawn("osascript", ["-e", `tell application "${LIGHTROOM_PROCESS_NAME}" to quit`], { stdio: "ignore", detached: true }).unref();
+  spawn("osascript", ["-e", `tell application "${LIGHTROOM_PROCESS_NAME}" to quit`], {
+    stdio: "ignore",
+    detached: true,
+  }).unref();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await sleep(1000);
@@ -312,7 +342,9 @@ export function activeModule(windowNames) {
 }
 
 function lightroomWindowNames() {
-  return osascript(`tell application "System Events" to tell process "${LIGHTROOM_PROCESS_NAME}" to get name of every window`).split(", ");
+  return osascript(
+    `tell application "System Events" to tell process "${LIGHTROOM_PROCESS_NAME}" to get name of every window`,
+  ).split(", ");
 }
 
 export function lightroomModule() {

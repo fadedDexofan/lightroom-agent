@@ -40,13 +40,20 @@ try {
       { photo_id, snapshot_id: "missing-snapshot" },
       { photo_id: otherId, snapshot_id: first.id },
       { photo_id: "999999999", snapshot_id: first.id },
-    ]) assert.equal((await session.tool(`${action}_develop_snapshot`, args)).isError, true);
+    ])
+      assert.equal((await session.tool(`${action}_develop_snapshot`, args)).isError, true);
   }
   await tool("delete_develop_snapshot", { photo_id, snapshot_id: first.id });
   created.delete(first.id);
   const listed = (await tool("list_develop_snapshots", { photo_id })).snapshots;
-  assert.equal(listed.some((snapshot) => snapshot.id === first.id), false);
-  assert.equal(listed.some((snapshot) => snapshot.id === replacement.id), true);
+  assert.equal(
+    listed.some((snapshot) => snapshot.id === first.id),
+    false,
+  );
+  assert.equal(
+    listed.some((snapshot) => snapshot.id === replacement.id),
+    true,
+  );
   console.log("PASS snapshot creation, duplicate rejection, replacement, exposure restore, ownership and deletion");
 } catch (error) {
   failure = error;

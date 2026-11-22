@@ -75,9 +75,7 @@ function parseObject(line: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
-  return typeof raw === "object" && raw !== null && !Array.isArray(raw)
-    ? (raw as Record<string, unknown>)
-    : null;
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
 }
 
 function authMatches(expected: string | null, actual: string | null): boolean {
@@ -99,15 +97,21 @@ function lostResponse(name: string, text: string): ToolResponse {
   return toolResponse(finishLost(isReadOnlyTool(name), text, true));
 }
 
-const SERVER_DIMENSIONS = [["version", "version"], ["build", "server build"], ["plugin", "plug-in build"]] as const;
+const SERVER_DIMENSIONS = [
+  ["version", "version"],
+  ["build", "server build"],
+  ["plugin", "plug-in build"],
+] as const;
 
 export function serverMismatch(follower: ServerIdentity, owner: ServerIdentity): string | null {
   if (sameIdentity(follower, owner)) return null;
-  const differences = SERVER_DIMENSIONS
-    .filter(([key]) => follower[key] === null || follower[key] !== owner[key])
-    .map(([key, label]) => `${label} (${follower[key] ?? "none"} here, ${owner[key] ?? "none"} there)`);
-  return `This server and the server that owns the Lightroom connection differ in ${differences.join(", ")}, `
-    + "so nothing was sent. Use one lightroom-agent build in every client, then restart them.";
+  const differences = SERVER_DIMENSIONS.filter(([key]) => follower[key] === null || follower[key] !== owner[key]).map(
+    ([key, label]) => `${label} (${follower[key] ?? "none"} here, ${owner[key] ?? "none"} there)`,
+  );
+  return (
+    `This server and the server that owns the Lightroom connection differ in ${differences.join(", ")}, ` +
+    "so nothing was sent. Use one lightroom-agent build in every client, then restart them."
+  );
 }
 
 function replyFrame(reply: BrokerReply, name: string): string {
@@ -175,7 +179,9 @@ export class BrokerServer {
     sock.on("error", () => {});
     sock.on("close", () => this.clients.delete(sock));
     const calls = new Map<number, AbortController>();
-    sock.on("close", () => { for (const controller of calls.values()) controller.abort(); });
+    sock.on("close", () => {
+      for (const controller of calls.values()) controller.abort();
+    });
     const nonce = newNonce();
     let greeted = false;
     let refusal: string | null = null;
@@ -210,12 +216,17 @@ export class BrokerServer {
   }
 
   private async handle(
-    sock: net.Socket, nonce: string, line: string, calls: Map<number, AbortController>, refusal: string | null,
+    sock: net.Socket,
+    nonce: string,
+    line: string,
+    calls: Map<number, AbortController>,
+    refusal: string | null,
   ): Promise<void> {
     const control = parseObject(line);
     if (typeof control?.cancelFor === "number") {
       const auth = typeof control.auth === "string" ? control.auth : null;
-      if (authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), auth)) calls.get(control.cancelFor)?.abort();
+      if (authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), auth))
+        calls.get(control.cancelFor)?.abort();
       return;
     }
     const req = parseRequest(line);
@@ -239,9 +250,11 @@ export class BrokerServer {
     try {
       result = await this.opts.callTool(req.name, req.args, {
         signal: controller.signal,
-        onProgress: req.reportProgress ? (progress) => {
-          if (!sock.destroyed) sock.write(JSON.stringify({ progressFor: req.id, progress }) + "\n");
-        } : undefined,
+        onProgress: req.reportProgress
+          ? (progress) => {
+              if (!sock.destroyed) sock.write(JSON.stringify({ progressFor: req.id, progress }) + "\n");
+            }
+          : undefined,
       });
     } catch (err) {
       calls.delete(req.id);
@@ -340,7 +353,10 @@ export class BrokerClient {
   private nonce = "";
   private refusal: string | null = null;
   private nextId = 0;
-  private readonly pending = new Map<number, { name: string; resolve: (resp: ToolResponse) => void; options?: CallOptions; cleanup: () => void }>();
+  private readonly pending = new Map<
+    number,
+    { name: string; resolve: (resp: ToolResponse) => void; options?: CallOptions; cleanup: () => void }
+  >();
 
   constructor(private readonly opts: BrokerClientOptions) {}
 
@@ -353,7 +369,11 @@ export class BrokerClient {
     const challenge = newNonce();
     let greeted: (hello: Record<string, unknown>) => void = () => {};
     const hello = new Promise<Record<string, unknown>>((resolve) => (greeted = resolve));
-    onLines(sock, (line) => this.receive(line, greeted), () => MAX_FRAME_BYTES);
+    onLines(
+      sock,
+      (line) => this.receive(line, greeted),
+      () => MAX_FRAME_BYTES,
+    );
     try {
       const greeting = await new Promise<Record<string, unknown>>((resolve, reject) => {
         const timer = setTimeout(
@@ -383,7 +403,10 @@ export class BrokerClient {
     sock.on("error", () => {});
     sock.on("close", () => {
       this.sock = null;
-      for (const pending of this.pending.values()) { pending.cleanup(); pending.resolve(lostResponse(pending.name, OWNER_LOST_MESSAGE)); }
+      for (const pending of this.pending.values()) {
+        pending.cleanup();
+        pending.resolve(lostResponse(pending.name, OWNER_LOST_MESSAGE));
+      }
       this.pending.clear();
       this.opts.onClose?.();
     });
@@ -425,7 +448,12 @@ export class BrokerClient {
       const cancel = () => {
         if (this.pending.has(id)) sock.write(JSON.stringify({ cancelFor: id, auth: req.auth }) + "\n");
       };
-      this.pending.set(id, { name, resolve, options, cleanup: () => options?.signal?.removeEventListener("abort", cancel) });
+      this.pending.set(id, {
+        name,
+        resolve,
+        options,
+        cleanup: () => options?.signal?.removeEventListener("abort", cancel),
+      });
       options?.signal?.addEventListener("abort", cancel, { once: true });
       sock.write(JSON.stringify(req) + "\n");
     });

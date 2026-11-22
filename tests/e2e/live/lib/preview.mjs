@@ -66,8 +66,14 @@ export function detailLevel(pixels) {
   for (let y = 0; y < pixels.h; y++) {
     for (let x = 0; x < pixels.w; x++) {
       const i = y * pixels.w + x;
-      if (x + 1 < pixels.w) { sum += Math.abs(pixels.L[i + 1] - pixels.L[i]); pairs++; }
-      if (y + 1 < pixels.h) { sum += Math.abs(pixels.L[i + pixels.w] - pixels.L[i]); pairs++; }
+      if (x + 1 < pixels.w) {
+        sum += Math.abs(pixels.L[i + 1] - pixels.L[i]);
+        pairs++;
+      }
+      if (y + 1 < pixels.h) {
+        sum += Math.abs(pixels.L[i + pixels.w] - pixels.L[i]);
+        pairs++;
+      }
     }
   }
   return pairs === 0 ? 0 : sum / pairs;
@@ -76,14 +82,22 @@ export function detailLevel(pixels) {
 export function luminanceGap(a, b) {
   if (a.w !== b.w || a.h !== b.h) return { sizes: [`${a.w}x${a.h}`, `${b.w}x${b.h}`] };
   const gaps = Float64Array.from(a.L, (value, i) => Math.abs(value - b.L[i])).sort();
-  return { mean_abs: gaps.reduce((sum, value) => sum + value, 0) / gaps.length, p99: gaps[Math.floor(gaps.length * 0.99)], max: gaps[gaps.length - 1] };
+  return {
+    mean_abs: gaps.reduce((sum, value) => sum + value, 0) / gaps.length,
+    p99: gaps[Math.floor(gaps.length * 0.99)],
+    max: gaps[gaps.length - 1],
+  };
 }
 
 export function describeSizes(before, after) {
   return { before: `${before.w}x${before.h}`, after: `${after.w}x${after.h}` };
 }
 
-export async function fetchStablePixels(session, photoId, { size = 864, tries = 8, pauseMs = 1500, fetch = fetchPixels, minDetail = 0 } = {}) {
+export async function fetchStablePixels(
+  session,
+  photoId,
+  { size = 864, tries = 8, pauseMs = 1500, fetch = fetchPixels, minDetail = 0 } = {},
+) {
   let previous = null;
   for (let attempt = 0; attempt < tries; attempt++) {
     const current = await fetch(session, photoId, size);
@@ -96,7 +110,20 @@ export async function fetchStablePixels(session, photoId, { size = 864, tries = 
 
 const sameImage = (a, b) => a.w === b.w && a.h === b.h && sampledMaxLuminanceDifference(a, b) < STABLE_PIXEL_TOLERANCE;
 
-export async function measureChange(session, photoId, applyChange, { size = 864, settleMs = SETTLE_MS, shows = (before, current) => !sameImage(current, before), minDetailRatio = 0, tries, pauseMs = 1500, fetch = fetchPixels } = {}) {
+export async function measureChange(
+  session,
+  photoId,
+  applyChange,
+  {
+    size = 864,
+    settleMs = SETTLE_MS,
+    shows = (before, current) => !sameImage(current, before),
+    minDetailRatio = 0,
+    tries,
+    pauseMs = 1500,
+    fetch = fetchPixels,
+  } = {},
+) {
   const before = await fetchStablePixels(session, photoId, { size, pauseMs, fetch });
   await applyChange();
   const changed = Date.now();
@@ -106,7 +133,13 @@ export async function measureChange(session, photoId, applyChange, { size = 864,
     current = await fetch(session, photoId, size);
   }
   const landedMs = shows(before, current) ? Date.now() - changed : null;
-  const after = await fetchStablePixels(session, photoId, { size, pauseMs, fetch, tries, minDetail: minDetailRatio * detailLevel(before) });
+  const after = await fetchStablePixels(session, photoId, {
+    size,
+    pauseMs,
+    fetch,
+    tries,
+    minDetail: minDetailRatio * detailLevel(before),
+  });
   return { before, after, landedMs };
 }
 
@@ -135,8 +168,20 @@ export function regionDeltas(before, after, regions) {
 }
 
 export function bandDeltas(before, after, bands = 10) {
-  const rows = Array.from({ length: bands }, (_, i) => ({ name: `row${i}`, x0: 0, y0: i / bands, x1: 1, y1: (i + 1) / bands }));
-  const columns = Array.from({ length: bands }, (_, i) => ({ name: `col${i}`, x0: i / bands, y0: 0, x1: (i + 1) / bands, y1: 1 }));
+  const rows = Array.from({ length: bands }, (_, i) => ({
+    name: `row${i}`,
+    x0: 0,
+    y0: i / bands,
+    x1: 1,
+    y1: (i + 1) / bands,
+  }));
+  const columns = Array.from({ length: bands }, (_, i) => ({
+    name: `col${i}`,
+    x0: i / bands,
+    y0: 0,
+    x1: (i + 1) / bands,
+    y1: 1,
+  }));
   return {
     rows: Object.values(regionDeltas(before, after, rows)),
     columns: Object.values(regionDeltas(before, after, columns)),
@@ -145,7 +190,12 @@ export function bandDeltas(before, after, bands = 10) {
 
 export function patchDeltas(before, after, centers, halfSizeFraction = 0.02) {
   return centers.map(({ x, y }) => {
-    const region = { x0: x - halfSizeFraction, y0: y - halfSizeFraction, x1: x + halfSizeFraction, y1: y + halfSizeFraction };
+    const region = {
+      x0: x - halfSizeFraction,
+      y0: y - halfSizeFraction,
+      x1: x + halfSizeFraction,
+      y1: y + halfSizeFraction,
+    };
     return {
       x,
       y,
@@ -177,7 +227,11 @@ export function rectangleInside({ x0, y0, x1, y1 }) {
 }
 
 const movedBy = (delta, threshold, direction) =>
-  direction === "brighter" ? delta > threshold : direction === "darker" ? delta < -threshold : Math.abs(delta) > threshold;
+  direction === "brighter"
+    ? delta > threshold
+    : direction === "darker"
+      ? delta < -threshold
+      : Math.abs(delta) > threshold;
 
 export function intersectionOverUnion(before, after, inside, { threshold = 0.04, direction = "brighter" } = {}) {
   let intersection = 0;
@@ -200,7 +254,13 @@ export function changedWhere(before, after, { threshold = 0.04, direction = "eit
   for (let y = 0; y < after.h; y++) {
     for (let x = 0; x < after.w; x++) {
       const i = y * after.w + x;
-      moved[i] = movedBy(after.L[i] - before.L[nearestIndex(before, (x + 0.5) / after.w, (y + 0.5) / after.h)], threshold, direction) ? 1 : 0;
+      moved[i] = movedBy(
+        after.L[i] - before.L[nearestIndex(before, (x + 0.5) / after.w, (y + 0.5) / after.h)],
+        threshold,
+        direction,
+      )
+        ? 1
+        : 0;
     }
   }
   return (fx, fy) => moved[nearestIndex(after, fx, fy)] === 1;

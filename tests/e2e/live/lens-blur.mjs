@@ -15,7 +15,8 @@ async function tool(name, args) {
 try {
   const initialSelection = await tool("get_selected_photos", {});
   const copies = await tool("create_virtual_copies", {
-    photo_ids: [requireFixtureId(marker, "arw_14bit")], copy_name: "LRAGENT Lens Blur live test",
+    photo_ids: [requireFixtureId(marker, "arw_14bit")],
+    copy_name: "LRAGENT Lens Blur live test",
   });
   copyId = copies.copies[0].copy_photo_id;
   await tool("set_lens_blur", { photo_id: copyId, active: false });
@@ -32,8 +33,13 @@ try {
   const saved = await tool("get_lens_blur", { photo_id: copyId });
   assert.equal(saved.active, true);
   assert.equal(saved.amount, 50);
-  const adjusted = await tool("set_lens_blur", { photo_id: copyId, cat_eye: 20,
-    highlights_boost: 30, focal_range: { near: 10, far: 30 }, bokeh: "Ring" });
+  const adjusted = await tool("set_lens_blur", {
+    photo_id: copyId,
+    cat_eye: 20,
+    highlights_boost: 30,
+    focal_range: { near: 10, far: 30 },
+    bokeh: "Ring",
+  });
   assert.equal(adjusted.cat_eye, 20);
   assert.equal(adjusted.highlights_boost, 30);
   assert.deepEqual(adjusted.focal_range, { near: 10, far: 30 });

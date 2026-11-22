@@ -19,10 +19,13 @@ describe('toolset parser', () => {
     expect(parseToolsets(raw)).toEqual(expected);
   });
 
-  it.each(['develp', 'Develop', 'all,typo', ',', 'develop,', '${user_config.toolsets}'])('rejects %s with valid names', (raw) => {
-    expect(() => parseToolsets(raw)).toThrow('LIGHTROOM_AGENT_TOOLSETS');
-    expect(() => parseToolsets(raw)).toThrow('Valid names: core, develop, masks, all');
-  });
+  it.each(['develp', 'Develop', 'all,typo', ',', 'develop,', '${user_config.toolsets}'])(
+    'rejects %s with valid names',
+    (raw) => {
+      expect(() => parseToolsets(raw)).toThrow('LIGHTROOM_AGENT_TOOLSETS');
+      expect(() => parseToolsets(raw)).toThrow('Valid names: core, develop, masks, all');
+    },
+  );
 
   it('wires every bundle environment reference to a defined setting with a default', () => {
     const manifest = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), '..', 'mcpb/manifest.json'), 'utf8')) as {

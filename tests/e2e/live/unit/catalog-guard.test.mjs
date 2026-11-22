@@ -52,7 +52,10 @@ test("a catalog is throwaway only with its marker file or an explicit environmen
   assert.equal(isThrowawayCatalog(THROWAWAY, options()), false);
   assert.equal(isThrowawayCatalog(THROWAWAY, options({ fileExists: (file) => file === markerFor(THROWAWAY) })), true);
   assert.equal(isThrowawayCatalog(THROWAWAY, options({ environment: { [THROWAWAY_CATALOG_ENV]: THROWAWAY } })), true);
-  assert.equal(isThrowawayCatalog(THROWAWAY, options({ environment: { [THROWAWAY_CATALOG_ENV]: "/elsewhere.lrcat" } })), false);
+  assert.equal(
+    isThrowawayCatalog(THROWAWAY, options({ environment: { [THROWAWAY_CATALOG_ENV]: "/elsewhere.lrcat" } })),
+    false,
+  );
 });
 
 test("a marker beside the real catalog never makes it throwaway", () => {
@@ -71,7 +74,6 @@ test("the guard returns the throwaway catalog path when it is marked", () => {
   assert.equal(assertThrowawayCatalog([THROWAWAY], options({ fileExists: () => true })), THROWAWAY);
 });
 
-
 test("Lightroom PID uses executable identity instead of AdobeIPCBroker launched-by arguments", () => {
   const pid = lightroomPid((command, args) => {
     assert.equal(command, "ps");
@@ -86,17 +88,27 @@ test("Lightroom PID uses executable identity instead of AdobeIPCBroker launched-
 });
 
 test("multiple Lightroom executables do not select an arbitrary catalog owner", () => {
-  const pid = lightroomPid(() => [
-    "100 /Applications/LrA.app/Contents/MacOS/Adobe Lightroom Classic",
-    "200 /Applications/LrB.app/Contents/MacOS/Adobe Lightroom Classic",
-  ].join("\n"));
+  const pid = lightroomPid(() =>
+    [
+      "100 /Applications/LrA.app/Contents/MacOS/Adobe Lightroom Classic",
+      "200 /Applications/LrB.app/Contents/MacOS/Adobe Lightroom Classic",
+    ].join("\n"),
+  );
 
   assert.equal(pid, null);
 });
 
 test("no Lightroom executable or process-query failure reports no catalog owner", () => {
-  assert.equal(lightroomPid(() => "81947 /Applications/AdobeIPCBroker"), null);
-  assert.equal(lightroomPid(() => { throw new Error("process query denied"); }), null);
+  assert.equal(
+    lightroomPid(() => "81947 /Applications/AdobeIPCBroker"),
+    null,
+  );
+  assert.equal(
+    lightroomPid(() => {
+      throw new Error("process query denied");
+    }),
+    null,
+  );
 });
 
 test("the runner's mutating modes refuse before starting a server when the open catalog has no throwaway marker", () => {
@@ -106,13 +118,23 @@ test("the runner's mutating modes refuse before starting a server when the open 
     const bin = path.join(root, "bin");
     const catalog = path.join(root, "unmarked", "Unmarked.lrcat");
     fs.mkdirSync(bin);
-    fs.writeFileSync(path.join(bin, "ps"), `#!/bin/sh\necho "4242 /Applications/X.app/Contents/MacOS/${LIGHTROOM_PROCESS_NAME}"\n`, { mode: 0o755 });
+    fs.writeFileSync(
+      path.join(bin, "ps"),
+      `#!/bin/sh\necho "4242 /Applications/X.app/Contents/MacOS/${LIGHTROOM_PROCESS_NAME}"\n`,
+      { mode: 0o755 },
+    );
     fs.writeFileSync(path.join(bin, "lsof"), `#!/bin/sh\necho "p4242"\necho "n${catalog}"\n`, { mode: 0o755 });
     for (const mode of ["write", "develop", "export", "preset-roundtrip", "all"]) {
       const result = spawnSync(process.execPath, [runner, mode], {
-        encoding: "utf8", timeout: 20_000, env: { PATH: bin, HOME: root, LIGHTROOM_AGENT_READ_ONLY: "true" },
+        encoding: "utf8",
+        timeout: 20_000,
+        env: { PATH: bin, HOME: root, LIGHTROOM_AGENT_READ_ONLY: "true" },
       });
-      assert.match(`${result.stdout}${result.stderr}`, /refusing to run: .*Unmarked\.lrcat is not a throwaway catalog/, mode);
+      assert.match(
+        `${result.stdout}${result.stderr}`,
+        /refusing to run: .*Unmarked\.lrcat is not a throwaway catalog/,
+        mode,
+      );
       assert.notEqual(result.status, 0, mode);
     }
   } finally {

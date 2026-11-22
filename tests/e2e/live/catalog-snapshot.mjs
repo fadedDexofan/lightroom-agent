@@ -11,6 +11,8 @@ if (command === "snapshot") {
 } else if (command === "restore" && argument && process.argv[4]) {
   console.log(restoreSnapshot(argument, { catalogPath: process.argv[4] }));
 } else {
-  console.error("usage: catalog-snapshot.mjs snapshot [label] | list | restore <snapshot-dir-name> <throwaway-catalog-path>");
+  console.error(
+    "usage: catalog-snapshot.mjs snapshot [label] | list | restore <snapshot-dir-name> <throwaway-catalog-path>",
+  );
   process.exit(2);
 }

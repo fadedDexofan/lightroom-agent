@@ -21,6 +21,14 @@ run = "cd server && npm run build"
 description = "Run tests"
 run = "cd server && npm test"
 
+[tasks.format]
+description = "Format the TypeScript and JavaScript"
+run = "npm --prefix server run format"
+
+[tasks."format:check"]
+description = "Check the formatting of the TypeScript and JavaScript"
+run = "npm --prefix server run format:check"
+
 [tasks.dev]
 description = "Build in watch mode"
 run = "cd server && npm run watch"

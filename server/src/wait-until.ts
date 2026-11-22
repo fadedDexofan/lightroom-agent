@@ -8,8 +8,7 @@ export async function waitUntil(
   timeoutMs: number,
   pollMs: number,
   now: () => number = () => Date.now(),
-  sleep: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<boolean> {
   const deadline = now() + timeoutMs;
   while (!predicate()) {

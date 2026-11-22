@@ -8,13 +8,21 @@ export interface CheckedContract {
   validate: ValidateFunction;
 }
 
-export const CHECKED_CONTRACTS: ReadonlyMap<string, CheckedContract> = new Map(TOOL_CONTRACTS.map((contract) => [
-  contract.name, { contract, validate: ajv.compile(contract.inputSchema) },
-]));
+export const CHECKED_CONTRACTS: ReadonlyMap<string, CheckedContract> = new Map(
+  TOOL_CONTRACTS.map((contract) => [contract.name, { contract, validate: ajv.compile(contract.inputSchema) }]),
+);
 
 function alternative(schema: unknown): string {
-  const { type, enum: values, minimum, maximum } = (schema ?? {}) as {
-    type?: string; enum?: unknown[]; minimum?: number; maximum?: number;
+  const {
+    type,
+    enum: values,
+    minimum,
+    maximum,
+  } = (schema ?? {}) as {
+    type?: string;
+    enum?: unknown[];
+    minimum?: number;
+    maximum?: number;
   };
   if (values) return values.map((value) => JSON.stringify(value)).join(", ");
   if (type === "number" && minimum !== undefined && maximum !== undefined) {
@@ -46,9 +54,9 @@ function describe(error: ErrorObject): string {
 }
 
 function problems(errors: ErrorObject[]): string[] {
-  const combined = new Set(errors
-    .filter((error) => error.keyword === "oneOf" || error.keyword === "anyOf")
-    .map((error) => error.instancePath));
+  const combined = new Set(
+    errors.filter((error) => error.keyword === "oneOf" || error.keyword === "anyOf").map((error) => error.instancePath),
+  );
   return errors
     .filter((error) => error.keyword === "oneOf" || error.keyword === "anyOf" || !combined.has(error.instancePath))
     .map(describe);

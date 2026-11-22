@@ -50,31 +50,83 @@ const jsonField = (file, label, get, set, expected) => ({
   },
 });
 
-const version = (file) => jsonField(file, null, (json) => json.version, (json, v) => { json.version = v; }, (r) => r.version);
+const version = (file) =>
+  jsonField(
+    file,
+    null,
+    (json) => json.version,
+    (json, v) => {
+      json.version = v;
+    },
+    (r) => r.version,
+  );
 
-const versionWithPackages = (file, packagesOf) => jsonField(file, null,
-  (json) => distinct([json.version, ...packagesOf(json).map((pkg) => pkg.version)]),
-  (json, [v]) => { json.version = v; for (const pkg of packagesOf(json)) pkg.version = v; },
-  (r) => [r.version]);
+const versionWithPackages = (file, packagesOf) =>
+  jsonField(
+    file,
+    null,
+    (json) => distinct([json.version, ...packagesOf(json).map((pkg) => pkg.version)]),
+    (json, [v]) => {
+      json.version = v;
+      for (const pkg of packagesOf(json)) pkg.version = v;
+    },
+    (r) => [r.version],
+  );
 
-const launchLine = (file, shape = (spec) => spec) => jsonField(file, "launch",
-  (json) => json.mcpServers?.[SERVER_KEY] ?? null,
-  (json, spec) => { json.mcpServers = { ...json.mcpServers, [SERVER_KEY]: spec }; },
-  (r) => shape(launch(r.version)));
+const launchLine = (file, shape = (spec) => spec) =>
+  jsonField(
+    file,
+    "launch",
+    (json) => json.mcpServers?.[SERVER_KEY] ?? null,
+    (json, spec) => {
+      json.mcpServers = { ...json.mcpServers, [SERVER_KEY]: spec };
+    },
+    (r) => shape(launch(r.version)),
+  );
 
-const unversionedMarketplace = (file) => jsonField(file, "no entry version",
-  (json) => json.plugins.filter((entry) => "version" in entry).map((entry) => entry.name),
-  (json) => { for (const entry of json.plugins) delete entry.version; },
-  () => []);
+const unversionedMarketplace = (file) =>
+  jsonField(
+    file,
+    "no entry version",
+    (json) => json.plugins.filter((entry) => "version" in entry).map((entry) => entry.name),
+    (json) => {
+      for (const entry of json.plugins) delete entry.version;
+    },
+    () => [],
+  );
 
-const description = (file) => jsonField(file, "description", (json) => json.description ?? null, (json, d) => { json.description = d; }, (r) => r.description);
+const description = (file) =>
+  jsonField(
+    file,
+    "description",
+    (json) => json.description ?? null,
+    (json, d) => {
+      json.description = d;
+    },
+    (r) => r.description,
+  );
 
-const entryDescription = (file) => jsonField(file, "entry description",
-  (json) => json.plugins.find((entry) => entry.name === PACKAGE)?.description ?? null,
-  (json, d) => { json.plugins.find((entry) => entry.name === PACKAGE).description = d; },
-  (r) => r.description);
+const entryDescription = (file) =>
+  jsonField(
+    file,
+    "entry description",
+    (json) => json.plugins.find((entry) => entry.name === PACKAGE)?.description ?? null,
+    (json, d) => {
+      json.plugins.find((entry) => entry.name === PACKAGE).description = d;
+    },
+    (r) => r.description,
+  );
 
-const author = (file) => jsonField(file, "author", (json) => json.author ?? null, (json, a) => { json.author = a; }, (r) => ({ name: r.author }));
+const author = (file) =>
+  jsonField(
+    file,
+    "author",
+    (json) => json.author ?? null,
+    (json, a) => {
+      json.author = a;
+    },
+    (r) => ({ name: r.author }),
+  );
 
 const targets = [
   version("server/package.json"),
@@ -119,7 +171,10 @@ const targets = [
       const [maj, min, pat] = core(release.version).split(".");
       const src = fs.readFileSync(p(this.name), "utf8");
       if (!INFO_LUA.test(src)) throw new Error("Info.lua: VERSION line not found");
-      fs.writeFileSync(p(this.name), src.replace(INFO_LUA, `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`));
+      fs.writeFileSync(
+        p(this.name),
+        src.replace(INFO_LUA, `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`),
+      );
     },
   },
 ];

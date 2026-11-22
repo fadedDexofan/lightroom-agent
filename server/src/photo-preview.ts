@@ -1,6 +1,14 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { MAX_IMAGE_BYTES, PREVIEW_SIZES, previewEdge, type PreviewSize } from "./preview-sizes.js";
-import { batchReply, jpegOf, previewBatch, previewItem, reasonOf, type PreviewItem, type RenderedPreview } from "./preview-item.js";
+import {
+  batchReply,
+  jpegOf,
+  previewBatch,
+  previewItem,
+  reasonOf,
+  type PreviewItem,
+  type RenderedPreview,
+} from "./preview-item.js";
 import { cutPixels, decodeJpeg, encodeWithin, pixelBox, scaleToEdge, type NormalizedRegion } from "./rendered-image.js";
 import type { Input, PluginReply } from "./tool-result.js";
 
@@ -35,11 +43,21 @@ function regionSourceEdge(edge: number, region: NormalizedRegion): number {
   return Math.min(MAX_REGION_SOURCE, Math.ceil(edge / Math.max(region.width, region.height)));
 }
 
-function fitted(preview: RenderedPreview, requestedSize: number, image: { width: number; height: number }, encoded: Buffer,
-  scaled: boolean): FittedPreview {
+function fitted(
+  preview: RenderedPreview,
+  requestedSize: number,
+  image: { width: number; height: number },
+  encoded: Buffer,
+  scaled: boolean,
+): FittedPreview {
   return {
-    photo_id: preview.photo_id, requested_size: requestedSize, width: image.width, height: image.height,
-    bytes: encoded.length, scaled_by_server: scaled, image: { mime_type: "image/jpeg", data: encoded.toString("base64") },
+    photo_id: preview.photo_id,
+    requested_size: requestedSize,
+    width: image.width,
+    height: image.height,
+    bytes: encoded.length,
+    scaled_by_server: scaled,
+    image: { mime_type: "image/jpeg", data: encoded.toString("base64") },
   };
 }
 
@@ -84,9 +102,17 @@ export async function renderPreview(
   const edge = previewEdge(args.size ?? DEFAULT_SIZE);
   const { region } = args;
   const requested = region ? regionSourceEdge(edge, region) : edge;
-  const item = await previewItem(dispatcher, { action: "render_preview", input: args.photo_id, size: requested }, budgetMs, options);
+  const item = await previewItem(
+    dispatcher,
+    { action: "render_preview", input: args.photo_id, size: requested },
+    budgetMs,
+    options,
+  );
   if (options?.signal?.aborted) throw new Error("Request cancelled");
-  return partsOf(item, region ? (preview) => cropPreview(preview, region, requested) : (preview) => fitPreview(preview, edge));
+  return partsOf(
+    item,
+    region ? (preview) => cropPreview(preview, region, requested) : (preview) => fitPreview(preview, edge),
+  );
 }
 
 export async function getPhotoPreviews(
@@ -98,7 +124,11 @@ export async function getPhotoPreviews(
   const edge = previewEdge(args.size ?? DEFAULT_BATCH_SIZE);
   const previews: FittedPreview[] = [];
   let bytes = 0;
-  const batch = await previewBatch(dispatcher, args.photo_ids, { action: "render_preview", size: edge, budgetMs }, options,
+  const batch = await previewBatch(
+    dispatcher,
+    args.photo_ids,
+    { action: "render_preview", size: edge, budgetMs },
+    options,
     (rendered, fail) => {
       let preview: FittedPreview;
       try {
@@ -110,6 +140,7 @@ export async function getPhotoPreviews(
       if (bytes + preview.bytes > BATCH_BUDGET_BYTES) return false;
       bytes += preview.bytes;
       previews.push(preview);
-    });
+    },
+  );
   return batchReply(batch, previews.length ? { previews } : undefined);
 }

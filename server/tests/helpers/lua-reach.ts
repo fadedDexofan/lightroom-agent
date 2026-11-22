@@ -3,16 +3,30 @@ import path from 'node:path';
 
 export type DevelopAccess = 'reads' | 'writes' | 'session';
 
-interface Token { kind: 'name' | 'string' | 'other'; text: string; column: number }
+interface Token {
+  kind: 'name' | 'string' | 'other';
+  text: string;
+  column: number;
+}
 
-interface Chunk { node: string; tokens: Token[] }
+interface Chunk {
+  node: string;
+  tokens: Token[];
+}
 
 const LONG_BRACKET = /^\[(=*)\[/;
 const NOT_STATEMENT_START = new Set(['end', 'else', 'elseif', 'until', '}', ')', ']']);
 const DEVELOP_READS = new Set(['getDevelopSettings', 'getDevelopSnapshots']);
 const DEVELOP_WRITES = new Set([
-  'applyDevelopSettings', 'applyDevelopPreset', 'createDevelopSnapshot', 'applyDevelopSnapshot',
-  'deleteDevelopSnapshot', 'updateAISettings', 'deleteAllEmptyMasks', 'quickDevelopSetTreatment', 'createVirtualCopies',
+  'applyDevelopSettings',
+  'applyDevelopPreset',
+  'createDevelopSnapshot',
+  'applyDevelopSnapshot',
+  'deleteDevelopSnapshot',
+  'updateAISettings',
+  'deleteAllEmptyMasks',
+  'quickDevelopSetTreatment',
+  'createVirtualCopies',
 ]);
 const SESSION = 'DevelopSession.run';
 const CONTROLLER_WRITE = 'CatalogWrite.develop';
@@ -32,8 +46,15 @@ function tokenize(source: string): Token[] {
   while (index < source.length) {
     const char = source[index];
     const column = index - lineStart;
-    if (char === '\n') { index++; lineStart = index; continue; }
-    if (/\s/.test(char)) { index++; continue; }
+    if (char === '\n') {
+      index++;
+      lineStart = index;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      index++;
+      continue;
+    }
     if (source.startsWith('--', index)) {
       const long = LONG_BRACKET.exec(source.slice(index + 2));
       const end = long ? longClose(long[1], index + 2 + long[0].length) : source.indexOf('\n', index);
@@ -79,7 +100,7 @@ function statements(tokens: Token[]): Token[][] {
 function definedName(statement: Token[]): string | null {
   const texts = statement.slice(0, 5).map((token) => token.text);
   if (texts[0] === 'local' && texts[1] === 'function') return texts[2];
-  if (texts[0] === 'function') return (texts[2] === '.' || texts[2] === ':') ? `${texts[1]}.${texts[3]}` : texts[1];
+  if (texts[0] === 'function') return texts[2] === '.' || texts[2] === ':' ? `${texts[1]}.${texts[3]}` : texts[1];
   if (texts[0] === 'local') return texts[1];
   if (texts[1] === '.' && texts[3] === '=') return `${texts[0]}.${texts[2]}`;
   if (texts[1] === '=') return texts[0];
@@ -103,21 +124,26 @@ function readModule(file: string, source: string): Module {
     if (literal?.kind === 'string') requires.set(tokens[at - 2].text, literal.text);
   });
   const returned = [...tokens].reverse().findIndex((token) => token.text === 'return' && token.column === 0);
-  const table = returned < 0 ? null : tokens[tokens.length - returned]?.text ?? null;
+  const table = returned < 0 ? null : (tokens[tokens.length - returned]?.text ?? null);
   const chunks: Chunk[] = [];
   const locals = new Set<string>();
   for (const statement of statements(tokens)) {
     const name = definedName(statement);
     if (name === null) continue;
     const [owner, field] = name.split('.');
-    const node = field !== undefined && owner === table ? `${file}.${field}` : `${file}:${field === undefined ? name : owner}`;
+    const node =
+      field !== undefined && owner === table ? `${file}.${field}` : `${file}:${field === undefined ? name : owner}`;
     if (field === undefined || owner !== table) locals.add(field === undefined ? name : owner);
     chunks.push({ node, tokens: statement });
   }
   return { file, table, requires, chunks, locals };
 }
 
-interface Graph { nodes: Set<string>; edges: Map<string, Set<string>>; access: Map<string, Set<DevelopAccess>> }
+interface Graph {
+  nodes: Set<string>;
+  edges: Map<string, Set<string>>;
+  access: Map<string, Set<DevelopAccess>>;
+}
 
 function addTo<T>(map: Map<string, Set<T>>, key: string, value: T) {
   const set = map.get(key) ?? new Set<T>();
@@ -163,7 +189,8 @@ export interface DevelopAccessScan {
 }
 
 export function developAccessByHandler(pluginDir: string): DevelopAccessScan {
-  const modules = fs.readdirSync(pluginDir)
+  const modules = fs
+    .readdirSync(pluginDir)
     .filter((name) => name.endsWith('.lua') && name !== 'Contract.lua')
     .map((name) => readModule(path.basename(name, '.lua'), fs.readFileSync(path.join(pluginDir, name), 'utf8')));
   const { nodes, edges, access } = graphOf(modules);
@@ -175,7 +202,10 @@ export function developAccessByHandler(pluginDir: string): DevelopAccessScan {
       const node = queue.pop()!;
       for (const kind of access.get(node) ?? []) reached.add(kind);
       for (const next of edges.get(node) ?? []) {
-        if (!seen.has(next)) { seen.add(next); queue.push(next); }
+        if (!seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
       }
     }
     return reached;
