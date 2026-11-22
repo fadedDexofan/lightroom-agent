@@ -76,6 +76,7 @@ jobs:
     env:
       VERSION: ${{ needs.verify.outputs.version }}
       NPM_TAG: ${{ needs.verify.outputs.npm_tag }}
+      PUBLISH: ${{ needs.verify.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -117,7 +118,17 @@ jobs:
           cat build/package-files.txt
 
       - name: Staged publish, dry run
-        run: npm stage publish "./build/lightroom-agent-$VERSION.tgz" --tag "$NPM_TAG" --dry-run
+        run: |
+          tarball="./build/lightroom-agent-$VERSION.tgz"
+          if [ "$PUBLISH" != true ]; then
+            case "$VERSION" in *-*) separator=. ;; *) separator=- ;; esac
+            dryrun="$VERSION${separator}dryrun.$GITHUB_RUN_ID"
+            copy="$(mktemp -d)"
+            tar -xzf "$tarball" -C "$copy"
+            (cd "$copy/package" && npm pkg set version="$dryrun" && npm pack --ignore-scripts --pack-destination "$copy")
+            tarball="$copy/lightroom-agent-$dryrun.tgz"
+          fi
+          npm stage publish "$tarball" --tag "$NPM_TAG" --dry-run
 
       - name: Lightroom plug-in zip
         run: (cd plugin && zip -r -X "../build/LightroomAgent.lrplugin-$VERSION.zip" LightroomAgent.lrplugin)
