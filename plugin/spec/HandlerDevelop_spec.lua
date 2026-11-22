@@ -753,7 +753,8 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.is_false(catalog.getQueriedInsideWriteAccess())
     end)
 
-    local pendingText = "Lightroom has not finished computing the AI masks of photo 1 within 15 s, so nothing more was"
+    local pendingText = "Lightroom has not finished computing the AI masks of photo 1 within "
+        .. require("Contract").AI_MASK_COMPUTE_WAIT_SECONDS .. " s, so nothing more was"
         .. " written to it. Do not write to this photo until its masks show in Develop: a write while Lightroom still"
         .. " computes can freeze Lightroom."
     for _, case in ipairs({
@@ -2885,9 +2886,9 @@ describe("develop settings batches stop within their budget", function()
         local cases = {
             { name = "named copy", reserve = 20, source = { Exposure2012 = 1 }, run = copy({ "Exposure2012" }) },
             { name = "full copy", reserve = 40, source = { Exposure2012 = 1 }, run = copy(nil) },
-            { name = "full copy with AI masks", reserve = 65, source = AI_MASK_SETTINGS, run = copy(nil) },
+            { name = "full copy with AI masks", reserve = 80, source = AI_MASK_SETTINGS, run = copy(nil) },
             { name = "preset", reserve = 20, source = {}, run = preset("Plain") },
-            { name = "preset with AI masks", reserve = 45, source = {}, run = preset("Subject") },
+            { name = "preset with AI masks", reserve = 60, source = {}, run = preset("Subject") },
             { name = "style match", reserve = 30, source = { Exposure2012 = 1 }, run = match },
         }
         package.loaded.HandlerSnapshots = { create = function() return { snapshot = { name = "s" } } end }
