@@ -1,12 +1,12 @@
-local LrTasks = import 'LrTasks'
+local LrTasks = import "LrTasks"
 
-local Contract = require 'Contract'
-local GuardedMaskWrite = require 'GuardedMaskWrite'
-local JsonValue = require 'JsonValue'
-local LocalSliders = require 'LocalSliders'
-local MaskCurves = require 'MaskCurves'
-local MaskPointColors = require 'MaskPointColors'
-local Reply = require 'Reply'
+local Contract = require "Contract"
+local GuardedMaskWrite = require "GuardedMaskWrite"
+local JsonValue = require "JsonValue"
+local LocalSliders = require "LocalSliders"
+local MaskCurves = require "MaskCurves"
+local MaskPointColors = require "MaskPointColors"
+local Reply = require "Reply"
 
 local MaskValues = {}
 
@@ -21,8 +21,14 @@ local SWATCH_STEPS = {
 }
 local COPY_STEP = "Copy Mask Adjustments"
 local IDENTITY_FIELDS = {
-    What = true, CorrectionMasks = true, CorrectionID = true, CorrectionSyncID = true, CorrectionName = true,
-    CorrectionReferenceX = true, CorrectionReferenceY = true, CorrectionActive = true,
+    What = true,
+    CorrectionMasks = true,
+    CorrectionID = true,
+    CorrectionSyncID = true,
+    CorrectionName = true,
+    CorrectionReferenceX = true,
+    CorrectionReferenceY = true,
+    CorrectionActive = true,
 }
 local COLORS_KEY = "LocalPointColors"
 local VARIANCE_KEY = "LocalColorVariance"
@@ -38,9 +44,15 @@ end
 local function entryOf(photo, entries, maskId)
     local index, entry = GuardedMaskWrite.findCorrection(entries, maskId)
     if entry == nil then
-        Reply.refuse(string.format("Mask %s is not in the saved settings of photo %s (saved masks: %s); a mask made in"
-            .. " Develop in the last few seconds may not be saved yet", tostring(maskId),
-            tostring(photo.localIdentifier), savedIds(entries)))
+        Reply.refuse(
+            string.format(
+                "Mask %s is not in the saved settings of photo %s (saved masks: %s); a mask made in"
+                    .. " Develop in the last few seconds may not be saved yet",
+                tostring(maskId),
+                tostring(photo.localIdentifier),
+                savedIds(entries)
+            )
+        )
     end
     return index, entry
 end
@@ -50,13 +62,16 @@ local DECODERS = {
         local adjustments = {}
         for _, slider in ipairs(LocalSliders.list) do
             local stored = entry[slider.stored]
-            adjustments[slider.name] = stored == nil and LocalSliders.neutralOf(slider) or LocalSliders.valueOf(slider, stored)
+            adjustments[slider.name] = stored == nil and LocalSliders.neutralOf(slider)
+                or LocalSliders.valueOf(slider, stored)
         end
         return adjustments
     end,
     curves = function(entry)
         local curves = {}
-        for _, channel in ipairs(MaskCurves.channels) do curves[channel.name] = MaskCurves.ofEntry(entry, channel) end
+        for _, channel in ipairs(MaskCurves.channels) do
+            curves[channel.name] = MaskCurves.ofEntry(entry, channel)
+        end
         return curves
     end,
     swatches = function(entry)
@@ -67,7 +82,9 @@ local ALL_KINDS = { "adjustments", "curves", "swatches" }
 
 local function decode(entry, kinds)
     local values = {}
-    for _, kind in ipairs(kinds) do values[kind] = DECODERS[kind](entry) end
+    for _, kind in ipairs(kinds) do
+        values[kind] = DECODERS[kind](entry)
+    end
     return values
 end
 
@@ -111,7 +128,9 @@ MaskValues.savedEntry = entryOf
 
 function MaskValues.adjustmentsOf(entry, requested)
     local all, picked = DECODERS.adjustments(entry), {}
-    for name in pairs(requested) do picked[name] = all[name] end
+    for name in pairs(requested) do
+        picked[name] = all[name]
+    end
     return picked
 end
 
@@ -128,15 +147,17 @@ local function sliderEdit(slider, value)
         end,
         describe = function(field, actual)
             if type(actual) ~= "number" then return nil end
-            return string.format("%s: wrote %s, Lightroom stored %s", slider.name,
-                tostring(LocalSliders.valueOf(slider, field.value)), tostring(LocalSliders.valueOf(slider, actual)))
+            return string.format(
+                "%s: wrote %s, Lightroom stored %s",
+                slider.name,
+                tostring(LocalSliders.valueOf(slider, field.value)),
+                tostring(LocalSliders.valueOf(slider, actual))
+            )
         end,
     }
 end
 
-local function pointsText(strings)
-    return type(strings) == "table" and table.concat(strings, " ") or "nothing"
-end
+local function pointsText(strings) return type(strings) == "table" and table.concat(strings, " ") or "nothing" end
 
 local function curveEdit(channel, points)
     local fields = { { key = channel.stored, value = MaskCurves.toStored(points) }, { key = channel.extended } }
@@ -146,25 +167,33 @@ local function curveEdit(channel, points)
         holds = function(entry) return JsonValue.equal(MaskCurves.ofEntry(entry, channel), points) end,
         describe = function(field, actual)
             if field.key ~= channel.stored then return nil end
-            return string.format("%s curve: wrote %s, Lightroom stored %s", channel.name, pointsText(field.value),
-                pointsText(actual))
+            return string.format(
+                "%s curve: wrote %s, Lightroom stored %s",
+                channel.name,
+                pointsText(field.value),
+                pointsText(actual)
+            )
         end,
     }
 end
 
 local function requireSwatch(maskId, index, count)
     if index > count then
-        Reply.refuse(string.format("No swatch at index %d on mask %s (the mask has %d)", index, tostring(maskId), count))
+        Reply.refuse(
+            string.format("No swatch at index %d on mask %s (the mask has %d)", index, tostring(maskId), count)
+        )
     end
 end
 
-local function swatchCountText(value)
-    return type(value) == "table" and (#value .. " entries") or "nothing"
-end
+local function swatchCountText(value) return type(value) == "table" and (#value .. " entries") or "nothing" end
 
 local function describeSwatchList(field, actual)
-    return string.format("Point Color %s: wrote %s, Lightroom stored %s", field.key, swatchCountText(field.value),
-        swatchCountText(actual))
+    return string.format(
+        "Point Color %s: wrote %s, Lightroom stored %s",
+        field.key,
+        swatchCountText(field.value),
+        swatchCountText(actual)
+    )
 end
 
 local function swatchUpdate(maskId, swatch)
@@ -195,8 +224,12 @@ local function swatchUpdate(maskId, swatch)
             return JsonValue.equal(swatchesOf(entry)[index], MaskPointColors.fromStored({ color }, { variance })[1])
         end,
         describe = function(field, actual)
-            return string.format("Point Color swatch %d: wrote %s, Lightroom stored %s", index, tostring(field.value[index]),
-                type(actual) == "table" and tostring(actual[index]) or "nothing")
+            return string.format(
+                "Point Color swatch %d: wrote %s, Lightroom stored %s",
+                index,
+                tostring(field.value[index]),
+                type(actual) == "table" and tostring(actual[index]) or "nothing"
+            )
         end,
     }
 end
@@ -238,13 +271,23 @@ local function swatchAdd(maskId, swatch)
     local function existing(entry)
         local swatches = MaskPointColors.fromStored(entry[COLORS_KEY], entry[VARIANCE_KEY])
         if #swatches >= MaskPointColors.MAX_SWATCHES then
-            Reply.refuse(string.format("Mask %s already holds %d Point Color swatches, the most Lightroom allows",
-                tostring(maskId), MaskPointColors.MAX_SWATCHES))
+            Reply.refuse(
+                string.format(
+                    "Mask %s already holds %d Point Color swatches, the most Lightroom allows",
+                    tostring(maskId),
+                    MaskPointColors.MAX_SWATCHES
+                )
+            )
         end
         for index, held in ipairs(swatches) do
             if MaskPointColors.sameSource(held, added) then
-                Reply.refuse(string.format("Mask %s already has a swatch with that source color at index %d; nothing"
-                    .. " was added", tostring(maskId), index))
+                Reply.refuse(
+                    string.format(
+                        "Mask %s already has a swatch with that source color at index %d; nothing" .. " was added",
+                        tostring(maskId),
+                        index
+                    )
+                )
             end
         end
         MaskPointColors.requireOrderedRanges(added, #swatches + 1)
@@ -307,7 +350,12 @@ local function copyEdit(sourceId, source)
             return true
         end,
         describe = function(field, actual)
-            return string.format("%s: wrote %s, Lightroom stored %s", field.key, valueText(field.value), valueText(actual))
+            return string.format(
+                "%s: wrote %s, Lightroom stored %s",
+                field.key,
+                valueText(field.value),
+                valueText(actual)
+            )
         end,
     }
 end
@@ -350,14 +398,18 @@ end
 
 local function apply(entry, plan)
     for _, step in ipairs(plan) do
-        for _, field in ipairs(step.fields) do entry[field.key] = field.value end
+        for _, field in ipairs(step.fields) do
+            entry[field.key] = field.value
+        end
     end
 end
 
 local function keysOf(plan)
     local keys = {}
     for _, step in ipairs(plan) do
-        for _, field in ipairs(step.fields) do keys[#keys + 1] = field.key end
+        for _, field in ipairs(step.fields) do
+            keys[#keys + 1] = field.key
+        end
     end
     return keys
 end
@@ -365,14 +417,17 @@ end
 local function mismatchesOf(index, plan)
     local byPath = {}
     for _, step in ipairs(plan) do
-        for _, field in ipairs(step.fields) do byPath[tostring(index) .. "." .. field.key] = { step = step, field = field } end
+        for _, field in ipairs(step.fields) do
+            byPath[tostring(index) .. "." .. field.key] = { step = step, field = field }
+        end
     end
     return function(expected, actual)
         local mismatches, described = {}, {}
         for _, path in ipairs(JsonValue.differences(expected, actual)) do
             local fieldPath = path:match("^(%d+%.[^.]+)")
             local named = fieldPath and byPath[fieldPath]
-            local text = named and named.step.describe(named.field, type(actual[index]) == "table" and actual[index][named.field.key])
+            local text = named
+                and named.step.describe(named.field, type(actual[index]) == "table" and actual[index][named.field.key])
             if text == nil then
                 mismatches[#mismatches + 1] = path .. " changed"
             elseif not described[fieldPath] then
@@ -411,17 +466,32 @@ local function submitEdits(context, catalog, photo, maskId, description, kinds, 
         return { before = values, after = values, written = {} }
     end
     if #plan > 0 and before.CorrectionActive == false then
-        context:warn(string.format("mask %s was hidden (CorrectionActive false); this write showed it again, as"
-            .. " Lightroom's own sliders do", tostring(maskId)))
+        context:warn(
+            string.format(
+                "mask %s was hidden (CorrectionActive false); this write showed it again, as"
+                    .. " Lightroom's own sliders do",
+                tostring(maskId)
+            )
+        )
     end
-    return { before = writtenValues(before, kinds), after = writtenValues(submitted.entries[index], kinds),
-        written = keysOf(plan) }
+    return {
+        before = writtenValues(before, kinds),
+        after = writtenValues(submitted.entries[index], kinds),
+        written = keysOf(plan),
+    }
 end
 
 function MaskValues.write(context, catalog, photo, maskId, change)
     local edits = editsOf(maskId, change)
-    return submitEdits(context, catalog, photo, maskId, historyStepOf(change), kindsOf(change),
-        function() return edits end)
+    return submitEdits(
+        context,
+        catalog,
+        photo,
+        maskId,
+        historyStepOf(change),
+        kindsOf(change),
+        function() return edits end
+    )
 end
 
 function MaskValues.copy(context, catalog, photo, sourceId, targetId)
@@ -435,8 +505,14 @@ function MaskValues.waitUntilSaved(catalog, photo, maskId, subject)
     local waited = 0
     while GuardedMaskWrite.findCorrection(GuardedMaskWrite.readEntries(catalog, photo), maskId) == nil do
         if waited >= Contract.NEW_MASK_SAVE_WAIT_SECONDS then
-            Reply.refuse(string.format("Lightroom did not save %s %s within %s s", subject, tostring(maskId),
-                tostring(Contract.NEW_MASK_SAVE_WAIT_SECONDS)))
+            Reply.refuse(
+                string.format(
+                    "Lightroom did not save %s %s within %s s",
+                    subject,
+                    tostring(maskId),
+                    tostring(Contract.NEW_MASK_SAVE_WAIT_SECONDS)
+                )
+            )
         end
         LrTasks.sleep(SAVED_POLL_SECONDS)
         waited = waited + SAVED_POLL_SECONDS

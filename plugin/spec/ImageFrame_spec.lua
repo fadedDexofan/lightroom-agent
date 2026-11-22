@@ -1,10 +1,8 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 helper.installImport({})
-local ImageFrame = require 'ImageFrame'
+local ImageFrame = require "ImageFrame"
 
-local function near(expected, actual, tolerance)
-    return math.abs(expected - actual) < (tolerance or 1e-12)
-end
+local function near(expected, actual, tolerance) return math.abs(expected - actual) < (tolerance or 1e-12) end
 
 local SIZE = { width = 3000, height = 2000 }
 
@@ -54,7 +52,16 @@ describe("ImageFrame orientation", function()
     end
 
     it("swaps the stored pixel size only for orientations that swap the axes", function()
-        for orientation, swaps in pairs({ AB = false, BA = false, CD = false, DC = false, CB = true, BC = true, AD = true, DA = true }) do
+        for orientation, swaps in pairs({
+            AB = false,
+            BA = false,
+            CD = false,
+            DC = false,
+            CB = true,
+            BC = true,
+            AD = true,
+            DA = true,
+        }) do
             local frame = frameOf(orientation)
 
             assert.are.same(swaps and { width = 2000, height = 3000 } or SIZE, frame.storedSize)
@@ -68,14 +75,16 @@ describe("ImageFrame orientation", function()
             assert.is_truthy(refusal:find("cannot map", 1, true))
             assert.is_nil(refusal:find("nothing was", 1, true))
         end
-        assert.is_truthy(helper.failedOf(function() ImageFrame.of({ dimensions = SIZE }) end):find("cannot map", 1, true))
+        assert.is_truthy(
+            helper.failedOf(function() ImageFrame.of({ dimensions = SIZE }) end):find("cannot map", 1, true)
+        )
     end)
 
     it("refuses a photo whose pixel size Lightroom does not report", function()
         for _, dimensions in ipairs({ false, {}, { width = 0, height = 10 }, { width = 10 } }) do
-            local message = helper.failedOf(function()
-                ImageFrame.of({ orientation = "AB", dimensions = dimensions or nil })
-            end)
+            local message = helper.failedOf(
+                function() ImageFrame.of({ orientation = "AB", dimensions = dimensions or nil }) end
+            )
             assert.is_truthy(message:find("pixel size", 1, true))
         end
     end)
@@ -87,7 +96,9 @@ describe("ImageFrame crop and straighten", function()
 
     local function sessionA(angle)
         local settings = { CropAngle = angle }
-        for key, value in pairs(SESSION_A_CROP) do settings[key] = value end
+        for key, value in pairs(SESSION_A_CROP) do
+            settings[key] = value
+        end
         return frameOf("AB", settings, SESSION_A_SIZE)
     end
 
@@ -98,12 +109,14 @@ describe("ImageFrame crop and straighten", function()
     }
 
     for colour, disc in pairs(DISCS_AT_8) do
-        it("maps the " .. colour .. " disc Lightroom 16.0 displayed at an 8 degree crop to where it sits in the photo",
+        it(
+            "maps the " .. colour .. " disc Lightroom 16.0 displayed at an 8 degree crop to where it sits in the photo",
             function()
                 local x, y = sessionA(8).toStored(disc.displayed[1], disc.displayed[2])
 
                 assert.is_true(near(disc.source[1], x, 0.001) and near(disc.source[2], y, 0.001))
-            end)
+            end
+        )
     end
 
     it("measures the displayed frame of the 8 degree crop as Lightroom renders it", function()
@@ -131,7 +144,10 @@ describe("ImageFrame crop and straighten", function()
 
     it("maps a point to the stored frame and back for every orientation with a crop angle", function()
         for _, orientation in ipairs({ "AB", "BA", "CD", "DC", "CB", "BC", "AD", "DA" }) do
-            local frame = frameOf(orientation, { CropLeft = 0.2, CropTop = 0.1, CropRight = 0.9, CropBottom = 0.8, CropAngle = -12 })
+            local frame = frameOf(
+                orientation,
+                { CropLeft = 0.2, CropTop = 0.1, CropRight = 0.9, CropBottom = 0.8, CropAngle = -12 }
+            )
 
             local x, y = frame.toDisplayed(frame.toStored(0.3, 0.6))
 
@@ -156,7 +172,10 @@ end)
 describe("ImageFrame warning for corrections it cannot invert", function()
     it("names every active Upright, Transform and manual distortion setting with the measured error", function()
         local frame = frameOf("AB", {
-            PerspectiveUpright = 4, PerspectiveScale = 90, LensManualDistortionAmount = 60, PerspectiveRotate = 0,
+            PerspectiveUpright = 4,
+            PerspectiveScale = 90,
+            LensManualDistortionAmount = 60,
+            PerspectiveRotate = 0,
         })
 
         assert.is_truthy(frame.warning:find("PerspectiveUpright 4", 1, true))
@@ -168,7 +187,11 @@ describe("ImageFrame warning for corrections it cannot invert", function()
 
     it("stays silent for a lens profile, a crop and neutral Transform values", function()
         local frame = frameOf("AB", {
-            LensProfileEnable = 1, CropAngle = 8, PerspectiveUpright = 0, PerspectiveScale = 100, PerspectiveVertical = 0,
+            LensProfileEnable = 1,
+            CropAngle = 8,
+            PerspectiveUpright = 0,
+            PerspectiveScale = 100,
+            PerspectiveVertical = 0,
         })
 
         assert.is_nil(frame.warning)
@@ -184,8 +207,10 @@ describe("ImageFrame.forPhoto", function()
             getDevelopSettings = function() return nil end,
         }
 
-        assert.has_error(function() ImageFrame.forPhoto(catalog, photo) end,
-            "Lightroom returned no saved settings for photo 7")
+        assert.has_error(
+            function() ImageFrame.forPhoto(catalog, photo) end,
+            "Lightroom returned no saved settings for photo 7"
+        )
     end)
 
     it("reads the orientation, pixel size and develop settings inside the read gate", function()
@@ -230,7 +255,10 @@ describe("ImageFrame crop planning", function()
         local width, height = sessionAFrameWidth(8)
 
         local settings = ImageFrame.cropSettingsFor(SESSION_A, {
-            center = { x = 0.535, y = 0.5 }, width = width, height = height, angle = 8,
+            center = { x = 0.535, y = 0.5 },
+            width = width,
+            height = height,
+            angle = 8,
         })
 
         assert.is_true(near(0.15, settings.CropLeft, 1e-9) and near(0.1, settings.CropTop, 1e-9))
@@ -241,8 +269,10 @@ describe("ImageFrame crop planning", function()
     it("plans an Orientation 8 crop as the photo skill's verified portrait mapping", function()
         local photo = { orientation = "DA", dimensions = SIZE }
 
-        local settings = ImageFrame.cropSettingsFor(photo, ImageFrame.cropOfRectangle(photo,
-            { left = 0.1, top = 0.2, right = 0.7, bottom = 0.9 }, 0))
+        local settings = ImageFrame.cropSettingsFor(
+            photo,
+            ImageFrame.cropOfRectangle(photo, { left = 0.1, top = 0.2, right = 0.7, bottom = 0.9 }, 0)
+        )
 
         assert.is_true(near(1 - 0.9, settings.CropLeft) and near(1 - 0.2, settings.CropRight))
         assert.is_true(near(0.1, settings.CropTop) and near(0.7, settings.CropBottom))
@@ -250,23 +280,34 @@ describe("ImageFrame crop planning", function()
     end)
 
     for _, orientation in ipairs(ORIENTATIONS) do
-        it("plans keys that ImageFrame.of maps back to the requested frame, a consistency check of the two, for " .. orientation, function()
-            local photo = { orientation = orientation, dimensions = SIZE }
-            local crop = ImageFrame.cropOfRectangle(photo, { left = 0.25, top = 0.2, right = 0.7, bottom = 0.75 }, -6)
+        it(
+            "plans keys that ImageFrame.of maps back to the requested frame, a consistency check of the two, for "
+                .. orientation,
+            function()
+                local photo = { orientation = orientation, dimensions = SIZE }
+                local crop =
+                    ImageFrame.cropOfRectangle(photo, { left = 0.25, top = 0.2, right = 0.7, bottom = 0.75 }, -6)
 
-            local frame = ImageFrame.of({
-                orientation = orientation, dimensions = SIZE, settings = ImageFrame.cropSettingsFor(photo, crop),
-            })
+                local frame = ImageFrame.of({
+                    orientation = orientation,
+                    dimensions = SIZE,
+                    settings = ImageFrame.cropSettingsFor(photo, crop),
+                })
 
-            local uncropped = frameOf(orientation)
-            local cornerX, cornerY = uncropped.toDisplayed(frame.toStored(0, 0))
-            local radians = math.rad(-6)
-            local expectedX = crop.center.x * 3000 - crop.width / 2 * math.cos(radians) + crop.height / 2 * math.sin(radians)
-            local expectedY = crop.center.y * 2000 - crop.width / 2 * math.sin(radians) - crop.height / 2 * math.cos(radians)
-            assert.is_true(near(crop.width, frame.displayedSize.width, 1e-6))
-            assert.is_true(near(crop.height, frame.displayedSize.height, 1e-6))
-            assert.is_true(near(expectedX, cornerX * 3000, 1e-6) and near(expectedY, cornerY * 2000, 1e-6))
-        end)
+                local uncropped = frameOf(orientation)
+                local cornerX, cornerY = uncropped.toDisplayed(frame.toStored(0, 0))
+                local radians = math.rad(-6)
+                local expectedX = crop.center.x * 3000
+                    - crop.width / 2 * math.cos(radians)
+                    + crop.height / 2 * math.sin(radians)
+                local expectedY = crop.center.y * 2000
+                    - crop.width / 2 * math.sin(radians)
+                    - crop.height / 2 * math.cos(radians)
+                assert.is_true(near(crop.width, frame.displayedSize.width, 1e-6))
+                assert.is_true(near(crop.height, frame.displayedSize.height, 1e-6))
+                assert.is_true(near(expectedX, cornerX * 3000, 1e-6) and near(expectedY, cornerY * 2000, 1e-6))
+            end
+        )
     end
 
     it("finds the largest frame of an aspect ratio around a centre", function()
@@ -277,8 +318,10 @@ describe("ImageFrame crop planning", function()
 
         assert.is_true(near(1600, crop.width, 1e-9) and near(2000, crop.height, 1e-9))
         assert.is_true(near(1200, offCentre.width, 1e-9) and near(1200, offCentre.height, 1e-9))
-        assert.are.same({ left = 0.5 - 800 / 3000, top = 0, right = 0.5 + 800 / 3000, bottom = 1 },
-            ImageFrame.rectangleOf(photo, crop))
+        assert.are.same(
+            { left = 0.5 - 800 / 3000, top = 0, right = 0.5 + 800 / 3000, bottom = 1 },
+            ImageFrame.rectangleOf(photo, crop)
+        )
     end)
 
     it("fits the largest straightened frame inside the photo", function()
@@ -295,8 +338,10 @@ describe("ImageFrame crop planning", function()
     it("refuses a straightened frame that leaves the photo and names the largest one that fits", function()
         local photo = { orientation = "AB", dimensions = SIZE }
         local crop = ImageFrame.cropOfRectangle(photo, { left = 0, top = 0, right = 1, bottom = 1 }, 5)
-        local largest = ImageFrame.rectangleOf(photo, ImageFrame.largestCrop(photo, { width = 3000, height = 2000 },
-            { x = 0.5, y = 0.5 }, 5))
+        local largest = ImageFrame.rectangleOf(
+            photo,
+            ImageFrame.largestCrop(photo, { width = 3000, height = 2000 }, { x = 0.5, y = 0.5 }, 5)
+        )
 
         local message = helper.failedOf(function() ImageFrame.cropSettingsFor(photo, crop) end)
 
@@ -313,7 +358,8 @@ describe("ImageFrame current crop", function()
 
     it("reads Session A's stored keys as the frame Lightroom 16.0 displayed at 8 degrees", function()
         local crop = ImageFrame.currentCrop({
-            orientation = "AB", dimensions = { width = 1500, height = 1000 },
+            orientation = "AB",
+            dimensions = { width = 1500, height = 1000 },
             settings = { CropLeft = 0.15, CropTop = 0.1, CropRight = 0.92, CropBottom = 0.9, CropAngle = 8 },
         })
 
@@ -326,7 +372,10 @@ describe("ImageFrame current crop", function()
     it("reads an uncropped photo as the whole displayed frame", function()
         local crop = ImageFrame.currentCrop({ orientation = "BC", dimensions = SIZE, settings = {} })
 
-        assert.are.same({ left = 0, top = 0, right = 1, bottom = 1 }, ImageFrame.rectangleOf({ dimensions = SIZE }, crop))
+        assert.are.same(
+            { left = 0, top = 0, right = 1, bottom = 1 },
+            ImageFrame.rectangleOf({ dimensions = SIZE }, crop)
+        )
         assert.is_true(near(0, crop.angle))
     end)
 
@@ -336,7 +385,9 @@ describe("ImageFrame current crop", function()
             local planned = ImageFrame.cropOfRectangle(photo, { left = 0.2, top = 0.15, right = 0.75, bottom = 0.8 }, 7)
 
             local read = ImageFrame.currentCrop({
-                orientation = orientation, dimensions = SIZE, settings = ImageFrame.cropSettingsFor(photo, planned),
+                orientation = orientation,
+                dimensions = SIZE,
+                settings = ImageFrame.cropSettingsFor(photo, planned),
             })
 
             local rectangle = ImageFrame.rectangleOf(photo, read)
@@ -348,13 +399,19 @@ describe("ImageFrame current crop", function()
 
     it("places a frame stated inside the current crop in the photo, adding the angles", function()
         local photo = {
-            orientation = "AB", dimensions = { width = 1500, height = 1000 },
+            orientation = "AB",
+            dimensions = { width = 1500, height = 1000 },
             settings = { CropLeft = 0.15, CropTop = 0.1, CropRight = 0.92, CropBottom = 0.9, CropAngle = 8 },
         }
         local current = ImageFrame.currentCrop(photo)
 
-        local placed = ImageFrame.withinCrop(photo, current, { center = { x = 0.5, y = 0.5 }, width = 400, height = 500, angle = 2 })
-        local corner = ImageFrame.withinCrop(photo, current, { center = { x = 0, y = 0 }, width = 10, height = 10, angle = 0 })
+        local placed = ImageFrame.withinCrop(
+            photo,
+            current,
+            { center = { x = 0.5, y = 0.5 }, width = 400, height = 500, angle = 2 }
+        )
+        local corner =
+            ImageFrame.withinCrop(photo, current, { center = { x = 0, y = 0 }, width = 10, height = 10, angle = 0 })
 
         assert.is_true(near(0.535, placed.center.x, 1e-9) and near(0.5, placed.center.y, 1e-9))
         assert.is_true(near(400, placed.width) and near(500, placed.height) and near(10, placed.angle, 1e-9))

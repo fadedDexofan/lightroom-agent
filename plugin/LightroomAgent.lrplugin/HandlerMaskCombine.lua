@@ -1,10 +1,10 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local AIMaskCompute = require 'AIMaskCompute'
-local Log = require 'Log'
-local MaskTypes = require 'MaskTypes'
-local MaskValues = require 'MaskValues'
-local PhotoLookup = require 'PhotoLookup'
+local AIMaskCompute = require "AIMaskCompute"
+local Log = require "Log"
+local MaskTypes = require "MaskTypes"
+local MaskValues = require "MaskValues"
+local PhotoLookup = require "PhotoLookup"
 
 local MaskCombineHandler = {}
 
@@ -40,8 +40,16 @@ function MaskCombineHandler.combineMask(args, context)
     })
     local toolId = tostring(result.components[1].MaskID)
 
-    Log.info(string.format("Combined mask %s on photo %s (%s %s) -> component %s", maskId, photoId, operation, typeName,
-        toolId))
+    Log.info(
+        string.format(
+            "Combined mask %s on photo %s (%s %s) -> component %s",
+            maskId,
+            photoId,
+            operation,
+            typeName,
+            toolId
+        )
+    )
 
     return { photo_id = photoId, mask_id = maskId, operation = operation, type = typeName, tool_id = toolId }
 end

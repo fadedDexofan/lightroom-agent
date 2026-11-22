@@ -1,12 +1,12 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local CatalogWrite = require 'CatalogWrite'
-local Contract = require 'Contract'
-local PhotoLookup = require 'PhotoLookup'
-local Reply = require 'Reply'
-local Log = require 'Log'
-local PhotoSummary = require 'PhotoSummary'
-local SearchHandler = require 'HandlerSearch'
+local CatalogWrite = require "CatalogWrite"
+local Contract = require "Contract"
+local PhotoLookup = require "PhotoLookup"
+local Reply = require "Reply"
+local Log = require "Log"
+local PhotoSummary = require "PhotoSummary"
+local SearchHandler = require "HandlerSearch"
 
 local CollectionsHandler = {}
 
@@ -54,8 +54,7 @@ function CollectionsHandler.listCollections(args)
         table.insert(slice, entry)
     end
 
-    Log.info(string.format("Found %d collections, returning %d (offset=%d, limit=%d)",
-        total, #slice, offset, limit))
+    Log.info(string.format("Found %d collections, returning %d (offset=%d, limit=%d)", total, #slice, offset, limit))
 
     return {
         count = total,
@@ -71,20 +70,20 @@ local function splitSetPath(path)
     while true do
         local first, last = rest:find(" / ", 1, true)
         local name = first and rest:sub(1, first - 1) or rest
-        if name:match("^%s*$") then
-            Reply.refuse("parent contains an empty collection set name: " .. path)
-        end
+        if name:match("^%s*$") then Reply.refuse("parent contains an empty collection set name: " .. path) end
         -- Edge spaces or slashes come from a malformed separator ("A /",
         -- "A / /B"); the set would exist but its path could not be read back.
         if name:match("^[%s/]") or name:match("[%s/]$") then
-            Reply.refuse(string.format(
-                "parent has a malformed collection set name '%s'; separate sets with ' / ': %s",
-                name, path))
+            Reply.refuse(
+                string.format(
+                    "parent has a malformed collection set name '%s'; separate sets with ' / ': %s",
+                    name,
+                    path
+                )
+            )
         end
         table.insert(names, name)
-        if not first then
-            return names
-        end
+        if not first then return names end
         rest = rest:sub(last + 1)
     end
 end
@@ -94,9 +93,7 @@ end
 local function findNamed(items, name)
     local wanted = name:lower()
     for _, item in ipairs(items) do
-        if item:getName():lower() == wanted then
-            return item
-        end
+        if item:getName():lower() == wanted then return item end
     end
     return nil
 end
@@ -161,14 +158,26 @@ local function createCollection(args, context, searchDesc)
         if findNamed(collections, collectionName) then Reply.refuse("Collection already exists: " .. path) end
         local clash = findNamed(sets, collectionName)
         if clash then
-            Reply.refuse(string.format("A collection set named '%s' already exists %s",
-                clash:getName(), parentSet and ("in " .. parentPath) or "at the top level"))
+            Reply.refuse(
+                string.format(
+                    "A collection set named '%s' already exists %s",
+                    clash:getName(),
+                    parentSet and ("in " .. parentPath) or "at the top level"
+                )
+            )
         end
 
         local created
         if searchDesc then
-            created = CatalogWrite.call(context, catalog, "createSmartCollection", collectionName, searchDesc, parentSet,
-                false)
+            created = CatalogWrite.call(
+                context,
+                catalog,
+                "createSmartCollection",
+                collectionName,
+                searchDesc,
+                parentSet,
+                false
+            )
         else
             created = CatalogWrite.call(context, catalog, "createCollection", collectionName, parentSet, false)
         end
@@ -179,9 +188,7 @@ local function createCollection(args, context, searchDesc)
     return { path = path }
 end
 
-function CollectionsHandler.createCollection(args, context)
-    return createCollection(args, context)
-end
+function CollectionsHandler.createCollection(args, context) return createCollection(args, context) end
 
 function CollectionsHandler.createSmartCollection(args, context)
     return createCollection(args, context, SearchHandler.buildSearchDesc(args))
@@ -194,9 +201,7 @@ local function findAllCollections(catalog, name)
     local byPath = {}
     local byName = {}
     for _, collection in ipairs(catalog:getChildCollections()) do
-        if collection:getName() == name then
-            table.insert(byPath, collection)
-        end
+        if collection:getName() == name then table.insert(byPath, collection) end
     end
 
     local function findInSet(collSet, prefix)
@@ -216,9 +221,7 @@ local function findAllCollections(catalog, name)
         findInSet(set, set:getName() .. " / ")
     end
 
-    if byPath[1] then
-        return byPath
-    end
+    if byPath[1] then return byPath end
     return byName
 end
 
@@ -227,9 +230,7 @@ end
 -- enumerates first.
 local function findOneCollection(catalog, name)
     local matches = findAllCollections(catalog, name)
-    if #matches == 0 then
-        Reply.refuse("Collection not found: " .. name)
-    end
+    if #matches == 0 then Reply.refuse("Collection not found: " .. name) end
     if #matches > 1 then
         Reply.refuse(string.format("%d collections are named '%s'; use a collection path", #matches, name))
     end
@@ -247,7 +248,6 @@ end
 CollectionsHandler.findOneRegularCollection = findOneRegularCollection
 
 function CollectionsHandler.addToCollection(args, context)
-
     local catalog = LrApplication.activeCatalog()
 
     -- Reject an unknown collection BEFORE resolving ids. Resolution scans the
@@ -255,9 +255,7 @@ function CollectionsHandler.addToCollection(args, context)
     -- only to discover a typo'd name pushed the request past the server's
     -- timeout, so the caller got no answer at all instead of "Collection not
     -- found".
-    catalog:withReadAccessDo(function()
-        findOneRegularCollection(catalog, args.collection_name)
-    end)
+    catalog:withReadAccessDo(function() findOneRegularCollection(catalog, args.collection_name) end)
 
     local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
     if #entries == 0 then return Reply.parts({ not_found = notFound }) end
@@ -270,7 +268,9 @@ function CollectionsHandler.addToCollection(args, context)
         -- the result safe to act on.
         local targetCollection = findOneRegularCollection(catalog, args.collection_name)
         local members = {}
-        for _, photo in ipairs(targetCollection:getPhotos()) do members[photo] = true end
+        for _, photo in ipairs(targetCollection:getPhotos()) do
+            members[photo] = true
+        end
         local photosToAdd = {}
         for _, entry in ipairs(entries) do
             if members[entry.photo] then
@@ -295,16 +295,13 @@ end
 
 -- Removes photos from a collection only; they stay in the catalog.
 function CollectionsHandler.removeFromCollection(args, context)
-
     local catalog = LrApplication.activeCatalog()
     local removedCount = 0
     local notInCollection = {}
 
     -- Checked before resolving ids, as add_to_collection does: resolution scans
     -- the catalog, too slow to spend on a typo'd name.
-    catalog:withReadAccessDo(function()
-        findOneRegularCollection(catalog, args.collection_name)
-    end)
+    catalog:withReadAccessDo(function() findOneRegularCollection(catalog, args.collection_name) end)
 
     local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
     if #entries == 0 then return Reply.parts({ not_found = notFound }) end
@@ -345,16 +342,13 @@ end
 -- Returns a page of a collection's photos, regular or smart, in the shape
 -- search_photos uses.
 function CollectionsHandler.getCollectionPhotos(args)
-
     local limit = args.limit or Contract.DEFAULT_PAGE_LIMIT
     local offset = args.offset or 0
 
     local catalog = LrApplication.activeCatalog()
 
     local collection
-    catalog:withReadAccessDo(function()
-        collection = findOneCollection(catalog, args.collection_name)
-    end)
+    catalog:withReadAccessDo(function() collection = findOneCollection(catalog, args.collection_name) end)
 
     -- OUTSIDE withReadAccessDo: a smart collection's getPhotos() runs a
     -- catalog search, and a query that yields inside the read gate deadlocks
@@ -365,8 +359,16 @@ function CollectionsHandler.getCollectionPhotos(args)
     local last = math.min(offset + limit, total)
     local results = PhotoSummary.page(catalog, photos, offset + 1, last, args.include_path == true)
 
-    Log.info(string.format("Collection %s has %d photos, returning %d (offset=%d, limit=%d)",
-        args.collection_name, total, #results, offset, limit))
+    Log.info(
+        string.format(
+            "Collection %s has %d photos, returning %d (offset=%d, limit=%d)",
+            args.collection_name,
+            total,
+            #results,
+            offset,
+            limit
+        )
+    )
 
     return {
         count = total,
@@ -377,20 +379,21 @@ end
 
 -- Deletes the collection itself; its photos stay in the catalog.
 function CollectionsHandler.deleteCollection(args, context)
-
     local catalog = LrApplication.activeCatalog()
     local found
-    catalog:withReadAccessDo(function()
-        found = findOneCollection(catalog, args.collection_name)
-    end)
+    catalog:withReadAccessDo(function() found = findOneCollection(catalog, args.collection_name) end)
     local photoCount = #(found:getPhotos() or {})
 
-    CatalogWrite.run(context, catalog, "Delete Collection", function()
-        CatalogWrite.call(context, findOneCollection(catalog, args.collection_name), "delete")
-    end)
+    CatalogWrite.run(
+        context,
+        catalog,
+        "Delete Collection",
+        function() CatalogWrite.call(context, findOneCollection(catalog, args.collection_name), "delete") end
+    )
 
-    Log.info(string.format("Deleted collection: %s (%d photos, still in the catalog)",
-        args.collection_name, photoCount))
+    Log.info(
+        string.format("Deleted collection: %s (%d photos, still in the catalog)", args.collection_name, photoCount)
+    )
 
     return { photo_count = photoCount }
 end

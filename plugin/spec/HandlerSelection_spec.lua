@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 describe("HandlerSelection.getSelectedPhotos", function()
     local Handler
@@ -13,7 +13,7 @@ describe("HandlerSelection.getSelectedPhotos", function()
             LrLogger = helper.defaultLrLogger(),
         })
         package.loaded.HandlerSelection = nil
-        Handler = require 'HandlerSelection'
+        Handler = require "HandlerSelection"
     end
 
     it("returns selected photos when selection is non-empty", function()
@@ -43,10 +43,15 @@ describe("HandlerSelection.getSelectedPhotos", function()
 
     it("returns serialized photo fields", function()
         setup({
-            photos = { helper.fakePhoto({
-                localIdentifier = 42, path = "/x.jpg", fileName = "x.jpg",
-                rating = 4, dateTimeOriginal = "2026-05-06",
-            }) },
+            photos = {
+                helper.fakePhoto({
+                    localIdentifier = 42,
+                    path = "/x.jpg",
+                    fileName = "x.jpg",
+                    rating = 4,
+                    dateTimeOriginal = "2026-05-06",
+                }),
+            },
         })
         local r = Handler.getSelectedPhotos({})
         local p = r.photos[1]

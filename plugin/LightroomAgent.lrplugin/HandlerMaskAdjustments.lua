@@ -1,9 +1,9 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local PhotoLookup = require 'PhotoLookup'
-local LocalSliders = require 'LocalSliders'
-local Log = require 'Log'
-local MaskValues = require 'MaskValues'
+local PhotoLookup = require "PhotoLookup"
+local LocalSliders = require "LocalSliders"
+local Log = require "Log"
+local MaskValues = require "MaskValues"
 
 local MaskAdjustmentsHandler = {}
 
@@ -28,8 +28,15 @@ function MaskAdjustmentsHandler.setMaskAdjustments(args, context)
         end
     end
 
-    Log.info(string.format("Mask %s on photo %s: %d sliders changed, %d already at the value",
-        maskId, photoId, #changed, #unchanged))
+    Log.info(
+        string.format(
+            "Mask %s on photo %s: %d sliders changed, %d already at the value",
+            maskId,
+            photoId,
+            #changed,
+            #unchanged
+        )
+    )
 
     return { photo_id = photoId, mask_id = maskId, adjustments = adjustments, changed = changed, unchanged = unchanged }
 end

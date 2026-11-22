@@ -1,18 +1,20 @@
-local helper = require 'spec_helper'
-local Store = require 'fake_mask_store'
+local helper = require "spec_helper"
+local Store = require "fake_mask_store"
 
 local linearComponent = Store.linearComponent
 local correction = Store.correction
 
-local function setup(opts)
-    return Store.guardedHandler("HandlerRangeMasks", { "ImageFrame", "RangeMaskGeometry" }, opts)
-end
+local function setup(opts) return Store.guardedHandler("HandlerRangeMasks", { "ImageFrame", "RangeMaskGeometry" }, opts) end
 
 local function luminanceRequest(overrides)
     local args = {
-        photo_id = "1", type = "luminance", luminance = { min = 0.3, max = 0.6, falloff = 0.1 },
+        photo_id = "1",
+        type = "luminance",
+        luminance = { min = 0.3, max = 0.6, falloff = 0.1 },
     }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
@@ -22,13 +24,17 @@ local function colorRequest(overrides)
         type = "color",
         color = { sample = { x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, amount = 0.4 },
     }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
 local function depthRequest(overrides)
     local args = { photo_id = "1", type = "depth", depth = { min = 0, max = 0.1, falloff = 0.25 } }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
@@ -47,7 +53,13 @@ local function colorEntryWithPoints(pointModels)
                 MaskActive = true,
                 MaskInverted = false,
                 MaskBlendMode = 0,
-                CorrectionRangeMask = { Type = 1, Version = 3, SampleType = 0, ColorAmount = 0.5, PointModels = pointModels },
+                CorrectionRangeMask = {
+                    Type = 1,
+                    Version = 3,
+                    SampleType = 0,
+                    ColorAmount = 0.5,
+                    PointModels = pointModels,
+                },
             },
         }, { CorrectionID = "C1" }),
     }
@@ -67,18 +79,24 @@ local function lightroomFillsDepthInfo(stored, writeNumber)
 end
 
 describe("HandlerRangeMasks.createRangeMask", function()
-    it("writes the requested adjustments into the new mask as Lightroom stores them, in the one guarded write", function()
-        local previous = { correction("Existing", { Store.linearComponent({ MaskID = "C1T1" }) },
-            { CorrectionID = "C1" }) }
-        local Handler, stores = setup({ photos = { { id = "1", entries = previous } } })
+    it(
+        "writes the requested adjustments into the new mask as Lightroom stores them, in the one guarded write",
+        function()
+            local previous = {
+                correction("Existing", { Store.linearComponent({ MaskID = "C1T1" }) }, { CorrectionID = "C1" }),
+            }
+            local Handler, stores = setup({ photos = { { id = "1", entries = previous } } })
 
-        Handler.createRangeMask(luminanceRequest({ adjustments = { local_Exposure = 1, local_colorgradeMidtoneHue = 61.83 } }))
+            Handler.createRangeMask(
+                luminanceRequest({ adjustments = { local_Exposure = 1, local_colorgradeMidtoneHue = 61.83 } })
+            )
 
-        local written = stores["1"].writes[1]
-        assert.are.equal(0.25, written[#written].LocalExposure2012)
-        assert.are.equal(62, written[#written].LocalColorGradeMidtoneHue)
-        assert.are.equal(1, #stores["1"].writes)
-    end)
+            local written = stores["1"].writes[1]
+            assert.are.equal(0.25, written[#written].LocalExposure2012)
+            assert.are.equal(62, written[#written].LocalColorGradeMidtoneHue)
+            assert.are.equal(1, #stores["1"].writes)
+        end
+    )
 
     it("writes a luminance range as a new mask and returns the stored range", function()
         local Handler, stores = setup({ photos = { { id = "1", transformWrite = lightroomFillsDepthInfo } } })
@@ -157,19 +175,22 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal(0, stores["1"].attempts)
     end)
 
-    it("creates a mask beside a color range with two PointModels Lightroom already stored, keeping it unchanged", function()
-        local entries = colorEntryWithPoints({
-            "0.462745 0.462745 0.462745 0.200000 0.200000 0",
-            "0.027451 0.027451 0.027451 0.800000 0.800000 0",
-        })
-        local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
-        local held = Store.clone(stores["1"].entries[1])
+    it(
+        "creates a mask beside a color range with two PointModels Lightroom already stored, keeping it unchanged",
+        function()
+            local entries = colorEntryWithPoints({
+                "0.462745 0.462745 0.462745 0.200000 0.200000 0",
+                "0.027451 0.027451 0.027451 0.800000 0.800000 0",
+            })
+            local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
+            local held = Store.clone(stores["1"].entries[1])
 
-        Handler.createRangeMask(luminanceRequest())
+            Handler.createRangeMask(luminanceRequest())
 
-        assert.are.equal(2, #stores["1"].entries)
-        assert.are.same(held, stores["1"].entries[1])
-    end)
+            assert.are.equal(2, #stores["1"].entries)
+            assert.are.same(held, stores["1"].entries[1])
+        end
+    )
 
     it("keeps an existing single-point color range verbatim next to the new mask", function()
         local entries = colorEntryWithPoints({ "0.5 0.5 0.5 0.1 0.1 0" })
@@ -193,7 +214,10 @@ describe("HandlerRangeMasks.createRangeMask", function()
                     MaskInverted = false,
                     MaskBlendMode = 0,
                     CorrectionRangeMask = {
-                        Type = -1, Version = 3, SampleType = 0, Invert = false,
+                        Type = -1,
+                        Version = 3,
+                        SampleType = 0,
+                        Invert = false,
                         DepthRange = "0.000000 0.000000 0.100000 0.350000",
                         LuminanceDepthSampleInfo = "0 0.526012 0.506934",
                     },
@@ -207,7 +231,10 @@ describe("HandlerRangeMasks.createRangeMask", function()
         local written = stores["1"].writes[1]
         assert.are.equal(2, #written)
         assert.are.equal(-1, written[1].CorrectionMasks[1].CorrectionRangeMask.Type)
-        assert.are.equal("0.000000 0.000000 0.100000 0.350000", written[1].CorrectionMasks[1].CorrectionRangeMask.DepthRange)
+        assert.are.equal(
+            "0.000000 0.000000 0.100000 0.350000",
+            written[1].CorrectionMasks[1].CorrectionRangeMask.DepthRange
+        )
         assert.are.equal(written[2].CorrectionID, result.mask_id)
     end)
 
@@ -276,10 +303,22 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
         local function lightroomColorRange(overrides)
             local range = {
-                What = "Mask/RangeMask", MaskID = "C1T1", MaskActive = true, MaskInverted = false, MaskBlendMode = 0,
-                CorrectionRangeMask = { Type = 1, Version = 3, SampleType = 0, ColorAmount = 0.494949, PointModels = { RED } },
+                What = "Mask/RangeMask",
+                MaskID = "C1T1",
+                MaskActive = true,
+                MaskInverted = false,
+                MaskBlendMode = 0,
+                CorrectionRangeMask = {
+                    Type = 1,
+                    Version = 3,
+                    SampleType = 0,
+                    ColorAmount = 0.494949,
+                    PointModels = { RED },
+                },
             }
-            for key, value in pairs(overrides or {}) do range[key] = value end
+            for key, value in pairs(overrides or {}) do
+                range[key] = value
+            end
             return range
         end
 
@@ -289,13 +328,13 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
         local function copyRequest(overrides)
             local args = { photo_id = "1", type = "color", copy_sample_from = { mask_id = "C1", tool_id = "C1T1" } }
-            for key, value in pairs(overrides or {}) do args[key] = value end
+            for key, value in pairs(overrides or {}) do
+                args[key] = value
+            end
             return args
         end
 
-        local function written(stores, photoId)
-            return stores[photoId or "1"].writes[#stores[photoId or "1"].writes]
-        end
+        local function written(stores, photoId) return stores[photoId or "1"].writes[#stores[photoId or "1"].writes] end
 
         it("copies the stored triple, pin and amount of a Lightroom-authored color range into a new mask", function()
             local Handler, stores = setup({ photos = { { id = "1", entries = sourceEntries() } } })
@@ -320,7 +359,10 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
             Handler.createRangeMask(copyRequest())
 
-            assert.are.same(lightroomColorRange().CorrectionRangeMask, written(stores)[1].CorrectionMasks[1].CorrectionRangeMask)
+            assert.are.same(
+                lightroomColorRange().CorrectionRangeMask,
+                written(stores)[1].CorrectionMasks[1].CorrectionRangeMask
+            )
         end)
 
         it("lets the caller tweak amount, invert and mode while copying into an existing mask", function()
@@ -329,7 +371,10 @@ describe("HandlerRangeMasks.createRangeMask", function()
             local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
 
             local result = Handler.createRangeMask(copyRequest({
-                color = { amount = 0.2 }, invert = true, mask_id = "C2", mode = "subtract",
+                color = { amount = 0.2 },
+                invert = true,
+                mask_id = "C2",
+                mode = "subtract",
             }))
 
             local component = written(stores)[2].CorrectionMasks[2]
@@ -343,10 +388,12 @@ describe("HandlerRangeMasks.createRangeMask", function()
         end)
 
         it("copies from another photo and keeps the pin at the same displayed position", function()
-            local Handler, stores = setup({ photos = {
-                { id = "1", orientation = "BC" },
-                { id = "2", entries = sourceEntries() },
-            } })
+            local Handler, stores = setup({
+                photos = {
+                    { id = "1", orientation = "BC" },
+                    { id = "2", entries = sourceEntries() },
+                },
+            })
 
             local result = Handler.createRangeMask(copyRequest({
                 copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
@@ -371,46 +418,61 @@ describe("HandlerRangeMasks.createRangeMask", function()
         end)
 
         it("warns when Upright on the source photo moves the copied pin", function()
-            local Handler = setup({ photos = {
-                { id = "1" },
-                { id = "2", entries = sourceEntries(), settings = { PerspectiveUpright = 2 } },
-            } })
+            local Handler = setup({
+                photos = {
+                    { id = "1" },
+                    { id = "2", entries = sourceEntries(), settings = { PerspectiveUpright = 2 } },
+                },
+            })
             local context = helper.requestContext()
 
-            Handler.createRangeMask(copyRequest({
-                copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
-            }), context)
+            Handler.createRangeMask(
+                copyRequest({
+                    copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
+                }),
+                context
+            )
 
             assert.are.equal(1, #context.warnings)
             assert.is_truthy(context.warnings[1]:find("PerspectiveUpright", 1, true))
         end)
 
-        it("treats a copy from the target's own range named by path as the same photo, warning about Upright once", function()
-            local Handler, _, _, catalog = setup({ photos = {
-                { id = "1", entries = sourceEntries(), settings = { PerspectiveUpright = 2 } },
-            } })
-            local target = catalog:getPhotoByLocalId(1)
-            local findPhotoByPath = catalog.findPhotoByPath
-            catalog.findPhotoByPath = function(self, path, caseSensitive)
-                if path == "/1.jpg" then return setmetatable({}, { __index = target }) end
-                return findPhotoByPath(self, path, caseSensitive)
+        it(
+            "treats a copy from the target's own range named by path as the same photo, warning about Upright once",
+            function()
+                local Handler, _, _, catalog = setup({
+                    photos = {
+                        { id = "1", entries = sourceEntries(), settings = { PerspectiveUpright = 2 } },
+                    },
+                })
+                local target = catalog:getPhotoByLocalId(1)
+                local findPhotoByPath = catalog.findPhotoByPath
+                catalog.findPhotoByPath = function(self, path, caseSensitive)
+                    if path == "/1.jpg" then return setmetatable({}, { __index = target }) end
+                    return findPhotoByPath(self, path, caseSensitive)
+                end
+                local context = helper.requestContext()
+
+                local result = Handler.createRangeMask(
+                    copyRequest({
+                        copy_sample_from = { photo_id = "/1.jpg", mask_id = "C1", tool_id = "C1T1" },
+                    }),
+                    context
+                )
+
+                assert.are.equal(1, #context.warnings, table.concat(context.warnings, " | "))
+                assert.is_nil(context.warnings[1]:find("On the source photo", 1, true))
+                assert.are.equal("1", result.copied_from.photo_id)
             end
-            local context = helper.requestContext()
-
-            local result = Handler.createRangeMask(copyRequest({
-                copy_sample_from = { photo_id = "/1.jpg", mask_id = "C1", tool_id = "C1T1" },
-            }), context)
-
-            assert.are.equal(1, #context.warnings, table.concat(context.warnings, " | "))
-            assert.is_nil(context.warnings[1]:find("On the source photo", 1, true))
-            assert.are.equal("1", result.copied_from.photo_id)
-        end)
+        )
 
         it("maps the source pin out of the frame of a rotated source photo", function()
-            local Handler, stores = setup({ photos = {
-                { id = "1" },
-                { id = "2", orientation = "BC", entries = sourceEntries() },
-            } })
+            local Handler, stores = setup({
+                photos = {
+                    { id = "1" },
+                    { id = "2", orientation = "BC", entries = sourceEntries() },
+                },
+            })
 
             local result = Handler.createRangeMask(copyRequest({
                 copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
@@ -449,15 +511,23 @@ describe("HandlerRangeMasks.createRangeMask", function()
             entries[2] = correction("Sky", { linearComponent({ MaskID = "C2T1" }) }, { CorrectionID = "C2" })
             local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
 
-            local unknownMask = helper.failedOf(function()
-                Handler.createRangeMask(copyRequest({ copy_sample_from = { mask_id = "C9", tool_id = "C1T1" } }))
-            end)
-            local otherMask = helper.failedOf(function()
-                Handler.createRangeMask(copyRequest({ copy_sample_from = { mask_id = "C2", tool_id = "C1T1" } }))
-            end)
-            local unknownPhoto = helper.notFoundOf(function()
-                Handler.createRangeMask(copyRequest({ copy_sample_from = { photo_id = "9", mask_id = "C1", tool_id = "C1T1" } }))
-            end)
+            local unknownMask = helper.failedOf(
+                function()
+                    Handler.createRangeMask(copyRequest({ copy_sample_from = { mask_id = "C9", tool_id = "C1T1" } }))
+                end
+            )
+            local otherMask = helper.failedOf(
+                function()
+                    Handler.createRangeMask(copyRequest({ copy_sample_from = { mask_id = "C2", tool_id = "C1T1" } }))
+                end
+            )
+            local unknownPhoto = helper.notFoundOf(
+                function()
+                    Handler.createRangeMask(
+                        copyRequest({ copy_sample_from = { photo_id = "9", mask_id = "C1", tool_id = "C1T1" } })
+                    )
+                end
+            )
 
             assert.is_truthy(unknownMask:find("copy_sample_from: mask C9 not found on photo 1", 1, true))
             assert.is_truthy(otherMask:find("copy_sample_from: tool C1T1 is not in mask C2 on photo 1", 1, true))
@@ -466,9 +536,12 @@ describe("HandlerRangeMasks.createRangeMask", function()
         end)
 
         it("never queries or reads settings outside the gates", function()
-            local Handler, stores, _, catalog = setup({ photos = { { id = "1", entries = sourceEntries() }, { id = "2" } } })
+            local Handler, stores, _, catalog =
+                setup({ photos = { { id = "1", entries = sourceEntries() }, { id = "2" } } })
 
-            Handler.createRangeMask(copyRequest({ photo_id = "2", copy_sample_from = { photo_id = "1", mask_id = "C1", tool_id = "C1T1" } }))
+            Handler.createRangeMask(
+                copyRequest({ photo_id = "2", copy_sample_from = { photo_id = "1", mask_id = "C1", tool_id = "C1T1" } })
+            )
 
             assert.is_false(catalog.getQueriedInsideReadAccess())
             assert.are.equal(0, stores["1"].readsOutsideGate)
@@ -508,11 +581,18 @@ describe("HandlerRangeMasks.createRangeMask", function()
     it("answers an unknown photo with not_found", function()
         local Handler = setup()
 
-        assert.are.equal("404", helper.notFoundOf(function() Handler.createRangeMask(luminanceRequest({ photo_id = "404" })) end))
+        assert.are.equal(
+            "404",
+            helper.notFoundOf(function() Handler.createRangeMask(luminanceRequest({ photo_id = "404" })) end)
+        )
     end)
 
     it("refuses on an uncertified Lightroom, leaving the photo and the view alone", function()
-        local Handler, stores = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
+        local Handler, stores = setup({
+            maskWrites = {
+                refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none).",
+            },
+        })
 
         local message = helper.failedOf(function() Handler.createRangeMask(luminanceRequest()) end)
 
@@ -522,14 +602,19 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
     it("restores the previous masks when Lightroom reads a different luminance range back", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                entries = existingGradient(),
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then stored[2].CorrectionMasks[1].CorrectionRangeMask.LumRange = "0.000000 0.000000 1.000000 1.000000" end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    entries = existingGradient(),
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then
+                            stored[2].CorrectionMasks[1].CorrectionRangeMask.LumRange =
+                                "0.000000 0.000000 1.000000 1.000000"
+                        end
+                        return stored
+                    end,
+                },
+            },
         })
 
         local message = helper.failedOf(function() Handler.createRangeMask(luminanceRequest()) end)
@@ -543,13 +628,15 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
     it("restores the previous masks when Lightroom resets the range type", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then stored[1].CorrectionMasks[1].CorrectionRangeMask.Type = 0 end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then stored[1].CorrectionMasks[1].CorrectionRangeMask.Type = 0 end
+                        return stored
+                    end,
+                },
+            },
         })
 
         local message = helper.failedOf(function() Handler.createRangeMask(colorRequest()) end)
@@ -560,15 +647,17 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
     it("restores the previous masks when Lightroom changes the color sample", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then
-                        stored[1].CorrectionMasks[1].CorrectionRangeMask.PointModels[1] = "0.1 0.1 0.1 0.9 0.9 0"
-                    end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then
+                            stored[1].CorrectionMasks[1].CorrectionRangeMask.PointModels[1] = "0.1 0.1 0.1 0.9 0.9 0"
+                        end
+                        return stored
+                    end,
+                },
+            },
         })
 
         local message = helper.failedOf(function() Handler.createRangeMask(colorRequest()) end)
@@ -579,13 +668,15 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
     it("restores the previous masks when Lightroom ignores the inversion", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then stored[1].CorrectionMasks[1].MaskInverted = false end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then stored[1].CorrectionMasks[1].MaskInverted = false end
+                        return stored
+                    end,
+                },
+            },
         })
 
         local message = helper.failedOf(function() Handler.createRangeMask(luminanceRequest({ invert = true })) end)
@@ -593,14 +684,18 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.is_truthy(message:find("MaskInverted", 1, true))
         assert.are.equal(0, #stores["1"].entries)
     end)
-
 end)
 
 describe("colour samples on a cropped photo", function()
     it("stores the sample pin in the stored frame and reports the displayed one back", function()
-        local Handler, stores = setup({ photos = { {
-            id = "1", settings = { CropLeft = 0.2, CropTop = 0.1, CropRight = 0.7, CropBottom = 0.9, CropAngle = 0 },
-        } } })
+        local Handler, stores = setup({
+            photos = {
+                {
+                    id = "1",
+                    settings = { CropLeft = 0.2, CropTop = 0.1, CropRight = 0.7, CropBottom = 0.9, CropAngle = 0 },
+                },
+            },
+        })
 
         local result = Handler.createRangeMask(colorRequest())
 

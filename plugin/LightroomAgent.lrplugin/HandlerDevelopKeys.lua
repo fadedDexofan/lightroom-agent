@@ -1,12 +1,12 @@
-local LrApplication = import 'LrApplication'
-local LrDevelopController = import 'LrDevelopController'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrDevelopController = import "LrDevelopController"
+local LrTasks = import "LrTasks"
 
-local DevelopReadBack = require 'DevelopReadBack'
-local DevelopSession = require 'DevelopSession'
-local MaskSelection = require 'MaskSelection'
-local PhotoLookup = require 'PhotoLookup'
-local RunningLightroom = require 'RunningLightroom'
+local DevelopReadBack = require "DevelopReadBack"
+local DevelopSession = require "DevelopSession"
+local MaskSelection = require "MaskSelection"
+local PhotoLookup = require "PhotoLookup"
+local RunningLightroom = require "RunningLightroom"
 
 local Handler = {}
 
@@ -38,9 +38,12 @@ function Handler.ranges(args, context)
             ranges = rangesOf(args.keys),
         }
         if args.mask_id ~= nil then
-            result.local_ranges = MaskSelection.withMaskSelected(catalog, photo, args.mask_id, function()
-                return rangesOf(args.local_keys)
-            end)
+            result.local_ranges = MaskSelection.withMaskSelected(
+                catalog,
+                photo,
+                args.mask_id,
+                function() return rangesOf(args.local_keys) end
+            )
         end
         return result
     end)

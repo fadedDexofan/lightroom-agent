@@ -2,8 +2,9 @@
 node = "26.13.1"
 lua = "5.1.5"
 # selene (Rust) and luacheck (a rock in lua_modules/ on the Lua above) lint the
-# plug-in and its specs — see lua:lint.
+# plug-in and its specs, and StyLua checks the plug-in's formatting — see lua:lint.
 "aqua:Kampfkarren/selene" = "0.32.0"
+"aqua:JohnnyMorganz/StyLua" = "2.6.0"
 
 [env]
 # Project-local LuaRocks tree (busted, luacheck) installed by `lua:deps`.
@@ -22,12 +23,12 @@ description = "Run tests"
 run = "cd server && npm test"
 
 [tasks.format]
-description = "Format the TypeScript and JavaScript"
-run = "npm --prefix server run format"
+description = "Format the TypeScript, JavaScript and plug-in Lua"
+run = ["npm --prefix server run format", "stylua plugin"]
 
 [tasks."format:check"]
-description = "Check the formatting of the TypeScript and JavaScript"
-run = "npm --prefix server run format:check"
+description = "Check the formatting of the TypeScript, JavaScript and plug-in Lua"
+run = ["npm --prefix server run format:check", "stylua --check plugin"]
 
 [tasks.dev]
 description = "Build in watch mode"
@@ -55,12 +56,13 @@ depends = ["lua:deps"]
 run = "lua_modules/bin/busted"
 
 [tasks."lua:lint"]
-description = "Lint the Lightroom plugin and its specs with selene and luacheck"
+description = "Lint the Lightroom plugin and its specs with selene and luacheck, and check its formatting with StyLua"
 depends = ["lua:deps"]
 run = [
   "selene plugin/LightroomAgent.lrplugin",
   "selene --config selene-spec.toml plugin/spec",
   "lua_modules/bin/luacheck plugin",
+  "stylua --check plugin",
 ]
 
 [tasks."live:fixtures"]

@@ -1,5 +1,5 @@
-local PathForms = require 'PathForms'
-local Reply = require 'Reply'
+local PathForms = require "PathForms"
+local Reply = require "Reply"
 
 local PhotoLookup = {}
 
@@ -55,18 +55,16 @@ function PhotoLookup.resolveMany(catalog, photoIds)
         elseif byPath[id] == nil then
             byPath[id] = false
             local photo = PhotoLookup.findByPath(catalog, id)
-            if photo and PathForms.same(photo:getRawMetadata('path'), id) then
-                byPath[id] = photo:getRawMetadata('masterPhoto') or photo
+            if photo and PathForms.same(photo:getRawMetadata("path"), id) then
+                byPath[id] = photo:getRawMetadata("masterPhoto") or photo
             end
         end
     end
 
     if #unverified > 0 then
-        local raw = catalog:batchGetRawMetadata(unverified, { 'uuid' }) or {}
+        local raw = catalog:batchGetRawMetadata(unverified, { "uuid" }) or {}
         for _, photo in ipairs(unverified) do
-            if (raw[photo] or {}).uuid ~= nil then
-                byLocalId[keyOf[photo]] = photo
-            end
+            if (raw[photo] or {}).uuid ~= nil then byLocalId[keyOf[photo]] = photo end
         end
     end
 
@@ -99,9 +97,7 @@ function PhotoLookup.resolveDistinct(catalog, photoIds)
     return entries, notFound, resolved
 end
 
-function PhotoLookup.resolveOne(catalog, photoId)
-    return PhotoLookup.resolveMany(catalog, { photoId })[1].photo
-end
+function PhotoLookup.resolveOne(catalog, photoId) return PhotoLookup.resolveMany(catalog, { photoId })[1].photo end
 
 function PhotoLookup.requireOne(catalog, photoId)
     local photo = PhotoLookup.resolveOne(catalog, photoId)

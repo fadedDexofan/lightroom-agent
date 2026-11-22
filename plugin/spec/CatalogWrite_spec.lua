@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local function catalogAnswering(outcome)
     local calls = {}
@@ -9,14 +9,15 @@ local function catalogAnswering(outcome)
             fn()
             return "executed"
         end,
-    }, calls
+    },
+        calls
 end
 
 local function load(imports)
     helper.installImport(imports or {})
     package.loaded.CatalogWrite = nil
     package.loaded.Ledger = nil
-    return require 'CatalogWrite', helper.requestContext()
+    return require "CatalogWrite", helper.requestContext()
 end
 
 describe("CatalogWrite.developSettings", function()
@@ -34,7 +35,13 @@ describe("CatalogWrite.developSettings", function()
     it("applies the settings under the gate's title and records the gate", function()
         local CatalogWrite, context, catalog, photo, events = developing()
 
-        CatalogWrite.developSettings(context, catalog, photo, "Set Develop Settings", function() return { Exposure2012 = 1 } end)
+        CatalogWrite.developSettings(
+            context,
+            catalog,
+            photo,
+            "Set Develop Settings",
+            function() return { Exposure2012 = 1 } end
+        )
 
         assert.are.same({ { apply = { Exposure2012 = 1 }, history = "Set Develop Settings" } }, events)
         assert.are.same({ "Set Develop Settings" }, context.ledger:live())
@@ -52,12 +59,23 @@ end)
 
 describe("CatalogWrite's writes", function()
     for _, case in ipairs({
-        { write = "run", act = function(CatalogWrite, context, events)
-            CatalogWrite.run(context, catalogAnswering("executed"), "Gate", function() events[#events + 1] = "write" end)
-        end },
-        { write = "invoke", act = function(CatalogWrite, context, events)
-            CatalogWrite.invoke(context, "Call", function() events[#events + 1] = "write" end)
-        end },
+        {
+            write = "run",
+            act = function(CatalogWrite, context, events)
+                CatalogWrite.run(
+                    context,
+                    catalogAnswering("executed"),
+                    "Gate",
+                    function() events[#events + 1] = "write" end
+                )
+            end,
+        },
+        {
+            write = "invoke",
+            act = function(CatalogWrite, context, events)
+                CatalogWrite.invoke(context, "Call", function() events[#events + 1] = "write" end)
+            end,
+        },
     }) do
         it("commit Develop's pending edit before " .. case.write .. " writes, whichever photo Develop shows", function()
             for _, module in ipairs({ "develop", "library" }) do
@@ -65,7 +83,9 @@ describe("CatalogWrite's writes", function()
                 local events = {}
                 local CatalogWrite, context = load({
                     LrApplicationView = { getCurrentModuleName = function() return module end },
-                    LrDevelopController = { stopTracking = function(committed) events[#events + 1] = "commit " .. tostring(committed) end },
+                    LrDevelopController = {
+                        stopTracking = function(committed) events[#events + 1] = "commit " .. tostring(committed) end,
+                    },
                 })
 
                 case.act(CatalogWrite, context, events)
@@ -79,33 +99,40 @@ end)
 describe("Committing Develop's pending edits", function()
     local function calls(source, pattern)
         local count = 0
-        for _ in source:gmatch(pattern) do count = count + 1 end
+        for _ in source:gmatch(pattern) do
+            count = count + 1
+        end
         return count
     end
 
-    it("happens at its named homes only: dispatch, CatalogWrite's two writes, Auto and reset, and a session's end", function()
-        local directory = "plugin/LightroomAgent.lrplugin/"
-        local found = { commit = {}, stopTracking = {}, releaseTracking = {} }
-        for file in io.popen('ls "' .. directory .. '"'):lines() do
-            if file:match("%.lua$") then
-                local source = assert(io.open(directory .. file)):read("*a"):gsub("%-%-[^\n]*", "")
-                local name = file:gsub("%.lua$", "")
-                local counts = {
-                    commit = calls(source, "DevelopSession%.commitPendingEdits") - calls(source, "function DevelopSession%.commitPendingEdits"),
-                    stopTracking = calls(source, "LrDevelopController%.stopTracking"),
-                    releaseTracking = calls(source, "DevelopSession%.releaseTracking") - calls(source, "function DevelopSession%.releaseTracking"),
-                }
-                for kind, count in pairs(counts) do
-                    if count > 0 then found[kind][name] = count end
+    it(
+        "happens at its named homes only: dispatch, CatalogWrite's two writes, Auto and reset, and a session's end",
+        function()
+            local directory = "plugin/LightroomAgent.lrplugin/"
+            local found = { commit = {}, stopTracking = {}, releaseTracking = {} }
+            for file in io.popen('ls "' .. directory .. '"'):lines() do
+                if file:match("%.lua$") then
+                    local source = assert(io.open(directory .. file)):read("*a"):gsub("%-%-[^\n]*", "")
+                    local name = file:gsub("%.lua$", "")
+                    local counts = {
+                        commit = calls(source, "DevelopSession%.commitPendingEdits")
+                            - calls(source, "function DevelopSession%.commitPendingEdits"),
+                        stopTracking = calls(source, "LrDevelopController%.stopTracking"),
+                        releaseTracking = calls(source, "DevelopSession%.releaseTracking")
+                            - calls(source, "function DevelopSession%.releaseTracking"),
+                    }
+                    for kind, count in pairs(counts) do
+                        if count > 0 then found[kind][name] = count end
+                    end
                 end
             end
+            assert.are.same({
+                commit = { PluginInfoProvider = 1, CatalogWrite = 2, HandlerDevelop = 2, DevelopSession = 1 },
+                stopTracking = { DevelopSession = 2 },
+                releaseTracking = { HandlerLensBlur = 1 },
+            }, found)
         end
-        assert.are.same({
-            commit = { PluginInfoProvider = 1, CatalogWrite = 2, HandlerDevelop = 2, DevelopSession = 1 },
-            stopTracking = { DevelopSession = 2 },
-            releaseTracking = { HandlerLensBlur = 1 },
-        }, found)
-    end)
+    )
 end)
 
 describe("CatalogWrite.run", function()
@@ -146,8 +173,12 @@ describe("CatalogWrite.run", function()
             CatalogWrite.run(context, catalog, "Set Rating", function() end)
         end)
 
-        assert.are.equal("The catalog stayed busy with another write for " .. CatalogWrite.WAIT_SECONDS
-            .. " s, so Lightroom did not run Set Rating", message)
+        assert.are.equal(
+            "The catalog stayed busy with another write for "
+                .. CatalogWrite.WAIT_SECONDS
+                .. " s, so Lightroom did not run Set Rating",
+            message
+        )
         assert.are.equal(helper.catalogBusy("Set Rating"), message)
         assert.are.same({}, context.ledger:live())
     end)
@@ -156,13 +187,15 @@ end)
 describe("CatalogWrite.call", function()
     local function target(log)
         local object = {}
-        setmetatable(object, { __index = function(_, method)
-            return function(self, ...)
-                assert.are.equal(object, self)
-                log[#log + 1] = { method, ... }
-                return method .. " done"
-            end
-        end })
+        setmetatable(object, {
+            __index = function(_, method)
+                return function(self, ...)
+                    assert.are.equal(object, self)
+                    log[#log + 1] = { method, ... }
+                    return method .. " done"
+                end
+            end,
+        })
         return object
     end
 
@@ -223,12 +256,14 @@ describe("CatalogWrite.invoke and CatalogWrite.develop", function()
 
     it("records a controller write as one before calling Develop's controller", function()
         local calls = {}
-        local CatalogWrite, context = load({ LrDevelopController = {
-            setValue = function(key, value)
-                calls[#calls + 1] = { key, value }
-                return "set"
-            end,
-        } })
+        local CatalogWrite, context = load({
+            LrDevelopController = {
+                setValue = function(key, value)
+                    calls[#calls + 1] = { key, value }
+                    return "set"
+                end,
+            },
+        })
         local mark = context.ledger:mark()
 
         assert.are.equal("set", CatalogWrite.develop(context, "setValue", "Exposure", 1))
@@ -255,31 +290,41 @@ describe("CatalogWrite.createFolder", function()
                 end,
             },
             LrPathUtils = { parent = function(path) return path:match("^(.+)/[^/]+$") end },
-        }, created
+        },
+            created
     end
 
-    it("records a folder it creates, and nothing for a path that already exists or a folder still missing after", function()
-        local imports, created = folders({ ["/out"] = "directory", ["/file"] = "file" }, { ["/readonly"] = true, ["/readonly/new"] = true })
-        local CatalogWrite, context = load(imports)
+    it(
+        "records a folder it creates, and nothing for a path that already exists or a folder still missing after",
+        function()
+            local imports, created = folders(
+                { ["/out"] = "directory", ["/file"] = "file" },
+                { ["/readonly"] = true, ["/readonly/new"] = true }
+            )
+            local CatalogWrite, context = load(imports)
 
-        for _, path in ipairs({ "/out", "/file", "/out/new", "/readonly/new" }) do
-            CatalogWrite.createFolder(context, path)
+            for _, path in ipairs({ "/out", "/file", "/out/new", "/readonly/new" }) do
+                CatalogWrite.createFolder(context, path)
+            end
+
+            assert.are.same({ "/out/new", "/readonly/new" }, created)
+            assert.are.same({ "/out/new" }, context.ledger:live())
         end
+    )
 
-        assert.are.same({ "/out/new", "/readonly/new" }, created)
-        assert.are.same({ "/out/new" }, context.ledger:live())
-    end)
+    it(
+        "keeps the record of a folder still missing after it created a missing parent, and answers the topmost folder"
+            .. " it created",
+        function()
+            local imports = folders({ ["/out"] = "directory" }, { ["/out/set/day"] = true })
+            local CatalogWrite, context = load(imports)
 
-    it("keeps the record of a folder still missing after it created a missing parent, and answers the topmost folder"
-        .. " it created", function()
-        local imports = folders({ ["/out"] = "directory" }, { ["/out/set/day"] = true })
-        local CatalogWrite, context = load(imports)
+            local topmost = CatalogWrite.createFolder(context, "/out/set/day")
 
-        local topmost = CatalogWrite.createFolder(context, "/out/set/day")
-
-        assert.are.same({ "/out/set/day" }, context.ledger:live())
-        assert.are.equal("/out/set", topmost)
-    end)
+            assert.are.same({ "/out/set/day" }, context.ledger:live())
+            assert.are.equal("/out/set", topmost)
+        end
+    )
 end)
 
 describe("Develop controller writes", function()

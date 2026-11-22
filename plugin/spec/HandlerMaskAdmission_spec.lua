@@ -1,12 +1,14 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
-local Store = require 'fake_mask_store'
+local Store = require "fake_mask_store"
 
 local HOME = "/Users/tester"
 local CERTIFICATION_FILE = HOME .. "/.config/lightroom-agent/mask-certification.json"
 local PERSONAL_CATALOG = HOME .. "/Pictures/Lightroom/Lightroom Catalog.lrcat"
 local RUNNING_BUILD = "16.0.0 build 1234567"
-local CERTIFIED = '{"lightroom":{"version":"16.0","build":"' .. RUNNING_BUILD .. '"},'
+local CERTIFIED = '{"lightroom":{"version":"16.0","build":"'
+    .. RUNNING_BUILD
+    .. '"},'
     .. '"process_versions":["15.4"],"certified_at":"2026-11-12T10:00:00Z","checks":["linear create"]}'
 
 local function setup(opts)
@@ -38,10 +40,18 @@ local function setup(opts)
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
     })
-    for _, name in ipairs({ "HandlerMaskAdmission", "GuardedMaskWrite", "MaskWriteAdmission", "RunningLightroom", "PluginFiles", "PhotoLookup", "Log" }) do
+    for _, name in ipairs({
+        "HandlerMaskAdmission",
+        "GuardedMaskWrite",
+        "MaskWriteAdmission",
+        "RunningLightroom",
+        "PluginFiles",
+        "PhotoLookup",
+        "Log",
+    }) do
         package.loaded[name] = nil
     end
-    return require 'HandlerMaskAdmission', state
+    return require "HandlerMaskAdmission", state
 end
 
 describe("HandlerMaskAdmission.get", function()
@@ -51,7 +61,11 @@ describe("HandlerMaskAdmission.get", function()
         local result = Handler.get({})
 
         assert.is_false(result.admitted)
-        assert.are.same({ version = "16.0", build = RUNNING_BUILD, version_table = { major = 16, minor = 0, revision = 0, build = 1234567 } }, result.running)
+        assert.are.same({
+            version = "16.0",
+            build = RUNNING_BUILD,
+            version_table = { major = 16, minor = 0, revision = 0, build = 1234567 },
+        }, result.running)
         assert.are.equal(CERTIFICATION_FILE, result.certification_file)
         assert.is_truthy(result.reason:find("certify-mask-writes.mjs", 1, true))
         assert.is_nil(result.photo)
@@ -59,21 +73,39 @@ describe("HandlerMaskAdmission.get", function()
     end)
 
     for _, case in ipairs({
-        { held = "masks of the pinned format", entry = Store.correction("A", { Store.linearComponent() }), problems = {} },
-        { held = "a mask outside the pinned format, listing it", entry = Store.correction("Odd", { { What = "Mask/Mystery", MaskActive = true } }),
-            problems = { "existing mask 1.CorrectionMasks[1]: unknown mask type Mask/Mystery" } },
-        { held = "a mask Lightroom has not named yet, listing it", entry = Store.correction("New", { Store.linearComponent() }),
-            unnamed = true, problems = { "existing mask 1: missing CorrectionID" } },
+        {
+            held = "masks of the pinned format",
+            entry = Store.correction("A", { Store.linearComponent() }),
+            problems = {},
+        },
+        {
+            held = "a mask outside the pinned format, listing it",
+            entry = Store.correction("Odd", { { What = "Mask/Mystery", MaskActive = true } }),
+            problems = { "existing mask 1.CorrectionMasks[1]: unknown mask type Mask/Mystery" },
+        },
+        {
+            held = "a mask Lightroom has not named yet, listing it",
+            entry = Store.correction("New", { Store.linearComponent() }),
+            unnamed = true,
+            problems = { "existing mask 1: missing CorrectionID" },
+        },
     }) do
         it("admits a photo of a certified build with a certified process version holding " .. case.held, function()
             local Handler, state = setup({ files = { [CERTIFICATION_FILE] = CERTIFIED }, entries = { case.entry } })
-            if case.unnamed then state.entries[1].CorrectionID, state.entries[1].CorrectionSyncID = nil, nil end
+            if case.unnamed then
+                state.entries[1].CorrectionID, state.entries[1].CorrectionSyncID = nil, nil
+            end
 
             local result = Handler.get({ photo_id = "7" })
 
             assert.is_true(result.admitted)
-            assert.are.same({ photo_id = "7", process_version = "15.4", mask_count = 1, schema_problems = case.problems,
-                admitted = true }, result.photo)
+            assert.are.same({
+                photo_id = "7",
+                process_version = "15.4",
+                mask_count = 1,
+                schema_problems = case.problems,
+                admitted = true,
+            }, result.photo)
         end)
     end
 

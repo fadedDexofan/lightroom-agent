@@ -1,10 +1,10 @@
-local LrApplication = import 'LrApplication'
-local LrFileUtils = import 'LrFileUtils'
-local LrPathUtils = import 'LrPathUtils'
-local LrStringUtils = import 'LrStringUtils'
+local LrApplication = import "LrApplication"
+local LrFileUtils = import "LrFileUtils"
+local LrPathUtils = import "LrPathUtils"
+local LrStringUtils = import "LrStringUtils"
 
-local DecimalText = require 'DecimalText'
-local PathForms = require 'PathForms'
+local DecimalText = require "DecimalText"
+local PathForms = require "PathForms"
 
 -- Lightroom Classic export presets (.lrtemplate files).
 --
@@ -16,7 +16,7 @@ local ExportPresets = {}
 
 -- Only Hard Drive presets can run over the bridge. Other services (DxO,
 -- Nik, publish services) hand the files to another application.
-ExportPresets.FILE_SERVICE = 'com.adobe.ag.export.file'
+ExportPresets.FILE_SERVICE = "com.adobe.ag.export.file"
 
 -- Destination types that name a folder without asking. chooseLater opens a
 -- folder dialog and tempFolder is a service-private scratch folder.
@@ -44,8 +44,19 @@ local MAX_DEPTH = 32
 -- Marks a parse error, as opposed to a bug in the parser.
 local PARSE_ERROR = "export preset parse error: "
 
-local ESCAPES = { n = "\n", t = "\t", r = "\r", a = "\a", b = "\b", f = "\f", v = "\v",
-    ["\\"] = "\\", ['"'] = '"', ["'"] = "'", ["\n"] = "\n" }
+local ESCAPES = {
+    n = "\n",
+    t = "\t",
+    r = "\r",
+    a = "\a",
+    b = "\b",
+    f = "\f",
+    v = "\v",
+    ["\\"] = "\\",
+    ['"'] = '"',
+    ["'"] = "'",
+    ["\n"] = "\n",
+}
 
 local function parsePreset(source)
     local pos = 1
@@ -144,8 +155,13 @@ local function parsePreset(source)
                 skipSpace()
                 if source:sub(pos, pos) ~= "=" then fail("expected '='") end
                 pos = pos + 1
-            elseif name and source:match("^[%a_][%w_]*%s*=[^=]", pos)
-                and name ~= "true" and name ~= "false" and name ~= "nil" then
+            elseif
+                name
+                and source:match("^[%a_][%w_]*%s*=[^=]", pos)
+                and name ~= "true"
+                and name ~= "false"
+                and name ~= "nil"
+            then
                 key = name
                 pos = pos + #name
                 skipSpace()
@@ -267,9 +283,7 @@ local function readFile(path)
     return text
 end
 
-local function stem(path)
-    return LrPathUtils.removeExtension(LrPathUtils.leafName(path))
-end
+local function stem(path) return LrPathUtils.removeExtension(LrPathUtils.leafName(path)) end
 
 local function sizeSummary(value)
     if not value.size_doConstrain then return nil end
@@ -290,25 +304,40 @@ end
 
 -- The folder a specificFolder preset writes to, including its subfolder.
 local function specificFolderPath(prefix, useSubfolder, suffix)
-    if prefix and useSubfolder and suffix and suffix ~= "" then
-        return LrPathUtils.child(prefix, suffix)
-    end
+    if prefix and useSubfolder and suffix and suffix ~= "" then return LrPathUtils.child(prefix, suffix) end
     return prefix
 end
 
 -- Lightroom hangs the export, with no error or dialog, on a setting of the wrong
 -- type, so such a preset is refused before it reaches an export session.
 local NUMBER_SETTINGS = {
-    "jpeg_quality", "jpeg_limitSize", "size_maxWidth", "size_maxHeight", "size_megapixels",
-    "size_percentage", "size_resolution", "initialSequenceNumber",
+    "jpeg_quality",
+    "jpeg_limitSize",
+    "size_maxWidth",
+    "size_maxHeight",
+    "size_megapixels",
+    "size_percentage",
+    "size_resolution",
+    "initialSequenceNumber",
 }
 local TEXT_SETTINGS = {
-    "format", "tokens", "size_resizeType", "size_units", "export_colorSpace", "export_destinationType",
+    "format",
+    "tokens",
+    "size_resizeType",
+    "size_units",
+    "export_colorSpace",
+    "export_destinationType",
 }
 
 local BOOLEAN_SETTINGS = {
-    "size_doConstrain", "size_userWantsConstrain", "size_doNotEnlarge", "jpeg_useLimitSize",
-    "renamingTokensOn", "export_useSubfolder", "outputSharpeningOn", "useWatermark",
+    "size_doConstrain",
+    "size_userWantsConstrain",
+    "size_doNotEnlarge",
+    "jpeg_useLimitSize",
+    "renamingTokensOn",
+    "export_useSubfolder",
+    "outputSharpeningOn",
+    "useWatermark",
 }
 
 local function invalidSetting(value)
@@ -319,14 +348,10 @@ local function invalidSetting(value)
         end
     end
     for _, key in ipairs(TEXT_SETTINGS) do
-        if value[key] ~= nil and type(value[key]) ~= "string" then
-            return key .. " must be a string"
-        end
+        if value[key] ~= nil and type(value[key]) ~= "string" then return key .. " must be a string" end
     end
     for _, key in ipairs(BOOLEAN_SETTINGS) do
-        if value[key] ~= nil and type(value[key]) ~= "boolean" then
-            return key .. " must be true or false"
-        end
+        if value[key] ~= nil and type(value[key]) ~= "boolean" then return key .. " must be true or false" end
     end
     if value.jpeg_quality and (value.jpeg_quality < 0 or value.jpeg_quality > 1) then
         return "jpeg_quality must be between 0 and 1"
@@ -359,9 +384,7 @@ local function loadEntry(root, folder, file)
         entry.unusable_reason = "could not read preset: " .. tostring(readError)
         return entry
     end
-    if type(preset.title) == "string" and preset.title ~= "" then
-        entry.name = preset.title
-    end
+    if type(preset.title) == "string" and preset.title ~= "" then entry.name = preset.title end
     entry.internal_name = type(preset.internalName) == "string" and preset.internalName or nil
     entry.id = type(preset.id) == "string" and preset.id or nil
     local value = preset.value
@@ -378,20 +401,22 @@ local function loadEntry(root, folder, file)
         entry.quality = math.floor(value.jpeg_quality * 100 + 0.5)
     end
     entry.size = sizeSummary(value)
-    if value.renamingTokensOn then
-        entry.file_naming = value.tokens
-    end
+    if value.renamingTokensOn then entry.file_naming = value.tokens end
     entry.watermark = value.useWatermark == true
     entry.destination_type = value.export_destinationType
     if value.export_destinationType == "specificFolder" then
-        entry.destination_folder = specificFolderPath(value.export_destinationPathPrefix,
-            value.export_useSubfolder, value.export_destinationPathSuffix)
+        entry.destination_folder = specificFolderPath(
+            value.export_destinationPathPrefix,
+            value.export_useSubfolder,
+            value.export_destinationPathSuffix
+        )
     end
     entry.has_fixed_destination = FIXED_DESTINATION_TYPES[value.export_destinationType] == true
 
     -- An unset provider is the built-in Hard Drive service.
     if entry.service ~= nil and entry.service ~= ExportPresets.FILE_SERVICE then
-        entry.unusable_reason = "exports through " .. tostring(entry.service_title or entry.service)
+        entry.unusable_reason = "exports through "
+            .. tostring(entry.service_title or entry.service)
             .. ", not Hard Drive"
         return entry
     end
@@ -447,28 +472,26 @@ end
 function ExportPresets.list(folder)
     local result = {}
     for _, entry in ipairs(allEntries()) do
-        if folder == nil or entry.folder == folder then
-            table.insert(result, summary(entry))
-        end
+        if folder == nil or entry.folder == folder then table.insert(result, summary(entry)) end
     end
     return result
 end
 
 -- string.lower leaves non-ASCII letters alone, and macOS can hand back a file
 -- name in a different Unicode form than the one a caller types.
-local function folded(text)
-    return LrStringUtils.lower(PathForms.toNfc(text))
-end
+local function folded(text) return LrStringUtils.lower(PathForms.toNfc(text)) end
 
 local function matchesName(entry, name, fold)
     local candidates = {
-        entry.name, entry.internal_name, stem(entry.file), entry.id,
-        entry.file, LrPathUtils.leafName(entry.file),
+        entry.name,
+        entry.internal_name,
+        stem(entry.file),
+        entry.id,
+        entry.file,
+        LrPathUtils.leafName(entry.file),
     }
     for _, candidate in pairs(candidates) do
-        if candidate == name or (fold and folded(candidate) == folded(name)) then
-            return true
-        end
+        if candidate == name or (fold and folded(candidate) == folded(name)) then return true end
     end
     return false
 end
@@ -490,9 +513,7 @@ end
 function ExportPresets.resolve(name, folder)
     local entries = allEntries()
     local matches = findMatches(entries, name, folder, false)
-    if #matches == 0 then
-        matches = findMatches(entries, name, folder, true)
-    end
+    if #matches == 0 then matches = findMatches(entries, name, folder, true) end
     if #matches == 0 then
         local where = folder and (" in folder '" .. folder .. "'") or ""
         error("Export preset not found: '" .. name .. "'" .. where .. " (use list_export_presets)")
@@ -505,18 +526,21 @@ function ExportPresets.resolve(name, folder)
             sharedFolder = sharedFolder and match.folder == matches[1].folder
         end
         local advice = sharedFolder and "pass its file path from list_export_presets" or "pass export_preset_folder"
-        error("Export preset '" .. name .. "' is ambiguous; " .. advice .. " (found in "
-            .. table.concat(locations, ", ") .. ")")
+        error(
+            "Export preset '"
+                .. name
+                .. "' is ambiguous; "
+                .. advice
+                .. " (found in "
+                .. table.concat(locations, ", ")
+                .. ")"
+        )
     end
     local entry = matches[1]
-    if not entry.usable then
-        error("Export preset '" .. entry.name .. "' cannot be used: " .. entry.unusable_reason)
-    end
+    if not entry.usable then error("Export preset '" .. entry.name .. "' cannot be used: " .. entry.unusable_reason) end
     local settings = {}
     for key, v in pairs(entry.value) do
-        if type(key) == "string" then
-            settings["LR_" .. key] = v
-        end
+        if type(key) == "string" then settings["LR_" .. key] = v end
     end
     local result = summary(entry)
     result.settings = settings

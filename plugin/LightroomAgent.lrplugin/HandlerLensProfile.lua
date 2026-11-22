@@ -1,10 +1,10 @@
-local LrApplication = import 'LrApplication'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrTasks = import "LrTasks"
 
-local DevelopReadBack = require 'DevelopReadBack'
-local Log = require 'Log'
-local PhotoLookup = require 'PhotoLookup'
-local Reply = require 'Reply'
+local DevelopReadBack = require "DevelopReadBack"
+local Log = require "Log"
+local PhotoLookup = require "PhotoLookup"
+local Reply = require "Reply"
 
 local LensProfileHandler = {}
 
@@ -34,7 +34,11 @@ function LensProfileHandler.read(args)
     local catalog = LrApplication.activeCatalog()
     local found, missing = {}, {}
     for _, entry in ipairs(PhotoLookup.resolveMany(catalog, args.photo_ids)) do
-        if entry.photo then found[#found + 1] = entry.photo else missing[#missing + 1] = entry.id end
+        if entry.photo then
+            found[#found + 1] = entry.photo
+        else
+            missing[#missing + 1] = entry.id
+        end
     end
     local photos, failed = {}, {}
     catalog:withReadAccessDo(function()

@@ -10,9 +10,7 @@ local M = {}
 -- Make plugin sources requireable.
 local sep = package.config:sub(1, 1)
 local pluginRoot = "plugin" .. sep .. "LightroomAgent.lrplugin" .. sep .. "?.lua"
-if not package.path:find(pluginRoot, 1, true) then
-    package.path = package.path .. ";" .. pluginRoot
-end
+if not package.path:find(pluginRoot, 1, true) then package.path = package.path .. ";" .. pluginRoot end
 
 -- Install a mock `import` global. Subsequent `import 'X'` calls return the mock for X.
 -- Pure helper namespaces every spec gets unless it installs its own. lower is
@@ -28,8 +26,11 @@ local defaultImports = {
     LrPathUtils = { parent = function(path) return path:match("^(.+)/[^/]+$") end },
     LrProgressScope = function()
         return {
-            setCancelable = function() end, setPortionComplete = function() end, setCaption = function() end,
-            isCanceled = function() return false end, done = function() end,
+            setCancelable = function() end,
+            setPortionComplete = function() end,
+            setCaption = function() end,
+            isCanceled = function() return false end,
+            done = function() end,
         }
     end,
 }
@@ -39,9 +40,7 @@ function M.installImport(modules)
     _G.import = function(name)
         local m = modules[name]
         if m == nil then m = defaultImports[name] end
-        if m == nil then
-            error("No mock installed for import('" .. tostring(name) .. "')", 2)
-        end
+        if m == nil then error("No mock installed for import('" .. tostring(name) .. "')", 2) end
         return m
     end
 end
@@ -50,11 +49,15 @@ local contexts = setmetatable({}, { __mode = "k" })
 
 local function attempt(fn)
     local marks = {}
-    for context in pairs(contexts) do marks[context] = context.ledger:mark() end
+    for context in pairs(contexts) do
+        marks[context] = context.ledger:mark()
+    end
     local ok, err = pcall(fn)
     local written = {}
     for context in pairs(contexts) do
-        for _, what in ipairs(context.ledger:since(marks[context] or 0)) do written[#written + 1] = what end
+        for _, what in ipairs(context.ledger:since(marks[context] or 0)) do
+            written[#written + 1] = what
+        end
     end
     return ok, err, written
 end
@@ -62,7 +65,7 @@ end
 local function classOf(fn)
     local ok, err, written = attempt(fn)
     if ok then return "succeeded", err, written end
-    local answer = require('Reply').outcome(false, err, {
+    local answer = require("Reply").outcome(false, err, {
         ledger = { live = function() return written end },
         warnings = {},
     })
@@ -71,7 +74,7 @@ local function classOf(fn)
 end
 
 local function expected(wanted, class, err, written)
-    local Reply = require('Reply')
+    local Reply = require("Reply")
     local detail = class == "succeeded" and "the call succeeded"
         or class == "not found" and "not found: " .. tostring(err)
         or #written > 0 and "the call wrote " .. table.concat(written, ", ") .. ": " .. Reply.messageOf(err)
@@ -82,32 +85,37 @@ end
 function M.failedOf(fn)
     local class, err, written = classOf(fn)
     if class ~= "failed" then expected("a failed outcome", class, err, written) end
-    return require('Reply').messageOf(err)
+    return require("Reply").messageOf(err)
 end
 
 function M.unknownOf(fn)
     local class, err, written = classOf(fn)
     if class ~= "unknown" then expected("an unknown outcome", class, err, written) end
-    return require('Reply').messageOf(err)
+    return require("Reply").messageOf(err)
 end
 
 function M.notFoundOf(fn)
     local class, err, written = classOf(fn)
     if class ~= "not found" then expected("not found", class, err, written) end
-    return require('Reply').notFoundOf(err)
+    return require("Reply").notFoundOf(err)
 end
 
 function M.catalogBusy(title)
     local aborting = { withWriteAccessDo = function() return "aborted" end }
-    local _, err = pcall(require('CatalogWrite').run, { ledger = require('Ledger').new() }, aborting, title,
-        function() end)
-    return require('Reply').messageOf(err)
+    local _, err = pcall(
+        require("CatalogWrite").run,
+        { ledger = require("Ledger").new() },
+        aborting,
+        title,
+        function() end
+    )
+    return require("Reply").messageOf(err)
 end
 
 function M.outcomeOf(fn, context)
     context = context or M.requestContext()
     local ok, value = pcall(fn, context)
-    local answer = require('Reply').outcome(ok, value, context)
+    local answer = require("Reply").outcome(ok, value, context)
     if answer.result then return "answered", answer.result end
     return answer.effect == "none" and "failed" or "unknown", answer.error
 end
@@ -116,23 +124,25 @@ function M.admitMaskWrites(decision)
     package.loaded.MaskWriteAdmission = {
         status = function() return {} end,
         requireAdmitted = function()
-            if decision and decision.refuse then require('Reply').refuse(decision.refuse) end
+            if decision and decision.refuse then require("Reply").refuse(decision.refuse) end
         end,
     }
 end
 
 function M.requestContext(budgetSeconds, overrides)
     package.loaded.RequestContext = nil
-    local RequestContext = require 'RequestContext'
+    local RequestContext = require "RequestContext"
     local context = RequestContext.new("test", (budgetSeconds or 3600) * 1000, nil)
     contexts[context] = true
     context.report = function() end
-    for key, value in pairs(overrides or {}) do context[key] = value end
+    for key, value in pairs(overrides or {}) do
+        context[key] = value
+    end
     return context
 end
 
 function M.withFixtureSlider(fn)
-    local keys = require('Contract').LOCAL_KEYS
+    local keys = require("Contract").LOCAL_KEYS
     keys[#keys + 1] = { name = "local_Fixture", stored = "LocalFixture", scale = 100 }
     package.loaded.LocalSliders = nil
     local ok, err = pcall(fn)
@@ -171,23 +181,65 @@ defaultImports.LrUUID = {
 local VALID_METADATA_KEYS = {}
 for _, key in ipairs({
     -- File / catalog
-    "fileName", "fileSize", "fileFormat", "path", "dimensions",
-    "rating", "colorNameForLabel", "pickStatus", "keywords",
-    "uuid", "isVirtualCopy", "isExported", "croppedDimensions", "dateTimeOriginalISO8601",
-    "masterPhoto", "virtualCopies", "orientation",
-    "isInStackInFolder", "stackInFolderIsCollapsed", "stackPositionInFolder",
-    "topOfStackInFolderContainingPhoto", "stackInFolderMembers",
+    "fileName",
+    "fileSize",
+    "fileFormat",
+    "path",
+    "dimensions",
+    "rating",
+    "colorNameForLabel",
+    "pickStatus",
+    "keywords",
+    "uuid",
+    "isVirtualCopy",
+    "isExported",
+    "croppedDimensions",
+    "dateTimeOriginalISO8601",
+    "masterPhoto",
+    "virtualCopies",
+    "orientation",
+    "isInStackInFolder",
+    "stackInFolderIsCollapsed",
+    "stackPositionInFolder",
+    "topOfStackInFolderContainingPhoto",
+    "stackInFolderMembers",
     -- EXIF
-    "dateTimeOriginal", "dateTimeDigitized", "cameraMake", "cameraModel",
-    "cameraSerialNumber", "lens", "isoSpeedRating", "focalLength",
-    "focalLength35mm", "aperture", "shutterSpeed", "exposureBias",
-    "exposureProgram", "meteringMode", "flash", "artist", "software",
-    "gps", "gpsAltitude",
+    "dateTimeOriginal",
+    "dateTimeDigitized",
+    "cameraMake",
+    "cameraModel",
+    "cameraSerialNumber",
+    "lens",
+    "isoSpeedRating",
+    "focalLength",
+    "focalLength35mm",
+    "aperture",
+    "shutterSpeed",
+    "exposureBias",
+    "exposureProgram",
+    "meteringMode",
+    "flash",
+    "artist",
+    "software",
+    "gps",
+    "gpsAltitude",
     -- IPTC content / location / rights
-    "title", "caption", "headline", "location", "city", "stateProvince",
-    "country", "isoCountryCode", "creator", "copyright", "copyrightState",
-    "rightsUsageTerms", "copyrightInfoUrl", "creatorUrl",
-    "altTextAccessibility", "extDescrAccessibility",
+    "title",
+    "caption",
+    "headline",
+    "location",
+    "city",
+    "stateProvince",
+    "country",
+    "isoCountryCode",
+    "creator",
+    "copyright",
+    "copyrightState",
+    "rightsUsageTerms",
+    "copyrightInfoUrl",
+    "creatorUrl",
+    "altTextAccessibility",
+    "extDescrAccessibility",
 }) do
     VALID_METADATA_KEYS[key] = true
 end
@@ -198,8 +250,12 @@ local function readMetadata(meta, key)
     -- `__`-prefixed keys are test-internal sentinels (e.g. __appliedSettings)
     -- that specs read back to assert what a handler wrote; never SDK keys.
     if key:sub(1, 2) ~= "__" and not VALID_METADATA_KEYS[key] then
-        error("unsupported metadata key '" .. tostring(key)
-            .. "' (add it to spec_helper VALID_METADATA_KEYS if it is a real SDK key)", 2)
+        error(
+            "unsupported metadata key '"
+                .. tostring(key)
+                .. "' (add it to spec_helper VALID_METADATA_KEYS if it is a real SDK key)",
+            2
+        )
     end
     return meta[key]
 end
@@ -219,7 +275,9 @@ end
 local function copiedValue(value)
     if type(value) ~= "table" then return value end
     local copy = {}
-    for key, inner in pairs(value) do copy[key] = copiedValue(inner) end
+    for key, inner in pairs(value) do
+        copy[key] = copiedValue(inner)
+    end
     return copy
 end
 
@@ -250,7 +308,9 @@ function M.fakePhoto(meta)
             for key, value in pairs(preset:getSetting()) do
                 if key == "MaskGroupBasedCorrections" then
                     local masks = copiedValue(meta.developSettings.MaskGroupBasedCorrections) or {}
-                    for _, entry in ipairs(value) do masks[#masks + 1] = copiedValue(entry) end
+                    for _, entry in ipairs(value) do
+                        masks[#masks + 1] = copiedValue(entry)
+                    end
                     meta.developSettings.MaskGroupBasedCorrections = masks
                 else
                     meta.developSettings[key] = copiedValue(value)
@@ -259,7 +319,9 @@ function M.fakePhoto(meta)
         end,
         applyDevelopSettings = function(_, settings, historyName, flattenAutoNow)
             meta.developSettings = meta.developSettings or {}
-            for key, value in pairs(settings) do meta.developSettings[key] = value end
+            for key, value in pairs(settings) do
+                meta.developSettings[key] = value
+            end
             meta.__appliedSettings = settings
             meta.__appliedHistoryName = historyName
             meta.__appliedFlattenAutoNow = flattenAutoNow
@@ -309,9 +371,7 @@ function M.fakeKeyword(name, opts)
         -- transactions to defer it to.
         setAttributes = function(_, attributes)
             local newName = attributes.keywordName
-            if newName and newName:lower() ~= name:lower() then
-                name = newName
-            end
+            if newName and newName:lower() ~= name:lower() then name = newName end
             return true
         end,
         getAttributes = function()
@@ -323,9 +383,7 @@ function M.fakeKeyword(name, opts)
         end,
         __addChild = function(_, child) table.insert(children, child) end,
     }
-    if opts.parent and not opts.detached then
-        opts.parent:__addChild(kw)
-    end
+    if opts.parent and not opts.detached then opts.parent:__addChild(kw) end
     return kw
 end
 
@@ -353,10 +411,14 @@ function M.fakeFolder(path, photos, children)
         getChildren = function() return children or {} end,
         getPhotos = function(_, includeChildren)
             local result = {}
-            for _, photo in ipairs(photos or {}) do table.insert(result, photo) end
+            for _, photo in ipairs(photos or {}) do
+                table.insert(result, photo)
+            end
             if includeChildren then
                 for _, child in ipairs(children or {}) do
-                    for _, photo in ipairs(child:getPhotos(true)) do table.insert(result, photo) end
+                    for _, photo in ipairs(child:getPhotos(true)) do
+                        table.insert(result, photo)
+                    end
                 end
             end
             return result
@@ -419,9 +481,7 @@ function M.fakeCollectionSet(name, opts)
     set.__name = function() return name end
     set.__childCollections = function() return collections end
     set.__childSets = function() return sets end
-    if opts.parent and not opts.detached then
-        table.insert(opts.parent.__childSets(), set)
-    end
+    if opts.parent and not opts.detached then table.insert(opts.parent.__childSets(), set) end
     return set
 end
 
@@ -476,23 +536,32 @@ function M.fakeCatalog(opts)
         local crit = criterion.criteria
         local op = criterion.operation
         if crit == "filename" and op == "any" then
-            local name = photo:getFormattedMetadata('fileName')
+            local name = photo:getFormattedMetadata("fileName")
             if not name then return false end
             return name:lower():find(criterion.value:lower(), 1, true) ~= nil
         elseif crit == "rating" and op == "==" then
-            return photo:getRawMetadata('rating') == criterion.value
+            return photo:getRawMetadata("rating") == criterion.value
         elseif crit == "rating" and op == ">=" then
-            local r = photo:getRawMetadata('rating')
+            local r = photo:getRawMetadata("rating")
             return r ~= nil and r >= criterion.value
         elseif crit == "keywords" and op == "all" then
-            local kws = photo:getRawMetadata('keywords') or {}
+            local kws = photo:getRawMetadata("keywords") or {}
             local target = criterion.value:lower()
             for _, kw in ipairs(kws) do
                 if kw:getName():lower() == target then return true end
             end
             return false
-        elseif (crit == "camera" or crit == "lens" or crit == "isoSpeedRating" or crit == "focalLength"
-            or crit == "pick" or crit == "labelColor" or crit == "fileFormat") and op == "==" then
+        elseif
+            (
+                crit == "camera"
+                or crit == "lens"
+                or crit == "isoSpeedRating"
+                or crit == "focalLength"
+                or crit == "pick"
+                or crit == "labelColor"
+                or crit == "fileFormat"
+            ) and op == "=="
+        then
             local keys = { camera = "cameraModel", pick = "pickStatus", labelColor = "colorNameForLabel" }
             local value = photo:getRawMetadata(keys[crit] or crit)
             if crit == "labelColor" then
@@ -501,16 +570,16 @@ function M.fakeCatalog(opts)
             end
             return value == criterion.value
         elseif crit == "hasAdjustments" and (op == "isTrue" or op == "isFalse") then
-            return (photo:getRawMetadata('__hasAdjustments') == true) == (op == "isTrue")
+            return (photo:getRawMetadata("__hasAdjustments") == true) == (op == "isTrue")
         elseif crit == "folder" and op == "all" then
-            local folder = (photo:getRawMetadata('path') or ""):match("^(.*)/[^/]+$") or ""
+            local folder = (photo:getRawMetadata("path") or ""):match("^(.*)/[^/]+$") or ""
             folder = folder:lower()
             for word in criterion.value:lower():gmatch("%S+") do
                 if not folder:find(word, 1, true) then return false end
             end
             return true
         elseif crit == "captureTime" then
-            local t = photo:getRawMetadata('dateTimeOriginal')
+            local t = photo:getRawMetadata("dateTimeOriginal")
             if not t then return false end
             if op == "in" then
                 return t >= criterion.value and t <= criterion.value2
@@ -524,7 +593,10 @@ function M.fakeCatalog(opts)
     end
 
     return {
-        getAllPhotos = function() markQuery() return photos end,
+        getAllPhotos = function()
+            markQuery()
+            return photos
+        end,
         getPhotoByLocalId = function(_, id)
             markQuery()
             for _, photo in ipairs(photos) do
@@ -532,11 +604,14 @@ function M.fakeCatalog(opts)
             end
             return M.fakePhoto({ id = id, __dangling = true })
         end,
-        getTargetPhotos = function() markQuery() return opts.targetPhotos or (selectionCall and selectionCall.photos) or photos end,
+        getTargetPhotos = function()
+            markQuery()
+            return opts.targetPhotos or (selectionCall and selectionCall.photos) or photos
+        end,
         findPhotoByPath = function(_, path, caseSensitive)
             markQuery()
             for _, photo in ipairs(photos) do
-                local candidate = photo:getRawMetadata('path')
+                local candidate = photo:getRawMetadata("path")
                 if candidate == path or (caseSensitive == false and candidate:lower() == path:lower()) then
                     return photo
                 end
@@ -563,7 +638,9 @@ function M.fakeCatalog(opts)
             local out = {}
             for _, photo in ipairs(list) do
                 local values = {}
-                for _, key in ipairs(keys) do values[key] = photo:getRawMetadata(key) end
+                for _, key in ipairs(keys) do
+                    values[key] = photo:getRawMetadata(key)
+                end
                 out[photo] = values
             end
             return out
@@ -572,7 +649,9 @@ function M.fakeCatalog(opts)
             local out = {}
             for _, photo in ipairs(list) do
                 local values = {}
-                for _, key in ipairs(keys) do values[key] = photo:getFormattedMetadata(key) end
+                for _, key in ipairs(keys) do
+                    values[key] = photo:getFormattedMetadata(key)
+                end
                 out[photo] = values
             end
             return out
@@ -609,9 +688,7 @@ function M.fakeCatalog(opts)
         end,
         getSelectionCall = function() return selectionCall end,
         withWriteAccessDo = function(_, actionName, fn, timeoutParams)
-            if timeoutParams and opts.writeAccessAborts and opts.writeAccessAborts(actionName) then
-                return "aborted"
-            end
+            if timeoutParams and opts.writeAccessAborts and opts.writeAccessAborts(actionName) then return "aborted" end
             writeAccessCount = writeAccessCount + 1
             insideWriteAccess = true
             pendingKeywords = {}
@@ -625,7 +702,9 @@ function M.fakeCatalog(opts)
             local undo = undoInWrite
             undoInWrite = {}
             if not ok then
-                for i = #undo, 1, -1 do undo[i]() end
+                for i = #undo, 1, -1 do
+                    undo[i]()
+                end
             end
             -- Keywords created in the transaction become visible once it
             -- commits; a failed transaction leaves none behind.
@@ -644,9 +723,7 @@ function M.fakeCatalog(opts)
         end,
         getQueriedInsideWriteAccess = function() return queriedInsideWriteAccess end,
         createCollection = function(_, name, parent, canReturnPrior)
-            if not insideWriteAccess then
-                error("createCollection outside withWriteAccessDo")
-            end
+            if not insideWriteAccess then error("createCollection outside withWriteAccessDo") end
             local siblings = parent and parent.__childCollections() or collections
             local siblingSets = parent and parent.__childSets() or collectionSets
             -- Live Lightroom: an exact duplicate returns nil (or the prior
@@ -657,9 +734,7 @@ function M.fakeCatalog(opts)
                     if canReturnPrior then return c end
                     return nil
                 end
-                if c:getName():lower() == name:lower() then
-                    error("name is not unique: " .. name)
-                end
+                if c:getName():lower() == name:lower() then error("name is not unique: " .. name) end
             end
             for _, set in ipairs(siblingSets) do
                 if set.__name():lower() == name:lower() then return nil end
@@ -696,9 +771,7 @@ function M.fakeCatalog(opts)
         -- that transaction ends; Lightroom raises the error below. It can still
         -- be passed as the parent of further sets in the same transaction.
         createCollectionSet = function(_, name, parent, canReturnPrior)
-            if not insideWriteAccess then
-                error("createCollectionSet outside withWriteAccessDo")
-            end
+            if not insideWriteAccess then error("createCollectionSet outside withWriteAccessDo") end
             local siblings = parent and parent.__childSets() or collectionSets
             local siblingCollections = parent and parent.__childCollections() or collections
             -- Live Lightroom: a case-only variant of a sibling set raises, and
@@ -709,9 +782,7 @@ function M.fakeCatalog(opts)
                     if canReturnPrior then return set end
                     return nil
                 end
-                if setName:lower() == name:lower() then
-                    error("name is not unique: " .. name)
-                end
+                if setName:lower() == name:lower() then error("name is not unique: " .. name) end
             end
             for _, c in ipairs(siblingCollections) do
                 if c:getName():lower() == name:lower() then return nil end
@@ -719,8 +790,10 @@ function M.fakeCatalog(opts)
             local set = M.fakeCollectionSet(name, { parent = parent, detached = true })
             set.__readGuard = function()
                 if setsCreatedInWrite[set] then
-                    error("Can't get collection information after creating collection"
-                        .. " inside the same withWriteAccessDo function")
+                    error(
+                        "Can't get collection information after creating collection"
+                            .. " inside the same withWriteAccessDo function"
+                    )
                 end
             end
             setsCreatedInWrite[set] = true
@@ -739,13 +812,9 @@ function M.fakeCatalog(opts)
         -- then, and creating the same name twice in one transaction asserts.
         -- returnExisting matches committed keywords ignoring case.
         createKeyword = function(_, name, synonyms, includeOnExport, parent, returnExisting)
-            if not insideWriteAccess then
-                error("createKeyword outside withWriteAccessDo")
-            end
+            if not insideWriteAccess then error("createKeyword outside withWriteAccessDo") end
             for _, kw in ipairs(pendingKeywords) do
-                if kw == parent then
-                    error("bad argument #2 to 'format' (number expected, got string)")
-                end
+                if kw == parent then error("bad argument #2 to 'format' (number expected, got string)") end
                 if kw:getParent() == parent and kw:getName():lower() == name:lower() then
                     error("createKeyword: " .. name .. " already created in this transaction")
                 end
@@ -786,10 +855,11 @@ function M.fakeRenditions(session)
         index = index + 1
         if not photos[index] then return nil end
         local path = tostring(session.exportSettings.LR_export_destinationPathPrefix) .. "/" .. tostring(index)
-        return index, {
-            destinationPath = path,
-            waitForRender = function() return true, path end,
-        }
+        return index,
+            {
+                destinationPath = path,
+                waitForRender = function() return true, path end,
+            }
     end
 end
 
@@ -813,9 +883,7 @@ end
 
 local DISPATCHED = dispatchedHandlers()
 
-local function packed(...)
-    return { n = select("#", ...), ... }
-end
+local function packed(...) return { n = select("#", ...), ... } end
 
 local function encodingResults(module, name)
     local wrapped = {}
@@ -827,8 +895,15 @@ local function encodingResults(module, name)
                 if type(results[1]) == "table" then
                     local ok, err = pcall(function() return privateJson:encode(results[1]) end)
                     if not ok then
-                        error(string.format("%s.%s returned a result JSON cannot encode: %s", name, tostring(key),
-                            tostring(err)), 0)
+                        error(
+                            string.format(
+                                "%s.%s returned a result JSON cannot encode: %s",
+                                name,
+                                tostring(key),
+                                tostring(err)
+                            ),
+                            0
+                        )
                     end
                 end
                 return unpack(results, 1, results.n)
@@ -843,8 +918,13 @@ end
 function require(name)
     local fromDisk = package.loaded[name] == nil
     local module = plainRequire(name)
-    if fromDisk and type(name) == "string" and DISPATCHED[name] and type(module) == "table"
-        and getmetatable(module) == nil then
+    if
+        fromDisk
+        and type(name) == "string"
+        and DISPATCHED[name]
+        and type(module) == "table"
+        and getmetatable(module) == nil
+    then
         local wrapped = encodingResults(module, name)
         package.loaded[name] = wrapped
         return wrapped

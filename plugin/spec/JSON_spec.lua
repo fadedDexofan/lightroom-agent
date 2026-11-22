@@ -1,4 +1,4 @@
-local JSON = require 'JSON'
+local JSON = require "JSON"
 
 describe("JSON", function()
     it("escapes Windows path backslashes when encoding strings", function()
@@ -81,10 +81,10 @@ describe("JSON", function()
     it("escapes control characters when encoding so the server can parse back", function()
         local encoded = JSON:encode({ s = "a\0b\1c\031d\8e" })
 
-        assert.is_not_nil(encoded:find('\\u0000', 1, true))
-        assert.is_not_nil(encoded:find('\\u0001', 1, true))
-        assert.is_not_nil(encoded:find('\\u001f', 1, true))
-        assert.is_not_nil(encoded:find('\\b', 1, true))
+        assert.is_not_nil(encoded:find("\\u0000", 1, true))
+        assert.is_not_nil(encoded:find("\\u0001", 1, true))
+        assert.is_not_nil(encoded:find("\\u001f", 1, true))
+        assert.is_not_nil(encoded:find("\\b", 1, true))
     end)
 
     it("encodes an empty table as an array so clients can iterate results", function()
@@ -101,7 +101,7 @@ describe("JSON", function()
     end)
 
     it("round-trips a string through encode and decode", function()
-        local original = "tab\there\nnewline \0nul \1soh émoji 😀 quote\" back\\slash"
+        local original = 'tab\there\nnewline \0nul \1soh émoji 😀 quote" back\\slash'
         local decoded = JSON:decode(JSON:encode({ s = original }))
 
         assert.are.equal(original, decoded.s)
@@ -125,9 +125,10 @@ describe("JSON", function()
             assert.truthy(encodeError({ [2] = "b" }):find("gap", 1, true))
         end)
 
-        it("refuses a table mixing array items and named fields instead of dropping the fields", function()
-            assert.truthy(encodeError({ 1, 2, count = 2 }):find("mixes", 1, true))
-        end)
+        it(
+            "refuses a table mixing array items and named fields instead of dropping the fields",
+            function() assert.truthy(encodeError({ 1, 2, count = 2 }):find("mixes", 1, true)) end
+        )
     end)
 
     describe("numbers under a comma-decimal locale", function()
@@ -162,7 +163,7 @@ describe("JSON", function()
 
     describe("decoding", function()
         it("keeps array positions after a null", function()
-            local decoded = JSON:decode('[1,null,3]')
+            local decoded = JSON:decode("[1,null,3]")
 
             assert.are.equal(1, decoded[1])
             assert.is_nil(decoded[2])
@@ -170,7 +171,7 @@ describe("JSON", function()
         end)
 
         it("rejects characters after the value", function()
-            for _, text in ipairs({ '{"a":1} junk', '1 2', '[1]]' }) do
+            for _, text in ipairs({ '{"a":1} junk', "1 2", "[1]]" }) do
                 assert.is_false(pcall(function() return JSON:decode(text) end))
             end
             assert.are.equal(1, JSON:decode(' {"a":1} \n').a)

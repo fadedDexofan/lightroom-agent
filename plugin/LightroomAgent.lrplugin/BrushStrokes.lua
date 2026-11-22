@@ -1,7 +1,7 @@
-local BrushFeather = require 'BrushFeather'
-local Contract = require 'Contract'
-local DecimalText = require 'DecimalText'
-local Reply = require 'Reply'
+local BrushFeather = require "BrushFeather"
+local Contract = require "Contract"
+local DecimalText = require "DecimalText"
+local Reply = require "Reply"
 
 local BrushStrokes = {}
 
@@ -20,24 +20,18 @@ local STORED_SCALE = 10 ^ STORED_PLACES
 local ERASE_VALUE = 0
 local DISTANCE_EPSILON = 1e-9
 
-local function fail(message)
-    Reply.refuse(message)
-end
+local function fail(message) Reply.refuse(message) end
 
-local function roundFlow(value)
-    return math.floor(value * FLOW_TOKEN_DECIMALS + 0.5) / FLOW_TOKEN_DECIMALS
-end
+local function roundFlow(value) return math.floor(value * FLOW_TOKEN_DECIMALS + 0.5) / FLOW_TOKEN_DECIMALS end
 
-local function roundStored(value)
-    return math.floor(value * STORED_SCALE + 0.5) / STORED_SCALE
-end
+local function roundStored(value) return math.floor(value * STORED_SCALE + 0.5) / STORED_SCALE end
 
 local function dabCountOf(points, radius)
     local spacing = radius * DAB_SPACING_IN_RADII
     local count = 1
     for index = 2, #points do
-        local distance = math.sqrt((points[index].x - points[index - 1].x) ^ 2
-            + (points[index].y - points[index - 1].y) ^ 2)
+        local distance =
+            math.sqrt((points[index].x - points[index - 1].x) ^ 2 + (points[index].y - points[index - 1].y) ^ 2)
         count = count + math.ceil(distance / spacing - DISTANCE_EPSILON)
     end
     return count
@@ -45,9 +39,16 @@ end
 
 local function requireDabBudget(field, dabCount, radius)
     if dabCount > MAX_DABS_PER_STROKE then
-        fail(string.format(
-            "%s would need %d dabs along its path at radius %s; at most %d are allowed (use a larger radius"
-                .. " or a shorter path)", field, dabCount, tostring(radius), MAX_DABS_PER_STROKE))
+        fail(
+            string.format(
+                "%s would need %d dabs along its path at radius %s; at most %d are allowed (use a larger radius"
+                    .. " or a shorter path)",
+                field,
+                dabCount,
+                tostring(radius),
+                MAX_DABS_PER_STROKE
+            )
+        )
     end
 end
 
@@ -84,7 +85,9 @@ function BrushStrokes.toStoredFrame(strokes, frame)
         if radius <= 0 then fail(field .. ".radius is too small to paint") end
         requireDabBudget(field, dabCountOf(points, radius), radius)
         local copy = {}
-        for key, item in pairs(stroke) do copy[key] = item end
+        for key, item in pairs(stroke) do
+            copy[key] = item
+        end
         copy.points = points
         copy.radius = radius
         mapped[index] = copy
@@ -92,12 +95,13 @@ function BrushStrokes.toStoredFrame(strokes, frame)
     return mapped
 end
 
-local function clampUnit(value)
-    return math.min(1, math.max(0, value))
-end
+local function clampUnit(value) return math.min(1, math.max(0, value)) end
 
 local function dabText(x, y)
-    return "d " .. DecimalText.fixed(clampUnit(x), STORED_PLACES) .. " " .. DecimalText.fixed(clampUnit(y), STORED_PLACES)
+    return "d "
+        .. DecimalText.fixed(clampUnit(x), STORED_PLACES)
+        .. " "
+        .. DecimalText.fixed(clampUnit(y), STORED_PLACES)
 end
 
 local function dabsAlong(stroke)
@@ -117,7 +121,9 @@ local function dabsAlong(stroke)
     if stroke.centerWeight > 0 and stroke.centerWeight < 1 then
         tokens[#tokens + 1] = "h " .. DecimalText.fixed(stroke.centerWeight, 4)
     end
-    for index = #tokens, 1, -1 do table.insert(dabs, 1, tokens[index]) end
+    for index = #tokens, 1, -1 do
+        table.insert(dabs, 1, tokens[index])
+    end
     return dabs
 end
 
@@ -137,7 +143,9 @@ end
 
 function BrushStrokes.newAggregate(strokes)
     local paints = {}
-    for index, stroke in ipairs(strokes) do paints[index] = BrushStrokes.newPaint(stroke) end
+    for index, stroke in ipairs(strokes) do
+        paints[index] = BrushStrokes.newPaint(stroke)
+    end
     return {
         What = AGGREGATE_WHAT,
         MaskActive = true,

@@ -1,10 +1,10 @@
-local LrFileUtils = import 'LrFileUtils'
-local LrPathUtils = import 'LrPathUtils'
+local LrFileUtils = import "LrFileUtils"
+local LrPathUtils = import "LrPathUtils"
 
-local Reply = require 'Reply'
-local JSON = require 'JSON'
-local PluginFiles = require 'PluginFiles'
-local RunningLightroom = require 'RunningLightroom'
+local Reply = require "Reply"
+local JSON = require "JSON"
+local PluginFiles = require "PluginFiles"
+local RunningLightroom = require "RunningLightroom"
 
 local MaskWriteAdmission = {}
 
@@ -30,8 +30,13 @@ local function readCertification()
     if LrFileUtils.exists(path) ~= "file" then return nil end
     local ok, record = pcall(function() return JSON:decode(LrFileUtils.readFile(path)) end)
     local lightroom = ok and type(record) == "table" and record.lightroom or nil
-    if type(lightroom) ~= "table" or type(lightroom.version) ~= "string" or type(lightroom.build) ~= "string"
-        or not stringList(record.process_versions) or type(record.certified_at) ~= "string" then
+    if
+        type(lightroom) ~= "table"
+        or type(lightroom.version) ~= "string"
+        or type(lightroom.build) ~= "string"
+        or not stringList(record.process_versions)
+        or type(record.certified_at) ~= "string"
+    then
         return nil, "the certification file " .. path .. " is not a certification record"
     end
     return {
@@ -59,33 +64,46 @@ function MaskWriteAdmission.status(catalog)
     local certified, problem = readCertification()
     status.certified = certified
     local build = status.running.build
-    status.admitted = status.throwaway_catalog
-        or (build ~= nil and certified ~= nil and certified.build == build)
+    status.admitted = status.throwaway_catalog or (build ~= nil and certified ~= nil and certified.build == build)
     if status.admitted then return status end
     if build == nil then
         status.reason = string.format(
-            "Lightroom Classic %s reports no build number, so no certification can name it.", status.running.version)
+            "Lightroom Classic %s reports no build number, so no certification can name it.",
+            status.running.version
+        )
     else
         status.reason = string.format(
             "Lightroom Classic %s (%s) is not certified for writing mask geometry (certified: %s). Run `%s`"
                 .. " on the live kit's throwaway catalog to certify it.",
-            status.running.version, build, certified and certified.build or problem or "none", CERTIFY_COMMAND)
+            status.running.version,
+            build,
+            certified and certified.build or problem or "none",
+            CERTIFY_COMMAND
+        )
     end
     return status
 end
 
 function MaskWriteAdmission.decide(status, processVersion)
-    if not status.admitted or status.throwaway_catalog
-        or contains(status.certified.process_versions, tostring(processVersion)) then
+    if
+        not status.admitted
+        or status.throwaway_catalog
+        or contains(status.certified.process_versions, tostring(processVersion))
+    then
         return status
     end
     local decision = {}
-    for key, value in pairs(status) do decision[key] = value end
+    for key, value in pairs(status) do
+        decision[key] = value
+    end
     decision.admitted = false
     decision.reason = string.format(
         "The photo's process version (%s) was not exercised by the certification of Lightroom Classic %s"
             .. " (certified: %s).",
-        tostring(processVersion), status.running.version, table.concat(status.certified.process_versions, ", "))
+        tostring(processVersion),
+        status.running.version,
+        table.concat(status.certified.process_versions, ", ")
+    )
     return decision
 end
 

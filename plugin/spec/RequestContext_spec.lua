@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local function load(clock, scopes)
     helper.installImport({
@@ -15,7 +15,7 @@ local function load(clock, scopes)
         end,
     })
     package.loaded.RequestContext = nil
-    return require 'RequestContext'
+    return require "RequestContext"
 end
 
 describe("RequestContext", function()
@@ -63,9 +63,11 @@ describe("RequestContext", function()
 
     it("opens a progress scope on first report and sends only increasing progress", function()
         local scopes, sent = {}, {}
-        local context = load({ now = 0 }, scopes).new("apply_denoise", 30000, function(progress)
-            sent[#sent + 1] = progress.progress
-        end)
+        local context = load({ now = 0 }, scopes).new(
+            "apply_denoise",
+            30000,
+            function(progress) sent[#sent + 1] = progress.progress end
+        )
         context:finish()
         assert.are.equal(0, #scopes)
         context:report(0, 3, "a")

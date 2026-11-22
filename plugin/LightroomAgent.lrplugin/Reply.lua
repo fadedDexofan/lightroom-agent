@@ -13,13 +13,9 @@ function Reply.parts(parts)
     return setmetatable(parts, PARTS)
 end
 
-function Reply.isParts(value)
-    return type(value) == "table" and getmetatable(value) == PARTS
-end
+function Reply.isParts(value) return type(value) == "table" and getmetatable(value) == PARTS end
 
-function Reply.refuse(message, cause)
-    error(setmetatable({ message = message, cause = cause }, REFUSAL), 0)
-end
+function Reply.refuse(message, cause) error(setmetatable({ message = message, cause = cause }, REFUSAL), 0) end
 
 local function refusalOf(value)
     if type(value) == "table" and getmetatable(value) == REFUSAL then return value.message end
@@ -31,9 +27,7 @@ function Reply.causeOf(value)
     return nil
 end
 
-function Reply.notFound(input)
-    error(setmetatable({ input = input }, NOT_FOUND), 0)
-end
+function Reply.notFound(input) error(setmetatable({ input = input }, NOT_FOUND), 0) end
 
 function Reply.notFoundOf(value)
     if type(value) == "table" and getmetatable(value) == NOT_FOUND then return value.input end
@@ -48,8 +42,15 @@ function Reply.messageOf(value)
     local chunkDetail = message:match('^%[string "[^"\r\n]-%.lua"%]:%d+: (.*)$')
     if chunkDetail then return chunkDetail end
     local source, detail = message:match("^([^\r\n]-%.lua):%d+: (.*)$")
-    if source and (source:match("^%S+%.lua$") or source:match("^[/\\]")
-        or source:match("^%a:[/\\]") or source:match("^%.%.%.")) then
+    if
+        source
+        and (
+            source:match("^%S+%.lua$")
+            or source:match("^[/\\]")
+            or source:match("^%a:[/\\]")
+            or source:match("^%.%.%.")
+        )
+    then
         return detail
     end
     return message
@@ -72,7 +73,9 @@ function Reply.outcome(ok, value, context)
         if parts.data == nil and parts.unknown == nil and #written > 0 then parts.written = written end
         if #context.warnings > 0 then
             parts.warnings = parts.warnings or {}
-            for _, warning in ipairs(context.warnings) do parts.warnings[#parts.warnings + 1] = warning end
+            for _, warning in ipairs(context.warnings) do
+                parts.warnings[#parts.warnings + 1] = warning
+            end
         end
         return { result = parts }
     end

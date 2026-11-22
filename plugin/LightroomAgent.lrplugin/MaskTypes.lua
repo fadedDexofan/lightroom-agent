@@ -1,5 +1,5 @@
-local AIMaskData = require 'AIMaskData'
-local Contract = require 'Contract'
+local AIMaskData = require "AIMaskData"
+local Contract = require "Contract"
 
 local MaskTypes = {}
 
@@ -29,9 +29,14 @@ end
 
 function MaskTypes.component(name, operation)
     local spec = MaskTypes.SPECS[name]
-    local component = { What = AIMaskData.KIND, MaskVersion = AI_MASK_VERSION, MaskName = spec.label .. " 1", MaskActive = true }
-    for key, value in pairs(spec.stored) do component[key] = value end
-    for key, value in pairs(FORMS[operation]) do component[key] = value end
+    local component =
+        { What = AIMaskData.KIND, MaskVersion = AI_MASK_VERSION, MaskName = spec.label .. " 1", MaskActive = true }
+    for key, value in pairs(spec.stored) do
+        component[key] = value
+    end
+    for key, value in pairs(FORMS[operation]) do
+        component[key] = value
+    end
     return component
 end
 

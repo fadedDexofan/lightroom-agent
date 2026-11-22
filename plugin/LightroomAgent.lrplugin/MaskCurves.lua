@@ -1,4 +1,4 @@
-local Contract = require 'Contract'
+local Contract = require "Contract"
 
 local MaskCurves = {}
 
@@ -42,7 +42,9 @@ function MaskCurves.ofEntry(entry, channel)
     local points = MaskCurves.fromStored(entry[channel.extended]) or MaskCurves.fromStored(entry[channel.stored])
     if points then return points end
     local linear = {}
-    for index, value in ipairs(MaskCurves.LINEAR) do linear[index] = value end
+    for index, value in ipairs(MaskCurves.LINEAR) do
+        linear[index] = value
+    end
     return linear
 end
 

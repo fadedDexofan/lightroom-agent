@@ -45,16 +45,10 @@ local function interpolate(feather, column)
     return FEATHER_SAMPLES[#FEATHER_SAMPLES][column]
 end
 
-function BrushFeather.fromPercent(percent)
-    return percent / BrushFeather.MAX_PERCENT
-end
+function BrushFeather.fromPercent(percent) return percent / BrushFeather.MAX_PERCENT end
 
-function BrushFeather.radiusScale(feather)
-    return interpolate(feather, RADIUS_SCALE_AT)
-end
+function BrushFeather.radiusScale(feather) return interpolate(feather, RADIUS_SCALE_AT) end
 
-function BrushFeather.centerWeight(feather)
-    return interpolate(feather, CENTER_WEIGHT_AT)
-end
+function BrushFeather.centerWeight(feather) return interpolate(feather, CENTER_WEIGHT_AT) end
 
 return BrushFeather

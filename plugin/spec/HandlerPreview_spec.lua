@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 -- thumbnail(photo, w, h, callback) stands in for Lightroom's renderer: it may
 -- call back at once, keep the callback for later, or never call it.
@@ -35,7 +35,7 @@ local function setup(photos, onSleep, view)
         },
     })
     package.loaded.HandlerPreview = nil
-    return catalog, require 'HandlerPreview', sleeps
+    return catalog, require "HandlerPreview", sleeps
 end
 
 describe("HandlerPreview.renderPreview", function()
@@ -55,14 +55,22 @@ describe("HandlerPreview.renderPreview", function()
         assert.are.same({ 64, 64 }, meta.__requested)
     end)
 
-    it("answers a duplicate-group preview of an unknown photo with not_found and one without capture time as failed", function()
-        local photo = previewPhoto({ localIdentifier = 7, path = "/a.nef" }, function(_, _, _, cb) cb("JPEGDATA") end)
-        local _, Handler = setup({ photo })
+    it(
+        "answers a duplicate-group preview of an unknown photo with not_found and one without capture time as failed",
+        function()
+            local photo = previewPhoto(
+                { localIdentifier = 7, path = "/a.nef" },
+                function(_, _, _, cb) cb("JPEGDATA") end
+            )
+            local _, Handler = setup({ photo })
 
-        assert.are.same({ "9" }, Handler.renderDuplicatePreview({ photo_ids = { "9" } }).not_found)
-        assert.are.same({ { photo_id = "7", reason = "No raw capture time" } },
-            Handler.renderDuplicatePreview({ photo_ids = { 7 } }).failed)
-    end)
+            assert.are.same({ "9" }, Handler.renderDuplicatePreview({ photo_ids = { "9" } }).not_found)
+            assert.are.same(
+                { { photo_id = "7", reason = "No raw capture time" } },
+                Handler.renderDuplicatePreview({ photo_ids = { 7 } }).failed
+            )
+        end
+    )
 
     it("returns the rendered JPEG base64-encoded with its mime type at the requested edge", function()
         local meta = { id = "1", path = "/a.nef" }
@@ -122,8 +130,10 @@ describe("HandlerPreview.renderPreview", function()
         end)
         local _, Handler = setup({ photo })
 
-        assert.are.same({ { photo_id = "1", reason = "Preview failed: file is offline" } },
-            Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30)).failed)
+        assert.are.same(
+            { { photo_id = "1", reason = "Preview failed: file is offline" } },
+            Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30)).failed
+        )
         assert.are.equal(1, requests)
     end)
 
@@ -131,7 +141,11 @@ describe("HandlerPreview.renderPreview", function()
         local requests = 0
         local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
             requests = requests + 1
-            if requests < 3 then cb(nil, "error loading thumb") else cb("JPEGDATA") end
+            if requests < 3 then
+                cb(nil, "error loading thumb")
+            else
+                cb("JPEGDATA")
+            end
         end)
         local _, Handler = setup({ photo })
 
@@ -142,30 +156,41 @@ describe("HandlerPreview.renderPreview", function()
     end)
 
     for _, case in ipairs({
-        { "preview", function(Handler) return Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30)) end },
-        { "duplicate preview", function(Handler)
-            return Handler.renderDuplicatePreview({ photo_ids = { "1" } }, helper.requestContext(30))
-        end },
+        {
+            "preview",
+            function(Handler)
+                return Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, helper.requestContext(30))
+            end,
+        },
+        {
+            "duplicate preview",
+            function(Handler) return Handler.renderDuplicatePreview({ photo_ids = { "1" } }, helper.requestContext(30)) end,
+        },
     }) do
-        it("asks Lightroom for no " .. case[1] .. " of the photo open in Develop, even one it could hand over", function()
-            local requests = 0
-            local photo = previewPhoto({ id = "1", path = "/a.arw", dateTimeOriginal = 5 }, function(_, _, _, cb)
-                requests = requests + 1
-                cb("CACHED")
-            end)
-            local _, Handler, sleeps = setup({ photo }, nil, { module = "develop", target = photo })
+        it(
+            "asks Lightroom for no " .. case[1] .. " of the photo open in Develop, even one it could hand over",
+            function()
+                local requests = 0
+                local photo = previewPhoto({ id = "1", path = "/a.arw", dateTimeOriginal = 5 }, function(_, _, _, cb)
+                    requests = requests + 1
+                    cb("CACHED")
+                end)
+                local _, Handler, sleeps = setup({ photo }, nil, { module = "develop", target = photo })
 
-            local reply = case[2](Handler)
+                local reply = case[2](Handler)
 
-            assert.are.same({ {
-                photo_id = "1",
-                reason = "This tool takes no thumbnail of photo 1 while it is the photo open in Develop: Lightroom's thumbnail there"
-                    .. " can be stale or an enlarged low-resolution copy",
-                cause = "active_in_develop",
-            } }, reply.failed)
-            assert.are.equal(0, requests)
-            assert.are.equal(0, sleeps.count)
-        end)
+                assert.are.same({
+                    {
+                        photo_id = "1",
+                        reason = "This tool takes no thumbnail of photo 1 while it is the photo open in Develop: Lightroom's thumbnail there"
+                            .. " can be stale or an enlarged low-resolution copy",
+                        cause = "active_in_develop",
+                    },
+                }, reply.failed)
+                assert.are.equal(0, requests)
+                assert.are.equal(0, sleeps.count)
+            end
+        )
     end
 
     it("stops asking once the photo becomes the one open in Develop between retries", function()
@@ -188,7 +213,11 @@ describe("HandlerPreview.renderPreview", function()
         local other = helper.fakePhoto({ id = "2", path = "/b.arw" })
         local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
             requests = requests + 1
-            if requests < 3 then cb(nil, "error loading thumb") else cb("JPEGDATA") end
+            if requests < 3 then
+                cb(nil, "error loading thumb")
+            else
+                cb("JPEGDATA")
+            end
         end)
         local _, Handler = setup({ photo, other }, nil, { module = "develop", target = other })
 
@@ -202,7 +231,11 @@ describe("HandlerPreview.renderPreview", function()
         local requests = 0
         local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
             requests = requests + 1
-            if requests < 3 then cb(nil, "error loading thumb") else cb("JPEGDATA") end
+            if requests < 3 then
+                cb(nil, "error loading thumb")
+            else
+                cb("JPEGDATA")
+            end
         end)
         local _, Handler = setup({ photo }, nil, { module = "library", target = photo })
 
@@ -212,24 +245,29 @@ describe("HandlerPreview.renderPreview", function()
         assert.are.equal(3, requests)
     end)
 
-    it("answers failed, saying Lightroom still had no preview pixels, when no render succeeds within the time", function()
-        local requests, context = 0, nil
-        local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
-            requests = requests + 1
-            if context:timeLeft() < 10 then error("asked again inside the reply reserve", 0) end
-            cb(nil, "error loading thumb")
-        end)
-        local _, Handler = setup({ photo })
-        context = helper.requestContext(30)
+    it(
+        "answers failed, saying Lightroom still had no preview pixels, when no render succeeds within the time",
+        function()
+            local requests, context = 0, nil
+            local photo = previewPhoto({ id = "1", path = "/a.arw" }, function(_, _, _, cb)
+                requests = requests + 1
+                if context:timeLeft() < 10 then error("asked again inside the reply reserve", 0) end
+                cb(nil, "error loading thumb")
+            end)
+            local _, Handler = setup({ photo })
+            context = helper.requestContext(30)
 
-        local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, context)
+            local reply = Handler.renderPreview({ photo_ids = { "1" }, size = 512 }, context)
 
-        assert.are.equal("Lightroom still had no preview pixels for photo 1 (it answered \"error loading thumb\" until"
-            .. " the time ran out); ask again later",
-            reply.failed[1].reason)
-        assert.is_true(requests > 1)
-        assert.is_true(context:timeLeft() >= 10)
-    end)
+            assert.are.equal(
+                'Lightroom still had no preview pixels for photo 1 (it answered "error loading thumb" until'
+                    .. " the time ran out); ask again later",
+                reply.failed[1].reason
+            )
+            assert.is_true(requests > 1)
+            assert.is_true(context:timeLeft() >= 10)
+        end
+    )
 
     it("says Lightroom still had no preview pixels when a retry after that answer never calls back", function()
         local requests = 0
@@ -259,9 +297,7 @@ describe("HandlerPreview.renderPreview", function()
 
     it("counts time outside the sleeps against the deadline", function()
         local sleeps
-        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function()
-            sleeps.now = sleeps.now + 19.99
-        end)
+        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function() sleeps.now = sleeps.now + 19.99 end)
         local _, Handler
         _, Handler, sleeps = setup({ photo })
 

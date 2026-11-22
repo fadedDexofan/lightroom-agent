@@ -1,6 +1,4 @@
-if _G.LightroomAgent_State then
-    require('PluginInfoProvider').shutdown()
-end
+if _G.LightroomAgent_State then require("PluginInfoProvider").shutdown() end
 
 return {
     LrShutdownFunction = function(doneFunction)

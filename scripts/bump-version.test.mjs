@@ -243,7 +243,7 @@ test("a bump writes the version, the package's description and author, and the p
   );
   assert.match(
     fs.readFileSync(path.join(root, "plugin/LightroomAgent.lrplugin/Info.lua"), "utf8"),
-    /VERSION = \{ major=9, minor=8, revision=7, build=0 \}/,
+    /VERSION = \{ major = 9, minor = 8, revision = 7, build = 0 \}/,
   );
   for (const file of [
     "plugin.json",

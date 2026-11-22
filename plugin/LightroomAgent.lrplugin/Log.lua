@@ -17,11 +17,11 @@ local function tryImport(name)
     return nil
 end
 
-local LrLogger = tryImport('LrLogger')
-local LrPathUtils = tryImport('LrPathUtils')
-local LrFileUtils = tryImport('LrFileUtils')
+local LrLogger = tryImport("LrLogger")
+local LrPathUtils = tryImport("LrPathUtils")
+local LrFileUtils = tryImport("LrFileUtils")
 
-local lrLogger = LrLogger and LrLogger('LightroomAgent') or nil
+local lrLogger = LrLogger and LrLogger("LightroomAgent") or nil
 if lrLogger then lrLogger:enable("logfile") end
 
 local Log = {}
@@ -38,9 +38,7 @@ local function filePath()
     local ok, docs = pcall(function() return LrPathUtils.getStandardFilePath("documents") end)
     if not ok or not docs then return nil end
     local dir = LrPathUtils.child(docs, "LrClassicLogs")
-    if LrFileUtils then
-        pcall(function() LrFileUtils.createAllDirectories(dir) end)
-    end
+    if LrFileUtils then pcall(function() LrFileUtils.createAllDirectories(dir) end) end
     resolvedPath = LrPathUtils.child(dir, "LightroomAgent.log")
     return resolvedPath
 end

@@ -4,9 +4,9 @@
 -- "Places|Europe|Paris". "|" is the separator Lightroom itself uses for
 -- hierarchies in the Keywording panel, so it cannot occur inside a keyword
 -- name and a string containing it is unambiguously a path.
-local LrStringUtils = import 'LrStringUtils'
+local LrStringUtils = import "LrStringUtils"
 
-local Reply = require 'Reply'
+local Reply = require "Reply"
 
 local KeywordTree = {}
 
@@ -15,35 +15,25 @@ KeywordTree.SEPARATOR = "|"
 -- Lightroom treats keyword names case-insensitively (createKeyword with
 -- returnExisting matches "paris" to "Paris"), so every name comparison here
 -- does too. LrStringUtils.lower folds non-ASCII letters; string.lower does not.
-function KeywordTree.fold(s)
-    return LrStringUtils.lower(s)
-end
+function KeywordTree.fold(s) return LrStringUtils.lower(s) end
 
-function KeywordTree.trim(s)
-    return (s:gsub("^%s+", ""):gsub("%s+$", ""))
-end
+function KeywordTree.trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 local trim = KeywordTree.trim
 
-function KeywordTree.isPath(name)
-    return type(name) == "string" and name:find(KeywordTree.SEPARATOR, 1, true) ~= nil
-end
+function KeywordTree.isPath(name) return type(name) == "string" and name:find(KeywordTree.SEPARATOR, 1, true) ~= nil end
 
 -- "A | B|C" -> { "A", "B", "C" }. Errors on an empty level ("A||B", "|A").
 function KeywordTree.split(path)
     local parts = {}
     for segment in (path .. KeywordTree.SEPARATOR):gmatch("(.-)|") do
         local name = trim(segment)
-        if name == "" then
-            Reply.refuse("Invalid keyword path (empty level): " .. path)
-        end
+        if name == "" then Reply.refuse("Invalid keyword path (empty level): " .. path) end
         parts[#parts + 1] = name
     end
     return parts
 end
 
-function KeywordTree.join(parts)
-    return table.concat(parts, KeywordTree.SEPARATOR)
-end
+function KeywordTree.join(parts) return table.concat(parts, KeywordTree.SEPARATOR) end
 
 -- Full parent-first path of a keyword object.
 function KeywordTree.pathOf(keyword)
@@ -58,18 +48,14 @@ end
 
 -- Children of `parent`, or the top-level keywords when parent is nil.
 function KeywordTree.children(catalog, parent)
-    if parent then
-        return parent:getChildren() or {}
-    end
+    if parent then return parent:getChildren() or {} end
     return catalog:getKeywords() or {}
 end
 
 function KeywordTree.findChild(catalog, parent, name)
     local folded = KeywordTree.fold(name)
     for _, child in ipairs(KeywordTree.children(catalog, parent)) do
-        if KeywordTree.fold(child:getName()) == folded then
-            return child
-        end
+        if KeywordTree.fold(child:getName()) == folded then return child end
     end
     return nil
 end
@@ -81,27 +67,19 @@ local function indexByName(keywords)
     local index = {}
     for _, child in ipairs(keywords) do
         local folded = KeywordTree.fold(child:getName())
-        if index[folded] == nil then
-            index[folded] = child
-        end
+        if index[folded] == nil then index[folded] = child end
     end
     return index
 end
 
-function KeywordTree.childIndex(catalog, parent)
-    return indexByName(KeywordTree.children(catalog, parent))
-end
+function KeywordTree.childIndex(catalog, parent) return indexByName(KeywordTree.children(catalog, parent)) end
 
 local topCache = nil
 
 local function sameMembers(cache, keywords)
-    if cache.count ~= #keywords then
-        return false
-    end
+    if cache.count ~= #keywords then return false end
     for _, keyword in ipairs(keywords) do
-        if not cache.members[keyword] then
-            return false
-        end
+        if not cache.members[keyword] then return false end
     end
     return true
 end
@@ -118,9 +96,7 @@ function KeywordTree.topIndex(catalog)
     return topCache.index
 end
 
-function KeywordTree.forgetTopIndex()
-    topCache = nil
-end
+function KeywordTree.forgetTopIndex() topCache = nil end
 
 -- findChild(catalog, nil, name) through the cached index. A hit that has been
 -- renamed or moved since the index was built is a miss; a miss does not
@@ -128,9 +104,7 @@ end
 function KeywordTree.findTopLevel(catalog, name)
     local folded = KeywordTree.fold(name)
     local keyword = KeywordTree.topIndex(catalog)[folded]
-    if keyword and not keyword:getParent() and KeywordTree.fold(keyword:getName()) == folded then
-        return keyword
-    end
+    if keyword and not keyword:getParent() and KeywordTree.fold(keyword:getName()) == folded then return keyword end
     return nil
 end
 
@@ -140,9 +114,7 @@ function KeywordTree.resolve(catalog, parts)
     local current = nil
     for i, name in ipairs(parts) do
         local child = KeywordTree.findChild(catalog, current, name)
-        if not child then
-            return nil, i - 1
-        end
+        if not child then return nil, i - 1 end
         current = child
     end
     return current, #parts
@@ -162,7 +134,10 @@ function KeywordTree.walk(catalog, root, visit)
             local attributes = child:getAttributes() or {}
             local name = attributes.keywordName or child:getName()
             kids[#kids + 1] = {
-                keyword = child, name = name, lower = KeywordTree.fold(name), attributes = attributes,
+                keyword = child,
+                name = name,
+                lower = KeywordTree.fold(name),
+                attributes = attributes,
             }
         end
         table.sort(kids, function(a, b)

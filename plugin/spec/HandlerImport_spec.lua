@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 -- Mirrors the real SDK: LrFileUtils.exists returns 'file' / 'directory' / false,
 -- and LrFileUtils.isDirectory is intentionally absent (nil on some Lightroom
@@ -19,16 +19,14 @@ local function fakeFileUtils(opts)
     end
     local function matches(known, p)
         for candidate in pairs(known or {}) do
-            if volumeForm(candidate) == volumeForm(p) then
-                return true
-            end
+            if volumeForm(candidate) == volumeForm(p) then return true end
         end
         return false
     end
     return {
         exists = function(p)
-            if matches(opts.directories, p) then return 'directory' end
-            if matches(opts.exists, p) then return 'file' end
+            if matches(opts.directories, p) then return "directory" end
+            if matches(opts.exists, p) then return "file" end
             return false
         end,
         directoryEntries = function(dir)
@@ -80,12 +78,21 @@ local function fakePathUtils()
         leafName = function(p) return p:match("([^/]+)$") end,
         parent = function(p) return p:match("^(.+)/[^/]+$") end,
         child = function(parent, child) return parent .. "/" .. child end,
-        getStandardFilePath = function(name) assert(name == "home"); return "/home/u" end,
+        getStandardFilePath = function(name)
+            assert(name == "home")
+            return "/home/u"
+        end,
     }
 end
 
 local function setup(opts)
-    local catalog = helper.fakeCatalog({ collectionSets = opts.collectionSets, collections = opts.collections or {}, photos = opts.photos, folders = opts.folders, writeAccessAborts = opts.writeAccessAborts })
+    local catalog = helper.fakeCatalog({
+        collectionSets = opts.collectionSets,
+        collections = opts.collections or {},
+        photos = opts.photos,
+        folders = opts.folders,
+        writeAccessAborts = opts.writeAccessAborts,
+    })
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrLogger = helper.defaultLrLogger(),
@@ -94,13 +101,13 @@ local function setup(opts)
         LrPathUtils = fakePathUtils(),
     })
     package.loaded.HandlerImport = nil
-    return catalog, require 'HandlerImport'
+    return catalog, require "HandlerImport"
 end
 
 local function importedPaths(catalog)
     local paths = {}
     for _, photo in ipairs(catalog:getAllPhotos()) do
-        paths[#paths + 1] = photo:getRawMetadata('path')
+        paths[#paths + 1] = photo:getRawMetadata("path")
     end
     return paths
 end
@@ -111,24 +118,30 @@ describe("HandlerImport.importPhotos", function()
             local opts = {
                 fs = { directories = { ["/dir"] = true }, dirContents = { "/dir/a.jpg", "/dir/b.jpg" } },
             }
-            for key, value in pairs(extra) do opts[key] = value end
+            for key, value in pairs(extra) do
+                opts[key] = value
+            end
             return setup(opts)
         end
 
         it("refuses a collection that does not exist before importing", function()
             local catalog, Handler = folder({})
-            assert.are.equal("Collection not found: Trip", helper.failedOf(function()
-                Handler.importPhotos({ source_path = "/dir", collection_name = "Trip" })
-            end))
+            assert.are.equal(
+                "Collection not found: Trip",
+                helper.failedOf(function() Handler.importPhotos({ source_path = "/dir", collection_name = "Trip" }) end)
+            )
             assert.are.equal(0, #catalog:getAllPhotos())
         end)
 
         it("refuses a smart collection before importing", function()
             local smart = helper.fakeCollection("Smart", {}, { smart = true })
             local catalog, Handler = folder({ collections = { smart } })
-            assert.are.equal("Cannot add or remove photos in a smart collection: Smart", helper.failedOf(function()
-                Handler.importPhotos({ source_path = "/dir", collection_name = "Smart" })
-            end))
+            assert.are.equal(
+                "Cannot add or remove photos in a smart collection: Smart",
+                helper.failedOf(
+                    function() Handler.importPhotos({ source_path = "/dir", collection_name = "Smart" }) end
+                )
+            )
             assert.are.equal(0, #catalog:getAllPhotos())
         end)
 
@@ -286,7 +299,8 @@ describe("HandlerImport.importPhotos", function()
 
     describe("source_path and copy_to", function()
         it("expand a leading ~/ to the home folder", function()
-            local fs = { directories = { ["/home/u/card"] = true }, exists = {}, dirContents = { "/home/u/card/a.jpg" } }
+            local fs =
+                { directories = { ["/home/u/card"] = true }, exists = {}, dirContents = { "/home/u/card/a.jpg" } }
             local catalog, Handler = setup({ fs = fs })
 
             local r = Handler.importPhotos({ source_path = "~/card", copy_to = "~/archive" })
@@ -325,7 +339,9 @@ describe("HandlerImport.importPhotos", function()
             assert.are.equal(1, r.data.imported)
             assert.are.same({ "/archive/d/a.arw" }, importedPaths(catalog))
             local copied = {}
-            for _, pair in ipairs(fs.copies) do copied[pair[2]] = pair[1] end
+            for _, pair in ipairs(fs.copies) do
+                copied[pair[2]] = pair[1]
+            end
             assert.are.equal("/card/d/a.arw", copied["/archive/d/a.arw"])
             assert.are.equal("/card/d/a.jpg", copied["/archive/d/a.jpg"])
             assert.are.equal("/card/d/a.xmp", copied["/archive/d/a.xmp"])
@@ -396,50 +412,64 @@ describe("HandlerImport.importPhotos", function()
         it("answers unknown for a single import whose copy failed after it created the copy_to folder", function()
             local _, Handler = setup({ fs = { copyFails = true, exists = { ["/card/a.jpg"] = true } } })
 
-            local message = helper.unknownOf(function()
-                Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" })
-            end)
+            local message = helper.unknownOf(
+                function() Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" }) end
+            )
 
             assert.are.equal("/card/a.jpg: could not copy /card/a.jpg to /archive/a.jpg", message)
         end)
 
         for _, case in ipairs({
-            { what = "fails a single import whose copy left no file", fs = { copyFails = true }, class = "failed",
-              message = "/card/a.jpg: could not copy /card/a.jpg to /archive/a.jpg" },
-            { what = "answers unknown, naming the copy, for a single import whose failed copy left a file",
-              fs = { copyLeavesFile = true }, class = "unknown",
-              message = "/card/a.jpg: could not copy /card/a.jpg to /archive/a.jpg; written before this stopped:"
-                  .. " /archive/a.jpg" },
+            {
+                what = "fails a single import whose copy left no file",
+                fs = { copyFails = true },
+                class = "failed",
+                message = "/card/a.jpg: could not copy /card/a.jpg to /archive/a.jpg",
+            },
+            {
+                what = "answers unknown, naming the copy, for a single import whose failed copy left a file",
+                fs = { copyLeavesFile = true },
+                class = "unknown",
+                message = "/card/a.jpg: could not copy /card/a.jpg to /archive/a.jpg; written before this stopped:"
+                    .. " /archive/a.jpg",
+            },
         }) do
             it(case.what .. " in an existing copy_to folder", function()
                 case.fs.exists = { ["/card/a.jpg"] = true }
                 case.fs.directories = { ["/archive"] = true }
                 local _, Handler = setup({ fs = case.fs })
 
-                local class, message = helper.outcomeOf(function(context)
-                    Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" }, context)
-                end)
+                local class, message = helper.outcomeOf(
+                    function(context)
+                        Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" }, context)
+                    end
+                )
 
                 assert.are.equal(case.class, class)
                 assert.are.equal(case.message, message)
             end)
         end
 
-        it("answers unknown for a single copied file the busy catalog would not take, naming the copy left on disk", function()
-            local catalog, Handler = setup({
-                fs = { exists = { ["/card/a.jpg"] = true } },
-                writeAccessAborts = function(name) return name == "Import Photo" end,
-            })
+        it(
+            "answers unknown for a single copied file the busy catalog would not take, naming the copy left on disk",
+            function()
+                local catalog, Handler = setup({
+                    fs = { exists = { ["/card/a.jpg"] = true } },
+                    writeAccessAborts = function(name) return name == "Import Photo" end,
+                })
 
-            local class, message = helper.outcomeOf(function(context)
-                Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" }, context)
-            end)
+                local class, message = helper.outcomeOf(
+                    function(context)
+                        Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" }, context)
+                    end
+                )
 
-            assert.are.equal("unknown", class)
-            assert.truthy(message:find("busy", 1, true), message)
-            assert.truthy(message:find("written before this stopped: /archive, /archive/a.jpg", 1, true), message)
-            assert.are.same({}, importedPaths(catalog))
-        end)
+                assert.are.equal("unknown", class)
+                assert.truthy(message:find("busy", 1, true), message)
+                assert.truthy(message:find("written before this stopped: /archive, /archive/a.jpg", 1, true), message)
+                assert.are.same({}, importedPaths(catalog))
+            end
+        )
     end)
 
     describe("files already in the catalog", function()
@@ -455,7 +485,10 @@ describe("HandlerImport.importPhotos", function()
         end
 
         it("adds the new photo and reports the existing ones", function()
-            local catalog, Handler = setupFolder({ "/dir/a.arw", "/dir/b.jpg" }, { "/dir/a.arw", "/dir/b.jpg", "/dir/c.arw" })
+            local catalog, Handler = setupFolder(
+                { "/dir/a.arw", "/dir/b.jpg" },
+                { "/dir/a.arw", "/dir/b.jpg", "/dir/c.arw" }
+            )
             local added = {}
             local addPhoto = catalog.addPhoto
             catalog.addPhoto = function(self, path)
@@ -528,7 +561,9 @@ describe("HandlerImport.importPhotos", function()
         describe("on a case-sensitive volume", function()
             local function volume(extra)
                 local files = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true }
-                for path in pairs(extra.exists or {}) do files[path] = true end
+                for path in pairs(extra.exists or {}) do
+                    files[path] = true
+                end
                 local fs = {
                     directories = { ["/dir"] = true, ["/dest"] = true },
                     dirContents = extra.dirContents,
@@ -544,7 +579,7 @@ describe("HandlerImport.importPhotos", function()
                 catalog.getFolderByPath = function(_, folderPath)
                     local inFolder = {}
                     for _, photo in ipairs(catalog:getAllPhotos()) do
-                        if photo:getRawMetadata('path'):match("^(.*)/[^/]+$") == folderPath then
+                        if photo:getRawMetadata("path"):match("^(.*)/[^/]+$") == folderPath then
                             inFolder[#inFolder + 1] = photo
                         end
                     end
@@ -625,7 +660,9 @@ describe("HandlerImport.importPhotos", function()
                     exists = { ["/card/a.jpg"] = true, ["/dest/A.jpg"] = true },
                 })
 
-                local refusal = helper.failedOf(function() Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/dest" }) end)
+                local refusal = helper.failedOf(
+                    function() Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/dest" }) end
+                )
 
                 assert.truthy(refusal:find("/dest/a.jpg: differs only in case from /dest/A.jpg", 1, true))
                 assert.is_nil(fs.copies)
@@ -718,8 +755,10 @@ describe("HandlerImport.importPhotos", function()
             local r = Handler.importPhotos({ source_path = "/dir" })
 
             assert.is_nil(r.failed)
-            assert.are.same({ { path = "/dir/bad.arw",
-                reason = "failed to import photo; written before this stopped: addPhoto" } }, r.unknown)
+            assert.are.same(
+                { { path = "/dir/bad.arw", reason = "failed to import photo; written before this stopped: addPhoto" } },
+                r.unknown
+            )
         end)
 
         it("still surfaces a file that fails for another reason", function()
@@ -740,7 +779,8 @@ describe("HandlerImport.importPhotos", function()
                 folders = extra.folders,
                 photos = extra.photos,
                 fs = {
-                    directories = extra.directories or { ["/root"] = true, ["/root/Dir2"] = true, ["/root/dir2"] = true },
+                    directories = extra.directories
+                        or { ["/root"] = true, ["/root/Dir2"] = true, ["/root/dir2"] = true },
                     dirContents = extra.dirContents,
                     exists = extra.exists or {},
                 },
@@ -806,12 +846,21 @@ describe("HandlerImport.importPhotos", function()
         it("refuses a file below a case-variant ancestor folder", function()
             local photo = helper.fakePhoto({ path = "/root/Dir2/sub/a.jpg", id = "1" })
             local Handler, added = caseSensitiveVolume({
-                folders = { helper.fakeFolder("/root", {}, { helper.fakeFolder("/root/Dir2", {}, {
-                    helper.fakeFolder("/root/Dir2/sub", { photo }),
-                }) }) },
+                folders = {
+                    helper.fakeFolder("/root", {}, {
+                        helper.fakeFolder("/root/Dir2", {}, {
+                            helper.fakeFolder("/root/Dir2/sub", { photo }),
+                        }),
+                    }),
+                },
                 photos = { photo },
-                directories = { ["/root"] = true, ["/root/Dir2"] = true, ["/root/dir2"] = true,
-                    ["/root/Dir2/sub"] = true, ["/root/dir2/sub"] = true },
+                directories = {
+                    ["/root"] = true,
+                    ["/root/Dir2"] = true,
+                    ["/root/dir2"] = true,
+                    ["/root/Dir2/sub"] = true,
+                    ["/root/dir2/sub"] = true,
+                },
                 dirContents = { "/root/dir2/sub/b.jpg" },
             })
 
@@ -914,10 +963,12 @@ describe("HandlerImport.importPhotos", function()
             local upper = helper.fakePhoto({ path = "/root/Dir2/a.jpg", id = "1" })
             local lower = helper.fakePhoto({ path = "/root/dir2/b.jpg", id = "2" })
             local Handler, added = caseSensitiveVolume({
-                folders = { helper.fakeFolder("/root", {}, {
-                    helper.fakeFolder("/root/Dir2", { upper }),
-                    helper.fakeFolder("/root/dir2", { lower }),
-                }) },
+                folders = {
+                    helper.fakeFolder("/root", {}, {
+                        helper.fakeFolder("/root/Dir2", { upper }),
+                        helper.fakeFolder("/root/dir2", { lower }),
+                    }),
+                },
                 photos = { upper, lower },
                 dirContents = { "/root/dir2/b.jpg", "/root/dir2/c.jpg" },
             })
@@ -931,10 +982,12 @@ describe("HandlerImport.importPhotos", function()
 
     describe("RAW+JPEG pairs", function()
         local function importFolder(dirContents, args)
-            local catalog, Handler = setup({ fs = {
-                directories = { ["/dir"] = true },
-                dirContents = dirContents,
-            } })
+            local catalog, Handler = setup({
+                fs = {
+                    directories = { ["/dir"] = true },
+                    dirContents = dirContents,
+                },
+            })
             args = args or {}
             args.source_path = "/dir"
             return Handler.importPhotos(args), importedPaths(catalog)
@@ -943,10 +996,18 @@ describe("HandlerImport.importPhotos", function()
         for _, case in ipairs({
             { name = "lowercase pair", files = { "/dir/a.cr3", "/dir/a.jpg" }, kept = { "/dir/a.cr3" } },
             { name = "mixed extension case", files = { "/dir/a.CR3", "/dir/a.jpg" }, kept = { "/dir/a.CR3" } },
-            { name = "mixed extension case on a jpeg", files = { "/dir/A.nef", "/dir/A.jpg" }, kept = { "/dir/A.nef" } },
+            {
+                name = "mixed extension case on a jpeg",
+                files = { "/dir/A.nef", "/dir/A.jpg" },
+                kept = { "/dir/A.nef" },
+            },
             { name = "jpeg listed before the raw", files = { "/dir/a.JPEG", "/dir/a.arw" }, kept = { "/dir/a.arw" } },
             { name = "jpe extension", files = { "/dir/a.nef", "/dir/a.jpe" }, kept = { "/dir/a.nef" } },
-            { name = "several jpegs for one raw", files = { "/dir/a.raf", "/dir/a.jpg", "/dir/a.jpeg" }, kept = { "/dir/a.raf" } },
+            {
+                name = "several jpegs for one raw",
+                files = { "/dir/a.raf", "/dir/a.jpg", "/dir/a.jpeg" },
+                kept = { "/dir/a.raf" },
+            },
         }) do
             it("leaves out the JPEG: " .. case.name, function()
                 local r, paths = importFolder(case.files)
@@ -1006,7 +1067,7 @@ describe("HandlerImport.importPhotos", function()
 
             assert.are.same({ "/dir/b.cr3" }, r.remaining)
             assert.are.equal(1, #added)
-            assert.are.equal("/dir/a.cr3", added[1]:getRawMetadata('path'))
+            assert.are.equal("/dir/a.cr3", added[1]:getRawMetadata("path"))
             assert.are.equal(2, r.data.skipped_sidecar_jpegs)
         end)
 
@@ -1021,10 +1082,12 @@ describe("HandlerImport.importPhotos", function()
                 { name = "mixed-case raw extension", jpeg = "/dir/a.jpg", raw = "/dir/a.Cr3" },
             }) do
                 it("refuses a lone JPEG and names the raw as on disk: " .. case.name .. ", " .. volume.name, function()
-                    local catalog, Handler = setup({ fs = {
-                        caseInsensitiveVolume = volume.caseInsensitiveVolume,
-                        exists = { [case.jpeg] = true, [case.raw] = true },
-                    } })
+                    local catalog, Handler = setup({
+                        fs = {
+                            caseInsensitiveVolume = volume.caseInsensitiveVolume,
+                            exists = { [case.jpeg] = true, [case.raw] = true },
+                        },
+                    })
 
                     local refusal = helper.failedOf(function() Handler.importPhotos({ source_path = case.jpeg }) end)
 
@@ -1035,10 +1098,12 @@ describe("HandlerImport.importPhotos", function()
         end
 
         it("uses the JPEG's name on disk when the path spells it in another case", function()
-            local catalog, Handler = setup({ fs = {
-                caseInsensitiveVolume = true,
-                exists = { ["/dir/S1.JPG"] = true, ["/dir/S1.ARW"] = true },
-            } })
+            local catalog, Handler = setup({
+                fs = {
+                    caseInsensitiveVolume = true,
+                    exists = { ["/dir/S1.JPG"] = true, ["/dir/S1.ARW"] = true },
+                },
+            })
 
             local refusal = helper.failedOf(function() Handler.importPhotos({ source_path = "/dir/s1.jpg" }) end)
 
@@ -1047,10 +1112,12 @@ describe("HandlerImport.importPhotos", function()
         end)
 
         it("imports a JPEG whose name on disk differs from its raw's, however the path spells it", function()
-            local catalog, Handler = setup({ fs = {
-                caseInsensitiveVolume = true,
-                exists = { ["/dir/q.jpg"] = true, ["/dir/Q.ARW"] = true },
-            } })
+            local catalog, Handler = setup({
+                fs = {
+                    caseInsensitiveVolume = true,
+                    exists = { ["/dir/q.jpg"] = true, ["/dir/Q.ARW"] = true },
+                },
+            })
 
             local r = Handler.importPhotos({ source_path = "/dir/Q.jpg" })
 
@@ -1059,9 +1126,11 @@ describe("HandlerImport.importPhotos", function()
         end)
 
         it("prefers the exact name when a case-sensitive volume holds both spellings", function()
-            local catalog, Handler = setup({ fs = {
-                exists = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true, ["/dir/A.ARW"] = true },
-            } })
+            local catalog, Handler = setup({
+                fs = {
+                    exists = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true, ["/dir/A.ARW"] = true },
+                },
+            })
 
             local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
 
@@ -1070,118 +1139,167 @@ describe("HandlerImport.importPhotos", function()
         end)
 
         it("names the raw as on disk when the path uses another Unicode form", function()
-            local catalog, Handler = setup({ fs = {
-                caseInsensitiveVolume = true,
-                normalizationInsensitiveVolume = true,
-                exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
-            } })
+            local catalog, Handler = setup({
+                fs = {
+                    caseInsensitiveVolume = true,
+                    normalizationInsensitiveVolume = true,
+                    exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
+                },
+            })
 
-            local refusal = helper.failedOf(function() Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" }) end)
+            local refusal = helper.failedOf(
+                function() Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" }) end
+            )
 
             assert.truthy(refusal:find("Import /dir/caf\195\169.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
         it("names a mixed-case raw extension as on disk across Unicode forms on a case-sensitive volume", function()
-            local catalog, Handler = setup({ fs = {
-                normalizationInsensitiveVolume = true,
-                exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ArW"] = true },
-            } })
+            local catalog, Handler = setup({
+                fs = {
+                    normalizationInsensitiveVolume = true,
+                    exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ArW"] = true },
+                },
+            })
 
-            local refusal = helper.failedOf(function() Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" }) end)
+            local refusal = helper.failedOf(
+                function() Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" }) end
+            )
 
             assert.truthy(refusal:find("Import /dir/caf\195\169.ArW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
         for _, case in ipairs({
-            { name = "NFD path, NFC disk", path = "/dir/Cafe\204\129.jpg",
-              exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true } },
-            { name = "NFC path, NFD disk", path = "/dir/Caf\195\169.jpg",
-              exists = { ["/dir/Cafe\204\129.jpg"] = true, ["/dir/cafe\204\129.ARW"] = true } },
+            {
+                name = "NFD path, NFC disk",
+                path = "/dir/Cafe\204\129.jpg",
+                exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
+            },
+            {
+                name = "NFC path, NFD disk",
+                path = "/dir/Caf\195\169.jpg",
+                exists = { ["/dir/Cafe\204\129.jpg"] = true, ["/dir/cafe\204\129.ARW"] = true },
+            },
         }) do
             for _, volume in ipairs({
                 { name = "case-sensitive volume", caseInsensitiveVolume = false },
                 { name = "case-insensitive volume", caseInsensitiveVolume = true },
             }) do
-                it("imports a JPEG in another Unicode form beside a raw whose stem differs in case: "
-                    .. case.name .. ", " .. volume.name, function()
-                    local catalog, Handler = setup({ fs = {
-                        caseInsensitiveVolume = volume.caseInsensitiveVolume,
-                        normalizationInsensitiveVolume = true,
-                        exists = case.exists,
-                    } })
+                it(
+                    "imports a JPEG in another Unicode form beside a raw whose stem differs in case: "
+                        .. case.name
+                        .. ", "
+                        .. volume.name,
+                    function()
+                        local catalog, Handler = setup({
+                            fs = {
+                                caseInsensitiveVolume = volume.caseInsensitiveVolume,
+                                normalizationInsensitiveVolume = true,
+                                exists = case.exists,
+                            },
+                        })
 
-                    local r = Handler.importPhotos({ source_path = case.path })
+                        local r = Handler.importPhotos({ source_path = case.path })
 
-                    assert.are.equal(1, r.data.imported)
-                    assert.are.same({ case.path }, importedPaths(catalog))
-                end)
+                        assert.are.equal(1, r.data.imported)
+                        assert.are.same({ case.path }, importedPaths(catalog))
+                    end
+                )
             end
         end
 
         it("refuses a JPEG in another Unicode form whose raw has the same stem as on disk", function()
-            local catalog, Handler = setup({ fs = {
-                caseInsensitiveVolume = true,
-                normalizationInsensitiveVolume = true,
-                exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Caf\195\169.ARW"] = true },
-            } })
+            local catalog, Handler = setup({
+                fs = {
+                    caseInsensitiveVolume = true,
+                    normalizationInsensitiveVolume = true,
+                    exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Caf\195\169.ARW"] = true },
+                },
+            })
 
-            local refusal = helper.failedOf(function() Handler.importPhotos({ source_path = "/dir/Cafe\204\129.jpg" }) end)
+            local refusal = helper.failedOf(
+                function() Handler.importPhotos({ source_path = "/dir/Cafe\204\129.jpg" }) end
+            )
 
             assert.truthy(refusal:find("Import /dir/Caf\195\169.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
         for _, case in ipairs({
-            { name = "NFD path, NFC jpeg, NFD raw", path = "/dir/Cafe\204\129.jpg",
-              exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Cafe\204\129.ARW"] = true },
-              raw = "/dir/Cafe\204\129.ARW" },
-            { name = "NFC path, NFC jpeg, NFD raw", path = "/dir/Caf\195\169.jpg",
-              exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Cafe\204\129.ARW"] = true },
-              raw = "/dir/Cafe\204\129.ARW" },
-            { name = "NFD path, NFD jpeg, NFC raw", path = "/dir/Cafe\204\129.jpg",
-              exists = { ["/dir/Cafe\204\129.jpg"] = true, ["/dir/Caf\195\169.ARW"] = true },
-              raw = "/dir/Caf\195\169.ARW" },
+            {
+                name = "NFD path, NFC jpeg, NFD raw",
+                path = "/dir/Cafe\204\129.jpg",
+                exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Cafe\204\129.ARW"] = true },
+                raw = "/dir/Cafe\204\129.ARW",
+            },
+            {
+                name = "NFC path, NFC jpeg, NFD raw",
+                path = "/dir/Caf\195\169.jpg",
+                exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Cafe\204\129.ARW"] = true },
+                raw = "/dir/Cafe\204\129.ARW",
+            },
+            {
+                name = "NFD path, NFD jpeg, NFC raw",
+                path = "/dir/Cafe\204\129.jpg",
+                exists = { ["/dir/Cafe\204\129.jpg"] = true, ["/dir/Caf\195\169.ARW"] = true },
+                raw = "/dir/Caf\195\169.ARW",
+            },
         }) do
             for _, volume in ipairs({
                 { name = "case-sensitive volume", caseInsensitiveVolume = false },
                 { name = "case-insensitive volume", caseInsensitiveVolume = true },
             }) do
-                it("refuses a JPEG whose raw has the same stem in another Unicode form on disk: "
-                    .. case.name .. ", " .. volume.name, function()
-                    local catalog, Handler = setup({ fs = {
-                        caseInsensitiveVolume = volume.caseInsensitiveVolume,
-                        normalizationInsensitiveVolume = true,
-                        exists = case.exists,
-                    } })
+                it(
+                    "refuses a JPEG whose raw has the same stem in another Unicode form on disk: "
+                        .. case.name
+                        .. ", "
+                        .. volume.name,
+                    function()
+                        local catalog, Handler = setup({
+                            fs = {
+                                caseInsensitiveVolume = volume.caseInsensitiveVolume,
+                                normalizationInsensitiveVolume = true,
+                                exists = case.exists,
+                            },
+                        })
 
-                    local refusal = helper.failedOf(function() Handler.importPhotos({ source_path = case.path }) end)
+                        local refusal = helper.failedOf(
+                            function() Handler.importPhotos({ source_path = case.path }) end
+                        )
 
-                    assert.truthy(refusal:find("Import " .. case.raw .. " instead", 1, true))
-                    assert.are.same({}, importedPaths(catalog))
-                end)
+                        assert.truthy(refusal:find("Import " .. case.raw .. " instead", 1, true))
+                        assert.are.same({}, importedPaths(catalog))
+                    end
+                )
             end
         end
 
         it("matches the on-disk name across Unicode forms and case together", function()
-            local catalog, Handler = setup({ fs = {
-                caseInsensitiveVolume = true,
-                normalizationInsensitiveVolume = true,
-                exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
-            } })
+            local catalog, Handler = setup({
+                fs = {
+                    caseInsensitiveVolume = true,
+                    normalizationInsensitiveVolume = true,
+                    exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
+                },
+            })
 
-            local refusal = helper.failedOf(function() Handler.importPhotos({ source_path = "/dir/Cafe\204\129.jpg" }) end)
+            local refusal = helper.failedOf(
+                function() Handler.importPhotos({ source_path = "/dir/Cafe\204\129.jpg" }) end
+            )
 
             assert.truthy(refusal:find("Import /dir/caf\195\169.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
         it("imports a JPEG in another Unicode form when no raw is beside it", function()
-            local _, Handler = setup({ fs = {
-                normalizationInsensitiveVolume = true,
-                exists = { ["/dir/caf\195\169.jpg"] = true },
-            } })
+            local _, Handler = setup({
+                fs = {
+                    normalizationInsensitiveVolume = true,
+                    exists = { ["/dir/caf\195\169.jpg"] = true },
+                },
+            })
 
             local r = Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" })
 
@@ -1207,12 +1325,16 @@ describe("HandlerImport.importPhotos", function()
         }) do
             it("imports a single file: " .. case.name, function()
                 local exists = { [case.source] = true }
-                for _, other in ipairs(case.others or {}) do exists[other] = true end
-                local catalog, Handler = setup({ fs = {
-                    caseInsensitiveVolume = true,
-                    exists = exists,
-                    directories = case.directoryNamed and { [case.directoryNamed] = true } or {},
-                } })
+                for _, other in ipairs(case.others or {}) do
+                    exists[other] = true
+                end
+                local catalog, Handler = setup({
+                    fs = {
+                        caseInsensitiveVolume = true,
+                        exists = exists,
+                        directories = case.directoryNamed and { [case.directoryNamed] = true } or {},
+                    },
+                })
 
                 local r = Handler.importPhotos({ source_path = case.source })
 
@@ -1223,10 +1345,12 @@ describe("HandlerImport.importPhotos", function()
     end)
 
     it("cancel keeps imports already committed and returns unprocessed paths", function()
-        local catalog, Handler = setup({ fs = {
-            directories = { ["/dir"] = true },
-            dirContents = { "/dir/a.jpg", "/dir/b.jpg", "/dir/c.jpg" },
-        } })
+        local catalog, Handler = setup({
+            fs = {
+                directories = { ["/dir"] = true },
+                dirContents = { "/dir/a.jpg", "/dir/b.jpg", "/dir/c.jpg" },
+            },
+        })
         local context = helper.requestContext(nil, {
             isCanceled = function() return #catalog:getAllPhotos() >= 1 end,
         })
@@ -1239,10 +1363,12 @@ describe("HandlerImport.importPhotos", function()
     end)
 
     it("imports nothing and lists every file as remaining when the budget is spent before the first", function()
-        local catalog, Handler = setup({ fs = {
-            directories = { ["/dir"] = true },
-            dirContents = { "/dir/a.jpg", "/dir/b.jpg" },
-        } })
+        local catalog, Handler = setup({
+            fs = {
+                directories = { ["/dir"] = true },
+                dirContents = { "/dir/a.jpg", "/dir/b.jpg" },
+            },
+        })
 
         local r = Handler.importPhotos({ source_path = "/dir" }, helper.requestContext(30))
 
@@ -1264,9 +1390,10 @@ describe("HandlerImport.importPhotos", function()
 
     it("refuses a source path that does not exist, naming it", function()
         local _, Handler = setup({ fs = { exists = {} } })
-        assert.are.equal("Source path does not exist: /missing.jpg", helper.failedOf(function()
-            Handler.importPhotos({ source_path = "/missing.jpg" })
-        end))
+        assert.are.equal(
+            "Source path does not exist: /missing.jpg",
+            helper.failedOf(function() Handler.importPhotos({ source_path = "/missing.jpg" }) end)
+        )
     end)
 
     it("imports multiple photos from directory and filters extensions", function()
@@ -1311,8 +1438,16 @@ describe("HandlerImport.importPhotos", function()
                 exists = { ["/dir"] = true },
                 directories = { ["/dir"] = true },
                 dirContents = {
-                    "/dir/a.RAF", "/dir/b.CR3", "/dir/c.orf", "/dir/d.rw2", "/dir/e.pef",
-                    "/dir/f.srw", "/dir/g.3fr", "/dir/h.iiq", "/dir/i.HEIC", "/dir/j.hif",
+                    "/dir/a.RAF",
+                    "/dir/b.CR3",
+                    "/dir/c.orf",
+                    "/dir/d.rw2",
+                    "/dir/e.pef",
+                    "/dir/f.srw",
+                    "/dir/g.3fr",
+                    "/dir/h.iiq",
+                    "/dir/i.HEIC",
+                    "/dir/j.hif",
                 },
             },
         })

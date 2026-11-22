@@ -1,10 +1,10 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local PhotoLookup = require 'PhotoLookup'
-local JsonValue = require 'JsonValue'
-local Log = require 'Log'
-local MaskCurves = require 'MaskCurves'
-local MaskValues = require 'MaskValues'
+local PhotoLookup = require "PhotoLookup"
+local JsonValue = require "JsonValue"
+local Log = require "Log"
+local MaskCurves = require "MaskCurves"
+local MaskValues = require "MaskValues"
 
 local MaskCurvesHandler = {}
 
@@ -29,8 +29,15 @@ function MaskCurvesHandler.setMaskCurves(args, context)
         end
     end
 
-    Log.info(string.format("Mask %s on photo %s: %d curves changed, %d already at the value",
-        maskId, photoId, #changed, #unchanged))
+    Log.info(
+        string.format(
+            "Mask %s on photo %s: %d curves changed, %d already at the value",
+            maskId,
+            photoId,
+            #changed,
+            #unchanged
+        )
+    )
 
     return { photo_id = photoId, mask_id = maskId, curves = curves, changed = changed, unchanged = unchanged }
 end

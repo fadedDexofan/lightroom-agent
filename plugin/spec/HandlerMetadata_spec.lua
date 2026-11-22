@@ -1,8 +1,6 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
-local function readOne(Handler, args)
-    return Handler.getPhotoMetadata({ photo_ids = { args.photo_id } }).data.photos[1]
-end
+local function readOne(Handler, args) return Handler.getPhotoMetadata({ photo_ids = { args.photo_id } }).data.photos[1] end
 
 local function setup(photos)
     local catalog = helper.fakeCatalog({ photos = photos or {} })
@@ -12,15 +10,23 @@ local function setup(photos)
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerMetadata = nil
-    return catalog, require 'HandlerMetadata'
+    return catalog, require "HandlerMetadata"
 end
 
 describe("HandlerMetadata.getPhotoMetadata", function()
     it("returns ordered single-photo metadata for mixed ids and paths, including repeats", function()
-        local first = helper.fakePhoto({ id = 1, path = "/first.jpg", title = "First",
-            developSettings = { Exposure2012 = 0.5 } })
-        local second = helper.fakePhoto({ id = 2, path = "/second.jpg", rating = 4,
-            developSettings = { Contrast2012 = 25 } })
+        local first = helper.fakePhoto({
+            id = 1,
+            path = "/first.jpg",
+            title = "First",
+            developSettings = { Exposure2012 = 0.5 },
+        })
+        local second = helper.fakePhoto({
+            id = 2,
+            path = "/second.jpg",
+            rating = 4,
+            developSettings = { Contrast2012 = 25 },
+        })
         local catalog, Handler = setup({ first, second })
         local a = readOne(Handler, { photo_id = 1 })
         local b = readOne(Handler, { photo_id = 2 })
@@ -77,7 +83,10 @@ describe("HandlerMetadata.getPhotoMetadata", function()
 
         local r = Handler.getPhotoMetadata({ photo_ids = { 1, 2, 3 } })
 
-        assert.are.same({ "t1", "t2", "t3" }, { r.data.photos[1].title, r.data.photos[2].title, r.data.photos[3].title })
+        assert.are.same(
+            { "t1", "t2", "t3" },
+            { r.data.photos[1].title, r.data.photos[2].title, r.data.photos[3].title }
+        )
         assert.are.equal(3, r.data.photos[3].rating)
         assert.is_true(batches <= 3)
     end)
@@ -87,8 +96,10 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         local _, Handler = setup({ photo })
         assert.are.same({ alt_text = "A red barn" }, readOne(Handler, { photo_id = "1" }).accessibility)
         photo:setRawMetadata("extDescrAccessibility", "A barn beside a field")
-        assert.are.equal("A barn beside a field",
-            readOne(Handler, { photo_id = "1" }).accessibility.extended_description)
+        assert.are.equal(
+            "A barn beside a field",
+            readOne(Handler, { photo_id = "1" }).accessibility.extended_description
+        )
         photo:setRawMetadata("altTextAccessibility", "")
         photo:setRawMetadata("extDescrAccessibility", "")
         assert.is_nil(readOne(Handler, { photo_id = "1" }).accessibility)
@@ -108,7 +119,8 @@ describe("HandlerMetadata.getPhotoMetadata", function()
 
     it("identifies a virtual copy and its master's catalog id", function()
         local master = helper.fakePhoto({ id = 7 })
-        local copy = helper.fakePhoto({ id = 8, isVirtualCopy = true, masterPhoto = master, copyName = "Probe copy 4x5" })
+        local copy =
+            helper.fakePhoto({ id = 8, isVirtualCopy = true, masterPhoto = master, copyName = "Probe copy 4x5" })
         local _, Handler = setup({ master, copy })
 
         local r = readOne(Handler, { photo_id = "8" })
@@ -131,24 +143,28 @@ describe("HandlerMetadata.getPhotoMetadata", function()
     it("reports folder stack position, collapse state, top and ordered members", function()
         local top = helper.fakePhoto({ id = 7 })
         local photo = helper.fakePhoto({
-            id = 8, isInStackInFolder = true, stackPositionInFolder = 2,
-            stackInFolderIsCollapsed = false, topOfStackInFolderContainingPhoto = top,
+            id = 8,
+            isInStackInFolder = true,
+            stackPositionInFolder = 2,
+            stackInFolderIsCollapsed = false,
+            topOfStackInFolderContainingPhoto = top,
         })
-        photo:setRawMetadata('stackInFolderMembers', { top, photo })
+        photo:setRawMetadata("stackInFolderMembers", { top, photo })
         local _, Handler = setup({ top, photo })
 
         local r = readOne(Handler, { photo_id = "8" })
 
-        assert.are.same({ position = 2, is_collapsed = false, top_photo_id = "7", member_photo_ids = { "7", "8" } },
-            r.stack)
-        photo:setRawMetadata('stackPositionInFolder', 1)
-        photo:setRawMetadata('stackInFolderIsCollapsed', true)
+        assert.are.same(
+            { position = 2, is_collapsed = false, top_photo_id = "7", member_photo_ids = { "7", "8" } },
+            r.stack
+        )
+        photo:setRawMetadata("stackPositionInFolder", 1)
+        photo:setRawMetadata("stackInFolderIsCollapsed", true)
         assert.is_true(readOne(Handler, { photo_id = "8" }).stack.is_collapsed)
     end)
 
     it("omits copy and stack groups when the photo has neither", function()
-        local photo = helper.fakePhoto({ id = 7, isVirtualCopy = false,
-            virtualCopies = {}, isInStackInFolder = false })
+        local photo = helper.fakePhoto({ id = 7, isVirtualCopy = false, virtualCopies = {}, isInStackInFolder = false })
         local _, Handler = setup({ photo })
 
         local r = readOne(Handler, { photo_id = "7" })
@@ -163,8 +179,13 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         for i = 1, 1000 do
             members[i] = { localIdentifier = i, getRawMetadata = function() error("member read") end }
         end
-        local meta = { id = 7, virtualCopies = members, isInStackInFolder = true,
-            stackInFolderMembers = members, topOfStackInFolderContainingPhoto = members[1] }
+        local meta = {
+            id = 7,
+            virtualCopies = members,
+            isInStackInFolder = true,
+            stackInFolderMembers = members,
+            topOfStackInFolderContainingPhoto = members[1],
+        }
         local photo = helper.fakePhoto(meta)
         local reads = {}
         local original = photo.getRawMetadata
@@ -223,20 +244,60 @@ describe("HandlerMetadata.getPhotoMetadata", function()
     it("names every field outside the develop section in snake_case", function()
         local top = helper.fakePhoto({ localIdentifier = 7 })
         local photo = helper.fakePhoto({
-            localIdentifier = 8, path = "/p/a.jpg", fileName = "a.jpg", rating = 2, colorNameForLabel = "red",
-            pickStatus = 1, title = "t", caption = "c", headline = "h", altTextAccessibility = "alt",
-            extDescrAccessibility = "ext", dateTimeOriginal = "d", dateTimeDigitized = "d", cameraMake = "m",
-            cameraModel = "m", cameraSerialNumber = "s", lens = "l", isoSpeedRating = "100", focalLength = "50",
-            focalLength35mm = "50", aperture = "f/2", shutterSpeed = "1/100", exposureBias = "0", exposureProgram = "p",
-            meteringMode = "m", flash = "f", dimensions = "1x1", fileSize = "1", fileFormat = "JPG", artist = "a",
-            software = "s", gps = { latitude = 1, longitude = 2 }, gpsAltitude = 3, location = "l", city = "c",
-            stateProvince = "s", country = "c", isoCountryCode = "c", creator = "c", copyright = "c",
-            copyrightState = "c", rightsUsageTerms = "r", copyrightInfoUrl = "u", creatorUrl = "u",
-            isVirtualCopy = true, masterPhoto = top, copyName = "copy", isInStackInFolder = true,
-            stackPositionInFolder = 2, stackInFolderIsCollapsed = false, topOfStackInFolderContainingPhoto = top,
+            localIdentifier = 8,
+            path = "/p/a.jpg",
+            fileName = "a.jpg",
+            rating = 2,
+            colorNameForLabel = "red",
+            pickStatus = 1,
+            title = "t",
+            caption = "c",
+            headline = "h",
+            altTextAccessibility = "alt",
+            extDescrAccessibility = "ext",
+            dateTimeOriginal = "d",
+            dateTimeDigitized = "d",
+            cameraMake = "m",
+            cameraModel = "m",
+            cameraSerialNumber = "s",
+            lens = "l",
+            isoSpeedRating = "100",
+            focalLength = "50",
+            focalLength35mm = "50",
+            aperture = "f/2",
+            shutterSpeed = "1/100",
+            exposureBias = "0",
+            exposureProgram = "p",
+            meteringMode = "m",
+            flash = "f",
+            dimensions = "1x1",
+            fileSize = "1",
+            fileFormat = "JPG",
+            artist = "a",
+            software = "s",
+            gps = { latitude = 1, longitude = 2 },
+            gpsAltitude = 3,
+            location = "l",
+            city = "c",
+            stateProvince = "s",
+            country = "c",
+            isoCountryCode = "c",
+            creator = "c",
+            copyright = "c",
+            copyrightState = "c",
+            rightsUsageTerms = "r",
+            copyrightInfoUrl = "u",
+            creatorUrl = "u",
+            isVirtualCopy = true,
+            masterPhoto = top,
+            copyName = "copy",
+            isInStackInFolder = true,
+            stackPositionInFolder = 2,
+            stackInFolderIsCollapsed = false,
+            topOfStackInFolderContainingPhoto = top,
             keywords = { helper.fakeKeyword("k") },
         })
-        photo:setRawMetadata('stackInFolderMembers', { top, photo })
+        photo:setRawMetadata("stackInFolderMembers", { top, photo })
         local _, Handler = setup({ top, photo })
 
         local record = readOne(Handler, { photo_id = 8 })
@@ -244,16 +305,21 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         local wrong = {}
         local function check(value, where)
             for key, item in pairs(value) do
-                if type(key) == "string" and not key:match("^[a-z][a-z0-9_]*$") then wrong[#wrong + 1] = where .. key end
+                if type(key) == "string" and not key:match("^[a-z][a-z0-9_]*$") then
+                    wrong[#wrong + 1] = where .. key
+                end
                 if type(item) == "table" then check(item, where .. tostring(key) .. ".") end
             end
         end
         check(record, "")
         assert.are.same({}, wrong)
         assert.are.equal("8", record.photo_id)
-        assert.are.same({ "location", "copyright", "gps", "accessibility" },
-            { record.location and "location", record.copyright and "copyright", record.gps and "gps",
-                record.accessibility and "accessibility" })
+        assert.are.same({ "location", "copyright", "gps", "accessibility" }, {
+            record.location and "location",
+            record.copyright and "copyright",
+            record.gps and "gps",
+            record.accessibility and "accessibility",
+        })
     end)
 
     it("exposes IPTC location, GPS, and copyright metadata", function()
@@ -469,8 +535,11 @@ describe("HandlerMetadata.setMetadata", function()
     it("writes and clears accessibility text on multiple photos", function()
         local photos = { helper.fakePhoto({ id = "1" }), helper.fakePhoto({ id = "2" }) }
         local _, Handler = setup(photos)
-        local r = Handler.setMetadata({ photo_ids = { "1", "2" }, alt_text = "A red barn",
-            extended_description = "A barn beside a field" })
+        local r = Handler.setMetadata({
+            photo_ids = { "1", "2" },
+            alt_text = "A red barn",
+            extended_description = "A barn beside a field",
+        })
         assert.are.equal(2, r.data.updated)
         assert.are.same({ "alt_text", "extended_description" }, r.data.fields)
         for _, photo in ipairs(photos) do
@@ -494,9 +563,11 @@ describe("HandlerMetadata.setMetadata", function()
         p2.setRawMetadata = function() error("unknown key: title", 0) end
         local _, Handler = setup({ p1, p2 })
 
-        assert.are.same({ "failed", "unknown key: title" }, { helper.outcomeOf(function(context)
-            Handler.setMetadata({ photo_ids = { "1", "2" }, title = "New" }, context)
-        end) })
+        assert.are.same({ "failed", "unknown key: title" }, {
+            helper.outcomeOf(
+                function(context) Handler.setMetadata({ photo_ids = { "1", "2" }, title = "New" }, context) end
+            ),
+        })
     end)
 
     it("writes every given field to found photos", function()
@@ -517,8 +588,16 @@ describe("HandlerMetadata.setMetadata", function()
         })
 
         assert.are.equal(2, r.data.updated)
-        assert.are.same({ "title", "caption", "headline", "creator", "copyright",
-            "rights_usage_terms", "copyright_info_url", "creator_url" }, r.data.fields)
+        assert.are.same({
+            "title",
+            "caption",
+            "headline",
+            "creator",
+            "copyright",
+            "rights_usage_terms",
+            "copyright_info_url",
+            "creator_url",
+        }, r.data.fields)
         for _, p in ipairs({ p1, p2 }) do
             assert.are.equal("Dunluce Castle", p:getRawMetadata("title"))
             assert.are.equal("Ruins on the Causeway Coast", p:getRawMetadata("caption"))
@@ -593,6 +672,9 @@ describe("HandlerMetadata writes when no photo_id is known", function()
     it("counts a photo named twice once", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler = setup({ p1 })
-        assert.are.same({ data = { updated = 1 } }, Handler.setGps({ photo_ids = { "1", "/a.jpg" }, latitude = 1, longitude = 2 }))
+        assert.are.same(
+            { data = { updated = 1 } },
+            Handler.setGps({ photo_ids = { "1", "/a.jpg" }, latitude = 1, longitude = 2 })
+        )
     end)
 end)

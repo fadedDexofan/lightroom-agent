@@ -1,5 +1,5 @@
-local helper = require 'spec_helper'
-local RadialEllipse = require 'radial_ellipse'
+local helper = require "spec_helper"
+local RadialEllipse = require "radial_ellipse"
 
 local GradientGeometry
 
@@ -7,13 +7,17 @@ local function point(x, y) return { x = x, y = y } end
 
 local function linearArgs(overrides)
     local args = { shape = "linear", start = point(0.5, 0.2), ["end"] = point(0.5, 0.6) }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
 local function radialArgs(overrides)
     local args = { shape = "radial", center = point(0.5, 0.5), width = 0.4, height = 0.6 }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
@@ -21,7 +25,7 @@ describe("GradientGeometry.parseCreate", function()
     before_each(function()
         helper.installImport({})
         package.loaded.GradientGeometry = nil
-        GradientGeometry = require 'GradientGeometry'
+        GradientGeometry = require "GradientGeometry"
     end)
 
     it("parses a linear gradient into start and end", function()
@@ -50,9 +54,9 @@ describe("GradientGeometry.parseCreate", function()
     end)
 
     it("rejects identical start and end", function()
-        local message = helper.failedOf(function()
-            GradientGeometry.parseCreate(linearArgs({ start = point(0.3, 0.3), ["end"] = point(0.3, 0.3) }))
-        end)
+        local message = helper.failedOf(
+            function() GradientGeometry.parseCreate(linearArgs({ start = point(0.3, 0.3), ["end"] = point(0.3, 0.3) })) end
+        )
 
         assert.is_truthy(message:find("same point", 1, true), message)
     end)
@@ -62,7 +66,7 @@ describe("GradientGeometry.parseUpdate", function()
     before_each(function()
         helper.installImport({})
         package.loaded.GradientGeometry = nil
-        GradientGeometry = require 'GradientGeometry'
+        GradientGeometry = require "GradientGeometry"
     end)
 
     it("collects only the fields that were given", function()
@@ -77,11 +81,12 @@ describe("GradientGeometry stored form", function()
     before_each(function()
         helper.installImport({})
         package.loaded.GradientGeometry = nil
-        GradientGeometry = require 'GradientGeometry'
+        GradientGeometry = require "GradientGeometry"
     end)
 
     it("stores a linear gradient with the full effect at start and none at end", function()
-        local component = GradientGeometry.newComponent("linear", GradientGeometry.parseCreate(linearArgs()).geometry, "add")
+        local component =
+            GradientGeometry.newComponent("linear", GradientGeometry.parseCreate(linearArgs()).geometry, "add")
 
         assert.are.equal("Mask/Gradient", component.What)
         assert.are.equal(0.5, component.FullX)
@@ -94,7 +99,10 @@ describe("GradientGeometry stored form", function()
 
     it("stores a radial gradient as a box around the center", function()
         local geometry = GradientGeometry.parseCreate(radialArgs({
-            center = point(0.5, 0.4), rotation = 0, feather = 20, area = "outside",
+            center = point(0.5, 0.4),
+            rotation = 0,
+            feather = 20,
+            area = "outside",
         })).geometry
 
         local component = GradientGeometry.newComponent("radial", geometry, "add", 1.5)
@@ -115,7 +123,10 @@ describe("GradientGeometry stored form", function()
 
     it("stores the half extents of a rotated radial as the rotated semi axes, as Lightroom reads them", function()
         local geometry = GradientGeometry.parseCreate(radialArgs({
-            center = point(0.5, 0.4), width = 0.4, height = 0.6, rotation = 45,
+            center = point(0.5, 0.4),
+            width = 0.4,
+            height = 0.6,
+            rotation = 45,
         })).geometry
 
         local component = GradientGeometry.newComponent("radial", geometry, "add", 1)
@@ -130,7 +141,10 @@ describe("GradientGeometry stored form", function()
 
     it("scales a rotated radial by the photo aspect ratio so it is an ellipse in pixels", function()
         local geometry = GradientGeometry.parseCreate(radialArgs({
-            center = point(0.5, 0.4), width = 0.2, height = 0.2, rotation = 45,
+            center = point(0.5, 0.4),
+            width = 0.2,
+            height = 0.2,
+            rotation = 45,
         })).geometry
 
         local component = GradientGeometry.newComponent("radial", geometry, "add", 1.5)
@@ -161,9 +175,10 @@ describe("GradientGeometry stored form", function()
         assert.are.same(geometry, read)
     end)
 
-    it("reports no shape for other mask types", function()
-        assert.is_nil(GradientGeometry.geometryOf({ What = "Mask/Aggregate" }, 1.5))
-    end)
+    it(
+        "reports no shape for other mask types",
+        function() assert.is_nil(GradientGeometry.geometryOf({ What = "Mask/Aggregate" }, 1.5)) end
+    )
 
     it("merges changes over the current geometry and re-checks it", function()
         local current = GradientGeometry.parseCreate(linearArgs()).geometry
@@ -173,15 +188,19 @@ describe("GradientGeometry stored form", function()
         assert.are.same(point(0.5, 0.2), merged.start)
         assert.are.same(point(0.9, 0.9), merged["end"])
         assert.are.same(point(0.5, 0.6), current["end"])
-        assert.is_truthy(helper.failedOf(function()
-            GradientGeometry.mergeChanges("linear", current, { ["end"] = point(0.5, 0.2) })
-        end):find("same point", 1, true))
+        assert.is_truthy(
+            helper
+                .failedOf(function() GradientGeometry.mergeChanges("linear", current, { ["end"] = point(0.5, 0.2) }) end)
+                :find("same point", 1, true)
+        )
     end)
 
     it("refuses a field of the other shape when merging", function()
         local current = GradientGeometry.parseCreate(linearArgs()).geometry
 
-        local message = helper.failedOf(function() GradientGeometry.mergeChanges("linear", current, { feather = 5 }) end)
+        local message = helper.failedOf(
+            function() GradientGeometry.mergeChanges("linear", current, { feather = 5 }) end
+        )
 
         assert.is_truthy(message:find("feather only applies to radial gradients, but this tool is a linear", 1, true))
     end)
@@ -198,7 +217,11 @@ describe("GradientGeometry stored form", function()
 end)
 
 local LIGHTROOM_AUTHORED_UPRIGHT = {
-    center = point(0.4168865, 0.445748), width = 0.263853, height = 0.234604, feather = 0, area = "inside",
+    center = point(0.4168865, 0.445748),
+    width = 0.263853,
+    height = 0.234604,
+    feather = 0,
+    area = "inside",
 }
 
 local LIGHTROOM_AUTHORED = {
@@ -223,15 +246,21 @@ local PHOTO_ASPECT = 1000 / 600
 
 local function turnedBy(rotation, overrides)
     local geometry = {}
-    for key, value in pairs(LIGHTROOM_AUTHORED_UPRIGHT) do geometry[key] = value end
+    for key, value in pairs(LIGHTROOM_AUTHORED_UPRIGHT) do
+        geometry[key] = value
+    end
     geometry.rotation = rotation
-    for key, value in pairs(overrides or {}) do geometry[key] = value end
+    for key, value in pairs(overrides or {}) do
+        geometry[key] = value
+    end
     return geometry
 end
 
 local function rotationSweep()
     local rotations = {}
-    for rotation = -360, 360, 7.5 do rotations[#rotations + 1] = rotation end
+    for rotation = -360, 360, 7.5 do
+        rotations[#rotations + 1] = rotation
+    end
     for _, rotation in ipairs({ -91, -90, -89, -61, -59, -46, -45.5, -45, 45, 45.5, 46, 59, 61, 89, 90, 91, 135 }) do
         rotations[#rotations + 1] = rotation
     end
@@ -248,39 +277,61 @@ describe("GradientGeometry radial rotation", function()
     before_each(function()
         helper.installImport({})
         package.loaded.GradientGeometry = nil
-        GradientGeometry = require 'GradientGeometry'
+        GradientGeometry = require "GradientGeometry"
     end)
 
     for _, aspect in ipairs({ PHOTO_ASPECT, 1, 1 / PHOTO_ASPECT }) do
         for _, shape in ipairs(SHAPES_BY_ASPECT) do
-            it(string.format("stores the requested ellipse within 45 degrees for a %s radial at aspect %.3f",
-                shape.label, aspect), function()
-                for _, rotation in ipairs(rotationSweep()) do
-                    local geometry = turnedBy(rotation, { width = shape.width, height = shape.height })
+            it(
+                string.format(
+                    "stores the requested ellipse within 45 degrees for a %s radial at aspect %.3f",
+                    shape.label,
+                    aspect
+                ),
+                function()
+                    for _, rotation in ipairs(rotationSweep()) do
+                        local geometry = turnedBy(rotation, { width = shape.width, height = shape.height })
 
-                    local component = GradientGeometry.newComponent("radial", geometry, "add", aspect)
+                        local component = GradientGeometry.newComponent("radial", geometry, "add", aspect)
 
-                    assert.is_true(math.abs(component.Angle) <= 45, "angle " .. component.Angle .. " for " .. rotation)
-                    local difference = RadialEllipse.differenceBetween(
-                        RadialEllipse.ofGeometry(geometry, aspect), RadialEllipse.ofComponent(component, aspect))
-                    assert.is_true(difference < 1e-9, "ellipse differs for rotation " .. rotation)
+                        assert.is_true(
+                            math.abs(component.Angle) <= 45,
+                            "angle " .. component.Angle .. " for " .. rotation
+                        )
+                        local difference = RadialEllipse.differenceBetween(
+                            RadialEllipse.ofGeometry(geometry, aspect),
+                            RadialEllipse.ofComponent(component, aspect)
+                        )
+                        assert.is_true(difference < 1e-9, "ellipse differs for rotation " .. rotation)
+                    end
                 end
-            end)
+            )
 
-            it(string.format("reads back the requested ellipse within 45 degrees for a %s radial at aspect %.3f",
-                shape.label, aspect), function()
-                for _, rotation in ipairs(rotationSweep()) do
-                    local geometry = turnedBy(rotation, { width = shape.width, height = shape.height })
-                    local component = GradientGeometry.newComponent("radial", geometry, "add", aspect)
+            it(
+                string.format(
+                    "reads back the requested ellipse within 45 degrees for a %s radial at aspect %.3f",
+                    shape.label,
+                    aspect
+                ),
+                function()
+                    for _, rotation in ipairs(rotationSweep()) do
+                        local geometry = turnedBy(rotation, { width = shape.width, height = shape.height })
+                        local component = GradientGeometry.newComponent("radial", geometry, "add", aspect)
 
-                    local _, read = GradientGeometry.geometryOf(component, aspect)
+                        local _, read = GradientGeometry.geometryOf(component, aspect)
 
-                    assert.is_true(math.abs(read.rotation) <= 45, "rotation " .. read.rotation .. " for " .. rotation)
-                    local difference = RadialEllipse.differenceBetween(
-                        RadialEllipse.ofGeometry(geometry, aspect), RadialEllipse.ofGeometry(read, aspect))
-                    assert.is_true(difference < 1e-4, "read back differs for rotation " .. rotation)
+                        assert.is_true(
+                            math.abs(read.rotation) <= 45,
+                            "rotation " .. read.rotation .. " for " .. rotation
+                        )
+                        local difference = RadialEllipse.differenceBetween(
+                            RadialEllipse.ofGeometry(geometry, aspect),
+                            RadialEllipse.ofGeometry(read, aspect)
+                        )
+                        assert.is_true(difference < 1e-4, "read back differs for rotation " .. rotation)
+                    end
                 end
-            end)
+            )
         end
     end
 
@@ -341,14 +392,17 @@ describe("GradientGeometry radial rotation", function()
 
         it("reads the gradient Lightroom stored for a gradient " .. authored.label, function()
             local component = { What = "Mask/CircularGradient", Feather = 0, MaskInverted = false }
-            for key, value in pairs(authored.stored) do component[key] = value end
+            for key, value in pairs(authored.stored) do
+                component[key] = value
+            end
 
             local _, read = GradientGeometry.geometryOf(component, PHOTO_ASPECT)
 
             assert.is_true(math.abs(read.rotation - authored.stored.Angle) < 1e-5)
             local difference = RadialEllipse.differenceBetween(
                 RadialEllipse.ofGeometry(turnedBy(authored.rotation), PHOTO_ASPECT),
-                RadialEllipse.ofGeometry(read, PHOTO_ASPECT))
+                RadialEllipse.ofGeometry(read, PHOTO_ASPECT)
+            )
             assert.is_true(difference < 1e-3, "ellipse differs: " .. difference)
         end)
     end
@@ -361,15 +415,20 @@ describe("GradientGeometry frame conversion", function()
         helper.installImport({})
         package.loaded.GradientGeometry = nil
         package.loaded.ImageFrame = nil
-        GradientGeometry = require 'GradientGeometry'
-        ImageFrame = require 'ImageFrame'
+        GradientGeometry = require "GradientGeometry"
+        ImageFrame = require "ImageFrame"
     end)
 
     local function frameOf(orientation, settings)
-        return ImageFrame.of({ orientation = orientation, dimensions = { width = 3000, height = 2000 }, settings = settings or {} })
+        return ImageFrame.of({
+            orientation = orientation,
+            dimensions = { width = 3000, height = 2000 },
+            settings = settings or {},
+        })
     end
 
-    local radial = { center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = 30, feather = 40, area = "outside" }
+    local radial =
+        { center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = 30, feather = 40, area = "outside" }
 
     it("keeps the geometry of an uncropped upright photo", function()
         local frame = frameOf("AB")
@@ -379,7 +438,10 @@ describe("GradientGeometry frame conversion", function()
     end)
 
     it("turns a displayed radial into the stored one and back for every orientation, crop and straighten", function()
-        for _, settings in ipairs({ {}, { CropLeft = 0.1, CropTop = 0.05, CropRight = 0.8, CropBottom = 0.9, CropAngle = -6 } }) do
+        for _, settings in ipairs({
+            {},
+            { CropLeft = 0.1, CropTop = 0.05, CropRight = 0.8, CropBottom = 0.9, CropAngle = -6 },
+        }) do
             for _, orientation in ipairs({ "AB", "BA", "CD", "DC", "CB", "BC", "AD", "DA" }) do
                 local frame = frameOf(orientation, settings)
 

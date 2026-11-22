@@ -1,11 +1,13 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local M = {}
 
 function M.deepCopy(value)
     if type(value) ~= "table" then return value end
     local copied = {}
-    for key, item in pairs(value) do copied[key] = M.deepCopy(item) end
+    for key, item in pairs(value) do
+        copied[key] = M.deepCopy(item)
+    end
     return copied
 end
 
@@ -53,7 +55,9 @@ function M.build(opts)
         getAllMasks = function()
             if ctx.module ~= "develop" then error("Develop module is not active") end
             local masks = {}
-            for id in pairs(valuesOf[ctx.active]) do masks[#masks + 1] = { ID = id, Name = id, Tools = {} } end
+            for id in pairs(valuesOf[ctx.active]) do
+                masks[#masks + 1] = { ID = id, Name = id, Tools = {} }
+            end
             table.sort(masks, function(a, b) return a.ID < b.ID end)
             return masks
         end,
@@ -112,8 +116,12 @@ function M.build(opts)
         },
         LrLogger = helper.defaultLrLogger(),
     })
-    for _, name in ipairs(opts.modules) do package.loaded[name] = nil end
-    for _, name in ipairs({ "GuardedMaskWrite", "MaskValues" }) do package.loaded[name] = nil end
+    for _, name in ipairs(opts.modules) do
+        package.loaded[name] = nil
+    end
+    for _, name in ipairs({ "GuardedMaskWrite", "MaskValues" }) do
+        package.loaded[name] = nil
+    end
     ctx.Handler = require(opts.handler)
     return ctx
 end

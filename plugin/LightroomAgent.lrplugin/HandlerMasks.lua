@@ -1,16 +1,16 @@
-local LrApplication = import 'LrApplication'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrTasks = import "LrTasks"
 
-local AiMaskParts = require 'AiMaskParts'
-local BrushStrokes = require 'BrushStrokes'
-local GradientGeometry = require 'GradientGeometry'
-local GuardedMaskWrite = require 'GuardedMaskWrite'
-local ImageFrame = require 'ImageFrame'
-local Log = require 'Log'
-local MaskTypes = require 'MaskTypes'
-local PhotoLookup = require 'PhotoLookup'
-local RangeMaskGeometry = require 'RangeMaskGeometry'
-local Reply = require 'Reply'
+local AiMaskParts = require "AiMaskParts"
+local BrushStrokes = require "BrushStrokes"
+local GradientGeometry = require "GradientGeometry"
+local GuardedMaskWrite = require "GuardedMaskWrite"
+local ImageFrame = require "ImageFrame"
+local Log = require "Log"
+local MaskTypes = require "MaskTypes"
+local PhotoLookup = require "PhotoLookup"
+local RangeMaskGeometry = require "RangeMaskGeometry"
+local Reply = require "Reply"
 
 local MaskHandler = {}
 
@@ -22,8 +22,14 @@ local TYPE_OF_GRADIENT_SHAPE = { linear = "gradient", radial = "radialGradient" 
 local function frameOf(context, catalog, photo)
     local ok, frame = LrTasks.pcall(ImageFrame.forPhoto, catalog, photo)
     if not ok then
-        context:warn(string.format("The colour samples of photo %s could not be placed, so colour ranges are listed"
-            .. " without range: %s", tostring(photo.localIdentifier), Reply.messageOf(frame)))
+        context:warn(
+            string.format(
+                "The colour samples of photo %s could not be placed, so colour ranges are listed"
+                    .. " without range: %s",
+                tostring(photo.localIdentifier),
+                Reply.messageOf(frame)
+            )
+        )
         return nil
     end
     if frame.warning then context:warn(frame.warning) end
@@ -56,8 +62,15 @@ end
 
 local function describeMask(entry, frameOfPhoto)
     local tools = {}
-    for _, component in ipairs(entry.CorrectionMasks or {}) do tools[#tools + 1] = describeTool(component, frameOfPhoto) end
-    return { id = entry.CorrectionID, name = entry.CorrectionName, hidden = entry.CorrectionActive == false, tools = tools }
+    for _, component in ipairs(entry.CorrectionMasks or {}) do
+        tools[#tools + 1] = describeTool(component, frameOfPhoto)
+    end
+    return {
+        id = entry.CorrectionID,
+        name = entry.CorrectionName,
+        hidden = entry.CorrectionActive == false,
+        tools = tools,
+    }
 end
 
 function MaskHandler.listMasks(args, context)
@@ -67,12 +80,16 @@ function MaskHandler.listMasks(args, context)
     local entries = GuardedMaskWrite.readEntries(catalog, photo)
     local read, frame = false, nil
     local function frameOfPhoto()
-        if not read then read, frame = true, frameOf(context, catalog, photo) end
+        if not read then
+            read, frame = true, frameOf(context, catalog, photo)
+        end
         return frame
     end
 
     local masks = {}
-    for index = #entries, 1, -1 do masks[#masks + 1] = describeMask(entries[index], frameOfPhoto) end
+    for index = #entries, 1, -1 do
+        masks[#masks + 1] = describeMask(entries[index], frameOfPhoto)
+    end
 
     Log.info(string.format("Listed %d masks on photo %s", #masks, photoId))
     return { photo_id = photoId, count = #masks, masks = masks }

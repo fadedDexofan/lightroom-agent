@@ -3,11 +3,11 @@ describe("PhotoLookup.findByPath", function()
 
     local function lookup(storedPath)
         package.loaded.PhotoLookup = nil
-        local PhotoLookup = require 'PhotoLookup'
+        local PhotoLookup = require "PhotoLookup"
         local photo = {
             localIdentifier = 1,
             getRawMetadata = function(_, key)
-                if key == 'path' then return storedPath end
+                if key == "path" then return storedPath end
                 return nil
             end,
         }
@@ -41,7 +41,7 @@ local function fakePhoto(id, path, state)
         __path = path,
         __meta = meta,
         getRawMetadata = function(_, key)
-            if key == 'path' and state then state.pathReads = state.pathReads + 1 end
+            if key == "path" and state then state.pathReads = state.pathReads + 1 end
             return meta[key]
         end,
     }
@@ -51,7 +51,9 @@ end
 -- copy reports the master's path.
 local function linkCopies(master, copies)
     master.__meta.virtualCopies = copies
-    for _, copy in ipairs(copies) do copy.__meta.masterPhoto = master end
+    for _, copy in ipairs(copies) do
+        copy.__meta.masterPhoto = master
+    end
 end
 
 local function fakeCatalog(photos)
@@ -79,7 +81,9 @@ local function fakeCatalog(photos)
             local out = {}
             for _, p in ipairs(list) do
                 local values = {}
-                for _, key in ipairs(keys) do values[key] = p:getRawMetadata(key) end
+                for _, key in ipairs(keys) do
+                    values[key] = p:getRawMetadata(key)
+                end
                 out[p] = values
             end
             return out
@@ -91,7 +95,7 @@ end
 local PhotoLookup
 local function loadModule()
     package.loaded.PhotoLookup = nil
-    PhotoLookup = require 'PhotoLookup'
+    PhotoLookup = require "PhotoLookup"
 end
 
 describe("PhotoLookup.resolveMany", function()
@@ -99,7 +103,9 @@ describe("PhotoLookup.resolveMany", function()
 
     local function numbered(n)
         local photos = {}
-        for i = 1, n do photos[i] = fakePhoto(i, "/" .. i .. ".jpg") end
+        for i = 1, n do
+            photos[i] = fakePhoto(i, "/" .. i .. ".jpg")
+        end
         local catalog, state = fakeCatalog(photos)
         return photos, catalog, state
     end
@@ -227,7 +233,9 @@ describe("PhotoLookup.resolveMany", function()
     it("never reads paths when every id is numeric", function()
         local state = { pathReads = 0 }
         local photos = {}
-        for i = 1, 5 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        for i = 1, 5 do
+            photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state)
+        end
         local catalog = fakeCatalog(photos)
 
         PhotoLookup.resolveMany(catalog, { "1", "2" })
@@ -238,7 +246,9 @@ describe("PhotoLookup.resolveMany", function()
     it("reads only the requested photo's path when resolving a path", function()
         local state = { pathReads = 0 }
         local photos = {}
-        for i = 1, 100 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        for i = 1, 100 do
+            photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state)
+        end
         local catalog = fakeCatalog(photos)
 
         local r = PhotoLookup.resolveMany(catalog, { "/2.jpg" })
@@ -250,7 +260,9 @@ describe("PhotoLookup.resolveMany", function()
     it("reads no path for a path that matches nothing", function()
         local state = { pathReads = 0 }
         local photos = {}
-        for i = 1, 10 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        for i = 1, 10 do
+            photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state)
+        end
         local catalog = fakeCatalog(photos)
 
         local r = PhotoLookup.resolveMany(catalog, { "/missing.jpg" })

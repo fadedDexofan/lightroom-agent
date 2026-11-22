@@ -1,11 +1,11 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local PhotoRecord = require 'PhotoRecord'
-local PhotoStack = require 'PhotoStack'
-local PhotoLookup = require 'PhotoLookup'
-local PhotoWrites = require 'PhotoWrites'
-local Log = require 'Log'
-local Reply = require 'Reply'
+local PhotoRecord = require "PhotoRecord"
+local PhotoStack = require "PhotoStack"
+local PhotoLookup = require "PhotoLookup"
+local PhotoWrites = require "PhotoWrites"
+local Log = require "Log"
+local Reply = require "Reply"
 
 local MetadataHandler = {}
 
@@ -27,14 +27,44 @@ for _, field in ipairs(TEXT_FIELDS) do
     if field.accessibility then ACCESSIBILITY_KEYS[#ACCESSIBILITY_KEYS + 1] = field.key end
 end
 local RAW_KEYS = PhotoRecord.rawKeys(PhotoStack.withRawKeys({
-    'path', 'fileFormat', 'isVirtualCopy', 'masterPhoto', 'virtualCopies', 'stackInFolderMembers',
+    "path",
+    "fileFormat",
+    "isVirtualCopy",
+    "masterPhoto",
+    "virtualCopies",
+    "stackInFolderMembers",
 }))
 local FORMATTED_KEYS = PhotoRecord.formattedKeys({
-    'fileName', 'title', 'caption', 'headline', 'copyName',
-    'dateTimeOriginal', 'dateTimeDigitized', 'cameraMake', 'cameraModel', 'cameraSerialNumber', 'lens',
-    'isoSpeedRating', 'focalLength', 'focalLength35mm', 'aperture', 'shutterSpeed', 'exposureBias',
-    'exposureProgram', 'meteringMode', 'flash', 'dimensions', 'fileSize', 'artist', 'software',
-    'creator', 'copyright', 'copyrightState', 'rightsUsageTerms', 'copyrightInfoUrl', 'creatorUrl',
+    "fileName",
+    "title",
+    "caption",
+    "headline",
+    "copyName",
+    "dateTimeOriginal",
+    "dateTimeDigitized",
+    "cameraMake",
+    "cameraModel",
+    "cameraSerialNumber",
+    "lens",
+    "isoSpeedRating",
+    "focalLength",
+    "focalLength35mm",
+    "aperture",
+    "shutterSpeed",
+    "exposureBias",
+    "exposureProgram",
+    "meteringMode",
+    "flash",
+    "dimensions",
+    "fileSize",
+    "artist",
+    "software",
+    "creator",
+    "copyright",
+    "copyrightState",
+    "rightsUsageTerms",
+    "copyrightInfoUrl",
+    "creatorUrl",
 })
 
 local function nonEmptyText(value)
@@ -42,9 +72,7 @@ local function nonEmptyText(value)
     return value
 end
 
-local function photoIdOf(photo)
-    return photo and tostring(photo.localIdentifier)
-end
+local function photoIdOf(photo) return photo and tostring(photo.localIdentifier) end
 
 local function photoIds(photos)
     if not photos or #photos == 0 then return nil end
@@ -68,7 +96,9 @@ end
 local function rawRows(catalog, photos)
     local keys = {}
     for _, list in ipairs({ RAW_KEYS, ACCESSIBILITY_KEYS }) do
-        for _, key in ipairs(list) do keys[#keys + 1] = key end
+        for _, key in ipairs(list) do
+            keys[#keys + 1] = key
+        end
     end
     return catalog:batchGetRawMetadata(photos, keys) or {}
 end
@@ -125,7 +155,11 @@ function MetadataHandler.getPhotoMetadata(args)
 
     local found, missing = {}, {}
     for _, entry in ipairs(resolved) do
-        if entry.photo then found[#found + 1] = entry.photo else missing[#missing + 1] = entry.id end
+        if entry.photo then
+            found[#found + 1] = entry.photo
+        else
+            missing[#missing + 1] = entry.id
+        end
     end
     local raw = #found > 0 and rawRows(catalog, found) or {}
     local formatted = #found > 0 and (catalog:batchGetFormattedMetadata(found, FORMATTED_KEYS) or {}) or {}
@@ -149,14 +183,18 @@ end
 function MetadataHandler.setGps(args, context)
     local clearAltitude = args.clear_altitude == true
 
-    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set GPS", write = function(call)
-        call('setRawMetadata', 'gps', { latitude = args.latitude, longitude = args.longitude })
-        if args.altitude ~= nil then
-            call('setRawMetadata', 'gpsAltitude', args.altitude)
-        elseif clearAltitude then
-            call('setRawMetadata', 'gpsAltitude', nil)
-        end
-    end })
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), {
+        photo_ids = args.photo_ids,
+        title = "Set GPS",
+        write = function(call)
+            call("setRawMetadata", "gps", { latitude = args.latitude, longitude = args.longitude })
+            if args.altitude ~= nil then
+                call("setRawMetadata", "gpsAltitude", args.altitude)
+            elseif clearAltitude then
+                call("setRawMetadata", "gpsAltitude", nil)
+            end
+        end,
+    })
 end
 
 -- "Sublocation" is the SDK `location` field.
@@ -171,7 +209,6 @@ local LOCATION_FIELDS = {
 -- Writes the IPTC location fields of photos. Fields left out are unchanged;
 -- an empty string clears a field. GPS is set_gps's job and is not touched.
 function MetadataHandler.setLocation(args, context)
-
     local changes = {}
     for _, field in ipairs(LOCATION_FIELDS) do
         local value = args[field.arg]
@@ -182,15 +219,20 @@ function MetadataHandler.setLocation(args, context)
         end
     end
     local fields = {}
-    for i, change in ipairs(changes) do fields[i] = change.arg end
+    for i, change in ipairs(changes) do
+        fields[i] = change.arg
+    end
 
-    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Location",
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), {
+        photo_ids = args.photo_ids,
+        title = "Set Location",
         data = { fields = fields },
         write = function(call)
             for _, change in ipairs(changes) do
-                call('setRawMetadata', change.key, change.value)
+                call("setRawMetadata", change.key, change.value)
             end
-        end })
+        end,
+    })
 end
 
 -- Writes IPTC description and rights fields of photos. Fields left out are
@@ -198,7 +240,6 @@ end
 -- purpose: Lightroom accepted "copyrighted" for copyrightState but rolled the
 -- whole write back for "unknown" and "public domain", after reporting success.
 function MetadataHandler.setMetadata(args, context)
-
     local changes = {}
     local fields = {}
     for _, field in ipairs(TEXT_FIELDS) do
@@ -216,7 +257,9 @@ function MetadataHandler.setMetadata(args, context)
         title = "Set Metadata",
         data = { fields = fields },
         write = function(call)
-            for _, change in ipairs(changes) do call('setRawMetadata', change.key, change.value) end
+            for _, change in ipairs(changes) do
+                call("setRawMetadata", change.key, change.value)
+            end
         end,
     })
 end

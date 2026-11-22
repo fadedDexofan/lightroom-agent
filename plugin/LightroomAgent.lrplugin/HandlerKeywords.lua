@@ -1,11 +1,11 @@
-local LrApplication = import 'LrApplication'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrTasks = import "LrTasks"
 
-local CatalogWrite = require 'CatalogWrite'
-local Contract = require 'Contract'
-local KeywordTree = require 'KeywordTree'
-local Reply = require 'Reply'
-local Log = require 'Log'
+local CatalogWrite = require "CatalogWrite"
+local Contract = require "Contract"
+local KeywordTree = require "KeywordTree"
+local Reply = require "Reply"
+local Log = require "Log"
 
 local KeywordsHandler = {}
 
@@ -22,14 +22,10 @@ function KeywordsHandler.listKeywords(args)
     local offset = args.offset or 0
 
     local parentParts = nil
-    if args.parent ~= nil then
-        parentParts = KeywordTree.split(args.parent)
-    end
+    if args.parent ~= nil then parentParts = KeywordTree.split(args.parent) end
 
     local query = nil
-    if args.query ~= nil then
-        query = KeywordTree.fold(args.query)
-    end
+    if args.query ~= nil then query = KeywordTree.fold(args.query) end
 
     local pathsOnly = args.paths_only == true
 
@@ -49,9 +45,7 @@ function KeywordsHandler.listKeywords(args)
         local root = nil
         if parentParts then
             root = KeywordTree.resolve(catalog, parentParts)
-            if not root then
-                Reply.refuse("Keyword not found: " .. KeywordTree.join(parentParts))
-            end
+            if not root then Reply.refuse("Keyword not found: " .. KeywordTree.join(parentParts)) end
         end
 
         KeywordTree.walk(catalog, root, function(keyword, path, attributes)
@@ -75,8 +69,7 @@ function KeywordsHandler.listKeywords(args)
         end)
     end)
 
-    Log.info(string.format("Found %d keywords, returning %d (offset=%d, limit=%d)",
-        total, #slice, offset, limit))
+    Log.info(string.format("Found %d keywords, returning %d (offset=%d, limit=%d)", total, #slice, offset, limit))
 
     return {
         count = total,
@@ -106,9 +99,7 @@ function KeywordsHandler.renameKeyword(args, context)
     local function findKeyword()
         if parts then
             local resolved = KeywordTree.resolve(catalog, parts)
-            if not resolved then
-                Reply.refuse("Keyword not found: " .. KeywordTree.join(parts))
-            end
+            if not resolved then Reply.refuse("Keyword not found: " .. KeywordTree.join(parts)) end
             return resolved
         end
         local matches = KeywordTree.findByName(catalog, oldName)
@@ -119,8 +110,7 @@ function KeywordsHandler.renameKeyword(args, context)
             for _, match in ipairs(matches) do
                 table.insert(found, match.path)
             end
-            Reply.refuse("Keyword is ambiguous, give its path: " .. oldName
-                .. " (" .. table.concat(found, ", ") .. ")")
+            Reply.refuse("Keyword is ambiguous, give its path: " .. oldName .. " (" .. table.concat(found, ", ") .. ")")
         end
         return matches[1].keyword
     end
@@ -132,17 +122,20 @@ function KeywordsHandler.renameKeyword(args, context)
         keyword = findKeyword()
 
         local currentName = keyword:getName()
-        if currentName == newName then
-            Reply.refuse("Keyword is already named '" .. newName .. "'")
-        end
+        if currentName == newName then Reply.refuse("Keyword is already named '" .. newName .. "'") end
 
         -- Lightroom matches names ignoring case, so a sibling "callie" would
         -- clash with "Callie"; the keyword itself does not.
         local parent = keyword:getParent()
         local clash = KeywordTree.findChild(catalog, parent, newName)
         if clash and clash ~= keyword then
-            Reply.refuse("A keyword named '" .. clash:getName() .. "' already exists at "
-                .. KeywordTree.pathOf(clash) .. "; rename cannot merge keywords")
+            Reply.refuse(
+                "A keyword named '"
+                    .. clash:getName()
+                    .. "' already exists at "
+                    .. KeywordTree.pathOf(clash)
+                    .. "; rename cannot merge keywords"
+            )
         end
 
         oldPath = KeywordTree.pathOf(keyword)
@@ -180,8 +173,14 @@ function KeywordsHandler.renameKeyword(args, context)
             end)
         end)
         if not ok then
-            error(string.format("Keyword '%s' was left named '%s' while changing its case: %s",
-                oldPath, tempName, Reply.messageOf(err)))
+            error(
+                string.format(
+                    "Keyword '%s' was left named '%s' while changing its case: %s",
+                    oldPath,
+                    tempName,
+                    Reply.messageOf(err)
+                )
+            )
         end
     end
 

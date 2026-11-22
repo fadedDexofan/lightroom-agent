@@ -1,6 +1,6 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local JsonValue = require 'JsonValue'
+local JsonValue = require "JsonValue"
 
 local RunningLightroom = {}
 

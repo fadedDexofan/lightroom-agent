@@ -1,9 +1,9 @@
-local LrTasks = import 'LrTasks'
+local LrTasks = import "LrTasks"
 
-local Contract = require 'Contract'
-local DevelopCurves = require 'DevelopCurves'
-local JSON = require 'JSON'
-local Reply = require 'Reply'
+local Contract = require "Contract"
+local DevelopCurves = require "DevelopCurves"
+local JSON = require "JSON"
+local Reply = require "Reply"
 
 local DevelopReadBack = {}
 
@@ -12,7 +12,9 @@ DevelopReadBack.REPLY_SECONDS = 2
 local NAMED_IN_PROBLEM = 10
 
 local KEYS = {}
-for _, key in ipairs(Contract.DEVELOP_KEYS) do KEYS[key.name] = key end
+for _, key in ipairs(Contract.DEVELOP_KEYS) do
+    KEYS[key.name] = key
+end
 
 local function valueText(value)
     if type(value) == "table" then return JSON:encode(value) end
@@ -57,7 +59,10 @@ end
 local LISTED_EDITS = {
     { "MaskGroupBasedCorrections", function(settings) return settings.MaskGroupBasedCorrections end },
     { "RetouchAreas", function(settings) return settings.RetouchAreas end },
-    { "FilterList", function(settings) return type(settings.FilterList) == "table" and settings.FilterList.Filters end },
+    {
+        "FilterList",
+        function(settings) return type(settings.FilterList) == "table" and settings.FilterList.Filters end,
+    },
 }
 
 local function profileOf(settings)
@@ -103,36 +108,52 @@ function DevelopReadBack.check(context, catalog, written)
         for _, entry in ipairs(written) do
             local reached = context:timeLeft() >= DevelopReadBack.REPLY_SECONDS
             local read, stored = false, "not read back within the time budget"
-            if reached then read, stored = LrTasks.pcall(DevelopReadBack.saved, entry.photo) end
-            local result = { photo_id = tostring(entry.photo.localIdentifier), stored = {}, adjusted = {}, absent = {},
-                notStored = {} }
+            if reached then
+                read, stored = LrTasks.pcall(DevelopReadBack.saved, entry.photo)
+            end
+            local result = {
+                photo_id = tostring(entry.photo.localIdentifier),
+                stored = {},
+                adjusted = {},
+                absent = {},
+                notStored = {},
+            }
             if not read then
                 result.error = entry.error
                     or (reached and "the read-back failed: " .. Reply.messageOf(stored) or "written; " .. stored)
                 result.written = entry.from and context.ledger:since(entry.from, entry.to) or {}
-                if #result.written == 0 and entry.error == nil then result.written = { "the settings written before this read" } end
+                if #result.written == 0 and entry.error == nil then
+                    result.written = { "the settings written before this read" }
+                end
             elseif entry.error ~= nil then
                 result.error = entry.error
                 result.written = context.ledger:since(entry.from, entry.to)
-                if #result.written == 0 and entry.before ~= nil and not unchanged(entry.settings, entry.before, stored) then
+                if
+                    #result.written == 0
+                    and entry.before ~= nil
+                    and not unchanged(entry.settings, entry.before, stored)
+                then
                     result.written = { "settings Lightroom now shows changed" }
                 end
             else
-            for _, key in ipairs(sortedKeys(entry.settings)) do
-                local requested, value = entry.settings[key], DevelopCurves.read(stored, key)
-                if value == nil and entry.before ~= nil and DevelopCurves.read(entry.before, key) == nil then
-                    result.notStored[#result.notStored + 1] = key
-                elseif value == nil then
-                    result.absent[#result.absent + 1] = key
-                else
-                    result.stored[key] = value
-                    if not same(key, requested, value) then
-                        result.adjusted[#result.adjusted + 1] = {
-                            photo_id = result.photo_id, key = key, requested = requested, stored = value,
-                        }
+                for _, key in ipairs(sortedKeys(entry.settings)) do
+                    local requested, value = entry.settings[key], DevelopCurves.read(stored, key)
+                    if value == nil and entry.before ~= nil and DevelopCurves.read(entry.before, key) == nil then
+                        result.notStored[#result.notStored + 1] = key
+                    elseif value == nil then
+                        result.absent[#result.absent + 1] = key
+                    else
+                        result.stored[key] = value
+                        if not same(key, requested, value) then
+                            result.adjusted[#result.adjusted + 1] = {
+                                photo_id = result.photo_id,
+                                key = key,
+                                requested = requested,
+                                stored = value,
+                            }
+                        end
                     end
                 end
-            end
             end
             checked[#checked + 1] = result
         end
@@ -140,9 +161,7 @@ function DevelopReadBack.check(context, catalog, written)
     return checked
 end
 
-function DevelopReadBack.confirmed(result)
-    return result.error == nil and #result.absent == 0
-end
+function DevelopReadBack.confirmed(result) return result.error == nil and #result.absent == 0 end
 
 function DevelopReadBack.parts(checked, data, lists)
     local parts = lists or {}
@@ -152,17 +171,25 @@ function DevelopReadBack.parts(checked, data, lists)
     parts.failed = parts.failed or {}
     for _, result in ipairs(checked) do
         if not DevelopReadBack.confirmed(result) then
-            local class, reason = "unknown", "Lightroom shows no " .. table.concat(result.absent, ", ") .. " after the write"
-            if result.error ~= nil then class, reason = Reply.stopped(result.error, result.written) end
+            local class, reason =
+                "unknown", "Lightroom shows no " .. table.concat(result.absent, ", ") .. " after the write"
+            if result.error ~= nil then
+                class, reason = Reply.stopped(result.error, result.written)
+            end
             local list = class == "failed" and parts.failed or parts.unknown
             list[#list + 1] = { photo_id = result.photo_id, reason = reason }
         end
-        for _, item in ipairs(result.adjusted) do adjusted[#adjusted + 1] = item end
+        for _, item in ipairs(result.adjusted) do
+            adjusted[#adjusted + 1] = item
+        end
         if #result.notStored > 0 then
             notStored[#notStored + 1] = { photo_id = result.photo_id, keys = result.notStored }
             parts.warnings = parts.warnings or {}
-            parts.warnings[#parts.warnings + 1] = string.format("Lightroom stores no %s for photo %s",
-                table.concat(result.notStored, ", "), result.photo_id)
+            parts.warnings[#parts.warnings + 1] = string.format(
+                "Lightroom stores no %s for photo %s",
+                table.concat(result.notStored, ", "),
+                result.photo_id
+            )
         end
     end
     if #notStored > 0 and data ~= nil then data.not_stored = notStored end
@@ -171,8 +198,13 @@ function DevelopReadBack.parts(checked, data, lists)
         local named, shown = {}, data ~= nil and math.min(#adjusted, NAMED_IN_PROBLEM) or #adjusted
         for index = 1, shown do
             local item = adjusted[index]
-            named[#named + 1] = string.format("%s %s on photo %s (written %s)",
-                item.key, valueText(item.stored), item.photo_id, valueText(item.requested))
+            named[#named + 1] = string.format(
+                "%s %s on photo %s (written %s)",
+                item.key,
+                valueText(item.stored),
+                item.photo_id,
+                valueText(item.requested)
+            )
         end
         if #adjusted > shown then named[#named + 1] = string.format("%d more in adjusted", #adjusted - shown) end
         parts.problem = "Lightroom stored other values than written: " .. table.concat(named, ", ")

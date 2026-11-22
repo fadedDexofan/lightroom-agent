@@ -1,8 +1,8 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local Contract = require 'Contract'
-local Log = require 'Log'
-local PhotoSummary = require 'PhotoSummary'
+local Contract = require "Contract"
+local Log = require "Log"
+local PhotoSummary = require "PhotoSummary"
 
 local SelectionHandler = {}
 
@@ -25,8 +25,7 @@ function SelectionHandler.getSelectedPhotos(args)
     local last = math.min(offset + limit, total)
     local results = PhotoSummary.page(catalog, matches, offset + 1, last, args.include_path == true)
 
-    Log.info(string.format("getSelectedPhotos: returning %d (offset=%d, limit=%d)",
-        #results, offset, limit))
+    Log.info(string.format("getSelectedPhotos: returning %d (offset=%d, limit=%d)", #results, offset, limit))
 
     return {
         count = total,

@@ -1,7 +1,8 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local function setup()
-    local first, second = helper.fakePhoto({ id = "1", path = "/1.jpg" }), helper.fakePhoto({ id = "2", path = "/2.jpg" })
+    local first, second =
+        helper.fakePhoto({ id = "1", path = "/1.jpg" }), helper.fakePhoto({ id = "2", path = "/2.jpg" })
     local catalog = helper.fakeCatalog({ photos = { first, second } })
     local active, selected = first, { first, second }
     local module, events = "library", {}
@@ -30,9 +31,9 @@ local function setup()
     })
     package.loaded.DevelopSession = nil
     package.loaded.CatalogWrite = nil
-    local ctx = { catalog = catalog, first = first, second = second, events = events, write = require 'CatalogWrite' }
+    local ctx = { catalog = catalog, first = first, second = second, events = events, write = require "CatalogWrite" }
     function ctx.state() return active, selected end
-    return require 'DevelopSession', ctx
+    return require "DevelopSession", ctx
 end
 
 describe("DevelopSession.openPhoto", function()
@@ -78,8 +79,10 @@ describe("DevelopSession.run", function()
                 case.body()
             end)
 
-            assert.are.same({ "module develop", "select 2", "set Exposure 1", "flush true", "module library",
-                "select 1" }, ctx.events)
+            assert.are.same(
+                { "module develop", "select 2", "set Exposure 1", "flush true", "module library", "select 1" },
+                ctx.events
+            )
         end)
     end
 
@@ -116,8 +119,14 @@ describe("DevelopSession.run", function()
         end)
 
         assert.matches("outer is already running", blocked, 1, true)
-        assert.is_true(DevelopSession.run(helper.requestContext(nil, { title = "after" }), ctx.catalog, false,
-            function() return true end))
+        assert.is_true(
+            DevelopSession.run(
+                helper.requestContext(nil, { title = "after" }),
+                ctx.catalog,
+                false,
+                function() return true end
+            )
+        )
     end)
 end)
 
@@ -126,7 +135,8 @@ describe("DevelopSession source steps", function()
         opts = opts or {}
         local now = { t = 0 }
         local events = {}
-        local folders = { ["/A"] = { path = "/A" }, ["/B"] = { path = "/B" }, ["/C"] = { path = "/C" }, ["/D"] = { path = "/D" } }
+        local folders =
+            { ["/A"] = { path = "/A" }, ["/B"] = { path = "/B" }, ["/C"] = { path = "/C" }, ["/D"] = { path = "/D" } }
         local onDisk = opts.onDisk or { ["/A"] = true, ["/B"] = true, ["/C"] = true, ["/D"] = true }
         local photos = {
             a = helper.fakePhoto({ id = "1", path = "/A/a.arw" }),
@@ -143,7 +153,9 @@ describe("DevelopSession source steps", function()
         local pollsSinceSwitch = 0
         local function shows(photo)
             for _, source in ipairs(sources) do
-                if source.all or photo:getRawMetadata("path"):sub(1, #source.path + 1) == source.path .. "/" then return true end
+                if source.all or photo:getRawMetadata("path"):sub(1, #source.path + 1) == source.path .. "/" then
+                    return true
+                end
             end
             return false
         end
@@ -163,15 +175,23 @@ describe("DevelopSession source steps", function()
             return true
         end
         catalog.getFolderByPath = function(_, path) return folders[path] end
-        catalog.getTargetPhoto = function() pollsSinceSwitch = pollsSinceSwitch + 1; return active end
+        catalog.getTargetPhoto = function()
+            pollsSinceSwitch = pollsSinceSwitch + 1
+            return active
+        end
         catalog.getTargetPhotos = function() return selected end
         catalog.setSelectedPhotos = function(_, photo, selection)
             local after = (opts.selectableAfterAll or {})[photo.localIdentifier]
             if after and not (allShownAt and now.t - allShownAt >= after) then return end
-            if shows(photo) and pollsSinceSwitch >= (opts.selectableAfterPolls or 0) then active, selected = photo, selection end
+            if shows(photo) and pollsSinceSwitch >= (opts.selectableAfterPolls or 0) then
+                active, selected = photo, selection
+            end
         end
         helper.installImport({
-            LrApplicationView = { getCurrentModuleName = function() return "library" end, switchToModule = function() end },
+            LrApplicationView = {
+                getCurrentModuleName = function() return "library" end,
+                switchToModule = function() end,
+            },
             LrDevelopController = {},
             LrFileUtils = { exists = function(path) return onDisk[path] and "directory" or false end },
             LrPathUtils = { parent = function(path) return path:match("^(.+)/[^/]+$") end },
@@ -181,7 +201,7 @@ describe("DevelopSession source steps", function()
         })
         package.loaded.PhotoSources = nil
         package.loaded.DevelopSession = nil
-        local DevelopSession = require 'DevelopSession'
+        local DevelopSession = require "DevelopSession"
         local context = helper.requestContext(nil, { title = "tool" })
         local function open(list)
             local opened = {}
@@ -196,16 +216,19 @@ describe("DevelopSession source steps", function()
         return photos, open, events, function() return sources end, context, function() return active, selected end
     end
 
-    it("shows a photo outside the source through its own folder after a short first try, then puts the source back", function()
-        local photos, open, events, current = sourceSetup()
+    it(
+        "shows a photo outside the source through its own folder after a short first try, then puts the source back",
+        function()
+            local photos, open, events, current = sourceSetup()
 
-        local opened = open({ photos.b })
+            local opened = open({ photos.b })
 
-        assert.is_true(opened[1][1])
-        assert.is_true(opened[1][2] <= 2.5)
-        assert.are.same({ "source /B", "source /A" }, events)
-        assert.are.equal("/A", current()[1].path)
-    end)
+            assert.is_true(opened[1][1])
+            assert.is_true(opened[1][2] <= 2.5)
+            assert.are.same({ "source /B", "source /A" }, events)
+            assert.are.equal("/A", current()[1].path)
+        end
+    )
 
     it("goes to All Photographs, never to a folder missing on disk", function()
         local photos, open, events = sourceSetup({ onDisk = { ["/A"] = true } })
@@ -215,14 +238,19 @@ describe("DevelopSession source steps", function()
     end)
 
     for _, failure in ipairs({ "raise", "false" }) do
-        it("goes to All Photographs when the folder step " .. (failure == "raise" and "raises" or "reports false")
-            .. ", and puts the source back", function()
-            local photos, open, events, current = sourceSetup({ folderFails = failure == "raise" and "raise" or true })
+        it(
+            "goes to All Photographs when the folder step "
+                .. (failure == "raise" and "raises" or "reports false")
+                .. ", and puts the source back",
+            function()
+                local photos, open, events, current =
+                    sourceSetup({ folderFails = failure == "raise" and "raise" or true })
 
-            assert.is_true(open({ photos.b })[1][1])
-            assert.are.same({ "source /B", "source all", "source /A" }, events)
-            assert.are.equal("/A", current()[1].path)
-        end)
+                assert.is_true(open({ photos.b })[1][1])
+                assert.are.same({ "source /B", "source all", "source /A" }, events)
+                assert.are.equal("/A", current()[1].path)
+            end
+        )
     end
 
     it("keeps polling after a switch until the grid can select the photo, then restores the selection", function()
@@ -270,7 +298,8 @@ describe("DevelopSession source steps", function()
     end)
 
     it("switches back to no folder once All Photographs is the run's source", function()
-        local photos, open, events = sourceSetup({ onDisk = { ["/A"] = true, ["/C"] = true }, selectableAfterAll = { ["3"] = 2.5 } })
+        local photos, open, events =
+            sourceSetup({ onDisk = { ["/A"] = true, ["/C"] = true }, selectableAfterAll = { ["3"] = 2.5 } })
 
         local opened = open({ photos.b, photos.c })
 

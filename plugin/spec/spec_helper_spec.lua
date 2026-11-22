@@ -1,5 +1,5 @@
-local helper = require 'spec_helper'
-local Reply = require 'Reply'
+local helper = require "spec_helper"
+local Reply = require "Reply"
 
 local function writing(fn)
     return function()
@@ -49,14 +49,33 @@ describe("spec_helper.outcomeOf", function()
     local written = function(context) context.ledger:record("Set Rating") end
     local cases = {
         { name = "a success", call = function() return 1 end, class = "answered", detail = { data = 1 } },
-        { name = "a refusal before any write", call = function() Reply.refuse("refused text") end, class = "failed",
-            detail = "refused text" },
-        { name = "a plain error before any write", call = function() error("plain text", 0) end, class = "failed",
-            detail = "plain text" },
-        { name = "not found before any write", call = function() Reply.notFound("9") end, class = "answered",
-            detail = { not_found = { "9" } } },
-        { name = "a refusal after a write", call = function(context) written(context); Reply.refuse("refused text") end,
-            class = "unknown", detail = "refused text; written before this stopped: Set Rating" },
+        {
+            name = "a refusal before any write",
+            call = function() Reply.refuse("refused text") end,
+            class = "failed",
+            detail = "refused text",
+        },
+        {
+            name = "a plain error before any write",
+            call = function() error("plain text", 0) end,
+            class = "failed",
+            detail = "plain text",
+        },
+        {
+            name = "not found before any write",
+            call = function() Reply.notFound("9") end,
+            class = "answered",
+            detail = { not_found = { "9" } },
+        },
+        {
+            name = "a refusal after a write",
+            call = function(context)
+                written(context)
+                Reply.refuse("refused text")
+            end,
+            class = "unknown",
+            detail = "refused text; written before this stopped: Set Rating",
+        },
     }
     for _, case in ipairs(cases) do
         it("derives " .. case.class .. " from " .. case.name, function()

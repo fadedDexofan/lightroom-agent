@@ -1,10 +1,10 @@
-local PhotoMarks = require 'PhotoMarks'
-local PhotoStack = require 'PhotoStack'
+local PhotoMarks = require "PhotoMarks"
+local PhotoStack = require "PhotoStack"
 
 local PhotoSummary = {}
 
-local RAW_KEYS = PhotoStack.withRawKeys(PhotoMarks.withRawKeys({ 'path' }))
-local FORMATTED_KEYS = { 'fileName', 'dateTimeOriginal' }
+local RAW_KEYS = PhotoStack.withRawKeys(PhotoMarks.withRawKeys({ "path" }))
+local FORMATTED_KEYS = { "fileName", "dateTimeOriginal" }
 
 function PhotoSummary.rows(catalog, photos, includePath)
     local rows = {}
@@ -31,7 +31,9 @@ end
 
 function PhotoSummary.page(catalog, photos, first, last, includePath)
     local slice = {}
-    for i = first, last do slice[#slice + 1] = photos[i] end
+    for i = first, last do
+        slice[#slice + 1] = photos[i]
+    end
     return PhotoSummary.rows(catalog, slice, includePath)
 end
 

@@ -1,5 +1,5 @@
-local Contract = require 'Contract'
-local DecimalText = require 'DecimalText'
+local Contract = require "Contract"
+local DecimalText = require "DecimalText"
 
 local RangeMaskGeometry = {}
 
@@ -27,9 +27,7 @@ local STORED_SCALE = 10 ^ STORED_PLACES
 
 local SAMPLE_FIELDS = { "x", "y", "l", "a", "b" }
 
-local function round(value)
-    return math.floor(value * STORED_SCALE + 0.5) / STORED_SCALE
-end
+local function round(value) return math.floor(value * STORED_SCALE + 0.5) / STORED_SCALE end
 
 local function parseTrapezoid(value)
     return { min = value.min, max = value.max, falloff = value.falloff or DEFAULT_FALLOFF }
@@ -37,7 +35,9 @@ end
 
 local function parseColor(value)
     local sample = {}
-    for _, field in ipairs(SAMPLE_FIELDS) do sample[field] = value.sample[field] end
+    for _, field in ipairs(SAMPLE_FIELDS) do
+        sample[field] = value.sample[field]
+    end
     return { sample = sample, amount = value.amount or DEFAULT_COLOR_AMOUNT }
 end
 
@@ -63,8 +63,13 @@ function RangeMaskGeometry.parseCreate(args)
         range = PARSER_OF_KIND[kind](args[kind])
     end
     return {
-        kind = kind, range = range, maskId = args.mask_id, mode = args.mode or "add", name = args.name,
-        invert = args.invert == true, copy = copy,
+        kind = kind,
+        range = range,
+        maskId = args.mask_id,
+        mode = args.mode or "add",
+        name = args.name,
+        invert = args.invert == true,
+        copy = copy,
     }
 end
 
@@ -83,8 +88,10 @@ local function rangeSettingsFor(kind, range)
     if TRAPEZOID_FIELD_OF_KIND[kind] ~= nil then
         local trapezoid = trapezoidOf(range)
         settings[TRAPEZOID_FIELD_OF_KIND[kind]] = table.concat({
-            DecimalText.fixed(trapezoid[1], STORED_PLACES), DecimalText.fixed(trapezoid[2], STORED_PLACES),
-            DecimalText.fixed(trapezoid[3], STORED_PLACES), DecimalText.fixed(trapezoid[4], STORED_PLACES),
+            DecimalText.fixed(trapezoid[1], STORED_PLACES),
+            DecimalText.fixed(trapezoid[2], STORED_PLACES),
+            DecimalText.fixed(trapezoid[3], STORED_PLACES),
+            DecimalText.fixed(trapezoid[4], STORED_PLACES),
         }, " ")
         return settings
     end
@@ -92,8 +99,12 @@ local function rangeSettingsFor(kind, range)
     settings.ColorAmount = round(range.amount)
     settings.PointModels = {
         table.concat({
-            DecimalText.fixed(sample.l, STORED_PLACES), DecimalText.fixed(sample.a, STORED_PLACES), DecimalText.fixed(sample.b, STORED_PLACES),
-            DecimalText.fixed(sample.x, STORED_PLACES), DecimalText.fixed(sample.y, STORED_PLACES), string.format("%d", POINT_MODEL_TRAILER),
+            DecimalText.fixed(sample.l, STORED_PLACES),
+            DecimalText.fixed(sample.a, STORED_PLACES),
+            DecimalText.fixed(sample.b, STORED_PLACES),
+            DecimalText.fixed(sample.x, STORED_PLACES),
+            DecimalText.fixed(sample.y, STORED_PLACES),
+            string.format("%d", POINT_MODEL_TRAILER),
         }, " "),
     }
     return settings
@@ -102,9 +113,13 @@ end
 function RangeMaskGeometry.toStoredFrame(request, frame)
     if request.kind ~= COLOR then return request end
     local stored = {}
-    for key, value in pairs(request) do stored[key] = value end
+    for key, value in pairs(request) do
+        stored[key] = value
+    end
     local sample = {}
-    for key, value in pairs(request.range.sample) do sample[key] = value end
+    for key, value in pairs(request.range.sample) do
+        sample[key] = value
+    end
     sample.x, sample.y = frame.toStored(sample.x, sample.y)
     stored.range = { sample = sample, amount = request.range.amount }
     return stored
@@ -144,12 +159,13 @@ function RangeMaskGeometry.rangeOf(component, frame)
     if TRAPEZOID_FIELD_OF_KIND[kind] ~= nil then
         local values = numbersIn(range[TRAPEZOID_FIELD_OF_KIND[kind]])
         if values == nil or #values ~= 4 then return nil end
-        return kind, {
-            min = round(values[2]),
-            max = round(values[3]),
-            lower_falloff = round(values[2] - values[1]),
-            upper_falloff = round(values[4] - values[3]),
-        }
+        return kind,
+            {
+                min = round(values[2]),
+                max = round(values[3]),
+                lower_falloff = round(values[2] - values[1]),
+                upper_falloff = round(values[4] - values[3]),
+            }
     end
     if kind == COLOR then
         if type(range.PointModels) ~= "table" or #range.PointModels == 0 then return nil end
@@ -159,8 +175,11 @@ function RangeMaskGeometry.rangeOf(component, frame)
             if point == nil or #point < 5 then return nil end
             local x, y = frame.toDisplayed(point[4], point[5])
             samples[index] = {
-                x = round(x), y = round(y),
-                l = round(point[1]), a = round(point[2]), b = round(point[3]),
+                x = round(x),
+                y = round(y),
+                l = round(point[1]),
+                a = round(point[2]),
+                b = round(point[3]),
             }
         end
         return kind, { samples = samples, amount = round(range.ColorAmount) }

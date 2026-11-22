@@ -1,9 +1,11 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local function deepCopy(value)
     if type(value) ~= "table" then return value end
     local result = {}
-    for key, child in pairs(value) do result[key] = deepCopy(child) end
+    for key, child in pairs(value) do
+        result[key] = deepCopy(child)
+    end
     return result
 end
 
@@ -16,8 +18,9 @@ local function fakePreset(name, opts)
         getFile = function() return opts.file end,
         getSetting = function()
             local settings = deepCopy(opts.settings or {})
-            for _, entry in ipairs(type(settings.MaskGroupBasedCorrections) == "table"
-                and settings.MaskGroupBasedCorrections or {}) do
+            for _, entry in
+                ipairs(type(settings.MaskGroupBasedCorrections) == "table" and settings.MaskGroupBasedCorrections or {})
+            do
                 minted = minted + 1
                 entry.CorrectionID = name .. "-read-" .. minted
             end
@@ -26,7 +29,48 @@ local function fakePreset(name, opts)
     }
 end
 
-local LONG_CURVE = { 0, 0, 13, 15, 27, 31, 40, 46, 54, 61, 67, 76, 81, 91, 94, 105, 107, 119, 121, 133, 134, 146, 148, 160, 161, 172, 174, 186, 188, 199, 201, 212, 214, 226, 228, 238, 241, 249, 255, 255 }
+local LONG_CURVE = {
+    0,
+    0,
+    13,
+    15,
+    27,
+    31,
+    40,
+    46,
+    54,
+    61,
+    67,
+    76,
+    81,
+    91,
+    94,
+    105,
+    107,
+    119,
+    121,
+    133,
+    134,
+    146,
+    148,
+    160,
+    161,
+    172,
+    174,
+    186,
+    188,
+    199,
+    201,
+    212,
+    214,
+    226,
+    228,
+    238,
+    241,
+    249,
+    255,
+    255,
+}
 
 local AI_MASK_SETTINGS = {
     Exposure2012 = 1.0,
@@ -48,12 +92,8 @@ local function setup(opts)
     local pluginPresets = opts.pluginPresets or {}
     local files = opts.files or {}
     local copies = {}
-    local function leafName(path)
-        return path:match("([^/\\]+)$") or path
-    end
-    local function extension(path)
-        return leafName(path):match("%.([^%.]+)$") or ""
-    end
+    local function leafName(path) return path:match("([^/\\]+)$") or path end
+    local function extension(path) return leafName(path):match("%.([^%.]+)$") or "" end
     _G._PLUGIN = { id = "io.github.fadeddexofan.lightroomagent" }
     helper.installImport({
         LrApplication = {
@@ -73,7 +113,10 @@ local function setup(opts)
         },
         LrFileUtils = {
             exists = function(path) return files[path] or false end,
-            createAllDirectories = function(path) files[path] = "directory" return true end,
+            createAllDirectories = function(path)
+                files[path] = "directory"
+                return true
+            end,
             copy = function(source, destination)
                 if opts.copyFails or files[source] ~= "file" or files[destination] then return false, "copy refused" end
                 files[destination] = "file"
@@ -86,7 +129,10 @@ local function setup(opts)
             extension = extension,
             parent = function(path) return path:match("^(.+)/[^/]+$") end,
             child = function(parent, child) return parent .. "/" .. child end,
-            getStandardFilePath = function(name) assert(name == "home"); return "/home/u" end,
+            getStandardFilePath = function(name)
+                assert(name == "home")
+                return "/home/u"
+            end,
         },
         LrApplicationView = opts.applicationView or {
             getCurrentModuleName = function() return "library" end,
@@ -99,34 +145,41 @@ local function setup(opts)
         LrTasks = opts.tasks or { sleep = function() end, pcall = pcall },
         LrLogger = helper.defaultLrLogger(),
     })
-    local Store = require 'fake_mask_store'
+    local Store = require "fake_mask_store"
     local function storedMasks(photo) return (photo:getDevelopSettings() or {}).MaskGroupBasedCorrections or {} end
-    package.loaded.GuardedMaskWrite = not opts.realGuard and (opts.guardedMaskWrite or {
-        apply = function(context, _, photo, spec)
-            local previous = Store.clone(storedMasks(photo))
-            context.ledger:record(spec.description)
-            photo:applyDevelopSettings({ MaskGroupBasedCorrections = Store.clone(spec.build(Store.clone(previous))) })
-            return { previous = previous }
-        end,
-        restore = function(context, _, photo, previous, mark)
-            photo:applyDevelopSettings({ MaskGroupBasedCorrections = Store.clone(previous) })
-            context.ledger:undone(mark)
-            return true
-        end,
-        readEntries = function(_, photo) return Store.clone(storedMasks(photo)) end,
-        deepClone = Store.clone,
-    }) or nil
+    package.loaded.GuardedMaskWrite = not opts.realGuard
+            and (opts.guardedMaskWrite or {
+                apply = function(context, _, photo, spec)
+                    local previous = Store.clone(storedMasks(photo))
+                    context.ledger:record(spec.description)
+                    photo:applyDevelopSettings({
+                        MaskGroupBasedCorrections = Store.clone(spec.build(Store.clone(previous))),
+                    })
+                    return { previous = previous }
+                end,
+                restore = function(context, _, photo, previous, mark)
+                    photo:applyDevelopSettings({ MaskGroupBasedCorrections = Store.clone(previous) })
+                    context.ledger:undone(mark)
+                    return true
+                end,
+                readEntries = function(_, photo) return Store.clone(storedMasks(photo)) end,
+                deepClone = Store.clone,
+            })
+        or nil
     package.loaded.AIMaskCompute = nil
-    package.loaded.MaskWriteAdmission = opts.maskWriteAdmission or { status = function() return {} end, requireAdmitted = function() end }
+    package.loaded.MaskWriteAdmission = opts.maskWriteAdmission
+        or { status = function() return {} end, requireAdmitted = function() end }
     package.loaded.HandlerDevelop = nil
     package.loaded.DevelopSession = nil
     package.loaded.DevelopBatch = nil
     package.loaded.DevelopReadBack = nil
-    return catalog, require 'HandlerDevelop', {
-        pluginPresets = pluginPresets,
-        files = files,
-        copies = copies,
-    }
+    return catalog,
+        require "HandlerDevelop",
+        {
+            pluginPresets = pluginPresets,
+            files = files,
+            copies = copies,
+        }
 end
 
 describe("HandlerDevelop.listDevelopPresets", function()
@@ -169,7 +222,10 @@ describe("HandlerDevelop.listDevelopPresets", function()
         assert.are.equal("visible-1", r.presets[1].uuid)
         assert.are.equal("plugin", r.presets[2].scope)
         assert.are.equal("Plugin Develop Presets", r.presets[2].folder)
-        assert.are.same({ name = "Visible", folder = "User Presets", scope = "lightroom", uuid = "visible-1" }, r.presets[1])
+        assert.are.same(
+            { name = "Visible", folder = "User Presets", scope = "lightroom", uuid = "visible-1" },
+            r.presets[1]
+        )
         assert.is_false(r.has_more)
     end)
 
@@ -198,10 +254,13 @@ describe("HandlerDevelop.listDevelopPresets", function()
     end)
 
     it("filters names literally ignoring case and folders exactly before paging", function()
-        local _, Handler = setup({ folders = {
-            fakeFolder("User Presets", { fakePreset("Vibrant"), fakePreset("Moody"), fakePreset("Vivid Skies") }),
-            fakeFolder("Adobe Color", { fakePreset("Vivid Color"), fakePreset("100%") }),
-        }, pluginPresets = { fakePreset("Checkpoint") } })
+        local _, Handler = setup({
+            folders = {
+                fakeFolder("User Presets", { fakePreset("Vibrant"), fakePreset("Moody"), fakePreset("Vivid Skies") }),
+                fakeFolder("Adobe Color", { fakePreset("Vivid Color"), fakePreset("100%") }),
+            },
+            pluginPresets = { fakePreset("Checkpoint") },
+        })
         local names = Handler.listDevelopPresets({ query = "vI" })
         assert.are.equal(3, names.count)
         local filtered = Handler.listDevelopPresets({ query = "VI", folder = "User Presets", offset = 1, limit = 1 })
@@ -212,8 +271,12 @@ describe("HandlerDevelop.listDevelopPresets", function()
         assert.are.equal(1, Handler.listDevelopPresets({ folder = "Plugin Develop Presets" }).count)
         assert.are.equal(1, Handler.listDevelopPresets({ query = "100%" }).count)
         for _, query in ipairs({ "%", "-", " - , " }) do
-            assert.matches("has no word to search", helper.failedOf(function() Handler.listDevelopPresets({ query = query }) end),
-                1, true)
+            assert.matches(
+                "has no word to search",
+                helper.failedOf(function() Handler.listDevelopPresets({ query = query }) end),
+                1,
+                true
+            )
         end
         for _, args in ipairs({ { query = "absent" }, { folder = "Adobe" }, { folder = "adobe color" } }) do
             local none = Handler.listDevelopPresets(args)
@@ -224,14 +287,18 @@ describe("HandlerDevelop.listDevelopPresets", function()
     end)
 
     it("matches every word of the query in the preset's folder or name, ignoring punctuation-only words", function()
-        local _, Handler = setup({ folders = {
-            fakeFolder("Adaptive: Sky", { fakePreset("Blue Drama") }),
-            fakeFolder("User Presets", { fakePreset("Soft Portrait") }),
-            fakeFolder("日本語", { fakePreset("空のドラマ") }),
-        } })
+        local _, Handler = setup({
+            folders = {
+                fakeFolder("Adaptive: Sky", { fakePreset("Blue Drama") }),
+                fakeFolder("User Presets", { fakePreset("Soft Portrait") }),
+                fakeFolder("日本語", { fakePreset("空のドラマ") }),
+            },
+        })
         local function names(query)
             local found = {}
-            for _, preset in ipairs(Handler.listDevelopPresets({ query = query }).presets) do found[#found + 1] = preset.name end
+            for _, preset in ipairs(Handler.listDevelopPresets({ query = query }).presets) do
+                found[#found + 1] = preset.name
+            end
             return found
         end
 
@@ -258,9 +325,7 @@ describe("HandlerDevelop.listDevelopPresets", function()
     end)
 
     it("uses Lightroom case folding for non-ASCII preset names", function()
-        local function lower(value)
-            return (value:gsub("É", "é")):lower()
-        end
+        local function lower(value) return (value:gsub("É", "é")):lower() end
         local _, Handler = setup({
             folders = { fakeFolder("A", { fakePreset("Éclat") }) },
             stringUtils = { lower = lower },
@@ -294,9 +359,10 @@ describe("HandlerDevelop.getDevelopPreset", function()
         }
         local _, Handler = setup({ folders = folders })
 
-        assert.are.equal("Preset selector is ambiguous; provide preset_uuid or preset_folder", helper.failedOf(function()
-            Handler.getDevelopPreset({ preset_name = "Same" })
-        end))
+        assert.are.equal(
+            "Preset selector is ambiguous; provide preset_uuid or preset_folder",
+            helper.failedOf(function() Handler.getDevelopPreset({ preset_name = "Same" }) end)
+        )
     end)
 
     it("accepts a name that resolves to one aliased preset", function()
@@ -467,12 +533,16 @@ describe("HandlerDevelop.createDevelopPreset", function()
 
     it("resolves the source photo OUTSIDE the read-access gate", function()
         local photo = helper.fakePhoto({
-            id = "7", path = "/raw/source.nef", developSettings = { Contrast2012 = 12 },
+            id = "7",
+            path = "/raw/source.nef",
+            developSettings = { Contrast2012 = 12 },
         })
         local catalog, Handler = setup({ photos = { photo } })
 
         Handler.createDevelopPreset({
-            photo_id = "/raw/source.nef", preset_name = "Contrast v1", settings = { "Contrast2012" },
+            photo_id = "/raw/source.nef",
+            preset_name = "Contrast v1",
+            settings = { "Contrast2012" },
         })
 
         assert.is_false(catalog.getQueriedInsideReadAccess())
@@ -501,34 +571,57 @@ describe("HandlerDevelop.createDevelopPreset", function()
     end)
 
     it("captures a curve from its Extended field first, with the companion", function()
-        local photo = helper.fakePhoto({ id = "7", path = "/raw/source.nef", developSettings = {
-            ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 }, ExtendedToneCurvePV2012 = LONG_CURVE,
-        } })
+        local photo = helper.fakePhoto({
+            id = "7",
+            path = "/raw/source.nef",
+            developSettings = {
+                ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 },
+                ExtendedToneCurvePV2012 = LONG_CURVE,
+            },
+        })
         local _, Handler, state = setup({ photos = { photo } })
 
         Handler.createDevelopPreset({ photo_id = "7", preset_name = "Long v1", settings = { "ToneCurvePV2012" } })
 
-        assert.are.same({ ToneCurvePV2012 = LONG_CURVE, ExtendedToneCurvePV2012 = LONG_CURVE },
-            state.pluginPresets[1]:getSetting())
+        assert.are.same(
+            { ToneCurvePV2012 = LONG_CURVE, ExtendedToneCurvePV2012 = LONG_CURVE },
+            state.pluginPresets[1]:getSetting()
+        )
     end)
 
     it("refuses duplicate names and missing source settings", function()
         local existing = fakePreset("Existing")
         local photo = helper.fakePhoto({
-            id = "7", path = "/raw/source.nef", developSettings = { Exposure2012 = 0.5 },
+            id = "7",
+            path = "/raw/source.nef",
+            developSettings = { Exposure2012 = 0.5 },
         })
         local _, Handler = setup({ photos = { photo }, pluginPresets = { existing } })
 
-        assert.are.equal("Plugin preset already exists; use a versioned preset_name", helper.failedOf(function()
-            Handler.createDevelopPreset({
-                photo_id = "7", preset_name = "Existing", settings = { "Exposure2012" },
-            })
-        end))
-        assert.are.equal("Source photo has no develop setting: Contrast2012", helper.failedOf(function()
-            Handler.createDevelopPreset({
-                photo_id = "7", preset_name = "New", settings = { "Contrast2012" },
-            })
-        end))
+        assert.are.equal(
+            "Plugin preset already exists; use a versioned preset_name",
+            helper.failedOf(
+                function()
+                    Handler.createDevelopPreset({
+                        photo_id = "7",
+                        preset_name = "Existing",
+                        settings = { "Exposure2012" },
+                    })
+                end
+            )
+        )
+        assert.are.equal(
+            "Source photo has no develop setting: Contrast2012",
+            helper.failedOf(
+                function()
+                    Handler.createDevelopPreset({
+                        photo_id = "7",
+                        preset_name = "New",
+                        settings = { "Contrast2012" },
+                    })
+                end
+            )
+        )
     end)
 end)
 
@@ -562,9 +655,9 @@ describe("HandlerDevelop.exportDevelopPreset", function()
             copyFails = true,
         })
 
-        local message = helper.failedOf(function()
-            Handler.exportDevelopPreset({ preset_uuid = "warm-1", destination_dir = "/exports" })
-        end)
+        local message = helper.failedOf(
+            function() Handler.exportDevelopPreset({ preset_uuid = "warm-1", destination_dir = "/exports" }) end
+        )
 
         assert.are.equal("could not copy /user/Warm.xmp to /exports/Warm.xmp: copy refused", message)
         assert.are.same({}, state.copies)
@@ -591,34 +684,55 @@ describe("HandlerDevelop.exportDevelopPreset", function()
         }
         local _, Handler = setup(base)
 
-        assert.are.equal("filename must be a leaf filename without path separators", helper.failedOf(function()
-            Handler.exportDevelopPreset({
-                preset_uuid = "warm-1", destination_dir = "/exports", filename = "../escape.xmp",
-            })
-        end))
-        assert.are.equal("filename extension must match preset backing file: .xmp", helper.failedOf(function()
-            Handler.exportDevelopPreset({
-                preset_uuid = "warm-1", destination_dir = "/exports", filename = "Warm.lrtemplate",
-            })
-        end))
+        assert.are.equal(
+            "filename must be a leaf filename without path separators",
+            helper.failedOf(
+                function()
+                    Handler.exportDevelopPreset({
+                        preset_uuid = "warm-1",
+                        destination_dir = "/exports",
+                        filename = "../escape.xmp",
+                    })
+                end
+            )
+        )
+        assert.are.equal(
+            "filename extension must match preset backing file: .xmp",
+            helper.failedOf(
+                function()
+                    Handler.exportDevelopPreset({
+                        preset_uuid = "warm-1",
+                        destination_dir = "/exports",
+                        filename = "Warm.lrtemplate",
+                    })
+                end
+            )
+        )
 
         for _, case in ipairs({
             { dir = "exports", refusal = "destination_dir must be an absolute path" },
             { dir = "/exports/../user", refusal = "destination_dir must be written canonically" },
         }) do
-            local refusal = helper.failedOf(function()
-                Handler.exportDevelopPreset({ preset_uuid = "warm-1", destination_dir = case.dir })
-            end)
+            local refusal = helper.failedOf(
+                function() Handler.exportDevelopPreset({ preset_uuid = "warm-1", destination_dir = case.dir }) end
+            )
             assert.truthy(refusal:find(case.refusal, 1, true), refusal)
         end
 
         base.files["/exports/Warm.xmp"] = "file"
         local _, ExistingHandler = setup(base)
-        assert.are.equal("destination preset already exists; choose a new filename", helper.failedOf(function()
-            ExistingHandler.exportDevelopPreset({
-                preset_uuid = "warm-1", destination_dir = "/exports", filename = "Warm.xmp",
-            })
-        end))
+        assert.are.equal(
+            "destination preset already exists; choose a new filename",
+            helper.failedOf(
+                function()
+                    ExistingHandler.exportDevelopPreset({
+                        preset_uuid = "warm-1",
+                        destination_dir = "/exports",
+                        filename = "Warm.xmp",
+                    })
+                end
+            )
+        )
     end)
 end)
 
@@ -655,7 +769,8 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
         local _, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { fakePreset("Vibrant") }) } })
-        local context = helper.requestContext(nil, { stopping = function() return false end, timeLeft = function() return 1 end })
+        local context =
+            helper.requestContext(nil, { stopping = function() return false end, timeLeft = function() return 1 end })
 
         local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Vibrant" }, context)
 
@@ -663,42 +778,53 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.same({ "1", "2" }, { r.unknown[1].photo_id, r.unknown[2].photo_id })
     end)
 
-    it("fails the photo the catalog stayed busy for, keeps the photos before it and lists the rest as remaining", function()
-        local photos = {}
-        for _, id in ipairs({ "1", "2", "3" }) do photos[#photos + 1] = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg" }) end
-        local applies = 0
-        local _, Handler = setup({
-            photos = photos, folders = { fakeFolder("User", { fakePreset("Vibrant") }) },
-            writeAccessAborts = function(name)
-                if name ~= "Apply Develop Preset" then return false end
-                applies = applies + 1
-                return applies == 2
-            end,
-        })
+    it(
+        "fails the photo the catalog stayed busy for, keeps the photos before it and lists the rest as remaining",
+        function()
+            local photos = {}
+            for _, id in ipairs({ "1", "2", "3" }) do
+                photos[#photos + 1] = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg" })
+            end
+            local applies = 0
+            local _, Handler = setup({
+                photos = photos,
+                folders = { fakeFolder("User", { fakePreset("Vibrant") }) },
+                writeAccessAborts = function(name)
+                    if name ~= "Apply Develop Preset" then return false end
+                    applies = applies + 1
+                    return applies == 2
+                end,
+            })
 
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Vibrant" })
+            local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Vibrant" })
 
-        assert.are.equal(1, r.data.applied)
-        assert.are.same({ { photo_id = "2", reason = helper.catalogBusy("Apply Develop Preset") } }, r.failed)
-        assert.is_nil(r.unknown)
-        assert.are.same({ "3" }, r.remaining)
-    end)
+            assert.are.equal(1, r.data.applied)
+            assert.are.same({ { photo_id = "2", reason = helper.catalogBusy("Apply Develop Preset") } }, r.failed)
+            assert.is_nil(r.unknown)
+            assert.are.same({ "3" }, r.remaining)
+        end
+    )
 
-    it("answers unknown for a photo whose apply raised, keeps the photos before it and lists the rest as remaining", function()
-        local photos = {}
-        for _, id in ipairs({ "1", "2", "3" }) do photos[#photos + 1] = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg" }) end
-        photos[2].applyDevelopPreset = function() error("preset file vanished", 0) end
-        local _, Handler = setup({ photos = photos, folders = { fakeFolder("User", { fakePreset("Vibrant") }) } })
+    it(
+        "answers unknown for a photo whose apply raised, keeps the photos before it and lists the rest as remaining",
+        function()
+            local photos = {}
+            for _, id in ipairs({ "1", "2", "3" }) do
+                photos[#photos + 1] = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg" })
+            end
+            photos[2].applyDevelopPreset = function() error("preset file vanished", 0) end
+            local _, Handler = setup({ photos = photos, folders = { fakeFolder("User", { fakePreset("Vibrant") }) } })
 
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Vibrant" })
+            local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Vibrant" })
 
-        assert.are.equal(1, r.data.applied)
-        assert.is_nil(r.failed)
-        assert.are.equal(1, #r.unknown)
-        assert.are.equal("2", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("preset file vanished", 1, true))
-        assert.are.same({ "3" }, r.remaining)
-    end)
+            assert.are.equal(1, r.data.applied)
+            assert.is_nil(r.failed)
+            assert.are.equal(1, #r.unknown)
+            assert.are.equal("2", r.unknown[1].photo_id)
+            assert.truthy(r.unknown[1].reason:find("preset file vanished", 1, true))
+            assert.are.same({ "3" }, r.remaining)
+        end
+    )
 
     it("skips unresolved photos", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
@@ -717,7 +843,9 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local _, Handler = setup({ photos = { p1 }, pluginPresets = { preset } })
 
         local r = Handler.applyDevelopPreset({
-            photo_ids = { "1" }, preset_uuid = "plugin-1", preset_scope = "plugin",
+            photo_ids = { "1" },
+            preset_uuid = "plugin-1",
+            preset_scope = "plugin",
         })
 
         assert.is_nil(r.problem)
@@ -731,7 +859,10 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
         local _, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { preset }) } })
 
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "404", "2", "/a.jpg", "1", "404" }, preset_name = "Subject" })
+        local r = Handler.applyDevelopPreset({
+            photo_ids = { "1", "404", "2", "/a.jpg", "1", "404" },
+            preset_name = "Subject",
+        })
 
         assert.are.equal(2, r.data.applied)
         assert.are.equal(2, r.data.ai_updated)
@@ -756,13 +887,20 @@ describe("HandlerDevelop.applyDevelopPreset", function()
     end)
 
     local pendingText = "Lightroom has not finished computing the AI masks of photo 1 within "
-        .. require("Contract").AI_MASK_COMPUTE_WAIT_SECONDS .. " s, so nothing more was"
+        .. require("Contract").AI_MASK_COMPUTE_WAIT_SECONDS
+        .. " s, so nothing more was"
         .. " written to it. Do not write to this photo until its masks show in Develop: a write while Lightroom still"
         .. " computes can freeze Lightroom."
     for _, case in ipairs({
-        { aiUpdate = "fail", reason = "Lightroom could not compute the preset's AI masks: AI update failed; " .. pendingText },
+        {
+            aiUpdate = "fail",
+            reason = "Lightroom could not compute the preset's AI masks: AI update failed; " .. pendingText,
+        },
         { aiUpdate = "nothing", reason = pendingText },
-        { aiUpdate = "error", reason = "Lightroom found nothing for the preset's AI masks on photo 1 (an unnamed component)" },
+        {
+            aiUpdate = "error",
+            reason = "Lightroom found nothing for the preset's AI masks on photo 1 (an unnamed component)",
+        },
     }) do
         it("answers unknown for a photo whose AI masks Lightroom did not compute (" .. case.aiUpdate .. ")", function()
             local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = case.aiUpdate })
@@ -774,8 +912,14 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
             assert.are.equal(1, r.data.applied)
             assert.are.equal(1, r.data.ai_updated)
-            assert.are.same({ { photo_id = "1", reason = case.reason .. "; check the photo's AI masks in Develop before"
-                .. " writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset, updateAISettings, Update AI Settings" } }, r.unknown)
+            assert.are.same({
+                {
+                    photo_id = "1",
+                    reason = case.reason
+                        .. "; check the photo's AI masks in Develop before"
+                        .. " writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset, updateAISettings, Update AI Settings",
+                },
+            }, r.unknown)
             assert.is_nil(r.warnings)
             assert.are.equal(1, p2.getRawMetadata(p2, "__aiUpdateCalls"))
         end)
@@ -798,37 +942,54 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Subject" })
 
         assert.are.equal(1, r.data.applied)
-        assert.are.same({ { photo_id = "1", reason = "Lightroom returned mask data that is not a list; check the photo's"
-            .. " AI masks in Develop before writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset, updateAISettings, Update AI Settings" } },
-            r.unknown)
+        assert.are.same({
+            {
+                photo_id = "1",
+                reason = "Lightroom returned mask data that is not a list; check the photo's"
+                    .. " AI masks in Develop before writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset, updateAISettings, Update AI Settings",
+            },
+        }, r.unknown)
         assert.is_nil(r.remaining)
     end)
 
-    it("answers a photo whose masks cannot be read before the preset as failed and keeps the photos before it", function()
-        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
-        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
-        local p3 = helper.fakePhoto({ id = "3", path = "/c.jpg", aiUpdate = "ok" })
-        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
-        local _, Handler = setup({ photos = { p1, p2, p3 }, folders = { fakeFolder("User", { preset }) } })
-        local guarded = package.loaded.GuardedMaskWrite
-        local readEntries = guarded.readEntries
-        guarded.readEntries = function(catalog, photo)
-            if photo.localIdentifier == "2" then error("Lightroom returned mask data that is not a list", 0) end
-            return readEntries(catalog, photo)
+    it(
+        "answers a photo whose masks cannot be read before the preset as failed and keeps the photos before it",
+        function()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
+            local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
+            local p3 = helper.fakePhoto({ id = "3", path = "/c.jpg", aiUpdate = "ok" })
+            local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+            local _, Handler = setup({ photos = { p1, p2, p3 }, folders = { fakeFolder("User", { preset }) } })
+            local guarded = package.loaded.GuardedMaskWrite
+            local readEntries = guarded.readEntries
+            guarded.readEntries = function(catalog, photo)
+                if photo.localIdentifier == "2" then error("Lightroom returned mask data that is not a list", 0) end
+                return readEntries(catalog, photo)
+            end
+
+            local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Subject" })
+
+            assert.are.equal(1, r.data.applied)
+            assert.are.same(
+                { { photo_id = "2", reason = "Lightroom returned mask data that is not a list" } },
+                r.failed
+            )
+            assert.is_nil(r.unknown)
+            assert.are.same({ "3" }, r.remaining)
         end
-
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Subject" })
-
-        assert.are.equal(1, r.data.applied)
-        assert.are.same({ { photo_id = "2", reason = "Lightroom returned mask data that is not a list" } }, r.failed)
-        assert.is_nil(r.unknown)
-        assert.are.same({ "3" }, r.remaining)
-    end)
+    )
 
     it("says nothing about an existing AI mask the recompute left as it was", function()
-        local held = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok", developSettings = {
-            MaskGroupBasedCorrections = { { CorrectionID = "kept", CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } } },
-        } })
+        local held = helper.fakePhoto({
+            id = "1",
+            path = "/a.jpg",
+            aiUpdate = "ok",
+            developSettings = {
+                MaskGroupBasedCorrections = {
+                    { CorrectionID = "kept", CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } },
+                },
+            },
+        })
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
         local _, Handler = setup({ photos = { held }, folders = { fakeFolder("User", { preset }) } })
         local context = helper.requestContext()
@@ -840,9 +1001,14 @@ describe("HandlerDevelop.applyDevelopPreset", function()
     end)
 
     it("does not warn about a recompute when the catalog stays busy for Update AI Settings", function()
-        local held = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok", developSettings = {
-            MaskGroupBasedCorrections = { { CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } } },
-        } })
+        local held = helper.fakePhoto({
+            id = "1",
+            path = "/a.jpg",
+            aiUpdate = "ok",
+            developSettings = {
+                MaskGroupBasedCorrections = { { CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } } },
+            },
+        })
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
         local _, Handler = setup({
             photos = { held },
@@ -854,20 +1020,32 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, context)
 
         assert.are.equal(0, r.data.applied)
-        assert.are.same({ { photo_id = "1", reason = "Lightroom could not compute the preset's AI masks: The catalog"
-            .. " stayed busy with another write for 10 s, so Lightroom did not run Update AI Settings; check the photo's"
-            .. " AI masks in Develop before writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset" } }, r.unknown)
+        assert.are.same({
+            {
+                photo_id = "1",
+                reason = "Lightroom could not compute the preset's AI masks: The catalog"
+                    .. " stayed busy with another write for 10 s, so Lightroom did not run Update AI Settings; check the photo's"
+                    .. " AI masks in Develop before writing to it; written before this stopped: applyDevelopPreset, Apply Develop Preset",
+            },
+        }, r.unknown)
         assert.is_nil(held:getRawMetadata("__aiUpdateCalls"))
         assert.are.same({}, context.warnings)
     end)
 
     it("names an AI mask that was already failed before the preset and does not let it decide", function()
-        local held = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok", developSettings = {
-            MaskGroupBasedCorrections = {
-                { CorrectionID = "own-mask",
-                    CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own", ErrorReason = 1 } } },
+        local held = helper.fakePhoto({
+            id = "1",
+            path = "/a.jpg",
+            aiUpdate = "ok",
+            developSettings = {
+                MaskGroupBasedCorrections = {
+                    {
+                        CorrectionID = "own-mask",
+                        CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own", ErrorReason = 1 } },
+                    },
+                },
             },
-        } })
+        })
         local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
         local _, Handler = setup({ photos = { held }, folders = { fakeFolder("User", { preset }) } })
         local context = helper.requestContext()
@@ -876,36 +1054,46 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         assert.are.equal(1, r.data.applied)
         assert.is_nil(r.unknown)
-        assert.are.same({ "Photo 1: mask own-mask was already failed (ErrorReason 1, no result) before this call" }, context.warnings)
+        assert.are.same(
+            { "Photo 1: mask own-mask was already failed (ErrorReason 1, no result) before this call" },
+            context.warnings
+        )
     end)
 
-    it("names, and does not judge, an existing mask the recompute failed: the preset's own entries are new ids", function()
-        local developSettings = {
-            MaskGroupBasedCorrections = {
-                { CorrectionID = "own-mask", CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } },
-            },
-        }
-        local held = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok", developSettings = developSettings })
-        held.updateAISettings = function()
-            for _, correction in ipairs(developSettings.MaskGroupBasedCorrections) do
-                local component = correction.CorrectionMasks[1]
-                if correction.CorrectionID == "own-mask" then
-                    component.MaskDigest, component.ErrorReason = "own-recomputed", 1
-                else
-                    component.MaskDigest = "digest-1"
+    it(
+        "names, and does not judge, an existing mask the recompute failed: the preset's own entries are new ids",
+        function()
+            local developSettings = {
+                MaskGroupBasedCorrections = {
+                    { CorrectionID = "own-mask", CorrectionMasks = { { What = "Mask/Image", MaskDigest = "own" } } },
+                },
+            }
+            local held =
+                helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok", developSettings = developSettings })
+            held.updateAISettings = function()
+                for _, correction in ipairs(developSettings.MaskGroupBasedCorrections) do
+                    local component = correction.CorrectionMasks[1]
+                    if correction.CorrectionID == "own-mask" then
+                        component.MaskDigest, component.ErrorReason = "own-recomputed", 1
+                    else
+                        component.MaskDigest = "digest-1"
+                    end
                 end
             end
+            local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+            local _, Handler = setup({ photos = { held }, folders = { fakeFolder("User", { preset }) } })
+            local context = helper.requestContext()
+
+            local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, context)
+
+            assert.are.equal(1, r.data.applied)
+            assert.is_nil(r.unknown)
+            assert.are.same(
+                { "Photo 1: Lightroom's photo-wide AI recompute changed mask own-mask; check it" },
+                context.warnings
+            )
         end
-        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
-        local _, Handler = setup({ photos = { held }, folders = { fakeFolder("User", { preset }) } })
-        local context = helper.requestContext()
-
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, context)
-
-        assert.are.equal(1, r.data.applied)
-        assert.is_nil(r.unknown)
-        assert.are.same({ "Photo 1: Lightroom's photo-wide AI recompute changed mask own-mask; check it" }, context.warnings)
-    end)
+    )
 
     it("does not touch AI settings for a preset without AI masks", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
@@ -931,13 +1119,13 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.same({ "ghost" }, r.not_found)
         assert.are.equal(0, catalog.getWriteAccessCount())
     end)
-
 end)
 
 describe("HandlerDevelop numeric photo ids", function()
     it("accepts the numeric ids the catalog hands out", function()
         local source = helper.fakePhoto({
-            id = 10, path = "/s.jpg",
+            id = 10,
+            path = "/s.jpg",
             developSettings = { Exposure2012 = 1.0 },
         })
         local target = helper.fakePhoto({ id = 11, path = "/t.jpg" })
@@ -955,7 +1143,9 @@ describe("HandlerDevelop numeric photo ids", function()
 
     it("reports target ids that matched no photo", function()
         local source = helper.fakePhoto({
-            id = 10, path = "/s.jpg", developSettings = { Exposure2012 = 1.0 },
+            id = 10,
+            path = "/s.jpg",
+            developSettings = { Exposure2012 = 1.0 },
         })
         local target = helper.fakePhoto({ id = 11, path = "/t.jpg" })
         local _, Handler = setup({ photos = { source, target } })
@@ -966,29 +1156,43 @@ describe("HandlerDevelop numeric photo ids", function()
         assert.are.same({ "ghost" }, r.not_found)
         assert.is_nil(r.warnings and r.warnings[1])
     end)
-
 end)
 
 describe("HandlerDevelop.copyDevelopSettings guards", function()
     local function photos()
         return {
-            helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-                Exposure2012 = 1, orientation = "BC", MaskGroupBasedCorrections = { { What = "Correction" } },
-            } }),
+            helper.fakePhoto({
+                id = "10",
+                path = "/s.jpg",
+                developSettings = {
+                    Exposure2012 = 1,
+                    orientation = "BC",
+                    MaskGroupBasedCorrections = { { What = "Correction" } },
+                },
+            }),
             helper.fakePhoto({ id = "11", path = "/t.jpg", developSettings = { orientation = "DC" } }),
         }
     end
 
     it("refuses a full copy whose source masks the mask-write admission refuses", function()
-        local Handler = select(2, setup({
-            photos = photos(),
-            maskWriteAdmission = { status = function() return {} end, requireAdmitted = function()
-                error("Mask writes are not certified for this Lightroom build.", 0)
-            end },
-        }))
-        local err = helper.failedOf(function() Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }) end)
-        assert.are.equal("The source's masks cannot be copied: Mask writes are not certified for this Lightroom build."
-            .. " Name the settings to copy with settings to leave masks out.", err)
+        local Handler = select(
+            2,
+            setup({
+                photos = photos(),
+                maskWriteAdmission = {
+                    status = function() return {} end,
+                    requireAdmitted = function() error("Mask writes are not certified for this Lightroom build.", 0) end,
+                },
+            })
+        )
+        local err = helper.failedOf(
+            function() Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }) end
+        )
+        assert.are.equal(
+            "The source's masks cannot be copied: Mask writes are not certified for this Lightroom build."
+                .. " Name the settings to copy with settings to leave masks out.",
+            err
+        )
     end)
 
     it("does not preview or copy the source's orientation", function()
@@ -998,18 +1202,27 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
     end)
 
     it("leaves the source's FilterList out of a full copy and its preview and names its filters", function()
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, FilterList = { Filters = {
-                { Name = "Enhance", CompressedSettings = "source" }, { Name = "Reflection", CompressedSettings = "r" },
-            } },
-        } })
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                FilterList = {
+                    Filters = {
+                        { Name = "Enhance", CompressedSettings = "source" },
+                        { Name = "Reflection", CompressedSettings = "r" },
+                    },
+                },
+            },
+        })
         local own = { Filters = { { Name = "Enhance", CompressedSettings = "target" } } }
-        local target = helper.fakePhoto({ id = "11", path = "/t.jpg", developSettings = { Exposure2012 = 0, FilterList = own } })
+        local target =
+            helper.fakePhoto({ id = "11", path = "/t.jpg", developSettings = { Exposure2012 = 0, FilterList = own } })
         local Handler = select(2, setup({ photos = { source, target } }))
 
         local previewContext = helper.requestContext()
-        local preview = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, dry_run = true },
-            previewContext)
+        local preview =
+            Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, dry_run = true }, previewContext)
         local context = helper.requestContext()
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }, context)
 
@@ -1019,15 +1232,22 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
         assert.is_nil(target:getRawMetadata("__appliedSettings").FilterList)
         assert.are.same(own, target:getDevelopSettings().FilterList)
         for _, warnings in ipairs({ previewContext.warnings, context.warnings }) do
-            assert.are.same({ "A full copy leaves out the source's FilterList (Enhance, Reflection): Lightroom computes"
-                .. " those results for each image, so each target keeps its own" }, warnings)
+            assert.are.same({
+                "A full copy leaves out the source's FilterList (Enhance, Reflection): Lightroom computes"
+                    .. " those results for each image, so each target keeps its own",
+            }, warnings)
         end
     end)
 
     it("does not warn about FilterList when the source has no filters", function()
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, FilterList = { Filters = {} },
-        } })
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                FilterList = { Filters = {} },
+            },
+        })
         local target = helper.fakePhoto({ id = "11", path = "/t.jpg" })
         local Handler = select(2, setup({ photos = { source, target } }))
         local context = helper.requestContext()
@@ -1056,7 +1276,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
     it("resolves targets OUTSIDE the write-access gate", function()
         local source = helper.fakePhoto({
-            id = "10", path = "/s.jpg",
+            id = "10",
+            path = "/s.jpg",
             developSettings = { Exposure2012 = 1.0 },
         })
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
@@ -1069,7 +1290,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
     it("resolves the source OUTSIDE the read-access gate", function()
         local source = helper.fakePhoto({
-            id = "10", path = "/s.jpg",
+            id = "10",
+            path = "/s.jpg",
             developSettings = { Exposure2012 = 1.0 },
         })
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
@@ -1080,24 +1302,31 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
 
-    it("fails a target whose saved settings Lightroom does not return, writes nothing to it and copies the others", function()
-        local source = helper.fakePhoto({ id = "10", developSettings = { Exposure2012 = 1 } })
-        local first = helper.fakePhoto({ id = "11" })
-        local unread = helper.fakePhoto({ id = "12" })
-        local last = helper.fakePhoto({ id = "13" })
-        unread.getDevelopSettings = function() return nil end
-        local _, Handler = setup({ photos = { source, first, unread, last } })
+    it(
+        "fails a target whose saved settings Lightroom does not return, writes nothing to it and copies the others",
+        function()
+            local source = helper.fakePhoto({ id = "10", developSettings = { Exposure2012 = 1 } })
+            local first = helper.fakePhoto({ id = "11" })
+            local unread = helper.fakePhoto({ id = "12" })
+            local last = helper.fakePhoto({ id = "13" })
+            unread.getDevelopSettings = function() return nil end
+            local _, Handler = setup({ photos = { source, first, unread, last } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12", "13" } })
+            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12", "13" } })
 
-        assert.are.equal(2, r.data.copied)
-        assert.is_nil(unread:getRawMetadata("__appliedSettings"))
-        assert.are.same({ { photo_id = "12", reason = "Lightroom returned no saved settings for photo 12" } }, r.failed)
-    end)
+            assert.are.equal(2, r.data.copied)
+            assert.is_nil(unread:getRawMetadata("__appliedSettings"))
+            assert.are.same(
+                { { photo_id = "12", reason = "Lightroom returned no saved settings for photo 12" } },
+                r.failed
+            )
+        end
+    )
 
     it("copies all settings from source to targets", function()
         local source = helper.fakePhoto({
-            id = "10", path = "/s.jpg",
+            id = "10",
+            path = "/s.jpg",
             developSettings = { Exposure2012 = 1.0, Contrast2012 = 25, WhiteBalance = "Custom" },
         })
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
@@ -1121,7 +1350,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
     it("filters by settings whitelist", function()
         local source = helper.fakePhoto({
-            id = "20", path = "/s.jpg",
+            id = "20",
+            path = "/s.jpg",
             developSettings = { Exposure2012 = 0.5, Contrast2012 = 10, Saturation = 20 },
         })
         local target = helper.fakePhoto({ id = "21", path = "/t.jpg" })
@@ -1144,9 +1374,14 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         { what = "the full copy", settings = nil },
     }) do
         it("copies the source's Extended curve into both fields of the target with " .. case.what, function()
-            local source = helper.fakePhoto({ id = "20", path = "/s.jpg", developSettings = {
-                ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 }, ExtendedToneCurvePV2012 = LONG_CURVE,
-            } })
+            local source = helper.fakePhoto({
+                id = "20",
+                path = "/s.jpg",
+                developSettings = {
+                    ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 },
+                    ExtendedToneCurvePV2012 = LONG_CURVE,
+                },
+            })
             local target = helper.fakePhoto({ id = "21", path = "/t.jpg" })
             local _, Handler = setup({ photos = { source, target } })
 
@@ -1160,7 +1395,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
     it("copies HSL settings by whitelist", function()
         local source = helper.fakePhoto({
-            id = "22", path = "/s.jpg",
+            id = "22",
+            path = "/s.jpg",
             developSettings = {
                 Exposure2012 = 0.5,
                 HueAdjustmentOrange = -12,
@@ -1189,7 +1425,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
         local _, Handler = setup({ photos = { source, t1 } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "404", "/t1.jpg", "11", "404" } })
+        local r =
+            Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "404", "/t1.jpg", "11", "404" } })
 
         assert.are.equal(1, r.data.copied)
         assert.are.same({ "11" }, r.data.computed)
@@ -1220,7 +1457,12 @@ describe("HandlerDevelop.copyDevelopSettings", function()
     it("answers unknown for a target still computing at the limit and writes nothing more to it", function()
         local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
-        local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "nothing", developSettings = { Exposure2012 = 0 } })
+        local t2 = helper.fakePhoto({
+            id = "12",
+            path = "/t2.jpg",
+            aiUpdate = "nothing",
+            developSettings = { Exposure2012 = 0 },
+        })
         local _, Handler = setup({ photos = { source, t1, t2 } })
 
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
@@ -1228,92 +1470,132 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.are.same({ "11" }, r.data.computed)
         assert.is_nil(r.failed)
         assert.are.equal("12", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("has not finished computing the AI masks of photo 12", 1, true),
-            r.unknown[1].reason)
+        assert.truthy(
+            r.unknown[1].reason:find("has not finished computing the AI masks of photo 12", 1, true),
+            r.unknown[1].reason
+        )
         local kept = t2:getDevelopSettings()
         assert.are.equal(0, kept.Exposure2012)
         assert.are.equal(1, #kept.MaskGroupBasedCorrections)
     end)
 
-    it("fails a target whose copied AI mask Lightroom could not compute, restoring its masks and writing none of the settings", function()
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
-        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
-        local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "error", developSettings = { Exposure2012 = 0 } })
-        local _, Handler = setup({ photos = { source, t1, t2 } })
+    it(
+        "fails a target whose copied AI mask Lightroom could not compute, restoring its masks and writing none of the settings",
+        function()
+            local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
+            local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+            local t2 = helper.fakePhoto({
+                id = "12",
+                path = "/t2.jpg",
+                aiUpdate = "error",
+                developSettings = { Exposure2012 = 0 },
+            })
+            local _, Handler = setup({ photos = { source, t1, t2 } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
 
-        assert.are.equal(1, r.data.copied)
-        assert.are.equal("12", r.failed[1].photo_id)
-        assert.truthy(r.failed[1].reason:find("Lightroom found nothing for the copied AI masks on photo 12", 1, true),
-            r.failed[1].reason)
-        local kept = t2:getDevelopSettings()
-        assert.are.equal(0, kept.Exposure2012)
-        assert.are.same({}, kept.MaskGroupBasedCorrections or {})
-    end)
+            assert.are.equal(1, r.data.copied)
+            assert.are.equal("12", r.failed[1].photo_id)
+            assert.truthy(
+                r.failed[1].reason:find("Lightroom found nothing for the copied AI masks on photo 12", 1, true),
+                r.failed[1].reason
+            )
+            local kept = t2:getDevelopSettings()
+            assert.are.equal(0, kept.Exposure2012)
+            assert.are.same({}, kept.MaskGroupBasedCorrections or {})
+        end
+    )
 
-    it("drops what Lightroom computed for the source's AI masks, frame fields included, so each target gets its own", function()
-        local sourceSettings = {
-            Exposure2012 = 1.0,
-            MaskGroupBasedCorrections = {
-                {
-                    CorrectionName = "Mask 1",
-                    CorrectionMasks = {
-                        {
-                            What = "Mask/Image",
-                            MaskSubType = 1,
-                            Origin = "619,0",
-                            MaskDigest = "mask-digest",
-                            InputDigest = "input-digest",
-                            LocalInputDigest = "local-digest",
+    it(
+        "drops what Lightroom computed for the source's AI masks, frame fields included, so each target gets its own",
+        function()
+            local sourceSettings = {
+                Exposure2012 = 1.0,
+                MaskGroupBasedCorrections = {
+                    {
+                        CorrectionName = "Mask 1",
+                        CorrectionMasks = {
+                            {
+                                What = "Mask/Image",
+                                MaskSubType = 1,
+                                Origin = "619,0",
+                                MaskDigest = "mask-digest",
+                                InputDigest = "input-digest",
+                                LocalInputDigest = "local-digest",
+                            },
+                            { What = "Mask/Gradient", MaskDigest = "kept-on-geometry-masks" },
                         },
-                        { What = "Mask/Gradient", MaskDigest = "kept-on-geometry-masks" },
                     },
                 },
-            },
-        }
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = sourceSettings })
-        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
-        local _, Handler = setup({ photos = { source, t1 } })
+            }
+            local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = sourceSettings })
+            local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+            local _, Handler = setup({ photos = { source, t1 } })
 
-        Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+            Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
-        local applied = t1:getDevelopSettings()
-        assert.are.equal(1.0, applied.Exposure2012)
-        assert.are.same({
-            { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-11" },
-            { What = "Mask/Gradient", MaskDigest = "kept-on-geometry-masks" },
-        }, applied.MaskGroupBasedCorrections[1].CorrectionMasks)
-        assert.are.equal("Mask 1", applied.MaskGroupBasedCorrections[1].CorrectionName)
-        assert.are.equal("mask-digest", sourceSettings.MaskGroupBasedCorrections[1].CorrectionMasks[1].MaskDigest)
-    end)
+            local applied = t1:getDevelopSettings()
+            assert.are.equal(1.0, applied.Exposure2012)
+            assert.are.same({
+                { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-11" },
+                { What = "Mask/Gradient", MaskDigest = "kept-on-geometry-masks" },
+            }, applied.MaskGroupBasedCorrections[1].CorrectionMasks)
+            assert.are.equal("Mask 1", applied.MaskGroupBasedCorrections[1].CorrectionName)
+            assert.are.equal("mask-digest", sourceSettings.MaskGroupBasedCorrections[1].CorrectionMasks[1].MaskDigest)
+        end
+    )
 
-    it("answers unknown for a target whose AI mask recompute raises and leaves its masks uncomputed, removing nothing", function()
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
-        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
-        local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "fail" })
-        local _, Handler = setup({ photos = { source, t1, t2 } })
+    it(
+        "answers unknown for a target whose AI mask recompute raises and leaves its masks uncomputed, removing nothing",
+        function()
+            local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
+            local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+            local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "fail" })
+            local _, Handler = setup({ photos = { source, t1, t2 } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
 
-        assert.are.same({ "11" }, r.data.computed)
-        assert.is_nil(r.failed)
-        assert.are.equal("12", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("AI update failed", 1, true), r.unknown[1].reason)
-        assert.truthy(r.unknown[1].reason:find("has not finished computing", 1, true), r.unknown[1].reason)
-        assert.are.equal(1, #t2:getDevelopSettings().MaskGroupBasedCorrections)
-    end)
+            assert.are.same({ "11" }, r.data.computed)
+            assert.is_nil(r.failed)
+            assert.are.equal("12", r.unknown[1].photo_id)
+            assert.truthy(r.unknown[1].reason:find("AI update failed", 1, true), r.unknown[1].reason)
+            assert.truthy(r.unknown[1].reason:find("has not finished computing", 1, true), r.unknown[1].reason)
+            assert.are.equal(1, #t2:getDevelopSettings().MaskGroupBasedCorrections)
+        end
+    )
 
     it("judges masks a repeat full copy writes under ids the target already holds as its own", function()
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1.0,
-            MaskGroupBasedCorrections = { { CorrectionID = "S1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1 } } } },
-        } })
-        local held = { { CorrectionID = "S1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-old" } } } }
-        local target = helper.fakePhoto({ id = "11", path = "/t.jpg", aiUpdate = "error", developSettings = {
-            Exposure2012 = 0, MaskGroupBasedCorrections = held,
-        } })
-        local before = { { CorrectionID = "S1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-old" } } } }
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1.0,
+                MaskGroupBasedCorrections = {
+                    { CorrectionID = "S1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1 } } },
+                },
+            },
+        })
+        local held = {
+            {
+                CorrectionID = "S1",
+                CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-old" } },
+            },
+        }
+        local target = helper.fakePhoto({
+            id = "11",
+            path = "/t.jpg",
+            aiUpdate = "error",
+            developSettings = {
+                Exposure2012 = 0,
+                MaskGroupBasedCorrections = held,
+            },
+        })
+        local before = {
+            {
+                CorrectionID = "S1",
+                CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1, MaskDigest = "digest-old" } },
+            },
+        }
         local _, Handler = setup({ photos = { source, target } })
 
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
@@ -1324,26 +1606,40 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.are.equal(0, target:getDevelopSettings().Exposure2012)
     end)
 
-    it("withholds the restore and answers unknown when an own mask has one failed and one uncomputed component", function()
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            MaskGroupBasedCorrections = { { CorrectionMasks = {
-                { What = "Mask/Image", MaskSubType = 3, MaskSubCategoryID = 13 },
-                { What = "Mask/Image", MaskSubType = 0, MaskSubCategoryID = 50001 },
-            } } },
-        } })
-        local target = helper.fakePhoto({ id = "11", path = "/t.jpg", aiUpdate = "mixed" })
-        local _, Handler = setup({ photos = { source, target } })
+    it(
+        "withholds the restore and answers unknown when an own mask has one failed and one uncomputed component",
+        function()
+            local source = helper.fakePhoto({
+                id = "10",
+                path = "/s.jpg",
+                developSettings = {
+                    MaskGroupBasedCorrections = {
+                        {
+                            CorrectionMasks = {
+                                { What = "Mask/Image", MaskSubType = 3, MaskSubCategoryID = 13 },
+                                { What = "Mask/Image", MaskSubType = 0, MaskSubCategoryID = 50001 },
+                            },
+                        },
+                    },
+                },
+            })
+            local target = helper.fakePhoto({ id = "11", path = "/t.jpg", aiUpdate = "mixed" })
+            local _, Handler = setup({ photos = { source, target } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
-        assert.is_nil(r.failed)
-        assert.are.equal("11", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("has not finished computing the AI masks of photo 11", 1, true), r.unknown[1].reason)
-        local kept = target:getDevelopSettings().MaskGroupBasedCorrections
-        assert.are.equal(1, #kept)
-        assert.are.equal(1, kept[1].CorrectionMasks[1].ErrorReason)
-        assert.is_nil(kept[1].CorrectionMasks[2].MaskDigest)
-    end)
+            assert.is_nil(r.failed)
+            assert.are.equal("11", r.unknown[1].photo_id)
+            assert.truthy(
+                r.unknown[1].reason:find("has not finished computing the AI masks of photo 11", 1, true),
+                r.unknown[1].reason
+            )
+            local kept = target:getDevelopSettings().MaskGroupBasedCorrections
+            assert.are.equal(1, #kept)
+            assert.are.equal(1, kept[1].CorrectionMasks[1].ErrorReason)
+            assert.is_nil(kept[1].CorrectionMasks[2].MaskDigest)
+        end
+    )
 
     it("does not touch AI settings when the copy has no AI masks", function()
         local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = { Exposure2012 = 1.0 } })
@@ -1363,7 +1659,9 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local _, Handler = setup({ photos = { source, t1 } })
 
         local r = Handler.copyDevelopSettings({
-            source_id = "10", target_ids = { "11" }, settings = { "Exposure2012" },
+            source_id = "10",
+            target_ids = { "11" },
+            settings = { "Exposure2012" },
         })
 
         assert.is_nil(r.data.computed)
@@ -1372,41 +1670,59 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
     it("answers not_found when the source is missing", function()
         local _, Handler = setup({ photos = {} })
-        assert.are.equal("missing", helper.notFoundOf(function() Handler.copyDevelopSettings({ source_id = "missing", target_ids = { "t" } }) end))
+        assert.are.equal(
+            "missing",
+            helper.notFoundOf(
+                function() Handler.copyDevelopSettings({ source_id = "missing", target_ids = { "t" } }) end
+            )
+        )
     end)
 end)
 
 describe("HandlerDevelop.setDevelopSettingsBatch", function()
-    it("writes each photo its own settings, reads all back after one wait, and answers by photo in request order", function()
-        local one = helper.fakePhoto({ id = "1", path = "/1.jpg" })
-        local two = helper.fakePhoto({ id = "2", path = "/2.jpg" })
-        local sleeps = 0
-        local _, Handler = setup({ photos = { one, two }, tasks = { pcall = pcall, sleep = function() sleeps = sleeps + 1 end } })
+    it(
+        "writes each photo its own settings, reads all back after one wait, and answers by photo in request order",
+        function()
+            local one = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+            local two = helper.fakePhoto({ id = "2", path = "/2.jpg" })
+            local sleeps = 0
+            local _, Handler =
+                setup({ photos = { one, two }, tasks = { pcall = pcall, sleep = function() sleeps = sleeps + 1 end } })
 
-        local reply = Handler.setDevelopSettingsBatch({ photos = {
-            { photo_id = "2", settings = { Temperature = 5200 } },
-            { photo_id = "1", settings = { Exposure2012 = 0.5 } },
-        } }, helper.requestContext())
+            local reply = Handler.setDevelopSettingsBatch({
+                photos = {
+                    { photo_id = "2", settings = { Temperature = 5200 } },
+                    { photo_id = "1", settings = { Exposure2012 = 0.5 } },
+                },
+            }, helper.requestContext())
 
-        assert.are.same({ Temperature = 5200 }, two:getRawMetadata("__appliedSettings"))
-        assert.are.same({ Exposure2012 = 0.5 }, one:getRawMetadata("__appliedSettings"))
-        assert.are.same({ { photo_id = "2", settings = { Temperature = 5200 } }, { photo_id = "1", settings = { Exposure2012 = 0.5 } } },
-            reply.data.results)
-        assert.are.equal(1, sleeps)
-    end)
+            assert.are.same({ Temperature = 5200 }, two:getRawMetadata("__appliedSettings"))
+            assert.are.same({ Exposure2012 = 0.5 }, one:getRawMetadata("__appliedSettings"))
+            assert.are.same({
+                { photo_id = "2", settings = { Temperature = 5200 } },
+                { photo_id = "1", settings = { Exposure2012 = 0.5 } },
+            }, reply.data.results)
+            assert.are.equal(1, sleeps)
+        end
+    )
 
     it("never writes a photo the server refused, answering it with the server's reason", function()
         local one = helper.fakePhoto({ id = "1", path = "/1.jpg" })
         local two = helper.fakePhoto({ id = "2", path = "/2.jpg" })
         local _, Handler = setup({ photos = { one, two } })
 
-        local reply = Handler.setDevelopSettingsBatch({ photos = {
-            { photo_id = "1", refused = "Refused before writing: GlowStyle needs Glow above 0" },
-            { photo_id = "2", settings = { Exposure2012 = 0.5 } },
-        } }, helper.requestContext())
+        local reply = Handler.setDevelopSettingsBatch({
+            photos = {
+                { photo_id = "1", refused = "Refused before writing: GlowStyle needs Glow above 0" },
+                { photo_id = "2", settings = { Exposure2012 = 0.5 } },
+            },
+        }, helper.requestContext())
 
         assert.is_nil(one:getRawMetadata("__appliedSettings"))
-        assert.are.same({ { photo_id = "1", reason = "Refused before writing: GlowStyle needs Glow above 0" } }, reply.failed)
+        assert.are.same(
+            { { photo_id = "1", reason = "Refused before writing: GlowStyle needs Glow above 0" } },
+            reply.failed
+        )
         assert.are.same({ { photo_id = "2", settings = { Exposure2012 = 0.5 } } }, reply.data.results)
     end)
 
@@ -1424,11 +1740,13 @@ describe("HandlerDevelop.setDevelopSettingsBatch", function()
         end
         local _, Handler = setup({ photos = photos, date = { currentTime = function() return clock.now end } })
 
-        local reply = Handler.setDevelopSettingsBatch({ photos = {
-            { photo_id = "1", settings = { Exposure2012 = 0.1 } },
-            { photo_id = "2", settings = { Exposure2012 = 0.2 } },
-            { photo_id = "3", settings = { Exposure2012 = 0.3 } },
-        } }, helper.requestContext(45))
+        local reply = Handler.setDevelopSettingsBatch({
+            photos = {
+                { photo_id = "1", settings = { Exposure2012 = 0.1 } },
+                { photo_id = "2", settings = { Exposure2012 = 0.2 } },
+                { photo_id = "3", settings = { Exposure2012 = 0.3 } },
+            },
+        }, helper.requestContext(45))
 
         assert.are.same({ "1", "2" }, { reply.data.results[1].photo_id, reply.data.results[2].photo_id })
         assert.are.same({ "3" }, reply.remaining)
@@ -1436,7 +1754,9 @@ describe("HandlerDevelop.setDevelopSettingsBatch", function()
 
     it("keeps the other photos' read-back when one photo's read raises, answering that one unknown", function()
         local photos = {}
-        for id = 1, 3 do photos[id] = helper.fakePhoto({ id = tostring(id), path = "/" .. id .. ".jpg" }) end
+        for id = 1, 3 do
+            photos[id] = helper.fakePhoto({ id = tostring(id), path = "/" .. id .. ".jpg" })
+        end
         local _, Handler = setup({ photos = photos })
         local get = photos[2].getDevelopSettings
         local reads = 0
@@ -1446,11 +1766,13 @@ describe("HandlerDevelop.setDevelopSettingsBatch", function()
             return get(self)
         end
 
-        local reply = Handler.setDevelopSettingsBatch({ photos = {
-            { photo_id = "1", settings = { Exposure2012 = 0.1 } },
-            { photo_id = "2", settings = { Exposure2012 = 0.2 } },
-            { photo_id = "3", settings = { Exposure2012 = 0.3 } },
-        } }, helper.requestContext())
+        local reply = Handler.setDevelopSettingsBatch({
+            photos = {
+                { photo_id = "1", settings = { Exposure2012 = 0.1 } },
+                { photo_id = "2", settings = { Exposure2012 = 0.2 } },
+                { photo_id = "3", settings = { Exposure2012 = 0.3 } },
+            },
+        }, helper.requestContext())
 
         assert.are.same({ "1", "3" }, { reply.data.results[1].photo_id, reply.data.results[2].photo_id })
         assert.are.equal("2", reply.unknown[1].photo_id)
@@ -1488,10 +1810,7 @@ describe("HandlerDevelop.setDevelopSettings", function()
         })
 
         assert.is_nil(r.problem)
-        assert.are.same(
-            { Exposure2012 = 0.75, Contrast2012 = 15 },
-            p.getRawMetadata(p, "__appliedSettings")
-        )
+        assert.are.same({ Exposure2012 = 0.75, Contrast2012 = 15 }, p.getRawMetadata(p, "__appliedSettings"))
     end)
 
     it("applies HSL settings to the photo", function()
@@ -1542,36 +1861,58 @@ describe("HandlerDevelop.setDevelopSettings", function()
         local composite = { 0, 0, 64, 48, 192, 210, 255, 255 }
         local blue = { 0, 4, 128, 132, 255, 250 }
 
-        local r = Handler.setDevelopSettings({ photo_id = "1", settings = { ToneCurvePV2012 = composite, ToneCurvePV2012Blue = blue } })
+        local r = Handler.setDevelopSettings({
+            photo_id = "1",
+            settings = { ToneCurvePV2012 = composite, ToneCurvePV2012Blue = blue },
+        })
 
         assert.is_nil(r.problem)
-        assert.are.same({ ToneCurvePV2012 = composite, ExtendedToneCurvePV2012 = composite,
-            ToneCurvePV2012Blue = blue, ExtendedToneCurvePV2012Blue = blue }, p.getRawMetadata(p, "__appliedSettings"))
+        assert.are.same({
+            ToneCurvePV2012 = composite,
+            ExtendedToneCurvePV2012 = composite,
+            ToneCurvePV2012Blue = blue,
+            ExtendedToneCurvePV2012Blue = blue,
+        }, p.getRawMetadata(p, "__appliedSettings"))
         assert.are.same(composite, r.data.settings.ToneCurvePV2012)
     end)
 
-    it("reads back a point curve from its Extended field first, so a curve Lightroom left in place is not reported done", function()
-        local held = LONG_CURVE
-        local p = helper.fakePhoto({ id = "1", path = "/a.jpg", developSettings = { ToneCurvePV2012 = { 0, 0, 255, 255 }, ExtendedToneCurvePV2012 = held } })
-        local apply = p.applyDevelopSettings
-        p.applyDevelopSettings = function(self, settings, ...)
-            local plain = {}
-            for key, value in pairs(settings) do
-                if not key:find("^Extended") then plain[key] = value end
+    it(
+        "reads back a point curve from its Extended field first, so a curve Lightroom left in place is not reported done",
+        function()
+            local held = LONG_CURVE
+            local p = helper.fakePhoto({
+                id = "1",
+                path = "/a.jpg",
+                developSettings = { ToneCurvePV2012 = { 0, 0, 255, 255 }, ExtendedToneCurvePV2012 = held },
+            })
+            local apply = p.applyDevelopSettings
+            p.applyDevelopSettings = function(self, settings, ...)
+                local plain = {}
+                for key, value in pairs(settings) do
+                    if not key:find("^Extended") then plain[key] = value end
+                end
+                return apply(self, plain, ...)
             end
-            return apply(self, plain, ...)
+            local _, Handler = setup({ photos = { p } })
+
+            local r = Handler.setDevelopSettings({
+                photo_id = "1",
+                settings = { ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } },
+            })
+
+            assert.truthy(r.problem, "expected a read-back problem")
+            assert.are.same(held, r.data.settings.ToneCurvePV2012)
         end
-        local _, Handler = setup({ photos = { p } })
-
-        local r = Handler.setDevelopSettings({ photo_id = "1", settings = { ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } } })
-
-        assert.truthy(r.problem, "expected a read-back problem")
-        assert.are.same(held, r.data.settings.ToneCurvePV2012)
-    end)
+    )
 
     it("answers not_found when the photo is missing", function()
         local _, Handler = setup({ photos = {} })
-        assert.are.equal("missing", helper.notFoundOf(function() Handler.setDevelopSettings({ photo_id = "missing", settings = { Exposure2012 = 1 } }) end))
+        assert.are.equal(
+            "missing",
+            helper.notFoundOf(
+                function() Handler.setDevelopSettings({ photo_id = "missing", settings = { Exposure2012 = 1 } }) end
+            )
+        )
     end)
 end)
 
@@ -1597,7 +1938,9 @@ local function denoiseSetup(opts)
             settings.MaskGroupBasedCorrections = masks
             return
         end
-        for key in pairs(settings) do settings[key] = nil end
+        for key in pairs(settings) do
+            settings[key] = nil
+        end
     end
     local function storeDenoise(photo, amount)
         settingsOf[photo].FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d" .. amount } } }
@@ -1612,7 +1955,9 @@ local function denoiseSetup(opts)
     end
     for _, spec in ipairs(opts.photos) do
         local settings = {}
-        for key, value in pairs(spec.settings or {}) do settings[key] = deepCopy(value) end
+        for key, value in pairs(spec.settings or {}) do
+            settings[key] = deepCopy(value)
+        end
         local p = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".rw2", developSettings = settings })
         settingsOf[p] = settings
         p.getDevelopSettings = function()
@@ -1629,11 +1974,12 @@ local function denoiseSetup(opts)
             settings.FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d" .. spec.denoise } } }
         end
         photos[#photos + 1] = p
-        panels[p] = spec.panel or {
-            denoiseEnabled = spec.enabled ~= false,
-            denoiseState = spec.denoise ~= nil,
-            denoiseAmount = spec.denoise or 50,
-        }
+        panels[p] = spec.panel
+            or {
+                denoiseEnabled = spec.enabled ~= false,
+                denoiseState = spec.denoise ~= nil,
+                denoiseAmount = spec.denoise or 50,
+            }
         outside[p] = spec.outsideSource
         unselectable[p] = spec.unselectable
     end
@@ -1643,7 +1989,13 @@ local function denoiseSetup(opts)
     local dropNextSelection = false
     local autoSelectPending = false
     calls = {
-        selections = {}, enhance = {}, amounts = {}, switched = 0, modules = {}, sources = {}, selectNone = 0,
+        selections = {},
+        enhance = {},
+        amounts = {},
+        switched = 0,
+        modules = {},
+        sources = {},
+        selectNone = 0,
     }
     local Handler
     local pendingAuto, pendingAutoWhiteBalance
@@ -1663,7 +2015,9 @@ local function denoiseSetup(opts)
             if not active then return { denoiseEnabled = false } end
             -- Lightroom returns a fresh copy of the panel state on every call.
             local copy = {}
-            for k, v in pairs(panels[active]) do copy[k] = v end
+            for k, v in pairs(panels[active]) do
+                copy[k] = v
+            end
             return copy
         end,
         setEnhance = function(name, on, amount)
@@ -1700,7 +2054,9 @@ local function denoiseSetup(opts)
         end
         calls.autoWhiteBalance = (calls.autoWhiteBalance or 0) + 1
     end
-    for _, name in ipairs(opts.without or {}) do controller[name] = nil end
+    for _, name in ipairs(opts.without or {}) do
+        controller[name] = nil
+    end
     local view = {
         getCurrentModuleName = function() return module end,
         switchToModule = function(name)
@@ -1793,7 +2149,9 @@ end
 
 local function reasonsOf(items)
     local found = {}
-    for _, item in ipairs(items or {}) do found[#found + 1] = item.photo_id .. ":" .. item.reason end
+    for _, item in ipairs(items or {}) do
+        found[#found + 1] = item.photo_id .. ":" .. item.reason
+    end
     return found
 end
 
@@ -1802,8 +2160,13 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
     local LANDING_SECONDS = 2.1
     local GRADIENT = { { CorrectionID = "G1", CorrectionMasks = { { What = "Mask/Gradient", MaskDigest = "a" } } } }
     local PREPARED = {
-        CropLeft = 0.124764, CropAngle = 5, PerspectiveUpright = 1, UprightCenterNormX = 0.5, Contrast2012 = 20,
-        Exposure2012 = 0.5, MaskGroupBasedCorrections = GRADIENT,
+        CropLeft = 0.124764,
+        CropAngle = 5,
+        PerspectiveUpright = 1,
+        UprightCenterNormX = 0.5,
+        Contrast2012 = 20,
+        Exposure2012 = 0.5,
+        MaskGroupBasedCorrections = GRADIENT,
     }
 
     local function readsAfterReset(calls, id)
@@ -1821,8 +2184,14 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
         { "only masks", { MaskGroupBasedCorrections = GRADIENT } },
         { "only spots", { RetouchAreas = { { SpotType = "heal" } } } },
         { "only the camera profile", { CameraProfile = "Adobe Standard" } },
-        { "only the profile Look", { Look = { Name = "Adobe Vivid", Amount = 1, UUID = "EA1DE074F188405965EEA2D7A5D3E3E9" } } },
-        { "only an Enhance filter", { FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d50" } } } } },
+        {
+            "only the profile Look",
+            { Look = { Name = "Adobe Vivid", Amount = 1, UUID = "EA1DE074F188405965EEA2D7A5D3E3E9" } },
+        },
+        {
+            "only an Enhance filter",
+            { FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d50" } } } },
+        },
     }) do
         it("answers reset once one read, after Lightroom lands a reset, shows a change to " .. case[1], function()
             local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = case[2] } } })
@@ -1845,8 +2214,12 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
             assert.is_nil(reply.data)
             assert.is_nil(reply.failed)
             assert.are.equal("1", reply.unknown[1].photo_id)
-            for _, text in ipairs({ "no edit", "the photo may have had nothing to reset", "read the photo before retrying",
-                "written before this stopped: resetAllDevelopAdjustments" }) do
+            for _, text in ipairs({
+                "no edit",
+                "the photo may have had nothing to reset",
+                "read the photo before retrying",
+                "written before this stopped: resetAllDevelopAdjustments",
+            }) do
                 assert.truthy(reply.unknown[1].reason:find(text, 1, true), reply.unknown[1].reason)
             end
             assert.are.equal(1, #readsAfterReset(calls, "1"))
@@ -1854,28 +2227,37 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
     end
 
     it("answers unknown when Lightroom returns no saved settings after the reset", function()
-        local Handler = denoiseSetup({ photos = { { id = "1", settings = PREPARED } }, reset = "voided", nilAfterReset = true })
+        local Handler =
+            denoiseSetup({ photos = { { id = "1", settings = PREPARED } }, reset = "voided", nilAfterReset = true })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } })
         assert.is_nil(reply.data)
         assert.are.equal("1", reply.unknown[1].photo_id)
-        assert.truthy(reply.unknown[1].reason:find("written before this stopped: resetAllDevelopAdjustments", 1, true),
-            reply.unknown[1].reason)
+        assert.truthy(
+            reply.unknown[1].reason:find("written before this stopped: resetAllDevelopAdjustments", 1, true),
+            reply.unknown[1].reason
+        )
     end)
 
     it("resets no photo when another photo becomes active while it reads the photo before the reset", function()
         local Handler, calls = denoiseSetup({
             photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED } },
-            onRead = function(id, photos) if id == "1" then return photos[2] end end,
+            onRead = function(id, photos)
+                if id == "1" then return photos[2] end
+            end,
         })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } })
         assert.is_nil(calls.resets)
         assert.is_nil(reply.data)
         assert.is_nil(reply.unknown)
-        assert.are.same({ "1:another photo became active before the reset; nothing was reset" }, reasonsOf(reply.failed))
+        assert.are.same(
+            { "1:another photo became active before the reset; nothing was reset" },
+            reasonsOf(reply.failed)
+        )
     end)
 
     it("resets each photo once, whether named by id or path, and lists unknown inputs as not_found", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED } } })
+        local Handler, calls =
+            denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED } } })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1", "404", "1", "/2.rw2", "2" } })
         assert.are.same({ "1", "2" }, calls.resets)
         assert.are.same({ "1:reset", "2:reset" }, statuses(reply))
@@ -1888,20 +2270,23 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
 
     it("lists the unprocessed inputs as remaining when the request's budget runs out", function()
         local Handler, calls = denoiseSetup({
-            photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED }, { id = "3", settings = EDITED } },
+            photos = {
+                { id = "1", settings = EDITED },
+                { id = "2", settings = EDITED },
+                { id = "3", settings = EDITED },
+            },
             onReset = function(clock) clock.now = clock.now + 100 end,
         })
-        local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1", 2, "3" } },
-            helper.requestContext(150))
+        local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1", 2, "3" } }, helper.requestContext(150))
         assert.are.same({ "1" }, calls.resets)
         assert.are.same({ "1:reset" }, statuses(reply))
         assert.are.same({ 2, "3" }, reply.remaining)
     end)
 
     it("lists every input as remaining when the budget is spent before the first photo", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED } } })
-        local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1", "2" } },
-            helper.requestContext(30))
+        local Handler, calls =
+            denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED } } })
+        local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1", "2" } }, helper.requestContext(30))
         assert.is_nil(reply.data)
         assert.are.same({ "1", "2" }, reply.remaining)
         assert.is_nil(calls.resets)
@@ -1909,7 +2294,8 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
     end)
 
     it("reports an error from the reset itself as an unknown outcome and restores the view", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED } }, resetError = "reset refused" })
+        local Handler, calls =
+            denoiseSetup({ photos = { { id = "1", settings = EDITED } }, resetError = "reset refused" })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } })
         assert.is_nil(reply.data)
         assert.are.equal("1", reply.unknown[1].photo_id)
@@ -1918,7 +2304,13 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
     end)
 
     it("reports a photo Develop cannot select as failed and carries on", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", unselectable = true, settings = EDITED }, { id = "3", settings = EDITED } } })
+        local Handler, calls = denoiseSetup({
+            photos = {
+                { id = "1", settings = EDITED },
+                { id = "2", unselectable = true, settings = EDITED },
+                { id = "3", settings = EDITED },
+            },
+        })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "2", "3" } })
         assert.are.same({ "3" }, calls.resets)
         assert.are.same({ "3:reset" }, statuses(reply))
@@ -1927,9 +2319,20 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
 
     it("reports progress that never decreases", function()
         local reports = {}
-        local Handler = denoiseSetup({ photos = { { id = "1", settings = EDITED }, { id = "2", settings = EDITED }, { id = "3", settings = EDITED } } })
-        Handler.resetDevelopAdjustments({ photo_ids = { "1", "2", "3", "404" } },
-            helper.requestContext(nil, { report = function(_, done, total) reports[#reports + 1] = { done, total } end }))
+        local Handler = denoiseSetup({
+            photos = {
+                { id = "1", settings = EDITED },
+                { id = "2", settings = EDITED },
+                { id = "3", settings = EDITED },
+            },
+        })
+        Handler.resetDevelopAdjustments(
+            { photo_ids = { "1", "2", "3", "404" } },
+            helper.requestContext(
+                nil,
+                { report = function(_, done, total) reports[#reports + 1] = { done, total } end }
+            )
+        )
         assert.are.same({ { 0, 3 }, { 1, 3 }, { 2, 3 }, { 3, 3 } }, reports)
     end)
 
@@ -1938,14 +2341,18 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
         local context = helper.requestContext(nil, { title = "reset_develop_adjustments" })
         local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } }, context)
         assert.are.same({ "1:reset" }, statuses(reply))
-        assert.are.same({ "reset_develop_adjustments could not restore the view: the library module was not reopened" },
-            context.warnings)
+        assert.are.same(
+            { "reset_develop_adjustments could not restore the view: the library module was not reopened" },
+            context.warnings
+        )
     end)
 
     it("lists all inputs as remaining when canceled before opening Develop", function()
         local Handler, calls = denoiseSetup({ photos = { { id = "1", settings = EDITED } } })
-        local reply = Handler.resetDevelopAdjustments({ photo_ids = { "1" } },
-            helper.requestContext(nil, { isCanceled = function() return true end }))
+        local reply = Handler.resetDevelopAdjustments(
+            { photo_ids = { "1" } },
+            helper.requestContext(nil, { isCanceled = function() return true end })
+        )
         assert.are.same({ "1" }, reply.remaining)
         assert.is_nil(calls.resets)
         assert.are.equal(0, calls.switched)
@@ -2034,23 +2441,30 @@ describe("HandlerDevelop.applyDenoise", function()
         assert.truthy(r.unknown[1].reason:find("did not show the new amount", 1, true))
     end)
 
-    it("answers unknown for a change Lightroom shows but never saves, naming the amount writes even once the panel"
-        .. " shows the previous amount again", function()
-        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2", denoise = 40 } }, notSaved = true })
+    it(
+        "answers unknown for a change Lightroom shows but never saves, naming the amount writes even once the panel"
+            .. " shows the previous amount again",
+        function()
+            local Handler, calls =
+                denoiseSetup({ photos = { { id = "1" }, { id = "2", denoise = 40 } }, notSaved = true })
 
-        local r = Handler.applyDenoise({ photo_ids = { "1", "2" }, amount = 60 })
+            local r = Handler.applyDenoise({ photo_ids = { "1", "2" }, amount = 60 })
 
-        assert.is_nil(r.data)
-        assert.is_nil(r.failed)
-        assert.are.equal("1", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("Denoise state", 1, true))
-        assert.are.equal("2", r.unknown[2].photo_id)
-        for _, text in ipairs({ "the panel shows the previous amount 40 again", "Denoise state",
-            "written before this stopped: changeDenoiseAmount" }) do
-            assert.truthy(r.unknown[2].reason:find(text, 1, true), r.unknown[2].reason)
+            assert.is_nil(r.data)
+            assert.is_nil(r.failed)
+            assert.are.equal("1", r.unknown[1].photo_id)
+            assert.truthy(r.unknown[1].reason:find("Denoise state", 1, true))
+            assert.are.equal("2", r.unknown[2].photo_id)
+            for _, text in ipairs({
+                "the panel shows the previous amount 40 again",
+                "Denoise state",
+                "written before this stopped: changeDenoiseAmount",
+            }) do
+                assert.truthy(r.unknown[2].reason:find(text, 1, true), r.unknown[2].reason)
+            end
+            assert.are.same({ { id = "2", amount = 60 }, { id = "2", amount = 40 } }, calls.amounts)
         end
-        assert.are.same({ { id = "2", amount = 60 }, { id = "2", amount = 40 } }, calls.amounts)
-    end)
+    )
 
     it("reports a Denoise change whose save lands after the timeout as unknown, not failed", function()
         local Handler = denoiseSetup({ photos = { { id = "2", denoise = 40 } }, savedAfter = 6 })
@@ -2077,8 +2491,8 @@ describe("HandlerDevelop.applyDenoise", function()
             onEnhance = function(_, clock) clock.now = clock.now + 100 end,
         })
 
-        local r = Handler.applyDenoise({ photo_ids = { "1", "2", "3", "4", "404" }, amount = 30 },
-            helper.requestContext(300))
+        local r =
+            Handler.applyDenoise({ photo_ids = { "1", "2", "3", "4", "404" }, amount = 30 }, helper.requestContext(300))
 
         assert.are.same({ "1:applied", "2:applied", "3:applied" }, statuses(r))
         assert.are.same({ "4" }, r.remaining)
@@ -2125,8 +2539,11 @@ describe("HandlerDevelop.applyDenoise", function()
 
         assert.are.equal("Develop module did not open", refusal)
         assert.are.same({ "develop", "library" }, calls.modules)
-        assert.is_nil(helper.failedOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
-            :find("already running", 1, true))
+        assert.is_nil(
+            helper
+                .failedOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
+                :find("already running", 1, true)
+        )
     end)
 
     it("refuses on a Lightroom without the Enhance panel calls before touching Develop", function()
@@ -2187,7 +2604,6 @@ describe("HandlerDevelop.applyDenoise", function()
         assert.are.equal(2, #r.unknown)
         assert.truthy(r.unknown[1].reason:find("panel busy", 1, true))
     end)
-
 end)
 
 local function processVersionSetup(opts)
@@ -2219,7 +2635,9 @@ local function processVersionSetup(opts)
     catalog.getTargetPhotos = function() return selected end
     catalog.getActiveSources = function() return sources end
     catalog.setActiveSources = function(_, value) sources = value end
-    catalog.setSelectedPhotos = function(_, photo, selection) active, selected = photo, selection end
+    catalog.setSelectedPhotos = function(_, photo, selection)
+        active, selected = photo, selection
+    end
     return Handler, calls, function() return module, active.localIdentifier, sources[1] end
 end
 
@@ -2227,16 +2645,19 @@ describe("HandlerDevelop.applyDenoise on a Lightroom without the Denoise functio
     it("refuses, naming the missing function as outside the SDK", function()
         local Handler = denoiseSetup({ photos = { { id = "1" } }, without = { "getEnhancePanelState" } })
 
-        assert.are.equal("apply_denoise needs LrDevelopController.getEnhancePanelState, a function outside the Lightroom SDK"
-            .. " that this Lightroom does not offer",
-            helper.failedOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end))
+        assert.are.equal(
+            "apply_denoise needs LrDevelopController.getEnhancePanelState, a function outside the Lightroom SDK"
+                .. " that this Lightroom does not offer",
+            helper.failedOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
+        )
     end)
 end)
 
 describe("HandlerDevelop.setProcessVersion", function()
     it("reports previous and actual versions and leaves unchanged photos alone", function()
         local Handler, calls, view = processVersionSetup()
-        local reply = Handler.setProcessVersion({ photo_ids = { "1", "2", "/1.raw", "missing" }, version = "Version 6" })
+        local reply =
+            Handler.setProcessVersion({ photo_ids = { "1", "2", "/1.raw", "missing" }, version = "Version 6" })
         assert.are.same({ "1" }, calls)
         assert.are.same({ "1:changed", "2:unchanged" }, statuses(reply))
         assert.are.equal("Version 5", reply.data.results[1].previous_version)
@@ -2250,7 +2671,8 @@ describe("HandlerDevelop.setProcessVersion", function()
     end)
 
     it("refuses masked-photo downgrades as failed before any setter call", function()
-        local Handler, calls, view = processVersionSetup({ settings2 = { MaskGroupBasedCorrections = { { CorrectionMasks = {} } } } })
+        local Handler, calls, view =
+            processVersionSetup({ settings2 = { MaskGroupBasedCorrections = { { CorrectionMasks = {} } } } })
         local reply = Handler.setProcessVersion({ photo_ids = { "2" }, version = "Version 5" })
         assert.is_nil(reply.data)
         assert.are.equal("2", reply.failed[1].photo_id)
@@ -2261,10 +2683,14 @@ describe("HandlerDevelop.setProcessVersion", function()
 
     it("still upgrades masked photos and downgrades photos without masks", function()
         local Handler, calls = processVersionSetup({ settings1 = { MaskGroupBasedCorrections = { {} } } })
-        assert.are.same({ "1:changed" },
-            statuses(Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6" })))
-        assert.are.same({ "2:changed" },
-            statuses(Handler.setProcessVersion({ photo_ids = { "2" }, version = "Version 4" })))
+        assert.are.same(
+            { "1:changed" },
+            statuses(Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6" }))
+        )
+        assert.are.same(
+            { "2:changed" },
+            statuses(Handler.setProcessVersion({ photo_ids = { "2" }, version = "Version 4" }))
+        )
         assert.are.same({ "1", "2" }, calls)
     end)
 
@@ -2278,29 +2704,34 @@ describe("HandlerDevelop.setProcessVersion", function()
 
     it("retains completed changes and lists remaining inputs when the request's budget runs out", function()
         local Handler = processVersionSetup({ cost = 100 })
-        local reply = Handler.setProcessVersion({ photo_ids = { "1", "2" }, version = "Version 6" },
-            helper.requestContext(120))
+        local reply =
+            Handler.setProcessVersion({ photo_ids = { "1", "2" }, version = "Version 6" }, helper.requestContext(120))
         assert.are.same({ "1:changed" }, statuses(reply))
         assert.are.same({ "2" }, reply.remaining)
     end)
 
     it("cancellation lists all unvisited inputs as remaining", function()
         local Handler, calls = processVersionSetup()
-        local reply = Handler.setProcessVersion({ photo_ids = { "1", "2" }, version = "Version 6" },
-            helper.requestContext(nil, { isCanceled = function() return true end }))
+        local reply = Handler.setProcessVersion(
+            { photo_ids = { "1", "2" }, version = "Version 6" },
+            helper.requestContext(nil, { isCanceled = function() return true end })
+        )
         assert.are.same({ "1", "2" }, reply.remaining)
         assert.are.equal(0, #calls)
     end)
 
-    it("reports an unconfirmed change as an unknown outcome naming the version read back, and restores the view", function()
-        local Handler, _, view = processVersionSetup({ ignored = true })
-        local reply = Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6" })
-        assert.is_nil(reply.data)
-        assert.are.equal("1", reply.unknown[1].photo_id)
-        assert.truthy(reply.unknown[1].reason:find("did not confirm", 1, true))
-        assert.truthy(reply.unknown[1].reason:find("Version 5", 1, true))
-        assert.are.equal("library", view())
-    end)
+    it(
+        "reports an unconfirmed change as an unknown outcome naming the version read back, and restores the view",
+        function()
+            local Handler, _, view = processVersionSetup({ ignored = true })
+            local reply = Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6" })
+            assert.is_nil(reply.data)
+            assert.are.equal("1", reply.unknown[1].photo_id)
+            assert.truthy(reply.unknown[1].reason:find("did not confirm", 1, true))
+            assert.truthy(reply.unknown[1].reason:find("Version 5", 1, true))
+            assert.are.equal("library", view())
+        end
+    )
 end)
 
 describe("HandlerDevelop.applyAutoAdjustments", function()
@@ -2322,8 +2753,10 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
 
     it("does not apply tone when only white balance is requested", function()
         local Handler, calls = denoiseSetup({ photos = { { id = "1" } } })
-        assert.are.same({ "1:applied" },
-            statuses(Handler.applyAutoAdjustments({ photo_ids = { "1" }, white_balance = true })))
+        assert.are.same(
+            { "1:applied" },
+            statuses(Handler.applyAutoAdjustments({ photo_ids = { "1" }, white_balance = true }))
+        )
         assert.is_nil(calls.autoTone)
     end)
 
@@ -2352,19 +2785,27 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
         { args = { tone = true }, names = "Auto Tone" },
         { args = { white_balance = true }, names = "Auto White Balance" },
     }) do
-        it("answers unknown when " .. case.names .. " shows no change within the wait, and lists missing photos",
+        it(
+            "answers unknown when " .. case.names .. " shows no change within the wait, and lists missing photos",
             function()
-            local Handler = denoiseSetup({ photos = { { id = "1" } }, autoUnchanged = true })
-            local args = { photo_ids = { "1", "404", "1" } }
-            for key, value in pairs(case.args) do args[key] = value end
-            local reply = Handler.applyAutoAdjustments(args)
-            assert.are.same({}, statuses(reply))
-            assert.are.equal("1", reply.unknown[1].photo_id)
-            assert.are.equal(case.names .. " was requested but no change was observed within 8 s; it may still be"
-                .. " applied, so read this photo's settings before writing to it; written before this stopped: "
-                .. (case.args.tone and "setAutoTone" or "setAutoWhiteBalance"), reply.unknown[1].reason)
-            assert.are.same({ "404" }, reply.not_found)
-        end)
+                local Handler = denoiseSetup({ photos = { { id = "1" } }, autoUnchanged = true })
+                local args = { photo_ids = { "1", "404", "1" } }
+                for key, value in pairs(case.args) do
+                    args[key] = value
+                end
+                local reply = Handler.applyAutoAdjustments(args)
+                assert.are.same({}, statuses(reply))
+                assert.are.equal("1", reply.unknown[1].photo_id)
+                assert.are.equal(
+                    case.names
+                        .. " was requested but no change was observed within 8 s; it may still be"
+                        .. " applied, so read this photo's settings before writing to it; written before this stopped: "
+                        .. (case.args.tone and "setAutoTone" or "setAutoWhiteBalance"),
+                    reply.unknown[1].reason
+                )
+                assert.are.same({ "404" }, reply.not_found)
+            end
+        )
     end
 
     it("lists the unreached inputs as remaining when the request's budget runs out after the first photo", function()
@@ -2372,8 +2813,8 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
             photos = { { id = "1" }, { id = "2" }, { id = "3" } },
             onAuto = function(_, clock) clock.now = clock.now + 100 end,
         })
-        local reply = Handler.applyAutoAdjustments({ photo_ids = { "1", "2", "3" }, tone = true },
-            helper.requestContext(150))
+        local reply =
+            Handler.applyAutoAdjustments({ photo_ids = { "1", "2", "3" }, tone = true }, helper.requestContext(150))
         assert.are.same({ "1:applied" }, statuses(reply))
         assert.are.same({ "2", "3" }, reply.remaining)
     end)
@@ -2381,12 +2822,16 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
     it("stops at the next photo when the request is cancelled", function()
         local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" }, { id = "3" } } })
         local cancelled = false
-        local reply = Handler.applyAutoAdjustments({ photo_ids = { "1", "2", "3" }, tone = true },
-            helper.requestContext(nil, { isCanceled = function()
-                local now = cancelled
-                cancelled = true
-                return now
-            end }))
+        local reply = Handler.applyAutoAdjustments(
+            { photo_ids = { "1", "2", "3" }, tone = true },
+            helper.requestContext(nil, {
+                isCanceled = function()
+                    local now = cancelled
+                    cancelled = true
+                    return now
+                end,
+            })
+        )
         assert.are.same({ "1:applied" }, statuses(reply))
         assert.are.same({ "2", "3" }, reply.remaining)
         assert.are.equal(1, calls.autoTone)
@@ -2394,11 +2839,14 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
 
     it("rejects overlap through the shared Develop session lock", function()
         local nested
-        local Handler = denoiseSetup({ photos = { { id = "1" } }, onAuto = function(handler)
-            nested = helper.failedOf(function()
-                handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true })
-            end)
-        end })
+        local Handler = denoiseSetup({
+            photos = { { id = "1" } },
+            onAuto = function(handler)
+                nested = helper.failedOf(
+                    function() handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true }) end
+                )
+            end,
+        })
         assert.are.same({ "1:applied" }, statuses(Handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true })))
         assert.truthy(nested:find("is already running", 1, true))
     end)
@@ -2409,10 +2857,11 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
         assert.are.equal("1", reply.unknown[1].photo_id)
         assert.truthy(reply.unknown[1].reason:find("Auto failed", 1, true))
         assert.are.same({ "develop", "library" }, calls.modules)
-        assert.are.same({ "1:applied" },
-            statuses(Handler.applyAutoAdjustments({ photo_ids = { "1" }, white_balance = true })))
+        assert.are.same(
+            { "1:applied" },
+            statuses(Handler.applyAutoAdjustments({ photo_ids = { "1" }, white_balance = true }))
+        )
     end)
-
 end)
 
 describe("HandlerDevelop batch dry runs", function()
@@ -2424,10 +2873,15 @@ describe("HandlerDevelop batch dry runs", function()
         catalog.withWriteAccessDo = function() error("dry run wrote") end
         target.applyDevelopSettings = function() error("dry run applied") end
         local r = Handler.copyDevelopSettings({
-            source_id = "1001", target_ids = { "1002", "1003", "missing" }, settings = { "Exposure2012" }, dry_run = true,
+            source_id = "1001",
+            target_ids = { "1002", "1003", "missing" },
+            settings = { "Exposure2012" },
+            dry_run = true,
         })
-        assert.are.same({ { key = "Exposure2012", before = 0, after = 0.5,
-            before_present = true, after_present = true } }, r.details[1].changes)
+        assert.are.same(
+            { { key = "Exposure2012", before = 0, after = 0.5, before_present = true, after_present = true } },
+            r.details[1].changes
+        )
         assert.are.same({}, r.details[2].changes)
         assert.are.same({ Exposure2012 = 1 }, r.setting_totals)
         assert.are.same({ "missing" }, r.missing)
@@ -2443,7 +2897,8 @@ describe("HandlerDevelop batch dry runs", function()
         catalog.withWriteAccessDo = function() error("dry run wrote") end
         target.applyDevelopPreset = function() error("dry run applied") end
         target.updateAISettings = function() error("dry run recomputed") end
-        local r = Handler.applyDevelopPreset({ photo_ids = { "1002", "missing" }, preset_name = "Subject", dry_run = true })
+        local r =
+            Handler.applyDevelopPreset({ photo_ids = { "1002", "missing" }, preset_name = "Subject", dry_run = true })
         assert.are.equal(1, r.setting_totals.Exposure2012)
         assert.is_nil(r.setting_totals.Contrast2012)
         assert.are.same({ "missing" }, r.missing)
@@ -2461,15 +2916,32 @@ describe("HandlerDevelop batch dry runs", function()
     end)
 
     it("limits preset diffs to readable declared keys and reports unknown effects", function()
-        local preset = fakePreset("Heavy", { settings = {
-            GrainAmount = 92, GrainFrequency = 40, GrainSize = 39, Glow = 0, Version = "18.7",
-        } })
-        local first = helper.fakePhoto({ id = "1002", developSettings = {
-            GrainAmount = 0, GrainFrequency = 50, GrainSize = 25,
-        } })
-        local second = helper.fakePhoto({ id = "1003", developSettings = {
-            GrainAmount = 92, GrainFrequency = 40, GrainSize = 39, Glow = 0,
-        } })
+        local preset = fakePreset("Heavy", {
+            settings = {
+                GrainAmount = 92,
+                GrainFrequency = 40,
+                GrainSize = 39,
+                Glow = 0,
+                Version = "18.7",
+            },
+        })
+        local first = helper.fakePhoto({
+            id = "1002",
+            developSettings = {
+                GrainAmount = 0,
+                GrainFrequency = 50,
+                GrainSize = 25,
+            },
+        })
+        local second = helper.fakePhoto({
+            id = "1003",
+            developSettings = {
+                GrainAmount = 92,
+                GrainFrequency = 40,
+                GrainSize = 39,
+                Glow = 0,
+            },
+        })
         local catalog, Handler = setup({ photos = { first, second }, folders = { fakeFolder("Grain", { preset }) } })
         catalog.withWriteAccessDo = function() error("preset preview wrote") end
         first.applyDevelopPreset = function() error("preset preview applied") end
@@ -2509,15 +2981,19 @@ describe("HandlerDevelop batch dry runs", function()
     end)
 
     it("lists the process version a full copy carries when source and target differ", function()
-        local source = helper.fakePhoto({ id = "1001", developSettings = { ProcessVersion = "15.4", Exposure2012 = 0.5 } })
-        local target = helper.fakePhoto({ id = "1002", developSettings = { ProcessVersion = "11.0", Exposure2012 = 0.5 } })
+        local source =
+            helper.fakePhoto({ id = "1001", developSettings = { ProcessVersion = "15.4", Exposure2012 = 0.5 } })
+        local target =
+            helper.fakePhoto({ id = "1002", developSettings = { ProcessVersion = "11.0", Exposure2012 = 0.5 } })
         local _, Handler = setup({ photos = { source, target } })
 
         local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
 
         assert.are.same({ ProcessVersion = 1 }, r.setting_totals)
-        assert.are.same({ key = "ProcessVersion", before_present = true, after_present = true, before = "11.0", after = "15.4" },
-            r.details[1].changes[1])
+        assert.are.same(
+            { key = "ProcessVersion", before_present = true, after_present = true, before = "11.0", after = "15.4" },
+            r.details[1].changes[1]
+        )
     end)
 
     it("does not recompute or write copied AI masks", function()
@@ -2561,9 +3037,14 @@ describe("HandlerDevelop batch dry runs", function()
         local source = helper.fakePhoto({ id = "1001" })
         local _, Handler = setup({ photos = { source } })
         for _, dryRun in ipairs({ false, true }) do
-            assert.are.equal("Preset not found", helper.failedOf(function()
-                Handler.applyDevelopPreset({ photo_ids = { "1001" }, preset_name = "Unknown", dry_run = dryRun })
-            end))
+            assert.are.equal(
+                "Preset not found",
+                helper.failedOf(
+                    function()
+                        Handler.applyDevelopPreset({ photo_ids = { "1001" }, preset_name = "Unknown", dry_run = dryRun })
+                    end
+                )
+            )
         end
     end)
 
@@ -2571,15 +3052,21 @@ describe("HandlerDevelop batch dry runs", function()
         local source = helper.fakePhoto({ id = "1001", developSettings = { Exposure2012 = 0.5 } })
         local _, Handler = setup({ photos = { source } })
         local ids = {}
-        for i = 1, 200 do ids[i] = "/missing/" .. string.rep("a", 200) .. tostring(i) .. ".jpg" end
+        for i = 1, 200 do
+            ids[i] = "/missing/" .. string.rep("a", 200) .. tostring(i) .. ".jpg"
+        end
         local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = ids, dry_run = true })
-        assert.is_true(#require('JSON'):encode(r) <= 20000)
+        assert.is_true(#require("JSON"):encode(r) <= 20000)
         assert.are.equal(200, r.missing_count)
         assert.are.equal(200, #r.missing_indices)
         assert.is_true(r.missing_truncated)
         assert.is_true(#r.missing < 200)
-        for i, id in ipairs(r.missing) do assert.are.equal(ids[i], id) end
-        for i, index in ipairs(r.missing_indices) do assert.are.equal(i, index) end
+        for i, id in ipairs(r.missing) do
+            assert.are.equal(ids[i], id)
+        end
+        for i, index in ipairs(r.missing_indices) do
+            assert.are.equal(i, index)
+        end
     end)
 
     it("bounds 200-target detail and totals every target", function()
@@ -2592,7 +3079,7 @@ describe("HandlerDevelop batch dry runs", function()
         end
         local _, Handler = setup({ photos = photos })
         local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = ids, dry_run = true })
-        assert.is_true(#require('JSON'):encode(r) <= 20000)
+        assert.is_true(#require("JSON"):encode(r) <= 20000)
         assert.are.equal(5, #r.details)
         assert.is_true(r.detail_truncated)
         assert.are.equal(200, r.setting_totals.Exposure2012)
@@ -2608,7 +3095,9 @@ describe("develop writes read back after Lightroom normalises them", function()
             if normalise and normalise.throws and not normalise.storesFirst then error(normalise.throws) end
             for key, value in pairs(settings) do
                 if normalise and normalise[key] ~= nil then value = normalise[key] end
-                if normalise and (normalise.drops == key or type(normalise.drops) == "table" and normalise.drops[key]) then
+                if
+                    normalise and (normalise.drops == key or type(normalise.drops) == "table" and normalise.drops[key])
+                then
                     value = nil
                 end
                 if key:find("^Extended") then value = nil end
@@ -2646,16 +3135,25 @@ describe("develop writes read back after Lightroom normalises them", function()
     end)
 
     it("names a table value Lightroom stored differently by its contents", function()
-        local _, Handler = setup({ photos = { storingPhoto("1", {}, { ToneCurvePV2012 = { 0, 0, 255, 255 } }) }, tasks = sleeps() })
+        local _, Handler =
+            setup({ photos = { storingPhoto("1", {}, { ToneCurvePV2012 = { 0, 0, 255, 255 } }) }, tasks = sleeps() })
 
-        local r = Handler.setDevelopSettings({ photo_id = "1", settings = { ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } } })
+        local r = Handler.setDevelopSettings({
+            photo_id = "1",
+            settings = { ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 } },
+        })
 
-        assert.truthy(r.problem:find("ToneCurvePV2012 [0,0,255,255] on photo 1 (written [0,0,128,140,255,255])", 1, true), r.problem)
+        assert.truthy(
+            r.problem:find("ToneCurvePV2012 [0,0,255,255] on photo 1 (written [0,0,128,140,255,255])", 1, true),
+            r.problem
+        )
     end)
 
     it("reports a key the photo held before and Lightroom does not show after the write as unknown", function()
-        local _, Handler = setup({ photos = { storingPhoto("1", { Temperature = 5000 }, { drops = "Temperature" }) },
-            tasks = sleeps() })
+        local _, Handler = setup({
+            photos = { storingPhoto("1", { Temperature = 5000 }, { drops = "Temperature" }) },
+            tasks = sleeps(),
+        })
 
         local r = Handler.setDevelopSettings({ photo_id = "1", settings = { Temperature = 200 } })
 
@@ -2669,7 +3167,10 @@ describe("develop writes read back after Lightroom normalises them", function()
     it("answers done and names the keys a photo stores neither before nor after the write", function()
         local _, Handler = setup({ photos = { storingPhoto("1", { Exposure2012 = 0 }, JPEG_DROPS) }, tasks = sleeps() })
 
-        local r = Handler.setDevelopSettings({ photo_id = "1", settings = { Temperature = 5500, Tint = 10, Exposure2012 = 0.5 } })
+        local r = Handler.setDevelopSettings({
+            photo_id = "1",
+            settings = { Temperature = 5500, Tint = 10, Exposure2012 = 0.5 },
+        })
 
         assert.is_nil(r.unknown)
         assert.is_nil(r.problem)
@@ -2696,7 +3197,11 @@ describe("develop writes read back after Lightroom normalises them", function()
         local broken = storingPhoto("12", { Exposure2012 = 0 }, { throws = "cannot write this photo" })
         local _, Handler = setup({ photos = { source, kept, broken }, tasks = sleeps() })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" }, settings = { "Exposure2012" } })
+        local r = Handler.copyDevelopSettings({
+            source_id = "10",
+            target_ids = { "11", "12" },
+            settings = { "Exposure2012" },
+        })
 
         assert.are.equal(1, r.data.copied)
         assert.are.equal("12", r.failed[1].photo_id)
@@ -2707,11 +3212,18 @@ describe("develop writes read back after Lightroom normalises them", function()
 
     it("answers unknown for a copy target that throws after Lightroom stored part of the settings", function()
         local source = storingPhoto("10", { Exposure2012 = 1, Contrast2012 = 20 })
-        local broken = storingPhoto("12", { Exposure2012 = 0, Contrast2012 = 0 },
-            { throws = "cannot finish this photo", storesFirst = true })
+        local broken = storingPhoto(
+            "12",
+            { Exposure2012 = 0, Contrast2012 = 0 },
+            { throws = "cannot finish this photo", storesFirst = true }
+        )
         local _, Handler = setup({ photos = { source, broken }, tasks = sleeps() })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "12" }, settings = { "Exposure2012", "Contrast2012" } })
+        local r = Handler.copyDevelopSettings({
+            source_id = "10",
+            target_ids = { "12" },
+            settings = { "Exposure2012", "Contrast2012" },
+        })
 
         assert.is_nil(r.failed)
         assert.are.equal("12", r.unknown[1].photo_id)
@@ -2731,8 +3243,8 @@ describe("develop writes read back after Lightroom normalises them", function()
 end)
 
 describe("copy replies carry data only for the copies their read-back confirmed", function()
-    local JSON = require 'JSON'
-    local Reply = require 'Reply'
+    local JSON = require "JSON"
+    local Reply = require "Reply"
 
     local function storingPhoto(id, stored, normalise)
         local photo = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg", developSettings = stored })
@@ -2747,19 +3259,22 @@ describe("copy replies carry data only for the copies their read-back confirmed"
         return photo
     end
 
-    local function source()
-        return storingPhoto("10", { Exposure2012 = 1, Contrast2012 = 20 })
-    end
+    local function source() return storingPhoto("10", { Exposure2012 = 1, Contrast2012 = 20 }) end
 
     local function wire(photos, args, opts)
         opts = opts or {}
-        local _, Handler = setup({ photos = photos, writeAccessAborts = opts.aborts,
-            tasks = { sleep = function() end, pcall = pcall } })
+        local _, Handler = setup({
+            photos = photos,
+            writeAccessAborts = opts.aborts,
+            tasks = { sleep = function() end, pcall = pcall },
+        })
         local asked = 0
-        local context = helper.requestContext(nil, opts.stopAfter and { stopping = function()
-            asked = asked + 1
-            return asked > opts.stopAfter
-        end } or nil)
+        local context = helper.requestContext(nil, opts.stopAfter and {
+            stopping = function()
+                asked = asked + 1
+                return asked > opts.stopAfter
+            end,
+        } or nil)
         local ok, value = pcall(Handler.copyDevelopSettings, args, context)
         local reply = Reply.outcome(ok, value, context)
         return JSON:decode(JSON:encode(reply))
@@ -2768,31 +3283,51 @@ describe("copy replies carry data only for the copies their read-back confirmed"
     local named = { "Exposure2012", "Contrast2012" }
     local cases = {
         ["all refused"] = function()
-            return wire({ source(), storingPhoto("11", { Exposure2012 = 0 }) }, { source_id = "10", target_ids = { "11" }, settings = named },
-                { aborts = function(name) return name == "Copy Develop Settings" end })
+            return wire(
+                { source(), storingPhoto("11", { Exposure2012 = 0 }) },
+                { source_id = "10", target_ids = { "11" }, settings = named },
+                { aborts = function(name) return name == "Copy Develop Settings" end }
+            )
         end,
         ["mixed"] = function()
-            return wire({ source(), storingPhoto("11", { Exposure2012 = 0 }), storingPhoto("12", { Exposure2012 = 0 }, { throws = "cannot write this photo" }) },
-                { source_id = "10", target_ids = { "11", "12" }, settings = named })
+            return wire({
+                source(),
+                storingPhoto("11", { Exposure2012 = 0 }),
+                storingPhoto("12", { Exposure2012 = 0 }, { throws = "cannot write this photo" }),
+            }, { source_id = "10", target_ids = { "11", "12" }, settings = named })
         end,
         ["unknown read-back"] = function()
-            return wire({ source(), storingPhoto("11", { Exposure2012 = 0, Contrast2012 = 0 }, { drops = { Contrast2012 = true } }) },
-                { source_id = "10", target_ids = { "11" }, settings = named })
+            return wire({
+                source(),
+                storingPhoto("11", { Exposure2012 = 0, Contrast2012 = 0 }, { drops = { Contrast2012 = true } }),
+            }, { source_id = "10", target_ids = { "11" }, settings = named })
         end,
         ["unknown and adjusted on one target"] = function()
-            return wire({ source(), storingPhoto("11", { Exposure2012 = 0, Contrast2012 = 0 }, { drops = { Contrast2012 = true }, Exposure2012 = 0.95 }) },
-                { source_id = "10", target_ids = { "11" }, settings = named })
+            return wire({
+                source(),
+                storingPhoto(
+                    "11",
+                    { Exposure2012 = 0, Contrast2012 = 0 },
+                    { drops = { Contrast2012 = true }, Exposure2012 = 0.95 }
+                ),
+            }, { source_id = "10", target_ids = { "11" }, settings = named })
         end,
         ["all not found"] = function()
             return wire({ source() }, { source_id = "10", target_ids = { "404", "/missing.jpg" }, settings = named })
         end,
         ["budget exhausted"] = function()
-            return wire({ source(), storingPhoto("11", { Exposure2012 = 0 }) }, { source_id = "10", target_ids = { "11" }, settings = named },
-                { stopAfter = 0 })
+            return wire(
+                { source(), storingPhoto("11", { Exposure2012 = 0 }) },
+                { source_id = "10", target_ids = { "11" }, settings = named },
+                { stopAfter = 0 }
+            )
         end,
         ["confirmed and remaining"] = function()
-            return wire({ source(), storingPhoto("11", { Exposure2012 = 0 }), storingPhoto("12", { Exposure2012 = 0 }) },
-                { source_id = "10", target_ids = { "11", "12" }, settings = named }, { stopAfter = 1 })
+            return wire(
+                { source(), storingPhoto("11", { Exposure2012 = 0 }), storingPhoto("12", { Exposure2012 = 0 }) },
+                { source_id = "10", target_ids = { "11", "12" }, settings = named },
+                { stopAfter = 1 }
+            )
         end,
     }
 
@@ -2801,32 +3336,48 @@ describe("copy replies carry data only for the copies their read-back confirmed"
     file:close()
 
     for _, expected in ipairs(fixture) do
-        it("answers the shared fixture's " .. expected.case .. " reply", function()
-            assert.are.same(expected.reply, cases[expected.case]())
-        end)
+        it(
+            "answers the shared fixture's " .. expected.case .. " reply",
+            function() assert.are.same(expected.reply, cases[expected.case]()) end
+        )
     end
 
     it("names every adjusted value in the error when no copy was confirmed", function()
         local photos, ids = { source() }, {}
         for index = 11, 21 do
-            photos[#photos + 1] = storingPhoto(tostring(index), { Exposure2012 = 0, Contrast2012 = 0 },
-                { drops = { Contrast2012 = true }, Exposure2012 = 0.95 })
+            photos[#photos + 1] = storingPhoto(
+                tostring(index),
+                { Exposure2012 = 0, Contrast2012 = 0 },
+                { drops = { Contrast2012 = true }, Exposure2012 = 0.95 }
+            )
             ids[#ids + 1] = tostring(index)
         end
 
         local reply = wire(photos, { source_id = "10", target_ids = ids, settings = named })
 
         assert.is_nil(reply.result.data)
-        assert.truthy(reply.result.problem:find("Exposure2012 0.95 on photo 21 (written 1)", 1, true), reply.result.problem)
+        assert.truthy(
+            reply.result.problem:find("Exposure2012 0.95 on photo 21 (written 1)", 1, true),
+            reply.result.problem
+        )
         assert.is_nil(reply.result.problem:find("more in adjusted", 1, true))
     end)
 
     it("covers every case of the shared fixture", function()
         local names = {}
-        for _, expected in ipairs(fixture) do names[#names + 1] = expected.case end
+        for _, expected in ipairs(fixture) do
+            names[#names + 1] = expected.case
+        end
         table.sort(names)
-        assert.are.same({ "all not found", "all refused", "budget exhausted", "confirmed and remaining", "mixed",
-            "unknown and adjusted on one target", "unknown read-back" }, names)
+        assert.are.same({
+            "all not found",
+            "all refused",
+            "budget exhausted",
+            "confirmed and remaining",
+            "mixed",
+            "unknown and adjusted on one target",
+            "unknown read-back",
+        }, names)
     end)
 end)
 
@@ -2841,9 +3392,14 @@ describe("a copy target the catalog stayed busy for before anything was written"
             })
             local label = settings and "named copy" or "full copy"
 
-            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, settings = settings or nil })
+            local r =
+                Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, settings = settings or nil })
 
-            assert.are.same({ { photo_id = "11", reason = helper.catalogBusy("Copy Develop Settings") } }, r.failed, label)
+            assert.are.same(
+                { { photo_id = "11", reason = helper.catalogBusy("Copy Develop Settings") } },
+                r.failed,
+                label
+            )
             assert.is_nil(r.unknown, label)
             assert.is_nil(r.data, label)
         end
@@ -2853,7 +3409,12 @@ end)
 describe("develop settings batches stop within their budget", function()
     local function stoppingAfter(count)
         local asked = 0
-        return helper.requestContext(nil, { stopping = function() asked = asked + 1; return asked > count end })
+        return helper.requestContext(nil, {
+            stopping = function()
+                asked = asked + 1
+                return asked > count
+            end,
+        })
     end
 
     it("copies to the targets that fit and lists the rest as remaining", function()
@@ -2864,62 +3425,76 @@ describe("develop settings batches stop within their budget", function()
         }
         local _, Handler = setup({ photos = photos })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" }, settings = { "Exposure2012" } },
-            stoppingAfter(1))
+        local r = Handler.copyDevelopSettings(
+            { source_id = "10", target_ids = { "11", "12" }, settings = { "Exposure2012" } },
+            stoppingAfter(1)
+        )
 
         assert.are.equal(1, r.data.copied)
         assert.are.same({ "12" }, r.remaining)
     end)
 
-    it("starts an item only with time for its work, one catalog wait per gate it can open and the AI compute", function()
-        local function copy(names)
-            return function(Handler, context)
-                return Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, settings = names }, context)
-            end
-        end
-        local function preset(name)
-            return function(Handler, context)
-                return Handler.applyDevelopPreset({ photo_ids = { "11" }, preset_name = name }, context)
-            end
-        end
-        local function match(Handler, context)
-            return Handler.matchPhotoStyle({ reference_id = "10", target_ids = { "11" } }, context)
-        end
-        local cases = {
-            { name = "named copy", reserve = 20, source = { Exposure2012 = 1 }, run = copy({ "Exposure2012" }) },
-            { name = "full copy", reserve = 40, source = { Exposure2012 = 1 }, run = copy(nil) },
-            { name = "full copy with AI masks", reserve = 80, source = AI_MASK_SETTINGS, run = copy(nil) },
-            { name = "preset", reserve = 20, source = {}, run = preset("Plain") },
-            { name = "preset with AI masks", reserve = 60, source = {}, run = preset("Subject") },
-            { name = "style match", reserve = 30, source = { Exposure2012 = 1 }, run = match },
-        }
-        package.loaded.HandlerSnapshots = { create = function() return { snapshot = { name = "s" } } end }
-        for _, case in ipairs(cases) do
-            for _, budget in ipairs({ case.reserve - 0.5, case.reserve + 0.5 }) do
-                local target = helper.fakePhoto({ id = "11", path = "/t.jpg", aiUpdate = "ok", developSettings = {} })
-                local _, Handler = setup({
-                    photos = { helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = case.source }), target },
-                    folders = { fakeFolder("User", {
-                        fakePreset("Plain", { settings = { Exposure2012 = 1 } }),
-                        fakePreset("Subject", { settings = AI_MASK_SETTINGS }),
-                    }) },
-                })
-
-                local r = case.run(Handler, helper.requestContext(budget))
-
-                local label = case.name .. " with " .. budget .. " s left"
-                if budget < case.reserve then
-                    assert.are.same({ "11" }, r.remaining, label)
-                    assert.is_nil(target:getRawMetadata("__appliedSettings"), label)
-                    assert.is_nil(target:getRawMetadata("__appliedPreset"), label)
-                    assert.is_nil(target:getRawMetadata("__aiUpdateCalls"), label)
-                else
-                    assert.is_nil(r.remaining, label)
+    it(
+        "starts an item only with time for its work, one catalog wait per gate it can open and the AI compute",
+        function()
+            local function copy(names)
+                return function(Handler, context)
+                    return Handler.copyDevelopSettings(
+                        { source_id = "10", target_ids = { "11" }, settings = names },
+                        context
+                    )
                 end
             end
+            local function preset(name)
+                return function(Handler, context)
+                    return Handler.applyDevelopPreset({ photo_ids = { "11" }, preset_name = name }, context)
+                end
+            end
+            local function match(Handler, context)
+                return Handler.matchPhotoStyle({ reference_id = "10", target_ids = { "11" } }, context)
+            end
+            local cases = {
+                { name = "named copy", reserve = 20, source = { Exposure2012 = 1 }, run = copy({ "Exposure2012" }) },
+                { name = "full copy", reserve = 40, source = { Exposure2012 = 1 }, run = copy(nil) },
+                { name = "full copy with AI masks", reserve = 80, source = AI_MASK_SETTINGS, run = copy(nil) },
+                { name = "preset", reserve = 20, source = {}, run = preset("Plain") },
+                { name = "preset with AI masks", reserve = 60, source = {}, run = preset("Subject") },
+                { name = "style match", reserve = 30, source = { Exposure2012 = 1 }, run = match },
+            }
+            package.loaded.HandlerSnapshots = { create = function() return { snapshot = { name = "s" } } end }
+            for _, case in ipairs(cases) do
+                for _, budget in ipairs({ case.reserve - 0.5, case.reserve + 0.5 }) do
+                    local target =
+                        helper.fakePhoto({ id = "11", path = "/t.jpg", aiUpdate = "ok", developSettings = {} })
+                    local _, Handler = setup({
+                        photos = {
+                            helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = case.source }),
+                            target,
+                        },
+                        folders = {
+                            fakeFolder("User", {
+                                fakePreset("Plain", { settings = { Exposure2012 = 1 } }),
+                                fakePreset("Subject", { settings = AI_MASK_SETTINGS }),
+                            }),
+                        },
+                    })
+
+                    local r = case.run(Handler, helper.requestContext(budget))
+
+                    local label = case.name .. " with " .. budget .. " s left"
+                    if budget < case.reserve then
+                        assert.are.same({ "11" }, r.remaining, label)
+                        assert.is_nil(target:getRawMetadata("__appliedSettings"), label)
+                        assert.is_nil(target:getRawMetadata("__appliedPreset"), label)
+                        assert.is_nil(target:getRawMetadata("__aiUpdateCalls"), label)
+                    else
+                        assert.is_nil(r.remaining, label)
+                    end
+                end
+            end
+            package.loaded.HandlerSnapshots = nil
         end
-        package.loaded.HandlerSnapshots = nil
-    end)
+    )
 
     it("reads a target's settings once before writing it, and not at all when it is remaining", function()
         local runs = {
@@ -2927,8 +3502,10 @@ describe("develop settings batches stop within their budget", function()
                 return Handler.matchPhotoStyle({ reference_id = "10", target_ids = { "11", "12" } }, context)
             end,
             ["named copy"] = function(Handler, context)
-                return Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" }, settings = { "Exposure2012" } },
-                    context)
+                return Handler.copyDevelopSettings(
+                    { source_id = "10", target_ids = { "11", "12" }, settings = { "Exposure2012" } },
+                    context
+                )
             end,
             ["full copy"] = function(Handler, context)
                 return Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } }, context)
@@ -2941,9 +3518,13 @@ describe("develop settings batches stop within their budget", function()
             local readsBeforeWrite
             local targets = {}
             for _, id in ipairs({ "11", "12" }) do
-                local photo = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg", developSettings = { Exposure2012 = 0 } })
+                local photo =
+                    helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg", developSettings = { Exposure2012 = 0 } })
                 local get, apply = photo.getDevelopSettings, photo.applyDevelopSettings
-                photo.getDevelopSettings = function(...) reads[id] = reads[id] + 1; return get(...) end
+                photo.getDevelopSettings = function(...)
+                    reads[id] = reads[id] + 1
+                    return get(...)
+                end
                 photo.applyDevelopSettings = function(...)
                     readsBeforeWrite = readsBeforeWrite or reads[id]
                     return apply(...)
@@ -2968,8 +3549,14 @@ describe("develop settings batches stop within their budget", function()
         for _, id in ipairs({ "1", "2" }) do
             local photo = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg", aiUpdate = "ok" })
             local apply, update = photo.applyDevelopPreset, photo.updateAISettings
-            photo.applyDevelopPreset = function(...) order[#order + 1] = "apply " .. id; return apply(...) end
-            photo.updateAISettings = function(...) order[#order + 1] = "compute " .. id; return update(...) end
+            photo.applyDevelopPreset = function(...)
+                order[#order + 1] = "apply " .. id
+                return apply(...)
+            end
+            photo.updateAISettings = function(...)
+                order[#order + 1] = "compute " .. id
+                return update(...)
+            end
             photos[#photos + 1] = photo
         end
         local _, Handler = setup({ photos = photos, folders = { fakeFolder("User", { preset }) } })
@@ -2981,7 +3568,8 @@ describe("develop settings batches stop within their budget", function()
 
     it("applies a preset to the photos that fit and lists the rest as remaining", function()
         local preset = fakePreset("Bright", { settings = { Exposure2012 = 0.5 } })
-        local photos = { helper.fakePhoto({ id = "1", path = "/a.jpg" }), helper.fakePhoto({ id = "2", path = "/b.jpg" }) }
+        local photos =
+            { helper.fakePhoto({ id = "1", path = "/a.jpg" }), helper.fakePhoto({ id = "2", path = "/b.jpg" }) }
         local _, Handler = setup({ photos = photos, folders = { fakeFolder("User", { preset }) } })
 
         local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Bright" }, stoppingAfter(1))
@@ -2994,13 +3582,18 @@ end)
 describe("a full copy writes masks only through the guarded mask write", function()
     it("copies each target whole through the guarded write, or not at all when the guarded write refuses", function()
         local masks = { { What = "Correction", CorrectionID = "C1", CorrectionMasks = {} } }
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, MaskGroupBasedCorrections = masks,
-        } })
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                MaskGroupBasedCorrections = masks,
+            },
+        })
         local accepted = helper.fakePhoto({ id = "11", path = "/a.jpg", developSettings = { Exposure2012 = 0 } })
         local refused = helper.fakePhoto({ id = "12", path = "/b.jpg", developSettings = { Exposure2012 = 0 } })
         local guarded = {}
-        local Reply = require 'Reply'
+        local Reply = require "Reply"
         local _, Handler = setup({
             photos = { source, accepted, refused },
             guardedMaskWrite = {
@@ -3028,10 +3621,16 @@ describe("a full copy writes masks only through the guarded mask write", functio
 
     it("answers unknown, without the rest, for a target whose guarded mask write raised a plain error", function()
         local masks = { { What = "Correction", CorrectionID = "C1", CorrectionMasks = {} } }
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, MaskGroupBasedCorrections = masks,
-        } })
-        local stored = { Exposure2012 = 0, MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "OLD" } } }
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                MaskGroupBasedCorrections = masks,
+            },
+        })
+        local stored =
+            { Exposure2012 = 0, MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "OLD" } } }
         local target = helper.fakePhoto({ id = "11", path = "/t.jpg", developSettings = stored })
         local _, Handler = setup({
             photos = { source, target },
@@ -3040,8 +3639,11 @@ describe("a full copy writes masks only through the guarded mask write", functio
                 apply = function(context, _, _, spec)
                     context.ledger:record(spec.description)
                     stored.MaskGroupBasedCorrections = spec.build({})
-                    error("Lightroom did not keep the mask data that was written, and the previous masks could not be"
-                        .. " confirmed restored", 0)
+                    error(
+                        "Lightroom did not keep the mask data that was written, and the previous masks could not be"
+                            .. " confirmed restored",
+                        0
+                    )
                 end,
             },
         })
@@ -3054,70 +3656,92 @@ describe("a full copy writes masks only through the guarded mask write", functio
         assert.are.equal(0, stored.Exposure2012)
     end)
 
-    it("answers unknown, not failed, for a target whose masks were replaced before the rest of the copy raised or met a busy catalog", function()
-        local cases = {
-            { name = "rest raised", reason = "cannot write the rest", restRaises = true },
-            { name = "rest gate busy", reason = helper.catalogBusy("Copy Develop Settings"), busy = true },
-        }
-        for _, case in ipairs(cases) do
-            local masks = { { What = "Correction", CorrectionID = "C1", CorrectionMasks = {} } }
-            local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-                Exposure2012 = 1, MaskGroupBasedCorrections = masks,
-            } })
-            local stored = { Exposure2012 = 0, MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "OLD" } } }
-            local target = helper.fakePhoto({ id = "11", path = "/t.jpg", developSettings = stored })
-            if case.restRaises then target.applyDevelopSettings = function() error("cannot write the rest") end end
-            local _, Handler = setup({
-                photos = { source, target },
-                tasks = { sleep = function() end, pcall = pcall },
-                writeAccessAborts = case.busy and function(name) return name == "Copy Develop Settings" end or nil,
-                guardedMaskWrite = {
+    it(
+        "answers unknown, not failed, for a target whose masks were replaced before the rest of the copy raised or met a busy catalog",
+        function()
+            local cases = {
+                { name = "rest raised", reason = "cannot write the rest", restRaises = true },
+                { name = "rest gate busy", reason = helper.catalogBusy("Copy Develop Settings"), busy = true },
+            }
+            for _, case in ipairs(cases) do
+                local masks = { { What = "Correction", CorrectionID = "C1", CorrectionMasks = {} } }
+                local source = helper.fakePhoto({
+                    id = "10",
+                    path = "/s.jpg",
+                    developSettings = {
+                        Exposure2012 = 1,
+                        MaskGroupBasedCorrections = masks,
+                    },
+                })
+                local stored =
+                    { Exposure2012 = 0, MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "OLD" } } }
+                local target = helper.fakePhoto({ id = "11", path = "/t.jpg", developSettings = stored })
+                if case.restRaises then target.applyDevelopSettings = function() error("cannot write the rest") end end
+                local _, Handler = setup({
+                    photos = { source, target },
+                    tasks = { sleep = function() end, pcall = pcall },
+                    writeAccessAborts = case.busy and function(name) return name == "Copy Develop Settings" end or nil,
+                    guardedMaskWrite = {
                         apply = function(context, _, _, spec)
-                        local previous = stored.MaskGroupBasedCorrections
-                        context.ledger:record(spec.description)
-                        stored.MaskGroupBasedCorrections = spec.build({})
-                        return { previous = previous }
-                    end,
-                },
-            })
+                            local previous = stored.MaskGroupBasedCorrections
+                            context.ledger:record(spec.description)
+                            stored.MaskGroupBasedCorrections = spec.build({})
+                            return { previous = previous }
+                        end,
+                    },
+                })
 
-            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+                local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
-            assert.are.same(masks, stored.MaskGroupBasedCorrections, case.name)
-            assert.are.equal(0, stored.Exposure2012, case.name)
-            assert.is_nil(r.failed, case.name)
-            assert.are.equal("11", r.unknown[1].photo_id, case.name)
-            assert.truthy(r.unknown[1].reason:find("; written before this stopped: Copy Develop Settings", 1, true),
-                r.unknown[1].reason)
-            assert.truthy(r.unknown[1].reason:find(case.reason, 1, true), r.unknown[1].reason)
+                assert.are.same(masks, stored.MaskGroupBasedCorrections, case.name)
+                assert.are.equal(0, stored.Exposure2012, case.name)
+                assert.is_nil(r.failed, case.name)
+                assert.are.equal("11", r.unknown[1].photo_id, case.name)
+                assert.truthy(
+                    r.unknown[1].reason:find("; written before this stopped: Copy Develop Settings", 1, true),
+                    r.unknown[1].reason
+                )
+                assert.truthy(r.unknown[1].reason:find(case.reason, 1, true), r.unknown[1].reason)
+            end
         end
-    end)
+    )
 end)
 
 describe("apply_develop_preset refuses a preset whose settings cannot be read", function()
-    it("refuses before writing, for a dry run and for the apply, when the settings are missing or too deeply nested", function()
-        local deep = {}
-        local level = deep
-        for _ = 1, 40 do level.next = {}; level = level.next end
-        for _, settings in ipairs({ "unreadable", deep }) do
-            local preset = fakePreset("Odd")
-            preset.getSetting = function() if settings == "unreadable" then return nil end return settings end
-            local photo = helper.fakePhoto({ id = "1", path = "/a.jpg" })
-            local catalog, Handler = setup({ photos = { photo }, folders = { fakeFolder("User", { preset }) } })
-
-            for _, dryRun in ipairs({ true, false }) do
-                local err = helper.failedOf(function()
-                    Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Odd", dry_run = dryRun })
-                end)
-                assert.truthy(err:find("Preset settings", 1, true))
+    it(
+        "refuses before writing, for a dry run and for the apply, when the settings are missing or too deeply nested",
+        function()
+            local deep = {}
+            local level = deep
+            for _ = 1, 40 do
+                level.next = {}
+                level = level.next
             end
-            assert.are.equal(0, catalog:getWriteAccessCount())
+            for _, settings in ipairs({ "unreadable", deep }) do
+                local preset = fakePreset("Odd")
+                preset.getSetting = function()
+                    if settings == "unreadable" then return nil end
+                    return settings
+                end
+                local photo = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+                local catalog, Handler = setup({ photos = { photo }, folders = { fakeFolder("User", { preset }) } })
+
+                for _, dryRun in ipairs({ true, false }) do
+                    local err = helper.failedOf(
+                        function()
+                            Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Odd", dry_run = dryRun })
+                        end
+                    )
+                    assert.truthy(err:find("Preset settings", 1, true))
+                end
+                assert.are.equal(0, catalog:getWriteAccessCount())
+            end
         end
-    end)
+    )
 end)
 
 describe("a full copy replaces the target's masks and admits them under the process version it writes", function()
-    local Reply = require 'Reply'
+    local Reply = require "Reply"
 
     local function recordingAdmission(log, refusal)
         local admissions = 0
@@ -3135,14 +3759,17 @@ describe("a full copy replaces the target's masks and admits them under the proc
         opts = opts or {}
         return {
             precheck = function(catalog, photo, _, processVersion)
-                local Admission = require 'MaskWriteAdmission'
+                local Admission = require "MaskWriteAdmission"
                 Admission.requireAdmitted(Admission.status(catalog), processVersion)
                 log[#log + 1] = "ids " .. tostring(photo.localIdentifier)
                 if opts.unnamed then Reply.refuse('mask 1 ("A") has no id yet') end
             end,
             apply = function(context, _, photo, spec)
                 local settings = photo:getDevelopSettings()
-                log[#log + 1] = "masks " .. tostring(photo.localIdentifier) .. " at " .. tostring(settings.ProcessVersion)
+                log[#log + 1] = "masks "
+                    .. tostring(photo.localIdentifier)
+                    .. " at "
+                    .. tostring(settings.ProcessVersion)
                 if opts.refuseApply then Reply.refuse(opts.refuseApply) end
                 local previous = settings.MaskGroupBasedCorrections or {}
                 context.ledger:record(spec.description)
@@ -3158,7 +3785,9 @@ describe("a full copy replaces the target's masks and admits them under the proc
         local apply = photo.applyDevelopSettings
         photo.applyDevelopSettings = function(self, written, ...)
             local keys = {}
-            for key in pairs(written) do keys[#keys + 1] = key end
+            for key in pairs(written) do
+                keys[#keys + 1] = key
+            end
             table.sort(keys)
             log[#log + 1] = "write " .. id .. " " .. table.concat(keys, ",")
             if opts.restThrows and written.Exposure2012 ~= nil then error(opts.restThrows) end
@@ -3174,10 +3803,17 @@ describe("a full copy replaces the target's masks and admits them under the proc
     it("removes the target's masks through the guarded write when the source has none, and says how many", function()
         for _, sourceMasks in ipairs({ false, {} }) do
             local log = {}
-            local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-                Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = sourceMasks or nil,
-            } })
-            local masked = target("11", { Exposure2012 = 0, ProcessVersion = "15.4", MaskGroupBasedCorrections = oldMasks() }, log)
+            local source = helper.fakePhoto({
+                id = "10",
+                path = "/s.jpg",
+                developSettings = {
+                    Exposure2012 = 1,
+                    ProcessVersion = "15.4",
+                    MaskGroupBasedCorrections = sourceMasks or nil,
+                },
+            })
+            local masked =
+                target("11", { Exposure2012 = 0, ProcessVersion = "15.4", MaskGroupBasedCorrections = oldMasks() }, log)
             local _, Handler = setup({ photos = { source, masked }, guardedMaskWrite = recordingGuard(log) })
 
             local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
@@ -3191,7 +3827,11 @@ describe("a full copy replaces the target's masks and admits them under the proc
 
     it("does not touch the masks of a maskless target when the source has none", function()
         local log = {}
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = { Exposure2012 = 1, ProcessVersion = "15.4" } })
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = { Exposure2012 = 1, ProcessVersion = "15.4" },
+        })
         local plain = target("11", { Exposure2012 = 0, ProcessVersion = "15.4" }, log)
         local _, Handler = setup({ photos = { source, plain }, guardedMaskWrite = recordingGuard(log) })
 
@@ -3204,43 +3844,79 @@ describe("a full copy replaces the target's masks and admits them under the proc
 
     it("writes the source's process version first and admits the masks under it", function()
         local log = {}
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
-        } })
-        local older = target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
-        local _, Handler = setup({ photos = { source, older }, guardedMaskWrite = recordingGuard(log),
-            maskWriteAdmission = recordingAdmission(log) })
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                ProcessVersion = "15.4",
+                MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
+            },
+        })
+        local older =
+            target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
+        local _, Handler = setup({
+            photos = { source, older },
+            guardedMaskWrite = recordingGuard(log),
+            maskWriteAdmission = recordingAdmission(log),
+        })
 
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
         assert.are.equal(1, r.data.copied)
-        assert.are.same({ "admit 15.4", "admit 15.4", "ids 11", "write 11 ProcessVersion", "masks 11 at 15.4",
-            "write 11 Exposure2012,ProcessVersion" }, log)
+        assert.are.same({
+            "admit 15.4",
+            "admit 15.4",
+            "ids 11",
+            "write 11 ProcessVersion",
+            "masks 11 at 15.4",
+            "write 11 Exposure2012,ProcessVersion",
+        }, log)
     end)
 
-    it("fails a target with nothing written when it holds a mask Lightroom has not named, before the process version", function()
-        local log = {}
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
-        } })
-        local older = target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
-        local _, Handler = setup({ photos = { source, older }, guardedMaskWrite = recordingGuard(log, { unnamed = true }),
-            maskWriteAdmission = recordingAdmission(log) })
+    it(
+        "fails a target with nothing written when it holds a mask Lightroom has not named, before the process version",
+        function()
+            local log = {}
+            local source = helper.fakePhoto({
+                id = "10",
+                path = "/s.jpg",
+                developSettings = {
+                    Exposure2012 = 1,
+                    ProcessVersion = "15.4",
+                    MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
+                },
+            })
+            local older =
+                target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
+            local _, Handler = setup({
+                photos = { source, older },
+                guardedMaskWrite = recordingGuard(log, { unnamed = true }),
+                maskWriteAdmission = recordingAdmission(log),
+            })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
-        assert.are.equal("11", r.failed[1].photo_id)
-        assert.truthy(r.failed[1].reason:find("has no id yet", 1, true), r.failed[1].reason)
-        assert.are.same({ "admit 15.4", "admit 15.4", "ids 11" }, log)
-        assert.are.equal("11.0", older:getDevelopSettings().ProcessVersion)
-    end)
+            assert.are.equal("11", r.failed[1].photo_id)
+            assert.truthy(r.failed[1].reason:find("has no id yet", 1, true), r.failed[1].reason)
+            assert.are.same({ "admit 15.4", "admit 15.4", "ids 11" }, log)
+            assert.are.equal("11.0", older:getDevelopSettings().ProcessVersion)
+        end
+    )
 
     it("fails a target with nothing written when the planned process version is not admitted", function()
         local log = {}
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
-        } })
-        local older = target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                ProcessVersion = "15.4",
+                MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
+            },
+        })
+        local older =
+            target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
         local _, Handler = setup({
             photos = { source, older },
             guardedMaskWrite = recordingGuard(log),
@@ -3256,10 +3932,17 @@ describe("a full copy replaces the target's masks and admits them under the proc
 
     it("answers unknown and names the process version when the masks are refused after it was written", function()
         local log = {}
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
-        } })
-        local older = target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                ProcessVersion = "15.4",
+                MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
+            },
+        })
+        local older =
+            target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log)
         local _, Handler = setup({
             photos = { source, older },
             guardedMaskWrite = recordingGuard(log, { refuseApply = "Lightroom did not keep the mask data" }),
@@ -3269,47 +3952,79 @@ describe("a full copy replaces the target's masks and admits them under the proc
 
         assert.is_nil(r.failed)
         assert.are.equal("11", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("written before this stopped: Set Process Version 15.4", 1, true),
-            r.unknown[1].reason)
+        assert.truthy(
+            r.unknown[1].reason:find("written before this stopped: Set Process Version 15.4", 1, true),
+            r.unknown[1].reason
+        )
         assert.truthy(r.unknown[1].reason:find("did not keep the mask data", 1, true), r.unknown[1].reason)
     end)
 
     it("answers unknown and names what was written when the rest raises after the process version and masks", function()
         local log = {}
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
-        } })
-        local older = target("11", { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() }, log,
-            { restThrows = "cannot write the rest" })
-        local _, Handler = setup({ photos = { source, older }, guardedMaskWrite = recordingGuard(log), tasks = { sleep = function() end, pcall = pcall } })
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                ProcessVersion = "15.4",
+                MaskGroupBasedCorrections = { { What = "Correction", CorrectionID = "S" } },
+            },
+        })
+        local older = target(
+            "11",
+            { Exposure2012 = 0, ProcessVersion = "11.0", MaskGroupBasedCorrections = oldMasks() },
+            log,
+            { restThrows = "cannot write the rest" }
+        )
+        local _, Handler = setup({
+            photos = { source, older },
+            guardedMaskWrite = recordingGuard(log),
+            tasks = { sleep = function() end, pcall = pcall },
+        })
 
         local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
         assert.is_nil(r.failed)
         assert.are.equal("11", r.unknown[1].photo_id)
-        assert.truthy(r.unknown[1].reason:find("written before this stopped: Set Process Version 15.4", 1, true),
-            r.unknown[1].reason)
+        assert.truthy(
+            r.unknown[1].reason:find("written before this stopped: Set Process Version 15.4", 1, true),
+            r.unknown[1].reason
+        )
         assert.truthy(r.unknown[1].reason:find("cannot write the rest", 1, true), r.unknown[1].reason)
     end)
 end)
 
 describe("a full copy refuses, before its first write to a target, what the guarded mask write would refuse", function()
-    local Reply = require 'Reply'
-    local Store = require 'fake_mask_store'
+    local Reply = require "Reply"
+    local Store = require "fake_mask_store"
 
     local function colorRange(points)
-        return Store.correction("R", { { What = "Mask/RangeMask", MaskActive = true,
-            CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = points } } })
+        return Store.correction("R", {
+            {
+                What = "Mask/RangeMask",
+                MaskActive = true,
+                CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = points },
+            },
+        })
     end
 
     local function copyOnto(sourceMasks, targetEntries, opts)
         opts = opts or {}
-        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
-            Exposure2012 = 1, ProcessVersion = "15.4", MaskGroupBasedCorrections = sourceMasks,
-        } })
+        local source = helper.fakePhoto({
+            id = "10",
+            path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 1,
+                ProcessVersion = "15.4",
+                MaskGroupBasedCorrections = sourceMasks,
+            },
+        })
         local target = helper.fakePhoto({ id = "11", path = "/t.jpg" })
-        local store = Store.attach(target, { entries = targetEntries, processVersion = "11.0", settings = { Exposure2012 = 0 } })
-        if opts.unnamed then store.entries[1].CorrectionID, store.entries[1].CorrectionSyncID = nil, nil end
+        local store =
+            Store.attach(target, { entries = targetEntries, processVersion = "11.0", settings = { Exposure2012 = 0 } })
+        if opts.unnamed then
+            store.entries[1].CorrectionID, store.entries[1].CorrectionSyncID = nil, nil
+        end
         local _, Handler = setup({ photos = { source, target }, realGuard = true, maskWriteAdmission = opts.admission })
         return Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }), store, target
     end
@@ -3321,32 +4036,44 @@ describe("a full copy refuses, before its first write to a target, what the guar
         return r.failed[1].reason
     end
 
-    it("refuses a source colour range Lightroom sampled twice, leaving the target's process version unwritten", function()
-        local r, store, target = copyOnto({ colorRange({ "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" }) }, {})
+    it(
+        "refuses a source colour range Lightroom sampled twice, leaving the target's process version unwritten",
+        function()
+            local r, store, target = copyOnto({ colorRange({ "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" }) }, {})
 
-        assert.truthy(onlyFailure(r):find("exactly one PointModels entry", 1, true))
-        assert.are.equal(0, store.attempts)
-        assert.are.equal("11.0", target:getDevelopSettings().ProcessVersion)
-    end)
+            assert.truthy(onlyFailure(r):find("exactly one PointModels entry", 1, true))
+            assert.are.equal(0, store.attempts)
+            assert.are.equal("11.0", target:getDevelopSettings().ProcessVersion)
+        end
+    )
 
     it("refuses a target holding a mask Lightroom has not named yet, leaving its process version unwritten", function()
-        local r, store, target = copyOnto({ Store.correction("S", { Store.linearComponent() }) },
-            { Store.correction("A", { Store.linearComponent() }) }, { unnamed = true })
+        local r, store, target = copyOnto(
+            { Store.correction("S", { Store.linearComponent() }) },
+            { Store.correction("A", { Store.linearComponent() }) },
+            { unnamed = true }
+        )
 
         assert.truthy(onlyFailure(r):find('mask 1 ("A") has no id yet', 1, true))
         assert.are.equal(0, store.attempts)
         assert.are.equal("11.0", target:getDevelopSettings().ProcessVersion)
     end)
 
-    it("answers the admission refusal before the id refusal when a maskless source meets an unnamed masked target", function()
-        local r, store = copyOnto({}, { Store.correction("A", { Store.linearComponent() }) }, {
-            unnamed = true,
-            admission = { status = function() return {} end, requireAdmitted = function(_, processVersion)
-                Reply.refuse("process version " .. tostring(processVersion) .. " is not admitted")
-            end },
-        })
+    it(
+        "answers the admission refusal before the id refusal when a maskless source meets an unnamed masked target",
+        function()
+            local r, store = copyOnto({}, { Store.correction("A", { Store.linearComponent() }) }, {
+                unnamed = true,
+                admission = {
+                    status = function() return {} end,
+                    requireAdmitted = function(_, processVersion)
+                        Reply.refuse("process version " .. tostring(processVersion) .. " is not admitted")
+                    end,
+                },
+            })
 
-        assert.truthy(onlyFailure(r):find("process version 15.4 is not admitted", 1, true))
-        assert.are.equal(0, store.attempts)
-    end)
+            assert.truthy(onlyFailure(r):find("process version 15.4 is not admitted", 1, true))
+            assert.are.equal(0, store.attempts)
+        end
+    )
 end)

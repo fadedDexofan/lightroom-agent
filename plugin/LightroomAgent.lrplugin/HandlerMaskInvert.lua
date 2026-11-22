@@ -1,15 +1,15 @@
-local LrApplication = import 'LrApplication'
-local LrDevelopController = import 'LrDevelopController'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrDevelopController = import "LrDevelopController"
+local LrTasks = import "LrTasks"
 
-local CatalogWrite = require 'CatalogWrite'
-local PhotoLookup = require 'PhotoLookup'
-local DevelopSession = require 'DevelopSession'
-local JsonValue = require 'JsonValue'
-local Log = require 'Log'
-local MaskSelection = require 'MaskSelection'
-local MaskValues = require 'MaskValues'
-local Reply = require 'Reply'
+local CatalogWrite = require "CatalogWrite"
+local PhotoLookup = require "PhotoLookup"
+local DevelopSession = require "DevelopSession"
+local JsonValue = require "JsonValue"
+local Log = require "Log"
+local MaskSelection = require "MaskSelection"
+local MaskValues = require "MaskValues"
+local Reply = require "Reply"
 
 local MaskInvertHandler = {}
 
@@ -28,12 +28,8 @@ end
 local function callInvertFunction(context, name, maskId)
     LrDevelopController.goToMasking()
     local ok, result = LrTasks.pcall(CatalogWrite.develop, context, name, maskId)
-    if not ok then
-        error("Lightroom could not run " .. name .. " on mask " .. maskId .. ": " .. tostring(result), 0)
-    end
-    if result == false then
-        error("Lightroom refused " .. name .. " on mask " .. maskId, 0)
-    end
+    if not ok then error("Lightroom could not run " .. name .. " on mask " .. maskId .. ": " .. tostring(result), 0) end
+    if result == false then error("Lightroom refused " .. name .. " on mask " .. maskId, 0) end
 end
 
 local function invertInPlace(context, catalog, photo, photoId, maskId)
@@ -47,9 +43,15 @@ local function invertInPlace(context, catalog, photo, photoId, maskId)
         return after ~= nil and not JsonValue.equal(after, before)
     end, INVERSION_VISIBLE_TIMEOUT_SECONDS)
     if not changed then
-        error("Lightroom did not report mask " .. maskId .. " on photo " .. photoId
-            .. " as changed after invertMask, so whether it is inverted is unknown; read it with list_masks"
-            .. " before calling invert_mask again, which would flip it back", 0)
+        error(
+            "Lightroom did not report mask "
+                .. maskId
+                .. " on photo "
+                .. photoId
+                .. " as changed after invertMask, so whether it is inverted is unknown; read it with list_masks"
+                .. " before calling invert_mask again, which would flip it back",
+            0
+        )
     end
     return {
         mode = MODE_IN_PLACE,
@@ -88,31 +90,55 @@ local function duplicateInverted(context, catalog, photo, photoId, maskId, masks
         error("Lightroom did not create an inverted copy of mask " .. maskId .. " on photo " .. photoId, 0)
     end
     if #fresh > 1 then
-        error("Lightroom created " .. #fresh .. " new masks on photo " .. photoId
-            .. " while copying mask " .. maskId .. "; cannot tell which is the copy", 0)
+        error(
+            "Lightroom created "
+                .. #fresh
+                .. " new masks on photo "
+                .. photoId
+                .. " while copying mask "
+                .. maskId
+                .. "; cannot tell which is the copy",
+            0
+        )
     end
 
     local originalAfter = MaskSelection.findMask(masksAfter, maskId)
     local sourceChange
     if not originalAfter then
-        sourceChange = string.format("Lightroom no longer lists the source mask %s on photo %s after making the"
-            .. " inverted copy", maskId, photoId)
+        sourceChange = string.format(
+            "Lightroom no longer lists the source mask %s on photo %s after making the" .. " inverted copy",
+            maskId,
+            photoId
+        )
     elseif not JsonValue.equal(originalAfter, original) then
-        sourceChange = string.format("Lightroom changed the source mask %s on photo %s while making the inverted"
-            .. " copy", maskId, photoId)
+        sourceChange = string.format(
+            "Lightroom changed the source mask %s on photo %s while making the inverted" .. " copy",
+            maskId,
+            photoId
+        )
     end
     if sourceChange then context:warn(sourceChange .. "; read the masks with list_masks before editing it") end
 
     local copyId = fresh[1]
     local copied, copyError = LrTasks.pcall(copyValues, context, catalog, photo, maskId, copyId)
     if not copied then
-        local failure = string.format("The adjustments of mask %s could not be copied to its inverted copy (%s)", maskId,
-            Reply.messageOf(copyError))
-        local problem = MaskSelection.problemUnlessAddedRemoved(context, catalog, photo, idsBefore, "the copy " .. copyId)
+        local failure = string.format(
+            "The adjustments of mask %s could not be copied to its inverted copy (%s)",
+            maskId,
+            Reply.messageOf(copyError)
+        )
+        local problem =
+            MaskSelection.problemUnlessAddedRemoved(context, catalog, photo, idsBefore, "the copy " .. copyId)
         if problem then error(failure .. "; " .. problem, 0) end
         if sourceChange then
-            error(failure .. "; the copy was removed, but " .. sourceChange .. ": read the masks with list_masks"
-                .. " before retrying", 0)
+            error(
+                failure
+                    .. "; the copy was removed, but "
+                    .. sourceChange
+                    .. ": read the masks with list_masks"
+                    .. " before retrying",
+                0
+            )
         end
         error(failure .. "; the copy was removed: read the masks with list_masks before retrying", 0)
     end

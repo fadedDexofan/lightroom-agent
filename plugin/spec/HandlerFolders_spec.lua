@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local function setup(opts)
     local catalog = helper.fakeCatalog(opts)
@@ -7,7 +7,7 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerFolders = nil
-    return catalog, require 'HandlerFolders'
+    return catalog, require "HandlerFolders"
 end
 
 describe("HandlerFolders", function()
@@ -91,16 +91,22 @@ describe("HandlerFolders", function()
 
     it("names unknown paths", function()
         local _, handler = setup({})
-        assert.are.same({ "failed", "Folder not found: /missing" },
-            { helper.outcomeOf(function(context) handler.getFolderPhotos({ folder_path = "/missing" }, context) end) })
+        assert.are.same(
+            { "failed", "Folder not found: /missing" },
+            { helper.outcomeOf(function(context) handler.getFolderPhotos({ folder_path = "/missing" }, context) end) }
+        )
     end)
 
     it("refuses duplicate paths and missing roots in a populated catalog", function()
         local _, handler = setup({ folders = { helper.fakeFolder("/same"), helper.fakeFolder("/same") } })
-        assert.are.same({ "failed", "Duplicate folder path in catalog: /same" },
-            { helper.outcomeOf(function(context) handler.listFolders({}, context) end) })
+        assert.are.same(
+            { "failed", "Duplicate folder path in catalog: /same" },
+            { helper.outcomeOf(function(context) handler.listFolders({}, context) end) }
+        )
         _, handler = setup({ photos = { helper.fakePhoto({ id = "1" }) } })
-        assert.are.same({ "failed", "Catalog has photos but returned no root folders" },
-            { helper.outcomeOf(function(context) handler.listFolders({}, context) end) })
+        assert.are.same(
+            { "failed", "Catalog has photos but returned no root folders" },
+            { helper.outcomeOf(function(context) handler.listFolders({}, context) end) }
+        )
     end)
 end)

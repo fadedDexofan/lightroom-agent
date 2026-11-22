@@ -1,8 +1,8 @@
-local LrTasks = import 'LrTasks'
+local LrTasks = import "LrTasks"
 
-local DevelopSession = require 'DevelopSession'
-local PhotoLookup = require 'PhotoLookup'
-local Reply = require 'Reply'
+local DevelopSession = require "DevelopSession"
+local PhotoLookup = require "PhotoLookup"
+local Reply = require "Reply"
 
 local DevelopBatch = {}
 
@@ -19,7 +19,9 @@ local function aliasesOf(resolved)
         if #inputs > 1 then
             local listed = "listed twice, as " .. table.concat(inputs, " and ")
             refusals[photo] = {}
-            for index, input in ipairs(inputs) do refusals[photo][index] = listed .. "; this is " .. input end
+            for index, input in ipairs(inputs) do
+                refusals[photo][index] = listed .. "; this is " .. input
+            end
         end
     end
     return refusals
@@ -27,8 +29,12 @@ end
 
 local function captionsOf(catalog, entries)
     local photos = {}
-    for index, entry in ipairs(entries) do photos[index] = entry.photo end
-    local read, formatted = LrTasks.pcall(function() return catalog:batchGetFormattedMetadata(photos, { "fileName" }) end)
+    for index, entry in ipairs(entries) do
+        photos[index] = entry.photo
+    end
+    local read, formatted = LrTasks.pcall(
+        function() return catalog:batchGetFormattedMetadata(photos, { "fileName" }) end
+    )
     local captions = {}
     for _, photo in ipairs(photos) do
         local name = read and formatted and formatted[photo] and formatted[photo].fileName
@@ -44,7 +50,9 @@ end
 
 function DevelopBatch.run(context, catalog, operation)
     local entries, notFound, resolved = PhotoLookup.resolveDistinct(catalog, operation.inputs)
-    for index, entry in ipairs(resolved) do entry.index = index end
+    for index, entry in ipairs(resolved) do
+        entry.index = index
+    end
     local results, failed, unknown, remaining = {}, {}, {}, {}
     local listedTwice = operation.duplicates == "refuse" and aliasesOf(resolved) or {}
 
@@ -61,7 +69,6 @@ function DevelopBatch.run(context, catalog, operation)
         list[#list + 1] = { photo_id = photoId, reason = reason }
     end
 
-
     local finished
     if #entries > 0 then
         DevelopSession.run(context, catalog, operation.restoreView, function(state)
@@ -71,7 +78,9 @@ function DevelopBatch.run(context, catalog, operation)
                 local photoId = tostring(entry.photo.localIdentifier)
                 local held = not listedTwice[entry.photo] and operation.held and operation.held(entry)
                 if listedTwice[entry.photo] then
-                    for _, reason in ipairs(listedTwice[entry.photo]) do failed[#failed + 1] = { photo_id = photoId, reason = reason } end
+                    for _, reason in ipairs(listedTwice[entry.photo]) do
+                        failed[#failed + 1] = { photo_id = photoId, reason = reason }
+                    end
                 elseif held and held.remaining then
                     remaining[#remaining + 1] = entry.id
                 elseif held then
@@ -100,8 +109,12 @@ function DevelopBatch.run(context, catalog, operation)
         data = finished.data
         warnings = finished.warnings
         problem = finished.problem
-        for _, item in ipairs(finished.failed or {}) do failed[#failed + 1] = item end
-        for _, item in ipairs(finished.unknown or {}) do unknown[#unknown + 1] = item end
+        for _, item in ipairs(finished.failed or {}) do
+            failed[#failed + 1] = item
+        end
+        for _, item in ipairs(finished.unknown or {}) do
+            unknown[#unknown + 1] = item
+        end
     end
     return Reply.parts({
         data = data,

@@ -1,20 +1,20 @@
-local LrApplication = import 'LrApplication'
-local LrDate = import 'LrDate'
-local LrExportSession = import 'LrExportSession'
-local LrFileUtils = import 'LrFileUtils'
-local LrPathUtils = import 'LrPathUtils'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrDate = import "LrDate"
+local LrExportSession = import "LrExportSession"
+local LrFileUtils = import "LrFileUtils"
+local LrPathUtils = import "LrPathUtils"
+local LrTasks = import "LrTasks"
 
-local CatalogWrite = require 'CatalogWrite'
-local Contract = require 'Contract'
-local JSON = require 'JSON'
-local CatalogFolders = require 'CatalogFolders'
-local PathForms = require 'PathForms'
-local PhotoLookup = require 'PhotoLookup'
-local Log = require 'Log'
-local ExportPresets = require 'ExportPresets'
-local PhotoRecord = require 'PhotoRecord'
-local Reply = require 'Reply'
+local CatalogWrite = require "CatalogWrite"
+local Contract = require "Contract"
+local JSON = require "JSON"
+local CatalogFolders = require "CatalogFolders"
+local PathForms = require "PathForms"
+local PhotoLookup = require "PhotoLookup"
+local Log = require "Log"
+local ExportPresets = require "ExportPresets"
+local PhotoRecord = require "PhotoRecord"
+local Reply = require "Reply"
 
 local ExportHandler = {}
 
@@ -24,20 +24,20 @@ local ExportHandler = {}
 -- timeout and queues every later request behind it, so re-exporting the same
 -- photo to the same folder wedged the plugin. Never prompt.
 local COLLISION_HANDLING = {
-    rename = 'rename',
-    overwrite = 'overwrite',
-    skip = 'skip',
+    rename = "rename",
+    overwrite = "overwrite",
+    skip = "skip",
 }
-local DEFAULT_COLLISION_HANDLING = 'rename'
+local DEFAULT_COLLISION_HANDLING = "rename"
 local DEFAULT_JPEG_QUALITY = 90
 -- Lightroom's largest exported edge; leaves an edge nobody limited unconstrained.
 local MAX_EXPORT_EDGE = 65000
 
 local EXPORT_FORMATS = {
-    jpeg = 'JPEG',
-    png = 'PNG',
-    tiff = 'TIFF',
-    original = 'ORIGINAL',
+    jpeg = "JPEG",
+    png = "PNG",
+    tiff = "TIFF",
+    original = "ORIGINAL",
 }
 
 local STANDARD_FOLDER_DESTINATIONS = { desktop = true, home = true, documents = true, pictures = true }
@@ -46,8 +46,8 @@ local function exportFolderOf(photo, exportSettings, fixedFolder)
     if fixedFolder then return fixedFolder end
     local destinationType = exportSettings.LR_export_destinationType
     local base
-    if destinationType == 'sourceFolder' then
-        base = LrPathUtils.parent(photo:getRawMetadata('path'))
+    if destinationType == "sourceFolder" then
+        base = LrPathUtils.parent(photo:getRawMetadata("path"))
     elseif STANDARD_FOLDER_DESTINATIONS[destinationType] then
         base = LrPathUtils.getStandardFilePath(destinationType)
     end
@@ -69,22 +69,24 @@ local function refuseOverwriteIntoCatalogFolders(catalog, photos, exportSettings
     for _, photo in ipairs(photos) do
         local folder = exportFolderOf(photo, exportSettings, fixedFolder)
         if folder and isCatalogFolder(known, folder) then
-            error(string.format("on_existing overwrite would export into %s, a folder of this catalog, and could"
-                .. " replace a cataloged photo's file; choose a folder outside the catalog or on_existing rename"
-                .. " or skip", folder), 0)
+            error(
+                string.format(
+                    "on_existing overwrite would export into %s, a folder of this catalog, and could"
+                        .. " replace a cataloged photo's file; choose a folder outside the catalog or on_existing rename"
+                        .. " or skip",
+                    folder
+                ),
+                0
+            )
         end
         if fixedFolder then return end
     end
 end
 
-local function requireFormat(requestedFormat)
-    return EXPORT_FORMATS[requestedFormat or 'jpeg']
-end
+local function requireFormat(requestedFormat) return EXPORT_FORMATS[requestedFormat or "jpeg"] end
 
 -- Lightroom's jpeg_quality is 0-1; the tool's quality is 0-100.
-local function jpegQuality(quality)
-    return quality / 100
-end
+local function jpegQuality(quality) return quality / 100 end
 
 -- Export settings when no preset is given: the tool's own defaults.
 local function defaultSettings(args)
@@ -93,10 +95,10 @@ local function defaultSettings(args)
     }
     local format = requireFormat(args.format)
     settings.LR_format = format
-    if format == 'JPEG' then
-        settings.LR_export_colorSpace = 'sRGB'
-    elseif format == 'TIFF' then
-        settings.LR_tiff_compressionMethod = 'compressionMethod_LZW'
+    if format == "JPEG" then
+        settings.LR_export_colorSpace = "sRGB"
+    elseif format == "TIFF" then
+        settings.LR_tiff_compressionMethod = "compressionMethod_LZW"
     end
     return settings
 end
@@ -106,16 +108,14 @@ end
 -- watermark settings survive a quality or size override.
 local function presetSettings(preset, args)
     local settings = preset.settings
-    if args.format ~= nil then
-        settings.LR_format = requireFormat(args.format)
-    end
+    if args.format ~= nil then settings.LR_format = requireFormat(args.format) end
     if args.quality ~= nil then
         settings.LR_jpeg_quality = jpegQuality(args.quality)
         -- Lightroom ignores the quality while a file size limit is on.
         settings.LR_jpeg_useLimitSize = false
     end
     -- Opening another application would leave it waiting for a user.
-    settings.LR_export_postProcessing = 'doNothing'
+    settings.LR_export_postProcessing = "doNothing"
     settings.LR_reimportExportedPhoto = false
     return settings
 end
@@ -126,13 +126,13 @@ end
 local function applySizeLimit(settings, args)
     if not args.width and not args.height then return end
     local keepsOtherEdge = settings.LR_size_doConstrain
-        and settings.LR_size_resizeType == 'wh'
-        and (settings.LR_size_units == nil or settings.LR_size_units == 'pixels')
+        and settings.LR_size_resizeType == "wh"
+        and (settings.LR_size_units == nil or settings.LR_size_units == "pixels")
     settings.LR_size_maxWidth = args.width or (keepsOtherEdge and settings.LR_size_maxWidth) or MAX_EXPORT_EDGE
     settings.LR_size_maxHeight = args.height or (keepsOtherEdge and settings.LR_size_maxHeight) or MAX_EXPORT_EDGE
     settings.LR_size_doConstrain = true
-    settings.LR_size_resizeType = 'wh'
-    settings.LR_size_units = 'pixels'
+    settings.LR_size_resizeType = "wh"
+    settings.LR_size_units = "pixels"
     settings.LR_size_doNotEnlarge = true
 end
 
@@ -140,17 +140,15 @@ end
 -- size_megapixels to a whole number (0.5 writes no file), so these sizes are
 -- turned into a long edge for each photo.
 local function scaleForPhoto(settings, dimensions)
-    if settings.LR_size_resizeType == 'percentage' then
-        return settings.LR_size_percentage / 100
-    end
+    if settings.LR_size_resizeType == "percentage" then return settings.LR_size_percentage / 100 end
     return math.sqrt(settings.LR_size_megapixels * 1000000 / (dimensions.width * dimensions.height))
 end
 
 local function needsProportionalSize(settings)
     if not settings.LR_size_doConstrain then return false end
     local megapixels = settings.LR_size_megapixels
-    return settings.LR_size_resizeType == 'percentage'
-        or (settings.LR_size_resizeType == 'megapixels' and megapixels ~= math.floor(megapixels))
+    return settings.LR_size_resizeType == "percentage"
+        or (settings.LR_size_resizeType == "megapixels" and megapixels ~= math.floor(megapixels))
 end
 
 -- Each photo gets its own session so a batch can be cancelled between photos,
@@ -158,22 +156,25 @@ end
 -- Returns nil and a reason when the photo's size cannot be worked out.
 local function settingsForPhoto(baseSettings, photo, index, total)
     local settings = {}
-    for key, value in pairs(baseSettings) do settings[key] = value end
+    for key, value in pairs(baseSettings) do
+        settings[key] = value
+    end
     settings.LR_initialSequenceNumber = (settings.LR_initialSequenceNumber or 1) + index - 1
     if type(settings.LR_tokens) == "string" then
-        settings.LR_tokens = settings.LR_tokens:gsub("{{naming_sequenceTotal_(%d)Digits?}}", function(digits)
-            return string.format("%0" .. digits .. "d", total)
-        end)
+        settings.LR_tokens = settings.LR_tokens:gsub(
+            "{{naming_sequenceTotal_(%d)Digits?}}",
+            function(digits) return string.format("%0" .. digits .. "d", total) end
+        )
     end
     if needsProportionalSize(settings) then
-        local dimensions = photo:getRawMetadata('croppedDimensions')
+        local dimensions = photo:getRawMetadata("croppedDimensions")
         if type(dimensions) ~= "table" or not dimensions.width or not dimensions.height then
             return nil, "Lightroom reported no dimensions for this photo"
         end
         local edge = math.max(dimensions.width, dimensions.height) * scaleForPhoto(settings, dimensions)
         edge = math.max(1, math.floor(edge + 0.5))
-        settings.LR_size_resizeType = 'longEdge'
-        settings.LR_size_units = 'pixels'
+        settings.LR_size_resizeType = "longEdge"
+        settings.LR_size_units = "pixels"
         settings.LR_size_maxWidth = edge
         settings.LR_size_maxHeight = edge
     end
@@ -184,19 +185,24 @@ local EXPORT_PHOTO_RESERVE_SECONDS = 60
 
 local function prepareExport(context, args, catalog)
     local preset
-    if args.export_preset ~= nil then
-        preset = ExportPresets.resolve(args.export_preset, args.export_preset_folder)
-    end
+    if args.export_preset ~= nil then preset = ExportPresets.resolve(args.export_preset, args.export_preset_folder) end
 
     local destination
     if args.destination ~= nil then
         destination = PathForms.absolute(args.destination, "destination")
     else
         local destinationType = preset.settings.LR_export_destinationType
-        if not ExportPresets.FIXED_DESTINATION_TYPES[destinationType]
-            or (destinationType == 'specificFolder' and not preset.settings.LR_export_destinationPathPrefix) then
-            error("Export preset '" .. preset.name .. "' has no fixed destination ("
-                .. tostring(destinationType) .. "); pass destination")
+        if
+            not ExportPresets.FIXED_DESTINATION_TYPES[destinationType]
+            or (destinationType == "specificFolder" and not preset.settings.LR_export_destinationPathPrefix)
+        then
+            error(
+                "Export preset '"
+                    .. preset.name
+                    .. "' has no fixed destination ("
+                    .. tostring(destinationType)
+                    .. "); pass destination"
+            )
         end
     end
 
@@ -217,21 +223,31 @@ local function prepareExport(context, args, catalog)
     -- bridge until a manual restart (issue #128). LrExportSession acquires
     -- its own catalog access during rendering.
     local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
-    local plan = { entries = entries, notFound = notFound, preset = preset, exportSettings = exportSettings,
-        collisionHandling = collisionHandling }
+    local plan = {
+        entries = entries,
+        notFound = notFound,
+        preset = preset,
+        exportSettings = exportSettings,
+        collisionHandling = collisionHandling,
+    }
     if #entries == 0 then return plan end
 
     local photos = {}
-    for index, entry in ipairs(entries) do photos[index] = entry.photo end
+    for index, entry in ipairs(entries) do
+        photos[index] = entry.photo
+    end
 
     local presetFolder
-    if not destination and exportSettings.LR_export_destinationType == 'specificFolder' then
-        presetFolder = ExportPresets.specificFolderPath(exportSettings.LR_export_destinationPathPrefix,
-            exportSettings.LR_export_useSubfolder, exportSettings.LR_export_destinationPathSuffix)
+    if not destination and exportSettings.LR_export_destinationType == "specificFolder" then
+        presetFolder = ExportPresets.specificFolderPath(
+            exportSettings.LR_export_destinationPathPrefix,
+            exportSettings.LR_export_useSubfolder,
+            exportSettings.LR_export_destinationPathSuffix
+        )
     end
 
     local exportFolder = destination or presetFolder
-    if collisionHandling == 'overwrite' then
+    if collisionHandling == "overwrite" then
         refuseOverwriteIntoCatalogFolders(catalog, photos, exportSettings, exportFolder)
     end
     if exportFolder then
@@ -253,7 +269,7 @@ local function prepareExport(context, args, catalog)
     -- writes next to the original. Without a destination argument the
     -- preset's own destination (type, folder, subfolder) is kept.
     if destination then
-        exportSettings.LR_export_destinationType = 'specificFolder'
+        exportSettings.LR_export_destinationType = "specificFolder"
         exportSettings.LR_export_destinationPathPrefix = destination
         exportSettings.LR_export_useSubfolder = false
     else
@@ -266,8 +282,11 @@ end
 local EXPORT_LEAVES = { "one Export history step", "the exported mark" }
 
 local function renderSession(context, exportSession, plan, photoId)
-    CatalogWrite.invoke(context, "Export photo " .. photoId .. " (" .. table.concat(EXPORT_LEAVES, " and ") .. ")",
-        function() exportSession:doExportOnCurrentTask() end)
+    CatalogWrite.invoke(
+        context,
+        "Export photo " .. photoId .. " (" .. table.concat(EXPORT_LEAVES, " and ") .. ")",
+        function() exportSession:doExportOnCurrentTask() end
+    )
     local outcome = { files = {}, failures = {} }
     local renditionCount = 0
     for _, rendition in exportSession:renditions() do
@@ -284,7 +303,7 @@ local function renderSession(context, exportSession, plan, photoId)
         end
     end
     if renditionCount == 0 then
-        if plan.collisionHandling == 'skip' then
+        if plan.collisionHandling == "skip" then
             outcome.skipped = true
         else
             outcome.failures[#outcome.failures + 1] = "Lightroom rendered no file"
@@ -338,8 +357,12 @@ local function runExport(args, context, run)
             elseif outcome.failed then
                 stopped(outcome.failed)
             else
-                for _, file in ipairs(outcome.files) do files[#files + 1] = file end
-                for _, reason in ipairs(outcome.failures) do stopped(reason) end
+                for _, file in ipairs(outcome.files) do
+                    files[#files + 1] = file
+                end
+                for _, reason in ipairs(outcome.failures) do
+                    stopped(reason)
+                end
                 if outcome.skipped then skipped[#skipped + 1] = photoId end
             end
             lastName = name
@@ -347,8 +370,16 @@ local function runExport(args, context, run)
     end
     if lastName then context:report(#files, #plan.entries, lastName) end
 
-    Log.info(string.format("Exported %d photos to: %s (skipped %d, failed %d, unknown %d)",
-        #files, plan.destination, #skipped, #failed, #unknown))
+    Log.info(
+        string.format(
+            "Exported %d photos to: %s (skipped %d, failed %d, unknown %d)",
+            #files,
+            plan.destination,
+            #skipped,
+            #failed,
+            #unknown
+        )
+    )
 
     local preset = plan.preset
     return Reply.parts({
@@ -357,7 +388,10 @@ local function runExport(args, context, run)
             skipped = #skipped > 0 and skipped or nil,
             destination = plan.destination,
             preset = preset and {
-                name = preset.name, folder = preset.folder, scope = preset.scope, file = preset.file,
+                name = preset.name,
+                folder = preset.folder,
+                scope = preset.scope,
+                file = preset.file,
             } or nil,
         } or nil,
         failed = #failed > 0 and failed or nil,
@@ -390,11 +424,12 @@ function ExportHandler.exportPhotos(args, context)
     return withExportLock("export_photos", function(run) return runExport(args, context, run) end)
 end
 
-
 local detailRenders = 0
 
 local function removeDirectory(directory)
-    for file in LrFileUtils.files(directory) do LrFileUtils.delete(file) end
+    for file in LrFileUtils.files(directory) do
+        LrFileUtils.delete(file)
+    end
     LrFileUtils.delete(directory)
 end
 
@@ -405,7 +440,9 @@ local function newDetailDirectory()
     if LrFileUtils.exists(base) == "directory" then
         for entry in LrFileUtils.directoryEntries(base) do
             local entryStartedMs = tonumber(LrPathUtils.leafName(entry):match("^(%d+)%-%d+$"))
-            if entryStartedMs and startedMs - entryStartedMs >= STALE_PHOTO_SECONDS * 1000 then removeDirectory(entry) end
+            if entryStartedMs and startedMs - entryStartedMs >= STALE_PHOTO_SECONDS * 1000 then
+                removeDirectory(entry)
+            end
         end
     end
     return LrPathUtils.child(base, string.format("%d-%d", startedMs, detailRenders))
@@ -413,16 +450,16 @@ end
 
 local function detailSettings(directory)
     return {
-        LR_format = 'JPEG',
+        LR_format = "JPEG",
         LR_jpeg_quality = 1,
-        LR_export_colorSpace = 'sRGB',
+        LR_export_colorSpace = "sRGB",
         LR_size_doConstrain = false,
         LR_outputSharpeningOn = false,
-        LR_embeddedMetadataOption = 'copyrightOnly',
+        LR_embeddedMetadataOption = "copyrightOnly",
         LR_removeLocationMetadata = true,
         LR_reimportExportedPhoto = false,
-        LR_collisionHandling = 'overwrite',
-        LR_export_destinationType = 'specificFolder',
+        LR_collisionHandling = "overwrite",
+        LR_export_destinationType = "specificFolder",
         LR_export_destinationPathPrefix = directory,
         LR_export_useSubfolder = false,
     }
@@ -432,8 +469,8 @@ local function renditionSettings(directory, edge)
     local settings = detailSettings(directory)
     settings.LR_jpeg_quality = Contract.RENDITION_JPEG_QUALITY / 100
     settings.LR_size_doConstrain = true
-    settings.LR_size_resizeType = 'longEdge'
-    settings.LR_size_units = 'pixels'
+    settings.LR_size_resizeType = "longEdge"
+    settings.LR_size_units = "pixels"
     settings.LR_size_maxWidth = edge
     settings.LR_size_maxHeight = edge
     settings.LR_size_doNotEnlarge = true
@@ -453,7 +490,7 @@ local function renderToFile(context, photo, run, settingsOf)
     render.created = CatalogWrite.createFolder(context, render.directory) or render.directory
     render.afterFolder = context.ledger:mark()
     run.lastPhotoAt = LrDate.currentTime()
-    local plan = { exportSettings = settingsOf(render.directory), collisionHandling = 'overwrite' }
+    local plan = { exportSettings = settingsOf(render.directory), collisionHandling = "overwrite" }
     local rendered, outcome = LrTasks.pcall(exportOne, context, plan, photo, 1, 1)
     if rendered and #outcome.files == 1 and #outcome.failures == 0 then return outcome.files[1].path end
     discardRender(context, render)
@@ -466,7 +503,9 @@ function ExportHandler.renderSource(args, context)
         if not photo then return Reply.parts({ not_found = { args.photo_id } }) end
         local photoId = tostring(photo.localIdentifier)
         local settingsOf = detailSettings
-        if args.long_edge then settingsOf = function(directory) return renditionSettings(directory, args.long_edge) end end
+        if args.long_edge then
+            settingsOf = function(directory) return renditionSettings(directory, args.long_edge) end
+        end
         local path, problem, mark = renderToFile(context, photo, run, settingsOf)
         if not path then
             local class, reason = Reply.stopped(problem, context.ledger:since(mark))
@@ -492,9 +531,15 @@ end
 -- outlast the server timeout and hold the read gate throughout.
 local MAX_METADATA_PHOTOS = 1000
 local RECORD_RAW_KEYS = PhotoRecord.rawKeys({
-    'uuid', 'path', 'fileFormat', 'isVirtualCopy', 'dateTimeOriginalISO8601', 'dimensions', 'croppedDimensions',
+    "uuid",
+    "path",
+    "fileFormat",
+    "isVirtualCopy",
+    "dateTimeOriginalISO8601",
+    "dimensions",
+    "croppedDimensions",
 })
-local RECORD_FORMATTED_KEYS = PhotoRecord.formattedKeys({ 'fileName', 'title', 'caption' })
+local RECORD_FORMATTED_KEYS = PhotoRecord.formattedKeys({ "fileName", "title", "caption" })
 
 local function sizeOf(dimensions)
     if type(dimensions) ~= "table" then return nil end
@@ -508,9 +553,7 @@ local function prepareMetadataExport(args, catalog)
     -- Lightroom process can write would otherwise be clobbered.
     local function checkDestination()
         local existing = LrFileUtils.exists(destination)
-        if existing == "directory" then
-            error("destination is a directory: " .. destination)
-        end
+        if existing == "directory" then error("destination is a directory: " .. destination) end
         if existing and args.overwrite ~= true then
             error("destination already exists: " .. destination .. " (pass overwrite: true to replace it)")
         end
@@ -525,18 +568,24 @@ local function prepareMetadataExport(args, catalog)
     if args.photo_ids then
         local entries
         entries, missingIds = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
-        for i, entry in ipairs(entries) do photos[i] = entry.photo end
+        for i, entry in ipairs(entries) do
+            photos[i] = entry.photo
+        end
     else
         photos = catalog:getTargetPhotos() or {}
         if #photos > MAX_METADATA_PHOTOS then
-            error(string.format("%d photos are selected (or in the filmstrip); export at most %d "
-                .. "at a time by selecting fewer or passing photo_ids", #photos, MAX_METADATA_PHOTOS))
+            error(
+                string.format(
+                    "%d photos are selected (or in the filmstrip); export at most %d "
+                        .. "at a time by selecting fewer or passing photo_ids",
+                    #photos,
+                    MAX_METADATA_PHOTOS
+                )
+            )
         end
     end
 
-    if #photos == 0 and #missingIds == 0 then
-        error("No photos found to export metadata for")
-    end
+    if #photos == 0 and #missingIds == 0 then error("No photos found to export metadata for") end
     return { destination = destination, photos = photos, missingIds = missingIds, checkDestination = checkDestination }
 end
 
@@ -595,8 +644,9 @@ function ExportHandler.exportPhotoMetadata(args, context)
             LrFileUtils.delete(destination)
             if not LrFileUtils.exists(destination) then context.ledger:undone(beforeFile) end
         end
-        error("Could not write " .. destination .. " (the file may be incomplete): "
-            .. tostring(writeError or closeError))
+        error(
+            "Could not write " .. destination .. " (the file may be incomplete): " .. tostring(writeError or closeError)
+        )
     end
 
     Log.info(string.format("Exported metadata for %d photos to: %s", #records, destination))

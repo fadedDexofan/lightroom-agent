@@ -1,4 +1,4 @@
-local DecimalText = require 'DecimalText'
+local DecimalText = require "DecimalText"
 
 describe("DecimalText.fixed", function()
     after_each(function() os.setlocale("C", "numeric") end)

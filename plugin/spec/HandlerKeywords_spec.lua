@@ -1,11 +1,12 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 -- tasks.pcallCount counts LrTasks.pcall calls: the plain pcall cannot yield,
 -- so a write gate inside it fails in Lightroom.
 local tasks = { pcallCount = 0 }
 
 local function setup(keywords, opts)
-    local catalog = helper.fakeCatalog({ keywords = keywords or {}, writeAccessAborts = opts and opts.writeAccessAborts })
+    local catalog =
+        helper.fakeCatalog({ keywords = keywords or {}, writeAccessAborts = opts and opts.writeAccessAborts })
     tasks.pcallCount = 0
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
@@ -18,7 +19,7 @@ local function setup(keywords, opts)
         },
     })
     package.loaded.HandlerKeywords = nil
-    return catalog, require 'HandlerKeywords'
+    return catalog, require "HandlerKeywords"
 end
 
 -- zebra
@@ -142,7 +143,7 @@ describe("HandlerKeywords.listKeywords", function()
         })
         package.loaded.HandlerKeywords = nil
         package.loaded.KeywordTree = nil
-        local Handler = require 'HandlerKeywords'
+        local Handler = require "HandlerKeywords"
 
         local r = Handler.listKeywords({ query = "ZÜRICH" })
 
@@ -153,8 +154,10 @@ describe("HandlerKeywords.listKeywords", function()
     it("refuses an unknown parent as rename_keyword refuses an unknown keyword", function()
         local _, Handler = setup(tree())
 
-        assert.are.equal("Keyword not found: Places|Africa",
-            helper.failedOf(function() Handler.listKeywords({ parent = "Places|Africa" }) end))
+        assert.are.equal(
+            "Keyword not found: Places|Africa",
+            helper.failedOf(function() Handler.listKeywords({ parent = "Places|Africa" }) end)
+        )
     end)
 
     it("never calls into the SDK from inside table.sort", function()
@@ -169,9 +172,7 @@ describe("HandlerKeywords.listKeywords", function()
             for _, method in ipairs({ "getName", "getParent", "getChildren", "getSynonyms", "getAttributes" }) do
                 local original = keyword[method]
                 keyword[method] = function(...)
-                    if insideSort then
-                        table.insert(calledInsideSort, method)
-                    end
+                    if insideSort then table.insert(calledInsideSort, method) end
                     return original(...)
                 end
             end
@@ -252,23 +253,31 @@ describe("HandlerKeywords.renameKeyword", function()
         assert.are.equal(1, tasks.pcallCount)
     end)
 
-    it("answers unknown, naming the temporary name it left behind, when the catalog stays busy for the second step", function()
-        local callie = helper.fakeKeyword("callie")
-        local gates = 0
-        local _, Handler = setup({ callie }, {
-            writeAccessAborts = function()
-                gates = gates + 1
-                return gates == 2
-            end,
-        })
+    it(
+        "answers unknown, naming the temporary name it left behind, when the catalog stays busy for the second step",
+        function()
+            local callie = helper.fakeKeyword("callie")
+            local gates = 0
+            local _, Handler = setup({ callie }, {
+                writeAccessAborts = function()
+                    gates = gates + 1
+                    return gates == 2
+                end,
+            })
 
-        assert.are.same({ "unknown", "Keyword 'callie' was left named 'Callie (renaming)' while changing its case: "
-            .. helper.catalogBusy("Rename Keyword") .. "; written before this stopped: Rename Keyword" },
-            { helper.outcomeOf(function(context)
-                Handler.renameKeyword({ keyword = "callie", new_name = "Callie" }, context)
-            end) })
-        assert.are.equal("Callie (renaming)", callie:getName())
-    end)
+            assert.are.same({
+                "unknown",
+                "Keyword 'callie' was left named 'Callie (renaming)' while changing its case: " .. helper.catalogBusy(
+                    "Rename Keyword"
+                ) .. "; written before this stopped: Rename Keyword",
+            }, {
+                helper.outcomeOf(
+                    function(context) Handler.renameKeyword({ keyword = "callie", new_name = "Callie" }, context) end
+                ),
+            })
+            assert.are.equal("Callie (renaming)", callie:getName())
+        end
+    )
 
     it("reports a sibling collision during the final case-only rename", function()
         local callie = helper.fakeKeyword("callie")
@@ -284,16 +293,14 @@ describe("HandlerKeywords.renameKeyword", function()
         local realSetAttributes = callie.setAttributes
         callie.setAttributes = function(self, attributes)
             for _, sibling in ipairs(siblings) do
-                if sibling ~= self and sibling:getName():lower() == attributes.keywordName:lower() then
-                    return false
-                end
+                if sibling ~= self and sibling:getName():lower() == attributes.keywordName:lower() then return false end
             end
             return realSetAttributes(self, attributes)
         end
 
-        local class, message = helper.outcomeOf(function(context)
-            Handler.renameKeyword({ keyword = "callie", new_name = "Callie" }, context)
-        end)
+        local class, message = helper.outcomeOf(
+            function(context) Handler.renameKeyword({ keyword = "callie", new_name = "Callie" }, context) end
+        )
         assert.are.equal("unknown", class)
         assert.matches("Keyword 'callie' was left named 'Callie (renaming)' while changing its case", message, 1, true)
         assert.are.equal("Callie (renaming)", callie:getName())
@@ -305,9 +312,11 @@ describe("HandlerKeywords.renameKeyword", function()
         local _, Handler = setup({ person })
         person.setAttributes = function() return false end
 
-        assert.are.same({ "failed", "Lightroom refused to rename keyword 'person' to 'people'" }, { helper.outcomeOf(function(context)
-            Handler.renameKeyword({ keyword = "person", new_name = "people" }, context)
-        end) })
+        assert.are.same({ "failed", "Lightroom refused to rename keyword 'person' to 'people'" }, {
+            helper.outcomeOf(
+                function(context) Handler.renameKeyword({ keyword = "person", new_name = "people" }, context) end
+            ),
+        })
         assert.are.equal("person", person:getName())
     end)
 
@@ -336,8 +345,10 @@ describe("HandlerKeywords.renameKeyword", function()
         local callie = helper.fakeKeyword("Callie")
         local _, Handler = setup({ callie })
 
-        assert.are.equal("Keyword is already named 'Callie'",
-            helper.failedOf(function() Handler.renameKeyword({ keyword = "Callie", new_name = "Callie" }) end))
+        assert.are.equal(
+            "Keyword is already named 'Callie'",
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "Callie", new_name = "Callie" }) end)
+        )
     end)
 
     it("refuses to guess between keywords that share a name", function()
@@ -346,8 +357,10 @@ describe("HandlerKeywords.renameKeyword", function()
         local nested = helper.fakeKeyword("Europe", { parent = places })
         local _, Handler = setup({ europe, places })
 
-        assert.are.equal("Keyword is ambiguous, give its path: Europe (Europe, Places|Europe)",
-            helper.failedOf(function() Handler.renameKeyword({ keyword = "Europe", new_name = "EU" }) end))
+        assert.are.equal(
+            "Keyword is ambiguous, give its path: Europe (Europe, Places|Europe)",
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "Europe", new_name = "EU" }) end)
+        )
         assert.are.equal("Europe", europe:getName())
         assert.are.equal("Europe", nested:getName())
     end)
@@ -359,8 +372,12 @@ describe("HandlerKeywords.renameKeyword", function()
         helper.fakeKeyword("Berlin", { parent = europe })
         local _, Handler = setup({ places })
 
-        assert.are.equal("A keyword named 'Berlin' already exists at Places|Europe|Berlin; rename cannot merge keywords",
-            helper.failedOf(function() Handler.renameKeyword({ keyword = "Places|Europe|Paris", new_name = "berlin" }) end))
+        assert.are.equal(
+            "A keyword named 'Berlin' already exists at Places|Europe|Berlin; rename cannot merge keywords",
+            helper.failedOf(
+                function() Handler.renameKeyword({ keyword = "Places|Europe|Paris", new_name = "berlin" }) end
+            )
+        )
         assert.are.equal("Paris", paris:getName())
     end)
 
@@ -379,9 +396,13 @@ describe("HandlerKeywords.renameKeyword", function()
     it("reports a keyword or path that does not exist", function()
         local _, Handler = setup(tree())
 
-        assert.are.equal("Keyword not found: nope",
-            helper.failedOf(function() Handler.renameKeyword({ keyword = "nope", new_name = "x" }) end))
-        assert.are.equal("Keyword not found: Places|Nope",
-            helper.failedOf(function() Handler.renameKeyword({ keyword = "Places|Nope", new_name = "x" }) end))
+        assert.are.equal(
+            "Keyword not found: nope",
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "nope", new_name = "x" }) end)
+        )
+        assert.are.equal(
+            "Keyword not found: Places|Nope",
+            helper.failedOf(function() Handler.renameKeyword({ keyword = "Places|Nope", new_name = "x" }) end)
+        )
     end)
 end)

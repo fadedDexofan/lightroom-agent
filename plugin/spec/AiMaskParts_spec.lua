@@ -1,18 +1,35 @@
-local AiMaskParts = require 'AiMaskParts'
+local AiMaskParts = require "AiMaskParts"
 
 describe("AiMaskParts", function()
     it("accepts the people parts and landscape categories Lightroom offers", function()
         local parts = {
-            "face_skin", "iris_and_pupil", "body_skin", "hair", "lips", "facial_hair",
-            "eye_sclera", "eyebrows", "clothes", "teeth", "entire_person",
+            "face_skin",
+            "iris_and_pupil",
+            "body_skin",
+            "hair",
+            "lips",
+            "facial_hair",
+            "eye_sclera",
+            "eyebrows",
+            "clothes",
+            "teeth",
+            "entire_person",
         }
         local categories = {
-            "architecture", "mountains", "artificial_ground", "natural_ground",
-            "vegetation", "sky", "water", "snow",
+            "architecture",
+            "mountains",
+            "artificial_ground",
+            "natural_ground",
+            "vegetation",
+            "sky",
+            "water",
+            "snow",
         }
         local function namesOf(specs)
             local names = {}
-            for index = 1, #parts + #categories do names[index] = specs[index] and specs[index].name end
+            for index = 1, #parts + #categories do
+                names[index] = specs[index] and specs[index].name
+            end
             return names
         end
         assert.are.same(parts, namesOf(AiMaskParts.parsePeople({ parts = parts }).specs))
@@ -63,5 +80,4 @@ describe("AiMaskParts", function()
         assert.are.equal(50002, mountains.MaskSubCategoryID)
         assert.is_nil(snow.InstanceIDs)
     end)
-
 end)

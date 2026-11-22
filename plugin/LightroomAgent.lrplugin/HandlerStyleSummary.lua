@@ -1,7 +1,7 @@
-local LrApplication = import 'LrApplication'
-local Contract = require 'Contract'
-local DevelopReadBack = require 'DevelopReadBack'
-local JSON = require 'JSON'
+local LrApplication = import "LrApplication"
+local Contract = require "Contract"
+local DevelopReadBack = require "DevelopReadBack"
+local JSON = require "JSON"
 
 local Handler = {}
 
@@ -20,7 +20,9 @@ local function summarize(group)
     group.settings_omitted = 0
     if #JSON:encode(group) > 5900 then error("Camera model exceeds the summary size limit", 0) end
     local keys = {}
-    for key in pairs(values) do keys[#keys + 1] = key end
+    for key in pairs(values) do
+        keys[#keys + 1] = key
+    end
     table.sort(keys)
     for _, key in ipairs(keys) do
         local list = values[key]
@@ -45,9 +47,12 @@ function Handler.summarize(args)
     local minRating = args.min_rating or Contract.STYLE_SUMMARY_MIN_RATING
     local maximum = args.max_photos or Contract.STYLE_SUMMARY_PHOTO_LIMIT
     local catalog = LrApplication.activeCatalog()
-    local candidates = catalog:findPhotos({ searchDesc = {
-        combine = "intersect", { criteria = "rating", operation = ">=", value = minRating },
-    } })
+    local candidates = catalog:findPhotos({
+        searchDesc = {
+            combine = "intersect",
+            { criteria = "rating", operation = ">=", value = minRating },
+        },
+    })
     local selected = candidates
     if args.exported_only then
         selected = {}
@@ -58,7 +63,9 @@ function Handler.summarize(args)
     end
     local matched = #selected
     local page = {}
-    for index = 1, math.min(maximum, matched) do page[index] = selected[index] end
+    for index = 1, math.min(maximum, matched) do
+        page[index] = selected[index]
+    end
     local groups, byCamera = {}, {}
     if #page > 0 then
         catalog:withReadAccessDo(function()
@@ -77,9 +84,17 @@ function Handler.summarize(args)
                 end
                 group.count = group.count + 1
                 for key, value in pairs(DevelopReadBack.saved(photo)) do
-                    if type(key) == "string" and not key:match("^Crop") and not key:match("^Perspective")
-                        and key ~= "Temperature" and key ~= "Tint" and type(value) == "number"
-                        and value == value and value > -math.huge and value < math.huge then
+                    if
+                        type(key) == "string"
+                        and not key:match("^Crop")
+                        and not key:match("^Perspective")
+                        and key ~= "Temperature"
+                        and key ~= "Tint"
+                        and type(value) == "number"
+                        and value == value
+                        and value > -math.huge
+                        and value < math.huge
+                    then
                         local list = group.values[key] or {}
                         group.values[key] = list
                         list[#list + 1] = value
@@ -92,7 +107,9 @@ function Handler.summarize(args)
         if a.camera_model == b.camera_model then return a.iso_bucket < b.iso_bucket end
         return a.camera_model < b.camera_model
     end)
-    for _, group in ipairs(groups) do summarize(group) end
+    for _, group in ipairs(groups) do
+        summarize(group)
+    end
     return { groups = groups, scanned = #page, matched = matched, truncated = matched > #page }
 end
 

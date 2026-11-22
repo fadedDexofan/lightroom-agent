@@ -32,7 +32,7 @@ function versionTs(v) {
   ].join("\n");
 }
 
-const INFO_LUA = /VERSION = \{ major=(\d+), minor=(\d+), revision=(\d+), build=\d+ \}/;
+const INFO_LUA = /VERSION = \{ major = (\d+), minor = (\d+), revision = (\d+), build = \d+ \}/;
 
 function packageRelease() {
   const { version, description, author } = readJson(p("server", "package.json"));
@@ -173,7 +173,7 @@ const targets = [
       if (!INFO_LUA.test(src)) throw new Error("Info.lua: VERSION line not found");
       fs.writeFileSync(
         p(this.name),
-        src.replace(INFO_LUA, `VERSION = { major=${maj}, minor=${min}, revision=${pat}, build=0 }`),
+        src.replace(INFO_LUA, `VERSION = { major = ${maj}, minor = ${min}, revision = ${pat}, build = 0 }`),
       );
     },
   },

@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 -- Load PluginInit with mocked LR globals and a stubbed PluginInfoProvider.
 -- Returns a table of observed effects.
@@ -16,13 +16,9 @@ local function loadInit(opts)
     package.loaded.PluginInfoProvider = {
         -- PluginInit calls this on load/reload to tear down a stale instance
         -- before auto-start (issues #121, #137); stub it so the require runs.
-        resetForReload = function()
-            observed.resetForReload = true
-        end,
+        resetForReload = function() observed.resetForReload = true end,
         startServer = function()
-            if opts.startServerError then
-                error(opts.startServerError)
-            end
+            if opts.startServerError then error(opts.startServerError) end
             observed.started = true
         end,
     }
@@ -58,7 +54,7 @@ local function loadInit(opts)
     }
 
     package.loaded.PluginInit = nil
-    require 'PluginInit'
+    require "PluginInit"
     observed.prefs = prefs
     return observed
 end

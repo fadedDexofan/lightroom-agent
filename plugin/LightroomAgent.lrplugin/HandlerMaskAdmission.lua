@@ -1,8 +1,8 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local GuardedMaskWrite = require 'GuardedMaskWrite'
-local MaskWriteAdmission = require 'MaskWriteAdmission'
-local PhotoLookup = require 'PhotoLookup'
+local GuardedMaskWrite = require "GuardedMaskWrite"
+local MaskWriteAdmission = require "MaskWriteAdmission"
+local PhotoLookup = require "PhotoLookup"
 
 local HandlerMaskAdmission = {}
 

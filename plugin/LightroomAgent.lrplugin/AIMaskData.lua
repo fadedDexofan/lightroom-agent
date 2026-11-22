@@ -2,17 +2,27 @@ local AIMaskData = {}
 
 AIMaskData.KIND = "Mask/Image"
 local COMPUTED_KEYS = {
-    "MaskDigest", "InputDigest", "InputDigestVersion", "LocalInputDigest", "LocalInputDigestVersion", "ModelVersion",
-    "FullMaskSize", "Origin", "ReferencePoint", "WholeImageArea", "MaskSyncID", "ErrorReason",
+    "MaskDigest",
+    "InputDigest",
+    "InputDigestVersion",
+    "LocalInputDigest",
+    "LocalInputDigestVersion",
+    "ModelVersion",
+    "FullMaskSize",
+    "Origin",
+    "ReferencePoint",
+    "WholeImageArea",
+    "MaskSyncID",
+    "ErrorReason",
 }
 AIMaskData.COMPUTATION_MARKER_KEY = "MaskDigest"
 
 local COMPUTED = {}
-for _, key in ipairs(COMPUTED_KEYS) do COMPUTED[key] = true end
-
-function AIMaskData.isComputed(key)
-    return COMPUTED[key] == true
+for _, key in ipairs(COMPUTED_KEYS) do
+    COMPUTED[key] = true
 end
+
+function AIMaskData.isComputed(key) return COMPUTED[key] == true end
 
 local ERROR_REASONS = {
     [1] = "no result",
@@ -28,16 +38,12 @@ end
 
 function AIMaskData.containsAIMasks(settings)
     local groups = type(settings) == "table" and settings.MaskGroupBasedCorrections
-    if type(groups) ~= "table" then
-        return false
-    end
+    if type(groups) ~= "table" then return false end
     for _, correction in ipairs(groups) do
         local masks = type(correction) == "table" and correction.CorrectionMasks
         if type(masks) == "table" then
             for _, mask in ipairs(masks) do
-                if type(mask) == "table" and mask.What == AIMaskData.KIND then
-                    return true
-                end
+                if type(mask) == "table" and mask.What == AIMaskData.KIND then return true end
             end
         end
     end
@@ -53,16 +59,12 @@ local function shallowCopy(source)
 end
 
 function AIMaskData.withoutComputedData(settings)
-    if not AIMaskData.containsAIMasks(settings) then
-        return settings
-    end
+    if not AIMaskData.containsAIMasks(settings) then return settings end
     local stripped = shallowCopy(settings)
     stripped.MaskGroupBasedCorrections = {}
     for groupIndex, correction in ipairs(settings.MaskGroupBasedCorrections) do
         local strippedCorrection = correction
-        if type(correction) == "table" then
-            strippedCorrection = shallowCopy(correction)
-        end
+        if type(correction) == "table" then strippedCorrection = shallowCopy(correction) end
         if type(correction) == "table" and type(correction.CorrectionMasks) == "table" then
             strippedCorrection.CorrectionMasks = {}
             for maskIndex, mask in ipairs(correction.CorrectionMasks) do
@@ -83,9 +85,7 @@ function AIMaskData.withoutComputedData(settings)
     return stripped
 end
 
-local function failed(component)
-    return type(component.ErrorReason) == "number" and component.ErrorReason ~= 0
-end
+local function failed(component) return type(component.ErrorReason) == "number" and component.ErrorReason ~= 0 end
 
 local function computed(component)
     local digest = component[AIMaskData.COMPUTATION_MARKER_KEY]
@@ -99,10 +99,18 @@ function AIMaskData.componentState(component)
 end
 
 function AIMaskData.uncomputed(correction)
-    for _, component in ipairs(type(correction) == "table" and type(correction.CorrectionMasks) == "table"
-        and correction.CorrectionMasks or {}) do
-        if type(component) == "table" and component.What == AIMaskData.KIND and not failed(component)
-            and not computed(component) then
+    for _, component in
+        ipairs(
+            type(correction) == "table" and type(correction.CorrectionMasks) == "table" and correction.CorrectionMasks
+                or {}
+        )
+    do
+        if
+            type(component) == "table"
+            and component.What == AIMaskData.KIND
+            and not failed(component)
+            and not computed(component)
+        then
             return true
         end
     end

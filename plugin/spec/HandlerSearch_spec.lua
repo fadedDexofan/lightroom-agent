@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 describe("HandlerSearch.searchPhotos", function()
     local catalog, Handler
@@ -6,9 +6,27 @@ describe("HandlerSearch.searchPhotos", function()
     before_each(function()
         catalog = helper.fakeCatalog({
             photos = {
-                helper.fakePhoto({ id = "1", path = "/a/sunset.jpg", fileName = "sunset.jpg", rating = 5, dateTimeOriginal = "2024-06-01" }),
-                helper.fakePhoto({ id = "2", path = "/b/portrait.jpg", fileName = "portrait.jpg", rating = 3, dateTimeOriginal = "2024-06-02" }),
-                helper.fakePhoto({ id = "3", path = "/c/landscape.jpg", fileName = "landscape.jpg", rating = 5, dateTimeOriginal = "2024-06-03" }),
+                helper.fakePhoto({
+                    id = "1",
+                    path = "/a/sunset.jpg",
+                    fileName = "sunset.jpg",
+                    rating = 5,
+                    dateTimeOriginal = "2024-06-01",
+                }),
+                helper.fakePhoto({
+                    id = "2",
+                    path = "/b/portrait.jpg",
+                    fileName = "portrait.jpg",
+                    rating = 3,
+                    dateTimeOriginal = "2024-06-02",
+                }),
+                helper.fakePhoto({
+                    id = "3",
+                    path = "/c/landscape.jpg",
+                    fileName = "landscape.jpg",
+                    rating = 5,
+                    dateTimeOriginal = "2024-06-03",
+                }),
             },
         })
 
@@ -18,7 +36,7 @@ describe("HandlerSearch.searchPhotos", function()
         })
 
         package.loaded.HandlerSearch = nil
-        Handler = require 'HandlerSearch'
+        Handler = require "HandlerSearch"
     end)
 
     it("returns all photos when no filters given", function()
@@ -33,8 +51,14 @@ describe("HandlerSearch.searchPhotos", function()
         local full = Handler.searchPhotos({ limit = 1, include_path = true })
         local explicit = Handler.searchPhotos({ limit = 1, include_path = false })
 
-        assert.are.same({ photo_id = "1", filename = "sunset.jpg", rating = 5,
-            date_time_original = "2024-06-01", flag = "none", color_label = "none" }, slim.photos[1])
+        assert.are.same({
+            photo_id = "1",
+            filename = "sunset.jpg",
+            rating = 5,
+            date_time_original = "2024-06-01",
+            flag = "none",
+            color_label = "none",
+        }, slim.photos[1])
         assert.are.same(slim, explicit)
         assert.are.equal("/a/sunset.jpg", full.photos[1].path)
         full.photos[1].path = nil
@@ -44,11 +68,16 @@ describe("HandlerSearch.searchPhotos", function()
     it("encodes a default 100-row page within 65 percent of rows with paths", function()
         local photos = {}
         for i = 1, 100 do
-            photos[i] = helper.fakePhoto({ id = tostring(i), path = "/" .. string.rep("a", 48) .. "/sunset.jpg",
-                fileName = "sunset.jpg", rating = 5, dateTimeOriginal = "2024-06-01" })
+            photos[i] = helper.fakePhoto({
+                id = tostring(i),
+                path = "/" .. string.rep("a", 48) .. "/sunset.jpg",
+                fileName = "sunset.jpg",
+                rating = 5,
+                dateTimeOriginal = "2024-06-01",
+            })
         end
         catalog = helper.fakeCatalog({ photos = photos })
-        local JSON = require 'JSON'
+        local JSON = require "JSON"
 
         local slim = JSON:encode(Handler.searchPhotos({}))
         local full = JSON:encode(Handler.searchPhotos({ include_path = true }))
@@ -65,18 +94,40 @@ describe("HandlerSearch.searchPhotos", function()
     end)
 
     it("carries rating, flag and color label on every row through PhotoMarks", function()
-        catalog = helper.fakeCatalog({ photos = { helper.fakePhoto({ id = "1", path = "/m1.jpg", fileName = "m.jpg",
-            rating = 2, pickStatus = -1, colorNameForLabel = "red" }) } })
+        catalog = helper.fakeCatalog({
+            photos = {
+                helper.fakePhoto({
+                    id = "1",
+                    path = "/m1.jpg",
+                    fileName = "m.jpg",
+                    rating = 2,
+                    pickStatus = -1,
+                    colorNameForLabel = "red",
+                }),
+            },
+        })
         local row = Handler.searchPhotos({}).photos[1]
         assert.are.same({ 2, "reject", "red" }, { row.rating, row.flag, row.color_label })
     end)
 
     it("tells on each row whether the photo is in a stack and whether it is the top", function()
-        local top = helper.fakePhoto({ id = "1", path = "/s/top.jpg", fileName = "top.jpg",
-            isInStackInFolder = true, stackPositionInFolder = 1, stackInFolderIsCollapsed = false })
-        local member = helper.fakePhoto({ id = "2", path = "/s/member.jpg", fileName = "member.jpg",
-            isInStackInFolder = true, stackPositionInFolder = 2, stackInFolderIsCollapsed = false,
-            topOfStackInFolderContainingPhoto = top })
+        local top = helper.fakePhoto({
+            id = "1",
+            path = "/s/top.jpg",
+            fileName = "top.jpg",
+            isInStackInFolder = true,
+            stackPositionInFolder = 1,
+            stackInFolderIsCollapsed = false,
+        })
+        local member = helper.fakePhoto({
+            id = "2",
+            path = "/s/member.jpg",
+            fileName = "member.jpg",
+            isInStackInFolder = true,
+            stackPositionInFolder = 2,
+            stackInFolderIsCollapsed = false,
+            topOfStackInFolderContainingPhoto = top,
+        })
         top:setRawMetadata("topOfStackInFolderContainingPhoto", top)
         local alone = helper.fakePhoto({ id = "3", path = "/s/alone.jpg", fileName = "alone.jpg" })
         catalog = helper.fakeCatalog({ photos = { top, member, alone } })
@@ -91,10 +142,18 @@ describe("HandlerSearch.searchPhotos", function()
     end)
 
     it("warns that the hidden photos of a collapsed stack are not searched", function()
-        local top = helper.fakePhoto({ id = "7", path = "/s/top.jpg", fileName = "top.jpg",
-            isInStackInFolder = true, stackPositionInFolder = 1, stackInFolderIsCollapsed = true })
+        local top = helper.fakePhoto({
+            id = "7",
+            path = "/s/top.jpg",
+            fileName = "top.jpg",
+            isInStackInFolder = true,
+            stackPositionInFolder = 1,
+            stackInFolderIsCollapsed = true,
+        })
         top:setRawMetadata("topOfStackInFolderContainingPhoto", top)
-        catalog = helper.fakeCatalog({ photos = { top, helper.fakePhoto({ id = "8", path = "/s/b.jpg", fileName = "b.jpg" }) } })
+        catalog = helper.fakeCatalog({
+            photos = { top, helper.fakePhoto({ id = "8", path = "/s/b.jpg", fileName = "b.jpg" }) },
+        })
         local context = helper.requestContext()
 
         local result = Handler.searchPhotos({ filename = "" }, context)
@@ -144,7 +203,6 @@ describe("HandlerSearch.searchPhotos", function()
         assert.are.equal("2", result.photos[2].photo_id)
     end)
 
-
     it("returns empty when no photo matches", function()
         local result = Handler.searchPhotos({ rating = 1 })
         assert.are.equal(0, result.count)
@@ -153,7 +211,10 @@ describe("HandlerSearch.searchPhotos", function()
     end)
 
     for _, case in ipairs({
-        { args = { camera = "Sony ILCE-7M3" }, criterion = { criteria = "camera", operation = "==", value = "Sony ILCE-7M3" } },
+        {
+            args = { camera = "Sony ILCE-7M3" },
+            criterion = { criteria = "camera", operation = "==", value = "Sony ILCE-7M3" },
+        },
         { args = { lens = "24-70mm" }, criterion = { criteria = "lens", operation = "==", value = "24-70mm" } },
         { args = { iso = 100 }, criterion = { criteria = "isoSpeedRating", operation = "==", value = 100 } },
         { args = { focal_length = 32 }, criterion = { criteria = "focalLength", operation = "==", value = 32 } },
@@ -167,19 +228,31 @@ describe("HandlerSearch.searchPhotos", function()
         { args = { color_label = "purple" }, criterion = { criteria = "labelColor", operation = "==", value = 5 } },
         { args = { color_label = "none" }, criterion = { criteria = "labelColor", operation = "==", value = "none" } },
         { args = { edited = true }, criterion = { criteria = "hasAdjustments", operation = "isTrue", value = true } },
-        { args = { edited = false }, criterion = { criteria = "hasAdjustments", operation = "isFalse", value = false } },
+        {
+            args = { edited = false },
+            criterion = { criteria = "hasAdjustments", operation = "isFalse", value = false },
+        },
         { args = { file_type = "RAW" }, criterion = { criteria = "fileFormat", operation = "==", value = "RAW" } },
-        { args = { folder = "Photos Travel" }, criterion = { criteria = "folder", operation = "all", value = "Photos Travel" } },
+        {
+            args = { folder = "Photos Travel" },
+            criterion = { criteria = "folder", operation = "all", value = "Photos Travel" },
+        },
     }) do
-        it("passes the Library criterion for " .. case.criterion.criteria .. " " .. tostring(case.criterion.value), function()
-            local queried
-            catalog.findPhotos = function(_, opts) queried = opts.searchDesc return {} end
-            local result = Handler.searchPhotos(case.args)
-            assert.are.same({ combine = "intersect", case.criterion }, queried)
-            assert.are.equal(0, result.count)
-            assert.are.same({}, result.photos)
-            assert.is_false(result.has_more)
-        end)
+        it(
+            "passes the Library criterion for " .. case.criterion.criteria .. " " .. tostring(case.criterion.value),
+            function()
+                local queried
+                catalog.findPhotos = function(_, opts)
+                    queried = opts.searchDesc
+                    return {}
+                end
+                local result = Handler.searchPhotos(case.args)
+                assert.are.same({ combine = "intersect", case.criterion }, queried)
+                assert.are.equal(0, result.count)
+                assert.are.same({}, result.photos)
+                assert.is_false(result.has_more)
+            end
+        )
     end
 
     it("intersects flag and rating with other Library filters", function()
@@ -198,24 +271,30 @@ describe("HandlerSearch.searchPhotos", function()
     end)
 
     it("intersects native focal length with other filters", function()
-        catalog = helper.fakeCatalog({ photos = {
-            helper.fakePhoto({ id = "1", focalLength = 32, rating = 5 }),
-            helper.fakePhoto({ id = "2", focalLength = 32, rating = 3 }),
-            helper.fakePhoto({ id = "3", focalLength = 24, rating = 5 }),
-        } })
+        catalog = helper.fakeCatalog({
+            photos = {
+                helper.fakePhoto({ id = "1", focalLength = 32, rating = 5 }),
+                helper.fakePhoto({ id = "2", focalLength = 32, rating = 3 }),
+                helper.fakePhoto({ id = "3", focalLength = 24, rating = 5 }),
+            },
+        })
         local result = Handler.searchPhotos({ focal_length = 32, rating = 5 })
         assert.are.equal(1, result.count)
         assert.are.equal("1", result.photos[1].photo_id)
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
 
-    it("preserves existing criterion tables", function()
-        assert.are.same({ combine = "intersect",
-            { criteria = "filename", operation = "any", value = "sun" },
-            { criteria = "rating", operation = "==", value = 5 },
-            { criteria = "keywords", operation = "all", value = "travel" },
-        }, Handler.buildSearchDesc({ filename = "sun", rating = 5, keywords = { "travel" } }))
-    end)
+    it(
+        "preserves existing criterion tables",
+        function()
+            assert.are.same({
+                combine = "intersect",
+                { criteria = "filename", operation = "any", value = "sun" },
+                { criteria = "rating", operation = "==", value = 5 },
+                { criteria = "keywords", operation = "all", value = "travel" },
+            }, Handler.buildSearchDesc({ filename = "sun", rating = 5, keywords = { "travel" } }))
+        end
+    )
 
     it("runs findPhotos OUTSIDE the read-access gate (#124 deadlock guard)", function()
         Handler.searchPhotos({ filename = "sunset" })
@@ -234,13 +313,16 @@ describe("HandlerSearch.searchPhotos pagination", function()
     before_each(function()
         local photos = {}
         for i = 1, 250 do
-            table.insert(photos, helper.fakePhoto({
-                id = tostring(i),
-                path = "/p/" .. i .. ".jpg",
-                fileName = "p" .. i .. ".jpg",
-                rating = 0,
-                dateTimeOriginal = "2024-06-01",
-            }))
+            table.insert(
+                photos,
+                helper.fakePhoto({
+                    id = tostring(i),
+                    path = "/p/" .. i .. ".jpg",
+                    fileName = "p" .. i .. ".jpg",
+                    rating = 0,
+                    dateTimeOriginal = "2024-06-01",
+                })
+            )
         end
         catalog = helper.fakeCatalog({ photos = photos })
         helper.installImport({
@@ -248,7 +330,7 @@ describe("HandlerSearch.searchPhotos pagination", function()
             LrLogger = helper.defaultLrLogger(),
         })
         package.loaded.HandlerSearch = nil
-        Handler = require 'HandlerSearch'
+        Handler = require "HandlerSearch"
     end)
 
     it("caps to 100 by default and signals has_more", function()

@@ -1,4 +1,4 @@
-local LrDialogs = import 'LrDialogs'
+local LrDialogs = import "LrDialogs"
 
 local state = _G.LightroomAgent_State or {}
 

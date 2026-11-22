@@ -1,12 +1,12 @@
-local LrApplication = import 'LrApplication'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrTasks = import "LrTasks"
 
-local DevelopCurves = require 'DevelopCurves'
-local DevelopReadBack = require 'DevelopReadBack'
-local JSON = require 'JSON'
-local JsonValue = require 'JsonValue'
-local PhotoLookup = require 'PhotoLookup'
-local Reply = require 'Reply'
+local DevelopCurves = require "DevelopCurves"
+local DevelopReadBack = require "DevelopReadBack"
+local JSON = require "JSON"
+local JsonValue = require "JsonValue"
+local PhotoLookup = require "PhotoLookup"
+local Reply = require "Reply"
 
 local DevelopSettingsRead = {}
 
@@ -64,11 +64,17 @@ function DevelopSettingsRead.get(args, context)
                 local reply = read and photoReply(entry.photo, settings, args.keys)
                 local size = read and #JSON:encode(reply)
                 if not read then
-                    failed[#failed + 1] = { photo_id = tostring(entry.photo.localIdentifier), reason = Reply.messageOf(settings) }
+                    failed[#failed + 1] =
+                        { photo_id = tostring(entry.photo.localIdentifier), reason = Reply.messageOf(settings) }
                 elseif size > MAX_REPLY_BYTES then
-                    failed[#failed + 1] = { photo_id = reply.photo_id, reason = string.format(
-                        "The requested settings take %d bytes, over the %d-byte limit; request fewer keys",
-                        size, MAX_REPLY_BYTES) }
+                    failed[#failed + 1] = {
+                        photo_id = reply.photo_id,
+                        reason = string.format(
+                            "The requested settings take %d bytes, over the %d-byte limit; request fewer keys",
+                            size,
+                            MAX_REPLY_BYTES
+                        ),
+                    }
                 elseif bytes + size > MAX_REPLY_BYTES then
                     remaining[#remaining + 1] = entry.id
                 else
@@ -103,7 +109,8 @@ function DevelopSettingsRead.byInput(args, context)
                     else
                         local photoId = tostring(photo.localIdentifier)
                         local read, settings = LrTasks.pcall(DevelopReadBack.saved, photo)
-                        rowOf[photo] = read and { photo_id = photoId, settings = (DevelopSettingsRead.values(settings, args.keys)) }
+                        rowOf[photo] = read
+                                and { photo_id = photoId, settings = (DevelopSettingsRead.values(settings, args.keys)) }
                             or { photo_id = photoId, failed = Reply.messageOf(settings) }
                     end
                 end
