@@ -85,7 +85,7 @@ Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defrin
 - Saving, comparing and exporting presets: [looks](../workflow/looks.md#make-a-preset-from-a-tuned-look).
 - `apply_auto_adjustments` gives no completion signal: a photo where no change is seen within 8 s is `unknown`; read its settings before writing to it.
 - `apply_denoise` computes in the background; "applied" does not mean every preview has caught up. An unsaved change answers `unknown`: read the Denoise state before retrying.
-- `set_process_version` can change the look and refuses downgrades of photos with masks; `reset_develop_adjustments` removes every edit, crop and masks included. Both need the person's word. A reset answers `reset` only when a read 4 s later shows at least one of the photo's edits changed; an `unknown` photo may not have been reset (or had nothing to reset): read it before grading on top, and resend only after that read. The first reset after Lightroom starts can come back `unknown` with nothing changed, most often right after a read of that photo's settings.
+- `set_process_version` can change the look and refuses downgrades of photos with masks; `reset_develop_adjustments` removes every edit, crop and masks included. Both need the person's word. A reset answers `reset` only when a read 4 s later shows at least one of the photo's edits changed; an `unknown` photo may have had nothing to reset, since an unedited photo reads the same before and after, or may not have been reset: read it before grading on top, and resend only after that read. The first reset after Lightroom starts can come back `unknown` with nothing changed, most often right after a read of that photo's settings.
 
 ## Previews and detail crops
 
