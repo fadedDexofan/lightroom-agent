@@ -228,7 +228,6 @@ end)
 
 describe('reference style matching within the budget', function()
     it('matches the targets that fit and lists the rest as remaining', function()
-        local helper = require 'spec_helper'
         local reference = helper.fakePhoto({ id = '1', path = '/r.raw', developSettings = { Exposure2012 = 0.5 } })
         local targets = {}
         for index = 2, 3 do

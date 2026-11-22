@@ -20,12 +20,6 @@ local function setup()
     return require 'DevelopBatch', catalog
 end
 
-local function idsOf(photosSeen)
-    local ids = {}
-    for _, photo in ipairs(photosSeen) do ids[#ids + 1] = tostring(photo.localIdentifier) end
-    return ids
-end
-
 describe("DevelopBatch.run", function()
     it("files a photo under failed when nothing was written for it and under unknown when something was", function()
         local DevelopBatch, catalog = setup()

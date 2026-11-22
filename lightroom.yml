@@ -1,7 +1,7 @@
 ---
-# Custom selene standard library for the Lightroom Classic SDK.
-# Mirrors the LR SDK globals previously declared in .luacheckrc. Built on the
-# Lua 5.1 base, which is the Lua version Lightroom Classic actually runs.
+# Custom selene standard library for the Lightroom Classic SDK; .luacheckrc reads
+# its global names. Built on the Lua 5.1 base, which is the Lua version Lightroom
+# Classic actually runs.
 base: lua51
 
 globals:

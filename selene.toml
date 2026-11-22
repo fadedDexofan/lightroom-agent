@@ -1,6 +1,5 @@
-# selene config for the Lightroom plugin (Lua). Replaces luacheck: selene is a
-# Rust binary, so it does not execute on mise's Lua runtime and is immune to the
-# Lua 5.5 breakage that crashed luacheck. LR SDK globals live in lightroom.yml.
+# selene config for the Lightroom plugin (Lua); the specs use selene-spec.toml.
+# LR SDK globals live in lightroom.yml.
 std = "lightroom"
 
 exclude = [

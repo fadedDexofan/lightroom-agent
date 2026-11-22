@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,19 +15,30 @@ permissions:
   contents: read
 
 jobs:
-  selene:
+  lint:
     name: Lint Lightroom plugin (Lua)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up mise
+      - name: Install the readline headers Lua builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreadline-dev
+
+      - name: Set up mise with the Lua Lightroom runs and selene
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
-          install_args: aqua:Kampfkarren/selene
+          install_args: lua aqua:Kampfkarren/selene
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run selene
+      - name: Restore the Lua rocks
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: lua_modules
+          key: lua-modules-${{ runner.os }}-${{ env.ImageOS }}-${{ hashFiles('.mise.toml') }}
+
+      - name: Run selene and luacheck
         env:
           MISE_AUTO_INSTALL: "false"
         run: mise run lua:lint

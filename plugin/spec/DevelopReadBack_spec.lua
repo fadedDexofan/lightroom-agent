@@ -53,7 +53,7 @@ describe("DevelopReadBack.check", function()
 end)
 
 describe("DevelopReadBack.check within the time budget", function()
-    local function written(DevelopReadBack, context, count, marked)
+    local function written(context, count, marked)
         local entries, reads = {}, { count = 0 }
         for index = 1, count do
             local photo = helper.fakePhoto({ id = tostring(index), path = "/" .. index .. ".arw" })
@@ -75,7 +75,7 @@ describe("DevelopReadBack.check within the time budget", function()
     it("stops reading back when the reply reserve is reached and answers the photos it did not read unknown", function()
         local DevelopReadBack = load()
         local context = helper.requestContext()
-        local entries, reads = written(DevelopReadBack, context, 2, true)
+        local entries, reads = written(context, 2, true)
         context.timeLeft = function() return reads.count >= 1 and DevelopReadBack.REPLY_SECONDS - 0.1 or 60 end
 
         local parts = DevelopReadBack.parts(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries), {})
@@ -88,7 +88,7 @@ describe("DevelopReadBack.check within the time budget", function()
     it("answers a written photo it did not reach unknown even when its entry carries no ledger marks", function()
         local DevelopReadBack = load()
         local context = helper.requestContext(nil, { timeLeft = function() return 1 end })
-        local entries = written(DevelopReadBack, context, 1, false)
+        local entries = written(context, 1, false)
 
         local parts = DevelopReadBack.parts(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries), {})
 
@@ -100,7 +100,7 @@ describe("DevelopReadBack.check within the time budget", function()
     it("still reads back every written photo after a cancel when time is left", function()
         local DevelopReadBack = load()
         local context = helper.requestContext(nil, { isCanceled = function() return true end })
-        local entries, reads = written(DevelopReadBack, context, 2, true)
+        local entries, reads = written(context, 2, true)
 
         local parts = DevelopReadBack.parts(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries), {})
 

@@ -435,7 +435,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
                 { components = { twoPoints }, expected = "has 2 color sample points; exactly one can be copied" },
             }
             for _, case in ipairs(cases) do
-                local Handler, stores, calls = setup({ photos = { { id = "1", entries = sourceEntries(case.components) } } })
+                local Handler, stores = setup({ photos = { { id = "1", entries = sourceEntries(case.components) } } })
 
                 local message = helper.failedOf(function() Handler.createRangeMask(copyRequest()) end)
 
@@ -447,7 +447,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
         it("refuses an unknown mask, a tool of another mask, an unknown photo, writing nothing", function()
             local entries = sourceEntries()
             entries[2] = correction("Sky", { linearComponent({ MaskID = "C2T1" }) }, { CorrectionID = "C2" })
-            local Handler, stores, calls = setup({ photos = { { id = "1", entries = entries } } })
+            local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
 
             local unknownMask = helper.failedOf(function()
                 Handler.createRangeMask(copyRequest({ copy_sample_from = { mask_id = "C9", tool_id = "C1T1" } }))

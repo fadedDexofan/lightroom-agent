@@ -543,9 +543,9 @@ function M.fakeCatalog(opts)
             end
             return nil
         end,
-        findPhotos = function(_, opts)
+        findPhotos = function(_, query)
             markQuery()
-            local desc = opts and opts.searchDesc or {}
+            local desc = query and query.searchDesc or {}
             local out = {}
             for _, photo in ipairs(photos) do
                 local ok = true
