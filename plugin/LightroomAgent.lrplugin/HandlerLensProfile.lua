@@ -1,4 +1,5 @@
 local LrApplication = import 'LrApplication'
+local LrTasks = import 'LrTasks'
 
 local DevelopReadBack = require 'DevelopReadBack'
 local Log = require 'Log'
@@ -35,17 +36,20 @@ function LensProfileHandler.read(args)
     for _, entry in ipairs(PhotoLookup.resolveMany(catalog, args.photo_ids)) do
         if entry.photo then found[#found + 1] = entry.photo else missing[#missing + 1] = entry.id end
     end
-    local photos = {}
+    local photos, failed = {}, {}
     catalog:withReadAccessDo(function()
-        for i, photo in ipairs(found) do
-            photos[i] = {
-                photo_id = tostring(photo.localIdentifier),
-                lens_profile = lensProfileOf(DevelopReadBack.saved(photo)),
-            }
+        for _, photo in ipairs(found) do
+            local photoId = tostring(photo.localIdentifier)
+            local read, settings = LrTasks.pcall(DevelopReadBack.saved, photo)
+            if read then
+                photos[#photos + 1] = { photo_id = photoId, lens_profile = lensProfileOf(settings) }
+            else
+                failed[#failed + 1] = { photo_id = photoId, reason = Reply.messageOf(settings) }
+            end
         end
     end)
     Log.info(string.format("Read the lens profile of %d photos", #photos))
-    return Reply.parts({ data = #photos > 0 and { photos = photos } or nil, not_found = missing })
+    return Reply.parts({ data = #photos > 0 and { photos = photos } or nil, failed = failed, not_found = missing })
 end
 
 return LensProfileHandler

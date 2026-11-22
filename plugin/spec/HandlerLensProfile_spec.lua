@@ -1,16 +1,21 @@
 local helper = require 'spec_helper'
 
 local function setup(settingsById)
-    local photos = {}
+    local photos, inside = {}, {}
+    local catalog
     for id, settings in pairs(settingsById) do
         local photo = helper.fakePhoto({ id = id, path = "/" .. id .. ".arw" })
-        photo.getDevelopSettings = function() return settings end
+        photo.getDevelopSettings = function()
+            inside[#inside + 1] = catalog.isInsideReadAccess()
+            if settings == "raises" then error("catalog read failed", 0) end
+            return settings
+        end
         photos[#photos + 1] = photo
     end
-    local catalog = helper.fakeCatalog({ photos = photos })
+    catalog = helper.fakeCatalog({ photos = photos })
     helper.installImport({ LrApplication = { activeCatalog = function() return catalog end }, LrLogger = helper.defaultLrLogger() })
     package.loaded.HandlerLensProfile = nil
-    return catalog, require 'HandlerLensProfile'
+    return catalog, require 'HandlerLensProfile', inside
 end
 
 describe("HandlerLensProfile.read", function()
@@ -35,5 +40,23 @@ describe("HandlerLensProfile.read", function()
         }, reply.data.photos)
         assert.are.same({ "404" }, reply.not_found)
         assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
+    it("reads every photo's settings inside the read gate", function()
+        local _, Handler, inside = setup({ ["7"] = { LensProfileEnable = 1 }, ["9"] = { LensProfileEnable = 0 } })
+
+        Handler.read({ photo_ids = { "7", "9" } })
+
+        assert.are.same({ true, true }, inside)
+    end)
+
+    it("fails a photo whose settings read raises and keeps the other photos' groups", function()
+        local _, Handler = setup({ ["1"] = { LensProfileEnable = 1 }, ["2"] = "raises", ["3"] = { LensProfileEnable = 0 } })
+
+        local reply = Handler.read({ photo_ids = { "1", "2", "3" } })
+
+        assert.are.same({ { photo_id = "1", lens_profile = { enabled = true } }, { photo_id = "3", lens_profile = { enabled = false } } },
+            reply.data.photos)
+        assert.are.same({ { photo_id = "2", reason = "catalog read failed" } }, reply.failed)
     end)
 end)
