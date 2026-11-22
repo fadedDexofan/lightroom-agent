@@ -17,7 +17,7 @@ export interface FakePluginOptions {
   requestPort?: number;
   responsePort?: number;
   token: string;
-  handler: (action: string, params: unknown) => unknown | Promise<unknown>;
+  handler: (action: string, params: unknown) => unknown;
   // Sleep between close and re-listen. The real plugin runs the close+bind
   // back-to-back in the monitor loop tick. Configurable so we can stress
   // the kernel port-reuse window.

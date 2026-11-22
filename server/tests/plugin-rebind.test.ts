@@ -40,7 +40,7 @@ const CALL_TIMEOUT_MS = 5_000;
 async function startHarness(options?: {
   rebindDelayMs?: number;
   exclusivePort?: boolean;
-  handler?: (action: string, params: unknown) => unknown | Promise<unknown>;
+  handler?: (action: string, params: unknown) => unknown;
 }): Promise<Harness> {
   const plugin = new FakePlugin({
     token: TOKEN,

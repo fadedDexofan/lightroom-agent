@@ -267,7 +267,7 @@ describe('broker', () => {
     expect(errorText(reply)).toContain('too large');
     expect(closed).toBe(false);
     client.close();
-    await server.close();
+    server.close();
   });
 
   it('refuses to connect a follower whose token does not match', async () => {

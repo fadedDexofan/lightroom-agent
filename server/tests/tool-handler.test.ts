@@ -807,7 +807,7 @@ describe('develop keys added from the installed parameter table', () => {
   });
 
   it('publishes the dependencies observed live as notes in the settings schema', () => {
-    const settings = (TOOL_CONTRACTS.find((contract) => contract.name === 'set_develop_settings')?.inputSchema as unknown as
+    const settings = (TOOL_CONTRACTS.find((contract) => contract.name === 'set_develop_settings')!.inputSchema as unknown as
       { properties: { settings: { properties: Record<string, { description?: string }> } } }).properties.settings.properties;
     expect(settings.VignetteMidpoint.description).toContain('Renders nothing while VignetteAmount is 0');
     expect(settings.PostCropVignetteHighlightContrast.description).toContain('PostCropVignetteStyle is 3 (Paint Overlay)');
