@@ -1,6 +1,6 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { reasonOf } from "./preview-item.js";
-import type { Input, PluginReply } from "./tool-result.js";
+import type { Input, ItemFailure, PluginReply } from "./tool-result.js";
 
 export interface PhotoMetadataArgs {
   photo_ids: Input[];
@@ -28,11 +28,16 @@ export async function getPhotoMetadata(
     if (options?.signal?.aborted) throw error;
     lens = { error: reasonOf(error) };
   }
+  const parts = reply.result ?? {};
+  const failed: ItemFailure[] = [...(parts.failed ?? [])];
   if (lens.error !== undefined) {
-    const parts = reply.result ?? {};
-    return { ...reply, result: { ...parts, warnings: [...(parts.warnings ?? []), `The lens profile was not read: ${lens.error}`] } };
+    const reason = `the lens profile was not read: ${lens.error}`;
+    for (const id of new Set(photos.map((photo) => photo.photo_id))) failed.push({ photo_id: id, reason });
+    return { ...reply, result: { ...parts, failed } };
   }
-  const profiles = new Map(photosOf(lens).map((photo) => [photo.photo_id, photo.lens_profile]));
+  failed.push(...(lens.result?.failed ?? []));
+  for (const id of lens.result?.not_found ?? []) failed.push({ photo_id: String(id), reason: "not found when its lens profile was read" });
+  const profiles = new Map(photosOf(lens).map((photo) => [photo.photo_id, { ...(photo.lens_profile as object) }]));
   const merged = photos.map((photo) => (profiles.has(photo.photo_id) ? { ...photo, lens_profile: profiles.get(photo.photo_id) } : photo));
-  return { ...reply, result: { ...reply.result, data: { ...(reply.result?.data as object), photos: merged } } };
+  return { ...reply, result: { ...parts, failed, data: { ...(parts.data as object), photos: merged } } };
 }

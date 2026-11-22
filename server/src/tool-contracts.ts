@@ -641,7 +641,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         lens_profile: {
           type: "boolean",
-          description: "Add lens_profile to each found photo: the lens profile in its saved develop settings, as Lightroom stores it: enabled (a boolean here; get_develop_settings returns the stored LensProfileEnable 0/1), setup (LensDefaults, Auto or Custom), name, filename, embedded, distortion_scale and vignetting_scale (0-200, 100 is the profile's own amount); a key the photo does not carry is left out. Reading develop settings waits for the Develop calls before it, as every read of a photo's develop state does; without lens_profile this tool does not wait.",
+          description: "Add lens_profile to each found photo: the lens profile in its saved develop settings, as Lightroom stores it: enabled (a boolean here; get_develop_settings returns the stored LensProfileEnable 0/1), setup (LensDefaults, Auto or Custom), name, filename, embedded, distortion_scale and vignetting_scale (0-200, 100 is the profile's own amount); a key the photo does not carry is left out; a photo with none of them gets {}. A photo whose group could not be read (the read failed, the photo left the catalog meanwhile, or the call got no Develop turn) keeps its metadata and is listed in failed, so the outcome is partial. Reading develop settings waits for the Develop calls before it, as every read of a photo's develop state does; without lens_profile this tool does not wait.",
         },
       },
       required: ["photo_ids"],
