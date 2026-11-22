@@ -49,6 +49,17 @@ export function fixturesNotProvenReset(answer, photoIds) {
   return photoIds.filter((photoId) => !reset.has(String(photoId)));
 }
 
+export const REGION_RENDERS = {
+  "sky batch": {
+    regions: [{ name: "sky", x0: 0.06, y0: 0.02, x1: 0.2, y1: 0.12 }, { name: "ground", x0: 0.35, y0: 0.72, x1: 0.5, y1: 0.8 }],
+    changed: "sky", untouched: "ground", direction: -1, check: "region_contrast",
+  },
+};
+
+export function regionRender({ changed, untouched, direction, check }, deltas) {
+  return { check, measured: { deltas, changed, untouched, direction } };
+}
+
 export const DEPTH_STEP = "depth range";
 export const NOT_EXERCISED = ["depth range (needs a photo with device depth)"];
 const LOCAL_SCALES_NOT_EXERCISED = "local slider stored scales (written and checked through the plug-in's own LOCAL_KEYS formula, so not observed independently)";

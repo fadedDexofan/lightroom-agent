@@ -63,7 +63,7 @@ It resets the develop settings of `wide_plain`, `ramp256`, `chart80`, `orient_1`
 - a copy of develop settings with masks;
 - a guarded write next to a computed Sky (below);
 - Landscape, and People on a photo without a person (refused, nothing left behind);
-- a sky batch over copies of `arw_12bit` and `arw_14bit`, judged on the first: the sky region must darken by at least `min_contrast_change` (0.01) and by at least `min_contrast_ratio` (5) times the ground's change. A nothing-found answer for the second photo alone still passes;
+- a sky batch over copies of `arw_12bit` and `arw_14bit`, judged on the first: the sky region (open sky at the top left) must darken by at least `min_contrast_change` (0.01) and by at least `min_contrast_ratio` (5) times the ground region (soil under a tree, away from the roof, path and metal, which Lightroom's Sky also darkens). The regions live in `REGION_RENDERS` in `lib/certification.mjs`, and `--rejudge` measures them again from the run's saved previews. Every saved run on 16.0 and 16.0.1 measures a ratio of 285 or more; a darkening of the whole frame measures about 1 and fails. A nothing-found answer for the second photo alone still passes;
 - on copies of `people_photo`, whose subject fills about 70 % of the frame: Subject (the pixels it darkens become the subject region), a gradient combined with Subject by add, subtract and intersect, and Background. Each must darken at least 0.5 % of the preview, with at least 70 % of the darkened pixels inside its region, and brighten nothing;
 - Subject on `flat_gray`, which must be refused as nothing found with the masks restored exactly.
 
