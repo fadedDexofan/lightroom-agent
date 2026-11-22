@@ -6,7 +6,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "lightroom-agent@0.1.0-rc.4"
+        "lightroom-agent@0.1.0"
       ],
       "env": {
         "LIGHTROOM_AGENT_TOOLSETS": "all"

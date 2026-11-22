@@ -1,3 +1,45 @@
+# lightroom-agent 0.1.0
+
+The first release of lightroom-agent: an MCP server and a Lightroom Classic plug-in that let an AI agent cull, develop, mask and export your photos, and check every change on Lightroom's own render. It ships 82 tools and a bundled skill, `lightroom-agent`, that teaches an agent to work with them.
+
+## Install
+
+- Claude Code: `/plugin marketplace add fadedDexofan/lightroom-agent`, then `/plugin install lightroom-agent@lightroom-agent`; to update, `claude plugin marketplace update lightroom-agent`, then `claude plugin update lightroom-agent@lightroom-agent`.
+- Codex CLI: `codex plugin marketplace add fadedDexofan/lightroom-agent`, then `codex plugin add lightroom-agent@lightroom-agent`; to update, `codex plugin marketplace upgrade lightroom-agent`, then start a new session.
+- Claude Desktop: open the `.mcpb` attached to this release; to update, open a newer release's `.mcpb`.
+- Any MCP client: `npx -y lightroom-agent@0.1.0` over stdio. The default toolset, `core`, leaves out the develop and mask tools; set `LIGHTROOM_AGENT_TOOLSETS=all` to load every tool.
+- From a checkout: run `npm --prefix server run build`, quit every client, run `node server/dist/index.js install-plugin`, restart Lightroom, then start the clients.
+
+After installing or updating, restart every client, then Lightroom Classic, and bring the Lightroom window to the front once. The server holding the Lightroom connection installs the matching plug-in when it starts, and Lightroom loads plug-ins only when its window is first activated.
+
+## Requirements
+
+- Lightroom Classic 15.0 or later, tested on Lightroom Classic 16.0.1 on macOS. Lightroom (the cloud app) is not supported.
+- Node.js 20 or later.
+- `LightroomAgent.lrplugin` cannot run next to `LightroomMCP.lrplugin`, because both use the same ports; remove `LightroomMCP.lrplugin` first if it is installed.
+
+## What an agent can do
+
+- **Find and organise photos.** Search by rating, date, camera, lens, ISO, focal length, keyword, folder, flag, colour label, edited state and file type; set ratings, flags, colour labels, keywords, metadata, GPS and location; build regular and smart collections; import, make virtual copies, and remove photos from the catalog (the files stay on disk). The agent can also keep its own score (0–100) and reason for each photo in private plug-in data, which is not written to IPTC, XMP, keywords or exported files.
+- **Look at photos.** Previews of any photo, whole or a region, at a chosen size, except the photo open in Develop, whose Lightroom thumbnail can be out of date. `render_photo` renders any photo, that one included, through a temporary export at a chosen long edge. `get_photo_detail` cuts 1:1 crops from a full-resolution render, so sharpness is judged on full-resolution pixels rather than a scaled preview. Both add one Export history step to the photo and mark it as exported.
+- **Develop.** 131 Develop settings, named as in the Lightroom SDK (`Exposure2012`, `ShadowTint`), including calibration, perspective offsets, lens and post-crop vignetting, and the tone curve's saturation refinement. Before anything is written, each value is checked against its range and against the rules that link settings to the photo's current ones. Every write is then read back, and any value Lightroom stored differently from the request is reported. `set_develop_settings_batch` gives up to 50 photos their own settings in one call. Crop and straighten in the frame the agent sees, switch between colour and black and white, set the process version (the version of Lightroom's processing engine a photo is edited with), run Auto, Denoise and Lens Blur, copy settings between photos, match one photo's look on others, and keep earlier edits recoverable with snapshots and named virtual copies. A reset reports `reset` only when a read afterwards shows the photo's edits changed; otherwise it reports `unknown`, because an unedited photo reads the same before and after.
+- **Presets.** List presets, with a query that matches every word in a preset's folder or name, so `sky` finds Lightroom's built-in Adaptive: Sky group; read and compare them; apply one by the id the list returns or by name; save settings as versioned plug-in presets and export them. When a preset contains AI masks, Lightroom computes them for each photo, and the call waits up to 30 s per photo.
+- **Mask.** Subject, Sky, Background, People parts and Landscape masks; linear and radial gradients, brushes, colour, luminance and depth ranges; per-mask sliders, curves and Point Color. Every mask write is read back from the photo's saved settings. If Lightroom finds nothing for an AI mask, the empty mask is removed and the call says so. Creating a mask works only after a test run (certification) has passed on your Mac for the installed Lightroom build and the photo's process version; rerun it after each Lightroom update. Editing or deleting existing masks works without it.
+- **Export.** To a folder or through an export preset; the reply lists the files written.
+
+## How it works
+
+- Every call ends with one of four statuses, set by what the plug-in wrote: `done`, `partial`, `failed` or `unknown`. `failed` means nothing changed; `unknown` names what may have changed, so read the photo before calling again.
+- Calls that open Develop or read or write develop settings run one at a time, in the order they arrive, across all clients; catalog reads, previews and other catalog writes run alongside them. One export or detail render runs at a time, and a second is refused rather than queued.
+- Several clients can share one Lightroom. The server checks that the plug-in comes from its own build and refuses, saying what to update, when it does not.
+- The package also works from the command line: `npx -y lightroom-agent@0.1.0 tools` lists the tools, `call <tool> [json]` runs one, and `install-plugin` installs the plug-in.
+
+## Known issues
+
+- The first reset after Lightroom starts can come back `unknown` with nothing changed, most often right after a read of that photo's settings; read the photo and call again.
+- An Adaptive preset whose AI mask Lightroom finds nothing for (no teeth on a closed-mouth portrait, say) answers `unknown` for that photo, though the preset was applied and its other masks computed.
+- Windows is not tested against Lightroom: the server builds and passes CI there, but nobody has run it with Lightroom on Windows.
+
 # lightroom-agent 0.1.0-rc.4
 
 The fifth release candidate of lightroom-agent. Previews now work for the photo you are editing in Develop.
