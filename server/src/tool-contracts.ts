@@ -478,7 +478,7 @@ const developSettingKeyItems = developKeyNamesSchema();
 
 const presetSelectorProperties = {
   preset_name: { type: "string", minLength: 1, description: "Develop preset name" },
-  preset_uuid: { type: "string", minLength: 1, description: "Develop preset UUID (preferred)" },
+  preset_uuid: { type: "string", minLength: 1, description: "The uuid list_develop_presets returns, Lightroom's own id for the preset (not the UUID written in its .xmp file); preferred over preset_name" },
   preset_folder: { type: "string", minLength: 1, description: "Preset folder for disambiguation" },
   preset_scope: {
     type: "string",
@@ -1425,13 +1425,13 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "List develop presets",
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { plugin: "HandlerDevelop.listDevelopPresets" },
-    description: "List Lightroom-visible Develop presets and plugin-managed checkpoints (paginated). Filter by name or folder before paging. Returns name, folder, scope and uuid; use get_develop_preset for backing-file metadata. count is the total matches; has_more indicates another page.",
+    description: "List Lightroom-visible Develop presets and plugin-managed checkpoints (paginated). Filter by name or folder before paging. Returns name, folder, scope and uuid (Lightroom's own id for the preset, which preset_uuid takes; not the UUID written in its .xmp file); use get_develop_preset for backing-file metadata. count is the total matches; has_more indicates another page.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         ...pagingProperties("presets"),
-        query: { type: "string", minLength: 1, description: "Keep presets whose name contains this text, ignoring case" },
+        query: { type: "string", minLength: 1, description: "Keep presets whose folder or name contains every word of this text, ignoring case (a built-in preset's group is its folder); words made only of ASCII punctuation are ignored, and a query with no other word is refused" },
         folder: { type: "string", minLength: 1, description: "Exact, case-sensitive folder name, including Plugin Develop Presets for checkpoints" },
       },
     },

@@ -200,15 +200,44 @@ local function withoutVolatileIds(value)
     return out
 end
 
+local ASCII_PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+
+local function isPunctuationOnly(token)
+    for index = 1, #token do
+        if not ASCII_PUNCTUATION:find(token:sub(index, index), 1, true) then return false end
+    end
+    return true
+end
+
+local function queryTokens(query)
+    local tokens = {}
+    for token in LrStringUtils.lower(query):gmatch("%S+") do
+        if not isPunctuationOnly(token) then tokens[#tokens + 1] = token end
+    end
+    if #tokens == 0 then
+        Reply.refuse("The query " .. string.format("%q", query) .. " has no word to search: it holds only ASCII punctuation"
+            .. " and spaces; leave query out to list every preset")
+    end
+    return tokens
+end
+
+local function presetMatches(entry, tokens)
+    local text = LrStringUtils.lower(tostring(entry.folder or "") .. " " .. (entry.name or ""))
+    for _, token in ipairs(tokens) do
+        if not text:find(token, 1, true) then return false end
+    end
+    return true
+end
+
 function DevelopHandler.listDevelopPresets(args)
     local limit = args.limit or Contract.DEFAULT_PAGE_LIMIT
     local offset = args.offset or 0
-    local query = args.query and LrStringUtils.lower(args.query)
+    local tokens = args.query and queryTokens(args.query)
     local out = {}
     local count = 0
     for _, entry in ipairs(allDevelopPresetEntries()) do
         if (not args.folder or entry.folder == args.folder)
-            and (not query or LrStringUtils.lower(entry.name or ""):find(query, 1, true)) then
+            and (not tokens or presetMatches(entry, tokens)) then
             count = count + 1
             if count > offset and #out < limit then
                 table.insert(out, {
