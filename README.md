@@ -207,7 +207,7 @@ To uninstall, remove the agent's plugin or server entry, then delete the install
 
 [`skills/lightroom-agent`](skills/lightroom-agent/SKILL.md) teaches an agent how to work with these tools on photographs. It culls in two passes (technical, then editorial), develops one representative frame per lighting situation before copying to the rest, inspects mask edges, and checks each exported file.
 
-The Claude Code and Codex plugins load it, and the server offers it to any client as the MCP prompt `lightroom-agent`. To install it by hand, copy or symlink the folder into `~/.claude/skills/` for Claude Code or `~/.codex/skills/` for Codex; `agents/openai.yaml` carries Codex's metadata. The skill describes the tools of the server it ships with, so replace a copied folder whenever you update the server.
+The Claude Code and Codex plugins load it, and the server offers it to any client as the MCP prompt `lightroom-agent`. For other agents, `npx skills add fadedDexofan/lightroom-agent -g` installs it and asks which agents to install it for; the server still needs its own MCP entry, as under "Any other MCP client" in [Installation](#installation). To install it by hand, copy or symlink the folder into `~/.claude/skills/` for Claude Code or `~/.codex/skills/` for Codex; `agents/openai.yaml` carries Codex's metadata. The skill describes the tools of the server it ships with, so install it again whenever you update the server.
 
 ## Configuration and reference
 
