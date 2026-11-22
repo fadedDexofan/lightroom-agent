@@ -35,8 +35,8 @@ depends = ["build"]
 run = "node scripts/build-mcpb.mjs"
 
 [tasks."lua:deps"]
-description = "Install Lua test rocks (busted) into lua_modules/"
-run = "test -d lua_modules/lib/luarocks/rocks-$(luarocks config lua_version)/busted || luarocks install --tree lua_modules busted"
+description = "Install the pinned busted rock into lua_modules/"
+run = "test -d lua_modules/lib/luarocks/rocks-$(luarocks config lua_version)/busted/2.3.0-1 || luarocks install --tree lua_modules busted 2.3.0-1"
 
 [tasks."lua:test"]
 description = "Run busted specs for the Lightroom plugin"

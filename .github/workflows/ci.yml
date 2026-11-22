@@ -71,9 +71,17 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
 
-      - name: Install dependencies
+      - name: Restore node_modules
+        id: modules
         if: needs.changes.outputs.code != 'false'
-        run: npm ci
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: server/node_modules
+          key: node-modules-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml', 'server/package-lock.json') }}
+
+      - name: Install dependencies
+        if: needs.changes.outputs.code != 'false' && steps.modules.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: Type check
         if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
