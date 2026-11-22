@@ -13,5 +13,3 @@ files["plugin/spec"] = {
     globals = { "require", io = { fields = { "open" } }, table = { fields = { "sort" } } },
     read_globals = { package = { fields = { "searchpath" } } },
 }
-
-files["plugin/LightroomAgent.lrplugin/HandlerDevelop.lua"] = { ignore = { "241/autoFunctions" } }
