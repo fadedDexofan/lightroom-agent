@@ -20,6 +20,7 @@ git clone https://github.com/fadedDexofan/lightroom-agent.git
 cd lightroom-agent
 mise install
 npm --prefix server ci
+git config blame.ignoreRevsFile .git-blame-ignore-revs   # skip the formatting commits in git blame
 ```
 
 To try your build in a client, point it at this checkout's server, for example in Claude Code: `claude mcp add lightroom-dev -e LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/dist/index.js"`. The server that owns the plug-in connection installs your build's Lightroom plug-in when it becomes the owner, but only where none, an older version or your own build is installed; over another build whose version is newer, the same or cannot be compared, a published one included, it leaves the installed copy alone, refuses every call naming both builds and does not connect. To put your build in place, quit your clients, run `node server/dist/index.js install-plugin`, restart Lightroom, then start the clients. While your build is installed, a lightroom-agent server of another build refuses tool calls, naming both, and installs its own plug-in only when it owns the connection and its version is newer. Build first, then start clients: a client started while a build is running may refuse until it is restarted. After you pull or edit the plug-in's Lua, rebuild, quit your clients, run `install-plugin`, restart Lightroom, then start the clients: a server whose build does not match its plug-in folder refuses every call until it is rebuilt.
