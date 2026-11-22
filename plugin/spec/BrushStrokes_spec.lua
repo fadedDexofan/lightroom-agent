@@ -214,7 +214,7 @@ describe("BrushStrokes.toStoredFrame", function()
         helper.installImport({})
         package.loaded.ImageFrame = nil
         return require('ImageFrame').of({
-            orientation = orientation, dimensions = { width = 3000, height = 2000 }, settings = settings,
+            orientation = orientation, dimensions = { width = 3000, height = 2000 }, settings = settings or {},
         })
     end
 

@@ -1,5 +1,6 @@
 local LrApplication = import 'LrApplication'
 local Contract = require 'Contract'
+local DevelopReadBack = require 'DevelopReadBack'
 local JSON = require 'JSON'
 
 local Handler = {}
@@ -75,7 +76,7 @@ function Handler.summarize(args)
                     groups[#groups + 1] = group
                 end
                 group.count = group.count + 1
-                for key, value in pairs(photo:getDevelopSettings()) do
+                for key, value in pairs(DevelopReadBack.saved(photo)) do
                     if type(key) == "string" and not key:match("^Crop") and not key:match("^Perspective")
                         and key ~= "Temperature" and key ~= "Tint" and type(value) == "number"
                         and value == value and value > -math.huge and value < math.huge then

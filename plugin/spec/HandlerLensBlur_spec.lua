@@ -21,6 +21,7 @@ local function setup(opts)
     catalog.getActiveSources = function() return sources end
     catalog.setActiveSources = function(_, nextSources) sources = nextSources end
     photos[1].getDevelopSettings = function()
+        if opts.nilRead then return nil end
         return { LensBlur = saved, ProcessVersion = opts.storedProcess, ColorGradeBlending = colorGradeBlending }
     end
     local controller = {
@@ -88,6 +89,14 @@ local function setup(opts)
 end
 
 describe('HandlerLensBlur', function()
+    it('refuses a photo whose saved settings Lightroom does not return before opening Develop', function()
+        local ctx = setup({ nilRead = true })
+        assert.has_error(function() ctx.Handler.set({ photo_id = '1', amount = 50 }, helper.requestContext()) end,
+            'Lightroom returned no saved settings for photo 1')
+        assert.are.equal(0, ctx.writes())
+        assert.are.equal('library', ctx.view().module)
+    end)
+
     it('enables an inactive photo before saving Amount50 and restores the view', function()
         local ctx = setup()
 

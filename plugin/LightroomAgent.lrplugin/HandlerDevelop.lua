@@ -32,6 +32,12 @@ local function batchReserve(gates, computesAIMasks)
     return SETTINGS_BATCH_RESERVE_SECONDS + gates * CatalogWrite.WAIT_SECONDS
         + (computesAIMasks and Contract.AI_MASK_COMPUTE_WAIT_SECONDS or 0)
 end
+
+local function savedOf(catalog, photo)
+    local settings
+    catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
+    return settings
+end
 local STYLE_KEYS = {}
 for _, key in ipairs(Contract.DEVELOP_KEYS) do
     if key.style then STYLE_KEYS[key.name] = true end
@@ -273,9 +279,7 @@ function DevelopHandler.createDevelopPreset(args, context)
     local sourceSettings
     -- Resolved OUTSIDE the read gate: the lookup runs catalog queries.
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
-    catalog:withReadAccessDo(function()
-        sourceSettings = photo:getDevelopSettings()
-    end)
+    sourceSettings = savedOf(catalog, photo)
 
     local presetSettings = {}
     for _, key in ipairs(args.settings) do
@@ -348,7 +352,7 @@ local containsAIMasks = AIMaskData.containsAIMasks
 local withoutComputedAIMaskData = AIMaskData.withoutComputedData
 
 local function filtersOf(settings)
-    local filterList = settings and settings.FilterList
+    local filterList = settings.FilterList
     local filters = type(filterList) == "table" and filterList.Filters
     return type(filters) == "table" and filters or {}
 end
@@ -436,9 +440,7 @@ local function previewDevelopSettings(catalog, resolved, settings, declaredPrese
             end
         else
             result.targets = result.targets + 1
-            local current
-            catalog:withReadAccessDo(function() current = entry.photo:getDevelopSettings() end)
-            current = withoutVolatileIds(withoutComputedAIMaskData(current))
+            local current = withoutVolatileIds(withoutComputedAIMaskData(savedOf(catalog, entry.photo)))
             if masks and current.MaskGroupBasedCorrections == nil then current.MaskGroupBasedCorrections = {} end
             local detail = { id = tostring(entry.id), changes = {} }
             local changed = false
@@ -511,7 +513,7 @@ function DevelopHandler.applyDevelopPreset(args, context)
             local from = context.ledger:mark()
             local entriesBefore, before
             local applied, problem = LrTasks.pcall(function()
-                catalog:withReadAccessDo(function() before = DevelopReadBack.before(photo:getDevelopSettings()) end)
+                before = DevelopReadBack.before(savedOf(catalog, photo))
                 entriesBefore = aiPreset and GuardedMaskWrite.readEntries(catalog, photo)
                 applyPreset(context, catalog, selectedPreset, photo)
             end)
@@ -573,9 +575,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
 
     -- Resolved OUTSIDE the read gate: the lookup runs catalog queries.
     local source = PhotoLookup.requireOne(catalog, args.source_id)
-    catalog:withReadAccessDo(function()
-        sourceSettings = source:getDevelopSettings()
-    end)
+    sourceSettings = savedOf(catalog, source)
 
     local toApply = {}
     if args.settings then
@@ -624,42 +624,45 @@ function DevelopHandler.copyDevelopSettings(args, context)
     local aiMasks = masks ~= nil and containsAIMasks({ MaskGroupBasedCorrections = masks })
     local reserveSeconds = batchReserve(masks == nil and 1 or aiMasks and 4 or 3, aiMasks)
 
-    local remaining = {}
+    local remaining, failed = {}, {}
     for _, entry in ipairs(entries) do
         if #remaining > 0 or context:stopping(reserveSeconds) then
             remaining[#remaining + 1] = entry.id
         else
-            local settings
-            catalog:withReadAccessDo(function() settings = entry.photo:getDevelopSettings() or {} end)
-            local existing = settings.MaskGroupBasedCorrections
-            local target = { processVersion = settings.ProcessVersion, maskCount = type(existing) == "table" and #existing or 0 }
-            local before = DevelopReadBack.before(settings)
-            local from = context.ledger:mark()
-            local masked, previous = true, nil
-            if masks and (#masks > 0 or target.maskCount > 0) then
-                masked, previous = LrTasks.pcall(replaceMasks, context, catalog, entry.photo, target, masks, aiMasks,
-                    rest.ProcessVersion)
-            end
-            if not masked then
-                written[#written + 1] = {
-                    photo = entry.photo, settings = rest, before = before, from = from, to = context.ledger:mark(),
-                    error = "the masks could not be copied: " .. Reply.messageOf(previous),
-                }
+            local read, settings = LrTasks.pcall(savedOf, catalog, entry.photo)
+            if not read then
+                failed[#failed + 1] = { photo_id = tostring(entry.photo.localIdentifier), reason = Reply.messageOf(settings) }
             else
-                local ok, reason = LrTasks.pcall(function()
-                    CatalogWrite.developSettings(context, catalog, entry.photo, "Copy Develop Settings",
-                        function() return rest end)
-                end)
-                if ok then
-                    written[#written + 1] = {
-                        photo = entry.photo, settings = rest, before = before,
-                        masksRemoved = masks and #masks == 0 and previous and #previous > 0 and #previous or nil,
-                    }
-                else
+                local existing = settings.MaskGroupBasedCorrections
+                local target = { processVersion = settings.ProcessVersion, maskCount = type(existing) == "table" and #existing or 0 }
+                local before = DevelopReadBack.before(settings)
+                local from = context.ledger:mark()
+                local masked, previous = true, nil
+                if masks and (#masks > 0 or target.maskCount > 0) then
+                    masked, previous = LrTasks.pcall(replaceMasks, context, catalog, entry.photo, target, masks, aiMasks,
+                        rest.ProcessVersion)
+                end
+                if not masked then
                     written[#written + 1] = {
                         photo = entry.photo, settings = rest, before = before, from = from, to = context.ledger:mark(),
-                        error = Reply.messageOf(reason),
+                        error = "the masks could not be copied: " .. Reply.messageOf(previous),
                     }
+                else
+                    local ok, reason = LrTasks.pcall(function()
+                        CatalogWrite.developSettings(context, catalog, entry.photo, "Copy Develop Settings",
+                            function() return rest end)
+                    end)
+                    if ok then
+                        written[#written + 1] = {
+                            photo = entry.photo, settings = rest, before = before,
+                            masksRemoved = masks and #masks == 0 and previous and #previous > 0 and #previous or nil,
+                        }
+                    else
+                        written[#written + 1] = {
+                            photo = entry.photo, settings = rest, before = before, from = from, to = context.ledger:mark(),
+                            error = Reply.messageOf(reason),
+                        }
+                    end
                 end
             end
         end
@@ -682,7 +685,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
         copied = copied,
         computed = aiMasks and computed or nil,
         masks_removed = #masksRemoved > 0 and masksRemoved or nil,
-    } or nil, { not_found = missingIds, remaining = remaining })
+    } or nil, { failed = failed, not_found = missingIds, remaining = remaining })
 end
 
 local styleMatchSerial = 0
@@ -699,7 +702,7 @@ function DevelopHandler.matchPhotoStyle(args, context)
 
     local settings, grayscale = {}, nil
     catalog:withReadAccessDo(function()
-        local reference = source:getDevelopSettings()
+        local reference = DevelopReadBack.saved(source)
         grayscale = reference.ConvertToGrayscale == true
         for key in pairs(STYLE_KEYS) do settings[key] = DevelopCurves.read(reference, key) end
     end)
@@ -709,15 +712,16 @@ function DevelopHandler.matchPhotoStyle(args, context)
             remaining[#remaining + 1] = entry.id
         else
             local photoId = tostring(entry.photo.localIdentifier)
-            local current
-            catalog:withReadAccessDo(function() current = entry.photo:getDevelopSettings() or {} end)
-            local before = DevelopReadBack.before(current)
-            if (current.ConvertToGrayscale == true) ~= grayscale then
+            local read, current = LrTasks.pcall(savedOf, catalog, entry.photo)
+            if not read then
+                failures[#failures + 1] = { photo_id = photoId, reason = Reply.messageOf(current) }
+            elseif (current.ConvertToGrayscale == true) ~= grayscale then
                 failures[#failures + 1] = {
                     photo_id = photoId,
                     reason = "treatment differs from the reference; convert it with set_treatment, then match",
                 }
             else
+                local before = DevelopReadBack.before(current)
                 local changed = 0
                 for key, value in pairs(settings) do
                     if not JsonValue.equal(value, DevelopCurves.read(current, key)) then changed = changed + 1 end
@@ -756,7 +760,7 @@ local function writeSettings(context, catalog, photo, settings)
     local before
     local from = context.ledger:mark()
     CatalogWrite.developSettings(context, catalog, photo, "Set Develop Settings", function()
-        before = DevelopReadBack.before(photo:getDevelopSettings())
+        before = DevelopReadBack.before(DevelopReadBack.saved(photo))
         return DevelopCurves.forWrite(settings)
     end)
     Log.info(string.format("Set develop settings on photo %s", tostring(photo.localIdentifier)))
@@ -817,7 +821,7 @@ local waitFor = DevelopSession.waitFor
 -- still describe the previously active photo. Any Enhance filter counts.
 local function enhanceDigest(catalog, photo)
     local filter
-    catalog:withReadAccessDo(function() filter = enhanceFilterOf(photo:getDevelopSettings()) end)
+    catalog:withReadAccessDo(function() filter = enhanceFilterOf(DevelopReadBack.saved(photo)) end)
     return filter and tostring(filter.CompressedSettings or "")
 end
 
@@ -918,9 +922,7 @@ local PROCESS_VERSIONS = {
 }
 
 local function refuseMaskedDowngrade(catalog, photo)
-    local settings
-    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
-    local masks = settings.MaskGroupBasedCorrections
+    local masks = savedOf(catalog, photo).MaskGroupBasedCorrections
     if masks and next(masks) ~= nil then
         Reply.refuse("Process-version downgrades are refused on photos with masks;"
             .. " keep the current version to preserve mask editing")
@@ -972,7 +974,7 @@ local AUTO_SETTLE_TIMEOUT_SECONDS = Contract.AUTO_CHANGE_WAIT_SECONDS
 local function autoValues(catalog, photo, keys)
     local values = {}
     catalog:withReadAccessDo(function()
-        local settings = photo:getDevelopSettings()
+        local settings = DevelopReadBack.saved(photo)
         for _, key in ipairs(keys) do values[key] = settings[key] end
     end)
     return values
@@ -1037,22 +1039,15 @@ end
 local RESET_PHOTO_AND_RESTORE_SECONDS = 60
 local RESET_LANDING_WAIT_SECONDS = Contract.RESET_LANDING_WAIT_SECONDS
 
-local function savedSettings(catalog, photo)
-    local settings
-    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
-    if settings == nil then error("Lightroom returned no saved settings for the photo", 0) end
-    return settings
-end
-
 local function resetPhoto(context, catalog, photo)
-    local before = savedSettings(catalog, photo)
+    local before = savedOf(catalog, photo)
     if catalog:getTargetPhoto() ~= photo then
         Reply.refuse("another photo became active before the reset; nothing was reset")
     end
     CatalogWrite.develop(context, "resetAllDevelopAdjustments")
     DevelopSession.commitPendingEdits()
     LrTasks.sleep(RESET_LANDING_WAIT_SECONDS)
-    if #DevelopReadBack.changedEdits(before, savedSettings(catalog, photo)) == 0 then
+    if #DevelopReadBack.changedEdits(before, savedOf(catalog, photo)) == 0 then
         error(string.format("no edit a reset clears (develop sliders, crop, Upright, profile, masks, spots, Enhance)"
             .. " changed in the saved settings %d s after the reset: Lightroom may not have reset the photo, or it had"
             .. " no such edit; read the photo before writing to it", RESET_LANDING_WAIT_SECONDS), 0)

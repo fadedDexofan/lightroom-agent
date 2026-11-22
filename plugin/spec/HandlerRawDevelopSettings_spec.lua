@@ -34,6 +34,7 @@ local function setup(settingsById)
         local read = photo.getDevelopSettings
         photo.getDevelopSettings = function(self)
             inside[#inside + 1] = catalog.isInsideReadAccess()
+            if settings == false then return nil end
             return read(self)
         end
         photos[#photos + 1] = photo
@@ -49,6 +50,15 @@ local function setup(settingsById)
 end
 
 describe("HandlerRawDevelopSettings.get", function()
+    it("fails a photo whose saved settings Lightroom does not return and keeps the others' rows", function()
+        local Handler = setup({ ["1"] = { Exposure2012 = 1 }, ["2"] = false, ["3"] = { Exposure2012 = 3 } })
+
+        local reply = Handler.get({ photo_ids = { "1", "2", "3" }, keys = { "Exposure2012" } }, helper.requestContext())
+
+        assert.are.same({ "1", "3" }, { reply.data.photos[1].photo_id, reply.data.photos[2].photo_id })
+        assert.are.same({ { photo_id = "2", reason = "Lightroom returned no saved settings for photo 2" } }, reply.failed)
+    end)
+
     it("returns a point curve from its Extended field first, and the Extended field itself when named", function()
         local long = { 0, 0, 13, 15, 27, 31, 40, 46, 54, 61, 67, 76, 81, 91, 94, 105, 107, 119, 121, 133, 134, 146, 148, 160, 161, 172, 174, 186, 188, 199, 201, 212, 214, 226, 228, 238, 241, 249, 255, 255 }
         local Handler = setup({ ["7"] = { ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 }, ExtendedToneCurvePV2012 = long,

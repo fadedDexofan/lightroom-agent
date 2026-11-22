@@ -1,6 +1,8 @@
 local LrApplication = import 'LrApplication'
+local LrTasks = import 'LrTasks'
 
 local DevelopCurves = require 'DevelopCurves'
+local DevelopReadBack = require 'DevelopReadBack'
 local JSON = require 'JSON'
 local JsonValue = require 'JsonValue'
 local PhotoLookup = require 'PhotoLookup'
@@ -58,9 +60,12 @@ function DevelopSettingsRead.get(args, context)
             if #remaining > 0 or context:stopping(REPLY_RESERVE_SECONDS) then
                 remaining[#remaining + 1] = entry.id
             else
-                local reply = photoReply(entry.photo, entry.photo:getDevelopSettings() or {}, args.keys)
-                local size = #JSON:encode(reply)
-                if size > MAX_REPLY_BYTES then
+                local read, settings = LrTasks.pcall(DevelopReadBack.saved, entry.photo)
+                local reply = read and photoReply(entry.photo, settings, args.keys)
+                local size = read and #JSON:encode(reply)
+                if not read then
+                    failed[#failed + 1] = { photo_id = tostring(entry.photo.localIdentifier), reason = Reply.messageOf(settings) }
+                elseif size > MAX_REPLY_BYTES then
                     failed[#failed + 1] = { photo_id = reply.photo_id, reason = string.format(
                         "The requested settings take %d bytes, over the %d-byte limit; request fewer keys",
                         size, MAX_REPLY_BYTES) }

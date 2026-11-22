@@ -4,6 +4,7 @@ local LrUUID = import 'LrUUID'
 local AIMaskData = require 'AIMaskData'
 local BrushStrokes = require 'BrushStrokes'
 local CatalogWrite = require 'CatalogWrite'
+local DevelopReadBack = require 'DevelopReadBack'
 local LocalSliders = require 'LocalSliders'
 local Reply = require 'Reply'
 local Log = require 'Log'
@@ -449,7 +450,7 @@ end
 
 local function readEntries(catalog, photo)
     local settings
-    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+    catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
     return entriesOf(settings)
 end
 
@@ -525,7 +526,7 @@ function GuardedMaskWrite.submit(context, catalog, photo, spec)
     local mark = context.ledger:mark()
     local wrote, writeError = LrTasks.pcall(CatalogWrite.developSettings, context, catalog, photo, spec.description,
         function()
-            settings = photo:getDevelopSettings()
+            settings = DevelopReadBack.saved(photo)
             previous = entriesOf(settings)
             requireNamed(previous)
             proposed = spec.build(deepClone(previous), settings)

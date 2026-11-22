@@ -4,6 +4,7 @@ local LrTasks = import 'LrTasks'
 
 local CatalogWrite = require 'CatalogWrite'
 local DecimalText = require 'DecimalText'
+local DevelopReadBack = require 'DevelopReadBack'
 local DevelopSession = require 'DevelopSession'
 local PhotoLookup = require 'PhotoLookup'
 local Reply = require 'Reply'
@@ -33,9 +34,9 @@ local function target(args)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local settings
-    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+    catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
     local legacy = { [5.0] = 'Version 1', [5.7] = 'Version 2' }
-    local version = legacy[DecimalText.parse(settings and settings.ProcessVersion)]
+    local version = legacy[DecimalText.parse(settings.ProcessVersion)]
     -- Opening legacy photos in Develop can materialize defaults before rejection.
     if version then
         Reply.refuse('Lens Blur needs Process Version 3 or later; this photo uses ' .. version)
@@ -77,7 +78,7 @@ local function read(catalog, photo)
 end
 
 local function stored(photo)
-    return sdk(function() return photo:getDevelopSettings().LensBlur or {} end)
+    return sdk(function() return DevelopReadBack.saved(photo).LensBlur or {} end)
 end
 
 local function flush(catalog, photo)

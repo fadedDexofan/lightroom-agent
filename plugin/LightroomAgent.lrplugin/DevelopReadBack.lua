@@ -79,9 +79,17 @@ function DevelopReadBack.changedEdits(before, after)
     return changed
 end
 
+function DevelopReadBack.saved(photo)
+    local settings = photo:getDevelopSettings()
+    if settings == nil then
+        error("Lightroom returned no saved settings for photo " .. tostring(photo.localIdentifier), 0)
+    end
+    return settings
+end
+
 function DevelopReadBack.before(settings)
     local kept = {}
-    for key, value in pairs(settings or {}) do
+    for key, value in pairs(settings) do
         if KEYS[key] or DevelopCurves.isCompanion(key) then kept[key] = value end
     end
     return kept
@@ -93,7 +101,7 @@ function DevelopReadBack.check(context, catalog, written)
     local checked = {}
     catalog:withReadAccessDo(function()
         for _, entry in ipairs(written) do
-            local read, stored = LrTasks.pcall(function() return entry.photo:getDevelopSettings() or {} end)
+            local read, stored = LrTasks.pcall(DevelopReadBack.saved, entry.photo)
             local result = { photo_id = tostring(entry.photo.localIdentifier), stored = {}, adjusted = {}, absent = {},
                 notStored = {} }
             if not read then

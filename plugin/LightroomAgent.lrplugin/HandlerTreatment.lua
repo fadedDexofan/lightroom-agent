@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 
 local CatalogWrite = require 'CatalogWrite'
 local DevelopBatch = require 'DevelopBatch'
+local DevelopReadBack = require 'DevelopReadBack'
 local DevelopSession = require 'DevelopSession'
 local Reply = require 'Reply'
 
@@ -22,7 +23,7 @@ end
 
 local function readSettings(catalog, photo)
     local settings
-    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() or {} end)
+    catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
     return settings
 end
 
