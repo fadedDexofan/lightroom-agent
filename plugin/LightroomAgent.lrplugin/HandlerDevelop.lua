@@ -1067,8 +1067,9 @@ local function resetPhoto(context, catalog, photo)
     LrTasks.sleep(RESET_LANDING_WAIT_SECONDS)
     if #DevelopReadBack.changedEdits(before, savedOf(catalog, photo)) == 0 then
         error(string.format("no edit a reset clears (develop sliders, crop, Upright, profile, masks, spots, Enhance)"
-            .. " changed in the saved settings %d s after the reset: Lightroom may not have reset the photo, or it had"
-            .. " no such edit; read the photo before writing to it", RESET_LANDING_WAIT_SECONDS), 0)
+            .. " changed in the saved settings %d s after the reset: the photo may have had nothing to reset, since an"
+            .. " unedited photo reads the same before and after, or Lightroom may not have reset it; read the photo before"
+            .. " retrying", RESET_LANDING_WAIT_SECONDS), 0)
     end
     return { status = "reset" }
 end

@@ -1816,7 +1816,8 @@ describe("HandlerDevelop.resetDevelopAdjustments", function()
             assert.is_nil(reply.data)
             assert.is_nil(reply.failed)
             assert.are.equal("1", reply.unknown[1].photo_id)
-            for _, text in ipairs({ "no edit", "read the photo", "written before this stopped: resetAllDevelopAdjustments" }) do
+            for _, text in ipairs({ "no edit", "the photo may have had nothing to reset", "read the photo before retrying",
+                "written before this stopped: resetAllDevelopAdjustments" }) do
                 assert.truthy(reply.unknown[1].reason:find(text, 1, true), reply.unknown[1].reason)
             end
             assert.are.equal(1, #readsAfterReset(calls, "1"))

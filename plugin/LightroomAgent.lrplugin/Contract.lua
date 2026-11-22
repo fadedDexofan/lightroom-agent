@@ -308,5 +308,5 @@ return {
     STYLE_SUMMARY_PHOTO_LIMIT = 200,
     HEARTBEAT_INTERVAL_SECONDS = 30,
     VERSION = "0.1.0-rc.4",
-    BUILD = "eb3c11bf6f5126a5",
+    BUILD = "6725d4acb4b09804",
 }
