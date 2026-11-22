@@ -790,6 +790,12 @@ describe('set_develop_settings_batch', () => {
   });
 });
 
+describe('the AI compute wait', () => {
+  it.each(['apply_develop_preset', 'create_mask', 'combine_mask', 'create_mask_batch', 'copy_develop_settings'])('%s states a wait of 30 s', (name) => {
+    expect(TOOL_CONTRACTS.find((contract) => contract.name === name)?.description).toMatch(/computing 30 s (after|later)/);
+  });
+});
+
 describe('set_develop_settings and keys another tool writes', () => {
   it('refuses ConvertToGrayscale before anything is read or written and points to set_treatment', async () => {
     const calls: string[] = [];

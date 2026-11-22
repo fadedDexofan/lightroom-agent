@@ -53,6 +53,19 @@ local function itemFor(list, photoId)
     return nil
 end
 
+describe("HandlerMaskBatch.createMaskBatch within the time budget", function()
+    it("starts a photo only with time for its three catalog waits and the AI compute wait", function()
+        for _, case in ipairs({ { budget = 59.5, started = 0 }, { budget = 60.5, started = 3 } }) do
+            local Handler, world = setup()
+            local result = Handler.createMaskBatch({ type = "subject", photo_ids = { "1", "2", "3" } },
+                helper.requestContext(case.budget, { title = "create_mask_batch" }))
+
+            assert.are.equal(case.started, #world.calls.updates, tostring(case.budget))
+            assert.are.equal(3 - case.started, #(result.remaining or {}), tostring(case.budget))
+        end
+    end)
+end)
+
 describe("HandlerMaskBatch.createMaskBatch in the saved settings", function()
     it("writes the same seed with the same adjustments to every photo, without Develop, and returns each mask id", function()
         local Handler, world = setup()

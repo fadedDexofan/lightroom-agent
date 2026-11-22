@@ -34,11 +34,16 @@ local function setup(opts)
     local photo = helper.fakePhoto({ id = "1", path = "/1.jpg" })
     local store = Store.attach(photo, { entries = opts.entries, processVersion = opts.processVersion, rejectWrite = opts.rejectWrite,
         transformWrite = opts.transformWrite })
-    local calls = { updateAI = 0, modules = {}, catalogs = 0 }
+    local calls = { updateAI = 0, modules = {}, catalogs = 0, slept = 0 }
+    local computesAt
     if not opts.withoutUpdateAi then
         photo.updateAISettings = function()
             calls.updateAI = calls.updateAI + 1
             if opts.updateFails then error("AI update failed") end
+            if opts.computesAfter then
+                computesAt = calls.slept + opts.computesAfter
+                return
+            end
             if opts.computesOnSecondRead then
                 local reads, getDevelopSettings = 0, photo.getDevelopSettings
                 photo.getDevelopSettings = function(self)
@@ -69,7 +74,13 @@ local function setup(opts)
         },
         LrDevelopController = {},
         LrSelection = {},
-        LrTasks = { pcall = pcall, sleep = function() end },
+        LrTasks = { pcall = pcall, sleep = function(seconds)
+            calls.slept = calls.slept + seconds
+            if computesAt and calls.slept >= computesAt - 1e-9 then
+                computesAt = nil
+                computeEveryEntry(opts)(store)
+            end
+        end },
         LrLogger = helper.defaultLrLogger(),
     })
     for _, name in ipairs({
@@ -212,7 +223,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local message = helper.unknownOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end)
 
         assert.matches("Lightroom could not compute the people masks: AI update failed", message, 1, true)
-        assert.matches("has not finished computing the AI masks of photo 1 within 15 s", message, 1, true)
+        assert.matches("has not finished computing the AI masks of photo 1 within " .. require("Contract").AI_MASK_COMPUTE_WAIT_SECONDS .. " s", message, 1, true)
         assert.are.equal(1, #store.writes)
         assert.are.equal(1, #store.entries)
         assert.are.equal(1, calls.updateAI)
@@ -268,6 +279,30 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(1, #store.entries)
     end)
 
+    for _, seconds in ipairs({ 20, 29.5 }) do
+        it("keeps a mask Lightroom finishes computing " .. seconds .. " s after the update", function()
+            local Handler, store, calls = setup({ computesAfter = seconds })
+
+            local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } },
+                helper.requestContext(nil, { title = "create_mask" }))
+
+            assert.are.equal(1, #result.masks)
+            assert.are.equal(1, #store.entries)
+            assert.is_true(calls.slept >= seconds - 1e-9)
+        end)
+    end
+
+    it("answers unknown once the 30 s wait is spent, and not before", function()
+        local Handler, _, calls = setup({ computesAfter = 1000 })
+
+        local message = helper.unknownOf(function()
+            Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
+        end)
+
+        assert.matches("within 30 s", message, 1, true)
+        assert.is_true(math.abs(calls.slept - 30) < 0.05, tostring(calls.slept))
+    end)
+
     it("writes nothing more and answers unknown when Lightroom has not finished computing at the limit", function()
         local Handler, store, calls = setup({ neverCompute = true })
 
@@ -275,7 +310,7 @@ describe("HandlerMaskCreate.createMask people", function()
             Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
         end)
 
-        assert.matches("Lightroom has not finished computing the AI masks of photo 1 within 15 s", message, 1, true)
+        assert.matches("Lightroom has not finished computing the AI masks of photo 1 within " .. require("Contract").AI_MASK_COMPUTE_WAIT_SECONDS .. " s", message, 1, true)
         assert.matches("can freeze Lightroom", message, 1, true)
         assert.are.equal(1, #store.writes)
         assert.are.equal(1, #store.entries)
@@ -291,7 +326,7 @@ describe("HandlerMaskCreate.createMask people", function()
             Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
         end)
 
-        assert.matches("has not finished computing the AI masks of photo 1 within 15 s", message, 1, true)
+        assert.matches("has not finished computing the AI masks of photo 1 within " .. require("Contract").AI_MASK_COMPUTE_WAIT_SECONDS .. " s", message, 1, true)
         assert.are.equal(1, #store.writes)
         assert.are.equal(2, #store.entries)
     end)

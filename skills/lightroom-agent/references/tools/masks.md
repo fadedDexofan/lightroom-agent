@@ -47,7 +47,7 @@ Four calls write AI masks: `create_mask` (Subject, Sky, Background, People parts
 - computed: `done`;
 - Lightroom reports finding nothing, or could not compute: the new masks are removed, the photo's own masks are restored exactly, and the call fails naming the failed components; no alert needs dismissing. If that restore cannot be confirmed, the call is `unknown` and asks you to check the photo's masks in Develop before writing to it;
 - if that same compute also refreshed other settings (stale Lens Blur depth, Enhance filters, Remove areas, an adaptive profile), those are not rolled back: the call is `unknown` and names them, and the masks are as before;
-- anything on the photo still computing 15 s later: `unknown`, and nothing more may be written to that photo until a read shows the compute finished;
+- anything on the photo still computing when the wait the tool states ends: `unknown`, and nothing more may be written to that photo until a read shows the compute finished;
 - a preset is the exception: `apply_develop_preset` keeps the preset and answers `unknown` (check the masks in Develop before writing to the photo), and an apply that stops ends the batch with the rest in `remaining`;
 - existing AI masks are never written, but the compute covers the whole photo: a warning names an existing mask whose result changed or was already failed. Render it before going on.
 
