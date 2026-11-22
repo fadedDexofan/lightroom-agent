@@ -112,7 +112,7 @@ describe('CLI process', () => {
       path.resolve('node_modules/@typescript/native/bin/tsc'), '--outDir', build,
     ], { cwd: process.cwd() });
     fs.writeFileSync(path.join(build, 'package.json'), '{"type":"module"}');
-    fs.symlinkSync(path.resolve('node_modules'), path.join(build, 'node_modules'), 'junction');
+    fs.symlinkSync(path.resolve('node_modules'), path.join(directory, 'node_modules'), 'junction');
     const bundle = path.join(directory, 'package', 'LightroomAgent.lrplugin');
     fs.mkdirSync(bundle);
     fs.writeFileSync(path.join(bundle, 'Info.lua'), 'return {}');
