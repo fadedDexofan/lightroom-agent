@@ -109,7 +109,7 @@ describe('CLI process', () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lr-cli-'));
     build = path.join(directory, 'package', 'dist');
     await promisify(execFile)(process.execPath, [
-      path.resolve('node_modules/@typescript/native/bin/tsc'), '--outDir', build,
+      path.resolve('node_modules/@typescript/native/bin/tsc'), '-p', 'tsconfig.build.json', '--outDir', build,
     ], { cwd: process.cwd() });
     fs.writeFileSync(path.join(build, 'package.json'), '{"type":"module"}');
     fs.symlinkSync(path.resolve('node_modules'), path.join(directory, 'node_modules'), 'junction');
