@@ -1,6 +1,7 @@
 import { treeDigest } from "./build-identity.js";
 import { DEVELOP_KEYS, LOCAL_KEYS, transfersStyle } from "./develop-keys.js";
 import { DETAIL_RENDER_FOLDER } from "./photo-detail.js";
+import { RENDITION_JPEG_QUALITY } from "./photo-render.js";
 import { HEARTBEAT_INTERVAL_SECONDS } from "./plugin-liveness.js";
 import { PREVIEW_REPLY_RESERVE_MS } from "./preview-item.js";
 import { VERSION } from "./version.js";
@@ -66,6 +67,7 @@ function contractTable(): { readonly [key: string]: LuaValue } {
     COLOR_LABELS,
     PREVIEW_REPLY_RESERVE_SECONDS: PREVIEW_REPLY_RESERVE_MS / 1000,
     DETAIL_RENDER_FOLDER,
+    RENDITION_JPEG_QUALITY,
     DEFAULT_PAGE_LIMIT,
     CATALOG_WRITE_WAIT_SECONDS,
     AI_MASK_COMPUTE_WAIT_SECONDS,

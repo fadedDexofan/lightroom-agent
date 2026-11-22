@@ -101,20 +101,8 @@ describe('duplicate groups', () => {
     const response = await call('find_duplicate_groups', {
       photo_ids: [1, 1, 2, 3], time_window_seconds: 5, max_hamming_distance: 0,
     });
-    expect((dataOf(response) as Result).groups).toEqual([{ photo_ids: ['1', '2'] }]);
-  });
-
-  it('groups the photo open in Develop with its duplicate, rendering it through Library at the duplicate size with its capture time', async () => {
-    const call = jest.fn(async (action: string, args: unknown): Promise<PluginResponse> => {
-      const id = (args as { photo_ids: number[] }).photo_ids[0];
-      if (action === 'render_duplicate_preview' && id === 1) {
-        return { id: 'test', result: { failed: [{ photo_id: '1', reason: 'open in Develop', cause: 'active_in_develop' } as never] } };
-      }
-      return preview(id, 10);
-    });
-    const response = await handler(call)('find_duplicate_groups', { photo_ids: [1, 2] });
-    expect((dataOf(response) as Result).groups).toEqual([{ photo_ids: ['2', '1'] }]);
-    expect(call.mock.calls.map(([action, args]) => [action, args])).toContainEqual(
-      ['render_preview_in_library', { action: 'render_duplicate_preview', photo_ids: [1] }]);
+    const result = dataOf(response) as Result;
+    expect(result.groups).toEqual([{ photo_ids: ['1', '2'] }]);
+    expect(result.photos.map((photo) => photo.photo_id)).toEqual(['1', '2', '3']);
   });
 });

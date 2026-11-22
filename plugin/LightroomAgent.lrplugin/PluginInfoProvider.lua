@@ -157,6 +157,8 @@ local SUPERSEDED_CHECK_TICKS = 5
 
 local function ping(_params) return { pong = true, version = Contract.VERSION, build = Contract.BUILD } end
 
+local WITHOUT_COMMIT = { ping = true, render_preview = true, render_duplicate_preview = true }
+
 local function handlerFor(action)
     if action == "ping" then return ping end
     local target = Contract.DISPATCH[action]
@@ -301,7 +303,7 @@ local function dispatchAction(request)
     -- client. Stick to LrTasks.pcall.
     local context = (id ~= nil and activeRequests[id]) or contextFor(request)
     local execOk, resultOrErr = LrTasks.pcall(function()
-        if action ~= "ping" then DevelopSession.commitPendingEdits() end
+        if not WITHOUT_COMMIT[action] then DevelopSession.commitPendingEdits() end
         return handler(params, context)
     end)
     if context:isCanceled() then addLog("Cancelled " .. action .. " id=" .. tostring(id)) end

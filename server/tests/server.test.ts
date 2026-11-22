@@ -18,6 +18,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   summarize_develop_settings: 'read-only',
   get_photo_preview: 'read-only',
   get_photo_detail: 'additive',
+  render_photo: 'additive',
   get_photo_previews: 'read-only',
   get_photo_stats: 'read-only',
   find_duplicate_groups: 'read-only',
@@ -148,6 +149,35 @@ describe('read-only mode', () => {
     expect(call).not.toHaveBeenCalled();
   });
 
+  it('offers render_photo only outside read-only mode and no preview tool an argument for the photo open in Develop', async () => {
+    const previewTools = ['get_photo_preview', 'get_photo_previews', 'get_photo_stats', 'find_duplicate_groups'];
+    for (const readOnly of [true, false]) {
+      const listing = await connect({ readOnly });
+      try {
+        const tools = (await listing.client.listTools()).tools;
+        expect(tools.some((tool) => tool.name === 'render_photo')).toBe(!readOnly);
+        const previews = tools.filter((tool) => previewTools.includes(tool.name));
+        expect(previews.map((tool) => tool.name).sort()).toEqual([...previewTools].sort());
+        for (const tool of previews) {
+          expect(Object.keys((tool.inputSchema as { properties: object }).properties)).not.toContain('open_in_develop');
+          expect(tool.description).toContain('naming render_photo');
+        }
+      } finally {
+        await listing.client.close();
+        await listing.server.close();
+      }
+    }
+  });
+
+  it('refuses open_in_develop as an unknown property before dispatch', async () => {
+    const call = jest.fn<CallFn>();
+    pair = await connect({ readOnly: true, call });
+    const refused = asToolResult(await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_id: 914, open_in_develop: 'fail' } }));
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain('unknown property \\"open_in_develop\\"');
+    expect(call).not.toHaveBeenCalled();
+  });
+
   it('enforces before the broker follower call and fixes the list at startup', async () => {
     const callTool = jest.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
     const options = { readOnly: true, toolsets: parseToolsets('all') };
@@ -254,6 +284,7 @@ describe('createMcpServer', () => {
       combine_mask: ['intersect', 'inverted true', 'ErrorReason', 'saved settings'],
       get_photo_detail: ['render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}', 'a string ("export" today)', 'a list of phrases', '"the exported mark"'],
       export_photos: ['get_photo_detail or another export', 'refused, not queued', 'separator between names (/ on macOS'],
+      render_photo: ['unchecked renders the existing AI computation', 'which can visibly change the photo', 'Cancel stops before rendering', 'a timeout while the dialog is open is unknown', 'not re-encoded', 'once per edit', 'lapses 300 s'],
       set_mask_adjustments: ['saved settings by mask_id', 'six decimal places', 'pending in Develop are committed before a call reads or writes', 'one history step', 'naming what Lightroom stored'],
       set_mask_curves: ['saved settings by mask_id', 'at most 16 points', 'pending in Develop are committed before a call reads or writes', 'naming what Lightroom stored'],
       edit_mask_point_colors: ['stores the source rounded to two decimals', 'centred on the rounded source', 'already holds', 'six decimals', 'saved settings by mask_id'],
@@ -293,7 +324,7 @@ describe('createMcpServer', () => {
 
     const coreNames = [
       'search_photos', 'get_selected_photos', 'get_photo_metadata', 'get_photo_preview',
-      'get_photo_detail', 'get_photo_previews', 'find_duplicate_groups', 'get_photo_stats', 'set_gps',
+      'get_photo_detail', 'render_photo', 'get_photo_previews', 'find_duplicate_groups', 'get_photo_stats', 'set_gps',
       'set_location', 'set_metadata', 'set_ai_metadata', 'get_ai_metadata', 'list_folders',
       'get_folder_photos', 'list_collections', 'create_collection', 'create_smart_collection',
       'add_to_collection', 'get_collection_photos', 'remove_from_collection', 'delete_collection',

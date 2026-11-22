@@ -40,19 +40,6 @@ describe('photo stats', () => {
     expect(envelope.warnings).toEqual([expect.stringContaining('Plugin request timed out')]);
   });
 
-  it('measures the photo open in Develop after the others, through Library, and answers in request order', async () => {
-    const actions: string[] = [];
-    const response = await handler(async (action, params) => {
-      actions.push(`${action} ${idOf(params)}`);
-      if (action === 'render_preview' && idOf(params) === 7) {
-        return { id: 'p', result: { failed: [{ photo_id: '7', reason: 'open in Develop', cause: 'active_in_develop' } as never] } };
-      }
-      return preview(flat, String(idOf(params)));
-    })('get_photo_stats', { photo_ids: [7, 1, 2] });
-    expect((dataOf(response) as { results: { photo_id: string }[] }).results.map((result) => result.photo_id)).toEqual(['7', '1', '2']);
-    expect(actions).toEqual(['render_preview 7', 'render_preview 1', 'render_preview 2', 'render_preview_in_library 7']);
-  });
-
   it('measures a full-size 20 MP preview', async () => {
     const full = image(5000, 4000, () => 128);
     const response = await handler(async () => preview(full))('get_photo_stats', { photo_ids: [1] });

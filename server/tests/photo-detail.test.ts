@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, jest } from '@jest/globals';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import jpeg from 'jpeg-js';
 import { envelopeOf } from './helpers/envelope.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
@@ -45,6 +45,7 @@ function cropOf(width: number, height: number): PluginResponse {
 }
 
 const LEFT = '; the render left one Export history step and the exported mark on the photo';
+const posixOnly = process.platform === 'win32' ? it.skip : it;
 
 function handlerFor(reply: PluginResponse, frame: PluginResponse = cropOf(64, 48)) {
   const calls: { action: string; params: unknown }[] = [];
@@ -86,7 +87,9 @@ describe('get_photo_detail', () => {
 
     const envelope = envelopeOf(response);
     expect(envelope.outcome).toBe('done');
-    expect(calls.map(({ action, params }) => [action, params])).toEqual([['get_crop', { photo_id: 7 }], ['render_detail_source', { photo_id: 7 }]]);
+    expect(calls.map(({ action, params }) => [action, params])).toEqual([
+      ['get_crop', { photo_id: 7 }], ['render_source', { photo_id: 7, tool: 'get_photo_detail' }],
+    ]);
     const data = envelope.data as { photo_id: string; render: unknown; crop_jpeg_quality: number; regions: { box: unknown; image_index: number }[] };
     expect(data.photo_id).toBe('7');
     expect(data.render).toEqual({
@@ -117,6 +120,20 @@ describe('get_photo_detail', () => {
     await handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] });
     expect(existsSync(own)).toBe(false);
     expect(existsSync(join(other, 'b.jpg'))).toBe(true);
+  });
+
+  posixOnly('warns, naming the folder, when the render folder cannot be removed, and still answers done', async () => {
+    const path = renderedFile(render(64, 48));
+    const base = dirname(dirname(path));
+    chmodSync(base, 0o555);
+    try {
+      const { handler } = handlerFor({ id: 'r', result: { data: { photo_id: '7', path, ...EXPORT_SOURCE } } });
+      const envelope = envelopeOf(await handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] }));
+      expect(envelope.outcome).toBe('done');
+      expect(envelope.warnings).toEqual([expect.stringContaining(`Could not remove the render folder ${dirname(path)}`)]);
+    } finally {
+      chmodSync(base, 0o755);
+    }
   });
 
   it('removes nothing when the plug-in names a path outside a render folder', async () => {
@@ -171,7 +188,7 @@ describe('get_photo_detail', () => {
       photo_id: 7, regions: [{ x: 0.0168, y: 0.0251, width: Number(suggested?.[1]), height: Number(suggested?.[2]) }],
     });
 
-    expect(calls.map(({ action }) => action)).toEqual(['get_crop', 'render_detail_source']);
+    expect(calls.map(({ action }) => action)).toEqual(['get_crop', 'render_source']);
   });
 
   it('hands the render only the time get_crop left of the tool\'s budget', async () => {
@@ -188,7 +205,7 @@ describe('get_photo_detail', () => {
       await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })('get_photo_detail', {
         photo_id: 7, regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }],
       });
-      expect(timeouts).toEqual([['get_crop', 300_000], ['render_detail_source', 295_000]]);
+      expect(timeouts).toEqual([['get_crop', 300_000], ['render_source', 295_000]]);
     } finally {
       jest.useRealTimers();
     }

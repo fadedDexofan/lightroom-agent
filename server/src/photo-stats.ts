@@ -52,15 +52,14 @@ export async function getPhotoStats(
   budgetMs: number,
   options?: CallOptions,
 ): Promise<PluginReply> {
-  const results: ({ photo_id: string; position: number } & ReturnType<typeof photoStats>)[] = [];
+  const results: ({ photo_id: string } & ReturnType<typeof photoStats>)[] = [];
   const batch = await previewBatch(dispatcher, photoIds, { action: "render_preview", size: STATS_PREVIEW_SIZE, budgetMs }, options,
-    (preview, fail, position) => {
+    (preview, fail) => {
       try {
-        results.push({ photo_id: preview.photo_id, position, ...photoStats(jpegOf(preview)) });
+        results.push({ photo_id: preview.photo_id, ...photoStats(jpegOf(preview)) });
       } catch (error) {
         fail({ photo_id: preview.photo_id, reason: reasonOf(error) });
       }
     });
-  const ordered = results.sort((a, b) => a.position - b.position).map(({ position: _position, ...result }) => result);
-  return batchReply(batch, ordered.length ? { results: ordered } : undefined);
+  return batchReply(batch, results.length ? { results } : undefined);
 }

@@ -2,6 +2,8 @@ import type { JSONObject } from "@modelcontextprotocol/server";
 
 export const PREVIEW_SIZES = { cull: 864, review: 1728 } as const;
 
+export const MAX_IMAGE_BYTES = 3.5 * 1024 * 1024;
+
 export type PreviewSize = number | keyof typeof PREVIEW_SIZES;
 
 export function previewEdge(size: PreviewSize): number {

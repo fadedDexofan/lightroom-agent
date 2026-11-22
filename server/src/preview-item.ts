@@ -10,10 +10,7 @@ export interface RenderedPreview {
 export type PreviewItem =
   | { preview: RenderedPreview }
   | { notFound: Input }
-  | { failed: ItemFailure }
-  | { blocked: ItemFailure };
-
-export type CompletedItem = Exclude<PreviewItem, { blocked: ItemFailure }>;
+  | { failed: ItemFailure };
 
 const OPEN_IN_DEVELOP = "active_in_develop";
 
@@ -25,7 +22,8 @@ export interface PreviewRequest {
   size?: number;
 }
 
-const LIBRARY_RENDER_ACTION = "render_preview_in_library";
+const WAY_OUT = " Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image"
+  + " by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode).";
 
 export function jpegOf(preview: RenderedPreview): Buffer {
   if (preview.image?.mime_type !== "image/jpeg" || typeof preview.image.data !== "string") {
@@ -50,28 +48,11 @@ function itemOf(input: Input, response: PluginReply): PreviewItem {
   if (parts.not_found?.length) return { notFound: input };
   if (parts.failed?.length) {
     const { cause, ...failure } = parts.failed[0] as PluginItemFailure;
-    return cause === OPEN_IN_DEVELOP ? { blocked: failure as ItemFailure } : { failed: failure as ItemFailure };
+    return { failed: cause === OPEN_IN_DEVELOP ? { ...failure, reason: `${failure.reason}.${WAY_OUT}` } : failure };
   }
   const preview = parts.data as RenderedPreview | undefined;
   if (!preview) return { failed: { photo_id: String(input), reason: "Plugin returned no preview" } };
   return { preview: { ...preview, photo_id: String(preview.photo_id) } };
-}
-
-export async function fallbackItem(
-  dispatcher: Pick<Dispatcher, "call">,
-  { action, input, size }: PreviewRequest,
-  timeoutMs: number,
-  options: CallOptions | undefined,
-): Promise<CompletedItem> {
-  const params = size === undefined ? { action, photo_ids: [input] } : { action, photo_ids: [input], size };
-  let item: PreviewItem;
-  try {
-    item = itemOf(input, await dispatcher.call(LIBRARY_RENDER_ACTION, params, timeoutMs, options));
-  } catch (error) {
-    if (options?.signal?.aborted) throw error;
-    return { failed: { photo_id: String(input), reason: reasonOf(error) } };
-  }
-  return "blocked" in item ? { failed: item.blocked } : item;
 }
 
 export const PREVIEW_REPLY_RESERVE_MS = 10_000;
@@ -100,19 +81,11 @@ export async function previewBatch(
   inputs: readonly Input[],
   request: { action: string; size?: number; budgetMs: number },
   options: CallOptions | undefined,
-  accept: (preview: RenderedPreview, fail: (failure: ItemFailure) => void, position: number) => boolean | void,
+  accept: (preview: RenderedPreview, fail: (failure: ItemFailure) => void) => boolean | void,
 ): Promise<PreviewBatch> {
   const deadline = performance.now() + previewStartLimitMs(request.budgetMs);
   const batch: PreviewBatch = { failed: [], notFound: [], remaining: [], warnings: [] };
   const fail = (failure: ItemFailure) => { batch.failed.push(failure); };
-  const unfinished: number[] = [];
-  const deferred: number[] = [];
-  const settle = (item: CompletedItem, position: number): boolean => {
-    if ("notFound" in item) batch.notFound.push(item.notFound);
-    else if ("failed" in item) fail(item.failed);
-    else return accept(item.preview, fail, position) !== false;
-    return true;
-  };
   let reached = 0;
   for (; reached < inputs.length; reached++) {
     if (options?.signal?.aborted) throw new Error("Request cancelled");
@@ -127,20 +100,12 @@ export async function previewBatch(
       batch.warnings.push(`Stopped at ${String(inputs[reached])}: ${reasonOf(error)}`);
       break;
     }
-    if ("blocked" in item) { deferred.push(reached); continue; }
     if ("failed" in item && performance.now() >= deadline) break;
-    if (!settle(item, reached)) break;
+    if ("notFound" in item) batch.notFound.push(item.notFound);
+    else if ("failed" in item) fail(item.failed);
+    else if (accept(item.preview, fail) === false) break;
   }
-  let finished = reached === inputs.length;
-  for (const index of deferred) {
-    const left = deadline - performance.now();
-    if (!finished || left <= 0) { unfinished.push(index); continue; }
-    const item = await fallbackItem(dispatcher, { action: request.action, input: inputs[index], size: request.size },
-      left + PREVIEW_REPLY_RESERVE_MS, options);
-    if (!settle(item, index)) { unfinished.push(index); finished = false; }
-  }
-  for (let index = reached; index < inputs.length; index++) unfinished.push(index);
-  batch.remaining = unfinished.sort((a, b) => a - b).map((index) => inputs[index]);
+  batch.remaining = inputs.slice(reached);
   return batch;
 }
 

@@ -4,6 +4,7 @@ import jpeg from "jpeg-js";
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { beforeWrite } from "./develop-write.js";
 import { cutPixels, decodeJpeg, pixelBox, type NormalizedRegion } from "./rendered-image.js";
+import { reasonOf } from "./preview-item.js";
 import type { Input, PluginReply } from "./tool-result.js";
 
 export interface DetailArgs {
@@ -47,15 +48,12 @@ export async function getPhotoDetail(
   if (predicted) {
     return { error: `${predicted} (cropped frame ${frame.width}x${frame.height}); nothing was rendered`, effect: "none" };
   }
-  const reply = await dispatcher.call("render_detail_source", { photo_id: args.photo_id },
+  const reply = await dispatcher.call("render_source", { photo_id: args.photo_id, tool: "get_photo_detail" },
     deadline - performance.now(), options);
-  const source = reply.result?.data as RenderSource | undefined;
-  if (reply.error !== undefined || !source) return reply;
-  const left = `; the render left ${source.left_on_photo.join(" and ")} on the photo`;
-  try {
-    const image = decodeJpeg(await readFile(source.path));
+  return withRenderedFile(reply, (file, source) => {
+    const image = decodeJpeg(file);
     const rendered = overLimit(args.regions, image.width, image.height, limit);
-    if (rendered) return { error: `${rendered} (render ${image.width}x${image.height})${left}` };
+    if (rendered) throw new Error(`${rendered} (render ${image.width}x${image.height})`);
     const boxes = args.regions.map((region) => pixelBox(region, image.width, image.height));
     const regions = boxes.map((box) => ({
       box,
@@ -66,21 +64,35 @@ export async function getPhotoDetail(
       },
     }));
     return {
-      result: {
-        data: {
-          photo_id: String(source.photo_id),
-          render: {
-            width: image.width, height: image.height, ...RENDER, source: source.source, left_on_photo: source.left_on_photo,
-          },
-          crop_jpeg_quality: CROP_JPEG_QUALITY,
-          regions,
-        },
+      photo_id: String(source.photo_id),
+      render: {
+        width: image.width, height: image.height, ...RENDER, source: source.source, left_on_photo: source.left_on_photo,
       },
+      crop_jpeg_quality: CROP_JPEG_QUALITY,
+      regions,
     };
+  });
+}
+
+export async function withRenderedFile(
+  reply: PluginReply,
+  use: (file: Buffer, source: RenderSource) => unknown,
+): Promise<PluginReply> {
+  const source = reply.result?.data as RenderSource | undefined;
+  if (reply.error !== undefined || !source) return reply;
+  let used: PluginReply;
+  try {
+    used = { result: { data: use(await readFile(source.path), source) } };
   } catch (error) {
-    return { error: `${error instanceof Error ? error.message : String(error)}${left}` };
-  } finally {
-    const folder = dirname(source.path);
-    if (basename(dirname(folder)) === DETAIL_RENDER_FOLDER) await rm(folder, { recursive: true, force: true });
+    used = { error: `${reasonOf(error)}; the render left ${source.left_on_photo.join(" and ")} on the photo` };
+  }
+  const folder = dirname(source.path);
+  if (basename(dirname(folder)) !== DETAIL_RENDER_FOLDER) return used;
+  try {
+    await rm(folder, { recursive: true, force: true });
+    return used;
+  } catch (error) {
+    const warning = `Could not remove the render folder ${folder}: ${reasonOf(error)}`;
+    return used.error !== undefined ? { error: `${used.error}; ${warning}` } : { result: { ...used.result, warnings: [warning] } };
   }
 }
