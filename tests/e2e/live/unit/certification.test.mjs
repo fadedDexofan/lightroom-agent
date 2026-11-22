@@ -8,6 +8,9 @@ import {
   buildCertificationRecord,
   certificationResult,
   evaluateStep,
+  fixtureStateProblems,
+  fixturesNotProvenReset,
+  uncertifiedFixtures,
   judgeRun,
   maskCount,
   NOT_EXERCISED,
@@ -312,4 +315,46 @@ test("the plug-in admits the catalog the kit marks, by the same marker file name
   const admission = fs.readFileSync(path.join(REPO_ROOT, "plugin", "LightroomAgent.lrplugin", "MaskWriteAdmission.lua"), "utf8");
 
   assert.equal(admission.match(/THROWAWAY_MARKER_FILE = "([^"]+)"/)?.[1], THROWAWAY_MARKER_FILE);
+});
+
+const fixtureSettings = (overrides = {}) => ({
+  MaskGroupBasedCorrections: [], RetouchAreas: [], FilterList: { Filters: [] },
+  CropLeft: 0, CropTop: 0, CropRight: 1, CropBottom: 1, CropAngle: 0,
+  Exposure2012: 0, Contrast2012: 0, Highlights2012: 0, Shadows2012: 0, Whites2012: 0, Blacks2012: 0,
+  Texture: 0, Clarity2012: 0, Dehaze: 0, Vibrance: 0, Saturation: 0, WhiteBalance: "As Shot",
+  ...overrides,
+});
+
+test("a fixture in the certified state, read with its lists and keys or with them absent, has no problems", () => {
+  assert.deepEqual(fixtureStateProblems(fixtureSettings()), []);
+  assert.deepEqual(fixtureStateProblems({}), []);
+});
+
+const editedFixtures = [
+  ["a mask", { MaskGroupBasedCorrections: [{ CorrectionID: "A" }] }, ["MaskGroupBasedCorrections"]],
+  ["a spot", { RetouchAreas: [{}] }, ["RetouchAreas"]],
+  ["an Enhance filter", { FilterList: { Filters: [{}] } }, ["FilterList"]],
+  ["a crop", { CropRight: 0.8, CropAngle: 2 }, ["CropRight", "CropAngle"]],
+  ["a slider", { Exposure2012: 0.5 }, ["Exposure2012"]],
+  ["a white balance", { WhiteBalance: "Custom" }, ["WhiteBalance"]],
+  ["black and white", { ConvertToGrayscale: true }, ["ConvertToGrayscale"]],
+  ["a Transform", { PerspectiveVertical: 10, PerspectiveScale: 90, PerspectiveUpright: 1 }, ["PerspectiveVertical", "PerspectiveScale", "PerspectiveUpright"]],
+  ["an HSL adjustment", { HueAdjustmentRed: 5, LuminanceAdjustmentBlue: -20 }, ["HueAdjustmentRed", "LuminanceAdjustmentBlue"]],
+];
+for (const [what, overrides, keys] of editedFixtures) {
+  test(`a fixture that still carries ${what} names the keys that differ`, () => {
+    assert.deepEqual(fixtureStateProblems(fixtureSettings(overrides)), keys);
+  });
+}
+
+test("only fixtures the reset answered as reset are proven; unknown and missing ones need a read", () => {
+  const answer = { data: { results: [{ photo_id: "1", status: "reset" }, { photo_id: "2", status: "unknown" }] }, envelope: { unknown: [{ photo_id: "3" }] } };
+  assert.deepEqual(fixturesNotProvenReset(answer, ["1", "2", "3", "4"]), ["2", "3", "4"]);
+  assert.deepEqual(fixturesNotProvenReset({ data: { results: [{ photo_id: "1", status: "reset" }] } }, ["1"]), []);
+});
+
+test("a fixture the state read did not return, or returned edited, keeps certification from running", () => {
+  const read = { photos: [{ photo_id: "2", settings: fixtureSettings() }, { photo_id: "3", settings: fixtureSettings({ Exposure2012: 1 }) }] };
+  assert.deepEqual(uncertifiedFixtures(read, ["2", "3", "4"]), [{ photo_id: "3", keys: ["Exposure2012"] }, { photo_id: "4", keys: ["not returned by the read"] }]);
+  assert.deepEqual(uncertifiedFixtures(read, ["2"]), []);
 });

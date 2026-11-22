@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { certificationResult, evaluateStep, judgeRun, renderPasses, requireThrowaway, THRESHOLDS, writeCertification } from "./lib/certification.mjs";
+import { certificationResult, evaluateStep, FIXTURE_STATE_KEYS, fixturesNotProvenReset, judgeRun, renderPasses, requireThrowaway, THRESHOLDS, uncertifiedFixtures, writeCertification } from "./lib/certification.mjs";
 import { compareRanges } from "./lib/develop-ranges.mjs";
 import { fixtureIdOrNull, openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 import { REPO_ROOT } from "./lib/paths.mjs";
@@ -74,7 +74,16 @@ console.log(`certifying ${status.running.build} on ${catalogPath}`);
 
 const depthPhoto = fixtureIdOrNull(marker, "depth_heic");
 const certified = depthPhoto === null ? Object.values(ids) : [...Object.values(ids), String(depthPhoto)];
-await toolData("reset_develop_adjustments", { photo_ids: certified, confirm: true }, { timeoutMs: AI_TIMEOUT_MS });
+const resetAnswer = await session.tool("reset_develop_adjustments", { photo_ids: certified, confirm: true }, { timeoutMs: AI_TIMEOUT_MS });
+const unproven = fixturesNotProvenReset(resetAnswer, certified);
+if (unproven.length > 0) {
+  const read = await toolData("get_develop_settings", { photo_ids: unproven, keys: FIXTURE_STATE_KEYS });
+  const edited = uncertifiedFixtures(read, unproven);
+  if (edited.length > 0) {
+    throw new Error(`the reset did not clear these fixtures; nothing certified: ${edited.map((photo) => `${photo.photo_id} (${photo.keys.join(", ")})`).join("; ")}`);
+  }
+  console.log(`fixtures already in their certified state (the reset saw nothing to clear): ${unproven.join(", ")}; edits outside ${FIXTURE_STATE_KEYS.join(", ")} are not checked on them`);
+}
 
 const runStem = path.join(path.dirname(catalogPath), "certification-runs", startedAt.toISOString().replaceAll(":", "-"));
 const runFile = `${runStem}.json`;

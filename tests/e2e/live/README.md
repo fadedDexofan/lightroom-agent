@@ -56,7 +56,7 @@ The plug-in allows guarded mask writes (gradient, brush, range and AI masks, `co
 node tests/e2e/live/certify-mask-writes.mjs
 ```
 
-It resets the develop settings of `wide_plain`, `ramp256`, `chart80`, `orient_1`, `pano`, `arw_14bit`, `arw_12bit`, `flat_gray`, `people_photo` (required) and `depth_heic` (when present), then runs these steps:
+It resets the develop settings of `wide_plain`, `ramp256`, `chart80`, `orient_1`, `pano`, `arw_14bit`, `arw_12bit`, `flat_gray`, `people_photo` (required) and `depth_heic` (when present). A fixture the reset does not answer as `reset` (an unedited fixture answers `unknown`: nothing changed) is read back and must be in the certified fixture state, `fixtureStateProblems` in `lib/certification.mjs`: no masks, spots or Enhance filters, an uncropped frame, colour, no Transform, the global tone, presence and HSL sliders at 0 and white balance As Shot; otherwise, or when the read does not return the fixture, nothing is certified and the fixture and its keys are named. Then it runs these steps:
 
 - linear and radial gradient create and update, a brush with an erase stroke, a luminance range, and a single-sample colour range on `chart80` at the l, a, b Lightroom sampled from its red patch;
 - a depth range (nearest 0 to 0.3, Exposure −1) on `depth_heic`, which must darken the near table edge and leave the far background unchanged;
