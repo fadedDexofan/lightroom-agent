@@ -210,13 +210,39 @@ describe("HandlerDevelop.listDevelopPresets", function()
         assert.is_false(filtered.has_more)
         assert.are.equal(2, Handler.listDevelopPresets({ folder = "Adobe Color" }).count)
         assert.are.equal(1, Handler.listDevelopPresets({ folder = "Plugin Develop Presets" }).count)
-        assert.are.equal(1, Handler.listDevelopPresets({ query = "%" }).count)
+        assert.are.equal(1, Handler.listDevelopPresets({ query = "100%" }).count)
+        for _, query in ipairs({ "%", "-", " - , " }) do
+            assert.matches("has no word to search", helper.failedOf(function() Handler.listDevelopPresets({ query = query }) end),
+                1, true)
+        end
         for _, args in ipairs({ { query = "absent" }, { folder = "Adobe" }, { folder = "adobe color" } }) do
             local none = Handler.listDevelopPresets(args)
             assert.are.equal(0, none.count)
             assert.are.same({}, none.presets)
             assert.is_false(none.has_more)
         end
+    end)
+
+    it("matches every word of the query in the preset's folder or name, ignoring punctuation-only words", function()
+        local _, Handler = setup({ folders = {
+            fakeFolder("Adaptive: Sky", { fakePreset("Blue Drama") }),
+            fakeFolder("User Presets", { fakePreset("Soft Portrait") }),
+            fakeFolder("日本語", { fakePreset("空のドラマ") }),
+        } })
+        local function names(query)
+            local found = {}
+            for _, preset in ipairs(Handler.listDevelopPresets({ query = query }).presets) do found[#found + 1] = preset.name end
+            return found
+        end
+
+        for _, query in ipairs({ "sky", "adaptive", "Adaptive Sky - Blue Drama", "drama" }) do
+            assert.are.same({ "Blue Drama" }, names(query), query)
+        end
+        assert.are.same({}, names("sky portrait"))
+        assert.are.same({ "Soft Portrait" }, names("soft"))
+        assert.are.same({ "空のドラマ" }, names("空"))
+        assert.are.same({}, names("雪"))
+        assert.are.equal(3, Handler.listDevelopPresets({}).count)
     end)
 
     it("supports count-only and paging", function()
