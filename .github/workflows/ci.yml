@@ -15,9 +15,37 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci-changes.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Classify the changed files
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files=""
+          if [ -n "$PR" ]; then
+            files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)') || files=""
+          fi
+          printf '%s\n' "$files" | node scripts/ci-changes.mjs | tee -a "$GITHUB_OUTPUT"
+
   build-and-test:
     name: Build & Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    needs: changes
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.changes.outputs.code == 'false' && 'ubuntu-latest' || matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -27,9 +55,16 @@ jobs:
       run:
         working-directory: server
     steps:
+      - name: Only documentation changed, nothing to build or test
+        if: needs.changes.outputs.code == 'false'
+        working-directory: .
+        run: echo "Documentation-only change"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.code != 'false'
 
       - name: Setup Node.js
+        if: needs.changes.outputs.code != 'false'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .mise.toml
@@ -37,50 +72,56 @@ jobs:
           cache-dependency-path: server/package-lock.json
 
       - name: Install dependencies
+        if: needs.changes.outputs.code != 'false'
         run: npm ci
 
       - name: Type check
+        if: needs.changes.outputs.code != 'false'
         run: npm run check
 
       - name: Lint
+        if: needs.changes.outputs.code != 'false'
         run: npm run lint
 
       - name: Build
+        if: needs.changes.outputs.code != 'false'
         run: npm run build
 
       - name: Release script tests
-        if: runner.os == 'Linux'
+        if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         working-directory: .
         run: |
           test -f scripts/bump-version.test.mjs
+          test -f scripts/ci-changes.test.mjs
           test -f scripts/codex-package.test.mjs
           test -f scripts/package-contents.test.mjs
           test -f scripts/release.test.mjs
           node --test "scripts/*.test.mjs"
 
       - name: Generated files are up to date
-        if: matrix.os == 'ubuntu-latest'
+        if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         working-directory: .
         run: |
           git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts codex/skills
           test -z "$(git ls-files --others --exclude-standard -- codex/skills)"
 
       - name: Live kit scripts parse
-        if: matrix.os == 'ubuntu-latest'
+        if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         working-directory: .
         run: for f in tests/e2e/live/*.mjs tests/e2e/live/lib/*.mjs; do node --check "$f"; done
 
       - name: Test
+        if: needs.changes.outputs.code != 'false'
         timeout-minutes: 5
         run: npm run test:coverage -- --ci --reporters=default
 
       - name: Live kit tests
-        if: matrix.os != 'windows-latest'
+        if: needs.changes.outputs.code != 'false' && matrix.os != 'windows-latest'
         working-directory: .
         run: node --test "tests/e2e/live/unit/*.test.mjs"
 
       - name: Upload build artifacts
-        if: matrix.os == 'ubuntu-latest'
+        if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-dist
