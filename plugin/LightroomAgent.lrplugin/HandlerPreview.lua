@@ -5,7 +5,6 @@ local LrStringUtils = import 'LrStringUtils'
 local LrTasks = import 'LrTasks'
 
 local Contract = require 'Contract'
-local DevelopSession = require 'DevelopSession'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 local Reply = require 'Reply'
@@ -55,21 +54,23 @@ local function openInDevelop(photo)
         and LrApplication.activeCatalog():getTargetPhoto() == photo
 end
 
-local function blockedInDevelop(photo)
-    Reply.refuse(string.format("Lightroom renders no preview of photo %s while it is the photo open in Develop",
-        tostring(photo.localIdentifier)), OPEN_IN_DEVELOP)
+local function declineOpenInDevelop(photo)
+    if not openInDevelop(photo) then return end
+    Reply.refuse(string.format("This tool takes no thumbnail of photo %s while it is the photo open in Develop:"
+        .. " Lightroom's thumbnail there can be stale or an enlarged low-resolution copy", tostring(photo.localIdentifier)),
+        OPEN_IN_DEVELOP)
 end
 
 local function thumbnailOf(photo, size, deadline)
     local answeredNoPixels = false
     local done, data, failure
     while true do
+        declineOpenInDevelop(photo)
         done, data, failure = requestThumbnail(photo, size, deadline)
         if data then break end
         if not done and answeredNoPixels then error(stillNoPixels(photo), 0) end
         if not done then error("Preview not ready before the request's time ran out", 0) end
         if not isNoPixels(failure) then error("Preview failed: " .. tostring(failure or "no image data"), 0) end
-        if openInDevelop(photo) then blockedInDevelop(photo) end
         answeredNoPixels = true
         if LrDate.currentTime() + NO_PIXELS_RETRY_SECONDS >= deadline then error(stillNoPixels(photo), 0) end
         LrTasks.sleep(NO_PIXELS_RETRY_SECONDS)
@@ -89,57 +90,38 @@ local function previewOf(photo, data)
     }
 end
 
-local VARIANTS = {
-    render_preview = function(photo, args, pixels)
-        return previewOf(photo, pixels(photo, args.size))
-    end,
-    render_duplicate_preview = function(photo, _, pixels)
-        local captureTime
-        LrApplication.activeCatalog():withReadAccessDo(function()
-            captureTime = photo:getRawMetadata("dateTimeOriginal")
-        end)
-        if type(captureTime) ~= "number" then error("No raw capture time", 0) end
-        local result = previewOf(photo, pixels(photo, DUPLICATE_SIZE))
-        result.capture_time = captureTime
-        return result
-    end,
-}
+local function preview(photo, args, deadline)
+    return previewOf(photo, thumbnailOf(photo, args.size, deadline))
+end
 
-local function onePhoto(action, args, pixels)
+local function duplicatePreview(photo, _, deadline)
+    local captureTime
+    LrApplication.activeCatalog():withReadAccessDo(function()
+        captureTime = photo:getRawMetadata("dateTimeOriginal")
+    end)
+    if type(captureTime) ~= "number" then error("No raw capture time", 0) end
+    local result = previewOf(photo, thumbnailOf(photo, DUPLICATE_SIZE, deadline))
+    result.capture_time = captureTime
+    return result
+end
+
+local function onePhoto(render, args, context)
     local input = args.photo_ids[1]
     local photo = PhotoLookup.resolveOne(LrApplication.activeCatalog(), input)
     if not photo then return Reply.parts({ not_found = { input } }) end
-    local ok, value = LrTasks.pcall(VARIANTS[action], photo, args, pixels)
+    local ok, value = LrTasks.pcall(render, photo, args, deadlineOf(context))
     if ok then return Reply.parts({ data = value }) end
     return Reply.parts({ failed = { {
         photo_id = tostring(photo.localIdentifier), reason = Reply.messageOf(value), cause = Reply.causeOf(value),
     } } })
 end
 
-local function thumbnails(context)
-    local deadline = deadlineOf(context)
-    return function(photo, size) return thumbnailOf(photo, size, deadline) end
-end
-
 function PreviewHandler.renderPreview(args, context)
-    return onePhoto("render_preview", args, thumbnails(context))
+    return onePhoto(preview, args, context)
 end
 
 function PreviewHandler.renderDuplicatePreview(args, context)
-    return onePhoto("render_duplicate_preview", args, thumbnails(context))
-end
-
-function PreviewHandler.renderPreviewInLibrary(args, context)
-    if not VARIANTS[args.action] then Reply.refuse("No preview is rendered for " .. tostring(args.action)) end
-    local catalog = LrApplication.activeCatalog()
-    local thumbnail = thumbnails(context)
-    return onePhoto(args.action, args, function(photo, size)
-        if not openInDevelop(photo) then return thumbnail(photo, size) end
-        return DevelopSession.run(context, catalog, true, function()
-            DevelopSession.openLibrary()
-            return thumbnail(photo, size)
-        end)
-    end)
+    return onePhoto(duplicatePreview, args, context)
 end
 
 return PreviewHandler

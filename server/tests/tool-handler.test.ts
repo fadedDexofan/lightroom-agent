@@ -334,7 +334,7 @@ describe('Develop call queue', () => {
     void handler(...develop(2));
     await settle();
     expect(pending.map((entry) => entry.action)).toEqual([
-      'reset_develop_adjustments', 'get_crop', 'render_detail_source', 'write_develop_settings',
+      'reset_develop_adjustments', 'get_crop', 'render_source', 'write_develop_settings',
     ]);
   });
 
@@ -350,7 +350,7 @@ describe('Develop call queue', () => {
         .resolve({ id: String(i), result: { data: { size: { width: 6000, height: 4000 } } } });
     }
     await settle();
-    expect(pending.map((entry) => entry.action).sort()).toEqual(['get_crop', 'get_crop', 'render_detail_source', 'render_detail_source']);
+    expect(pending.map((entry) => entry.action).sort()).toEqual(['get_crop', 'get_crop', 'render_source', 'render_source']);
   });
 
   it.each([

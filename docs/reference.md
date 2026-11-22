@@ -20,17 +20,17 @@ To change the ports, set both variables and enter the same values in the plug-in
 
 | Toolset | Contents |
 | --- | --- |
-| `core` | Catalog search, metadata (with GPS, location and private AI scores), keywords, collections, ratings, flags and labels, previews and detail crops, import, export, undo and removal from the catalog. Always on. |
+| `core` | Catalog search, metadata (with GPS, location and private AI scores), keywords, collections, ratings, flags and labels, previews, renders and detail crops, import, export, undo and removal from the catalog. Always on. |
 | `develop` | Develop settings, crop, presets, style match, snapshots, virtual copies, treatment, process version, Lens Blur, Denoise, Auto, reset, and editing or deleting existing spot removals. |
 | `masks` | Every mask tool: listing, geometry, AI masks, sliders, curves, Point Color, deletion. |
 | `all` | All of the above. |
 
 ## Read-only mode
 
-`LIGHTROOM_AGENT_READ_ONLY=true` hides every tool that writes and refuses calls to them before they reach Lightroom. A read still commits a slider change pending in Develop, as every call does.
+`LIGHTROOM_AGENT_READ_ONLY=true` hides every tool that writes and refuses calls to them before they reach Lightroom. A read still commits a slider change pending in Develop, as every call but the previews does.
 
 - Exports count as writes.
-- `get_photo_detail` counts as a write: its full-resolution render is an export, which leaves an Export step in the photo's history and marks the photo exported.
+- `get_photo_detail` and `render_photo` count as writes: their renders are exports, which leave an Export step in the photo's history and mark the photo exported.
 - Previews come from Lightroom's preview cache and stay available.
 
 ## Command line

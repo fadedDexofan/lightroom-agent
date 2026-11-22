@@ -900,7 +900,8 @@ describe("HandlerExport.exportPhotoMetadata", function()
     end)
 end)
 
-describe("HandlerExport.renderDetailSource", function()
+describe("HandlerExport.renderSource", function()
+    local DETAIL = { photo_id = 7, tool = "get_photo_detail" }
     local function detailSetup(opts)
         opts = opts or {}
         local files, deleted, sessions = {}, {}, {}
@@ -993,7 +994,7 @@ describe("HandlerExport.renderDetailSource", function()
     it("renders the photo at full size, quality 100, sRGB, unsharpened and unimported into its own temporary folder", function()
         local Handler, sessions = detailSetup()
 
-        local r = Handler.renderDetailSource({ photo_id = "/p/a.arw" })
+        local r = Handler.renderSource({ photo_id = "/p/a.arw", tool = "get_photo_detail" })
 
         local folder = sessions[1].exportSettings.LR_export_destinationPathPrefix
         assert.matches("^/tmp/lightroom%-agent%-detail/[^/]+$", folder)
@@ -1012,8 +1013,8 @@ describe("HandlerExport.renderDetailSource", function()
 
     it("renders each call into a folder of its own and leaves other calls' files alone", function()
         local Handler, sessions, files, deleted = detailSetup({ leftovers = { "other/b.jpg" } })
-        local first = Handler.renderDetailSource({ photo_id = 7 })
-        local second = Handler.renderDetailSource({ photo_id = 7 })
+        local first = Handler.renderSource(DETAIL)
+        local second = Handler.renderSource(DETAIL)
         assert.are_not.equal(sessions[1].exportSettings.LR_export_destinationPathPrefix,
             sessions[2].exportSettings.LR_export_destinationPathPrefix)
         assert.are_not.equal(first.path, second.path)
@@ -1027,7 +1028,7 @@ describe("HandlerExport.renderDetailSource", function()
         local Handler, sessions, files = detailSetup({ now = 1000, leftovers = {
             "700000-1/abandoned.jpg", "700001-2/recent.jpg", "other/b.jpg" } })
 
-        Handler.renderDetailSource({ photo_id = 7 })
+        Handler.renderSource(DETAIL)
 
         assert.is_nil(files[base .. "700000-1/abandoned.jpg"])
         assert.is_true(files[base .. "700001-2/recent.jpg"])
@@ -1040,18 +1041,21 @@ describe("HandlerExport.renderDetailSource", function()
         { name = "a refused render", opts = { renderMessage = "AI Updates Recommended: Cancel" },
             reason = "AI Updates Recommended: Cancel" },
     }) do
-        it("reports " .. case.name .. " as unknown, naming the export, and leaves no file behind", function()
-            local Handler, _, files = detailSetup(case.opts)
-            local r = Handler.renderDetailSource({ photo_id = 7 })
-            assert.is_nil(r.data)
-            assert.is_nil(r.failed)
-            assert.are.same({ {
-                photo_id = "7",
-                reason = case.reason .. "; written before this stopped: Export photo 7 (one Export history step and the"
-                    .. " exported mark)",
-            } }, r.unknown)
-            assert.are.same({}, files)
-        end)
+        for _, args in ipairs({ DETAIL, { photo_id = 7, long_edge = 1728, tool = "render_photo" } }) do
+            it("reports " .. case.name .. " of a " .. args.tool .. " render as unknown, naming the export, and leaves no"
+                .. " file behind", function()
+                local Handler, _, files = detailSetup(case.opts)
+                local r = Handler.renderSource(args)
+                assert.is_nil(r.data)
+                assert.is_nil(r.failed)
+                assert.are.same({ {
+                    photo_id = "7",
+                    reason = case.reason .. "; written before this stopped: Export photo 7 (one Export history step and the"
+                        .. " exported mark)",
+                } }, r.unknown)
+                assert.are.same({}, files)
+            end)
+        end
     end
 
     for _, case in ipairs({
@@ -1062,7 +1066,7 @@ describe("HandlerExport.renderDetailSource", function()
         it("reports an export session that could not start " .. case.name .. " as failed, naming nothing left on the"
             .. " photo, and removes the folders it created", function()
             local Handler, _, files, deleted = detailSetup(case.opts)
-            local r = Handler.renderDetailSource({ photo_id = 7 })
+            local r = Handler.renderSource(DETAIL)
             assert.is_nil(r.unknown)
             assert.are.same({ { photo_id = "7", reason = "session refused" } }, r.failed)
             assert.are.same({}, files)
@@ -1075,7 +1079,7 @@ describe("HandlerExport.renderDetailSource", function()
         .. " failed to start", function()
         local Handler = detailSetup({ sessionError = "session refused", deleteFails = true })
 
-        local r = Handler.renderDetailSource({ photo_id = 7 })
+        local r = Handler.renderSource(DETAIL)
 
         assert.is_nil(r.failed)
         assert.are.equal("7", r.unknown[1].photo_id)
@@ -1085,29 +1089,52 @@ describe("HandlerExport.renderDetailSource", function()
 
     it("answers an unknown photo with not_found", function()
         local Handler = detailSetup()
-        assert.are.same({ 404 }, Handler.renderDetailSource({ photo_id = 404 }).not_found)
+        assert.are.same({ 404 }, Handler.renderSource({ photo_id = 404, tool = "get_photo_detail" }).not_found)
     end)
 
-    it("shares the export lock with export_photos, naming the call that holds it", function()
-        local Handler = detailSetup()
-        local inner
-        local context = helper.requestContext(nil, { title = "an_internal_action", isCanceled = function()
-            inner = helper.failedOf(function() Handler.renderDetailSource({ photo_id = 7 }) end)
-            return false
-        end })
-        Handler.exportPhotos({ photo_ids = { "7" }, destination = "/tmp/lightroom-agent-detail" }, context)
-        assert.are.equal("export_photos is already running; wait for it to finish, then call again", inner)
-    end)
+    for _, args in ipairs({ DETAIL, { photo_id = 7, long_edge = 864, tool = "render_photo" } }) do
+        it("refuses a " .. args.tool .. " render while export_photos holds the lock, naming it and exporting nothing", function()
+            local Handler, sessions = detailSetup()
+            local inner
+            local context = helper.requestContext(nil, { title = "an_internal_action", isCanceled = function()
+                inner = helper.failedOf(function() Handler.renderSource(args) end)
+                return false
+            end })
+            Handler.exportPhotos({ photo_ids = { "7" }, destination = "/tmp/lightroom-agent-detail" }, context)
+            assert.are.equal("export_photos is already running; wait for it to finish, then call again", inner)
+            assert.are.equal(1, #sessions)
+        end)
+    end
 
-    it("names get_photo_detail, not its internal action, when a detail render holds the lock", function()
-        local Handler
-        local inner
-        Handler = detailSetup({ duringRender = function()
-            inner = helper.failedOf(function()
-                Handler.exportPhotos({ photo_ids = { "7" }, destination = "/tmp/out" }, helper.requestContext(nil, { title = "export_photos" }))
-            end)
-        end })
-        Handler.renderDetailSource({ photo_id = 7 }, helper.requestContext(nil, { title = "render_detail_source" }))
-        assert.are.equal("get_photo_detail is already running; wait for it to finish, then call again", inner)
+    for _, tool in ipairs({ "get_photo_detail", "render_photo" }) do
+        it("names " .. tool .. ", the tool the call gives, not its internal action, when its render holds the lock", function()
+            local Handler
+            local inner
+            Handler = detailSetup({ duringRender = function()
+                inner = helper.failedOf(function()
+                    Handler.exportPhotos({ photo_ids = { "7" }, destination = "/tmp/out" }, helper.requestContext(nil, { title = "export_photos" }))
+                end)
+            end })
+            Handler.renderSource({ photo_id = 7, long_edge = 864, tool = tool }, helper.requestContext(nil, { title = "render_source" }))
+            assert.are.equal(tool .. " is already running; wait for it to finish, then call again", inner)
+        end)
+    end
+
+    it("renders at the given long edge at quality 0.8, never enlarged and unsharpened, into a folder of its own", function()
+        local Handler, sessions = detailSetup()
+
+        local r = Handler.renderSource({ photo_id = "/p/a.arw", long_edge = 864, tool = "render_photo" })
+
+        local s = sessions[1].exportSettings
+        local folder = s.LR_export_destinationPathPrefix
+        assert.matches("^/tmp/lightroom%-agent%-detail/[^/]+$", folder)
+        assert.are.same({ "JPEG", 0.8, "sRGB", true, "longEdge", "pixels", 864, 864, true, false, false },
+            { s.LR_format, s.LR_jpeg_quality, s.LR_export_colorSpace, s.LR_size_doConstrain, s.LR_size_resizeType,
+                s.LR_size_units, s.LR_size_maxWidth, s.LR_size_maxHeight, s.LR_size_doNotEnlarge, s.LR_outputSharpeningOn,
+                s.LR_reimportExportedPhoto })
+        assert.are.same({
+            photo_id = "7", path = folder .. "/a.jpg",
+            source = "export", left_on_photo = { "one Export history step", "the exported mark" },
+        }, r)
     end)
 end)

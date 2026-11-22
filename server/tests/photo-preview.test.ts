@@ -34,7 +34,8 @@ function rendered(image: string, photoId: number | string = 914): PluginResponse
   return { id: 'preview', result: { data: { photo_id: photoId, image: { mime_type: 'image/jpeg', data: image } } } };
 }
 
-const OPEN_IN_DEVELOP_REASON = (id: number | string) => `Lightroom renders no preview of photo ${id} while it is the photo open in Develop`;
+const OPEN_IN_DEVELOP_REASON = (id: number | string) => `This tool takes no thumbnail of photo ${id} while it is the photo open in Develop: Lightroom's thumbnail there can be stale or an enlarged low-resolution copy`;
+const WAY_OUT = ' Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode).';
 function blockedInDevelop(id: number | string): PluginResponse {
   return { id: 'preview', result: { failed: [{ photo_id: String(id), reason: OPEN_IN_DEVELOP_REASON(id), cause: 'active_in_develop' } as never] } };
 }
@@ -97,48 +98,12 @@ describe('get_photo_preview', () => {
     ]);
   });
 
-  it('renders the photo open in Develop through Library with the time left, keeping the cause to itself', async () => {
-    const source = halves(32, 16);
-    const call = jest.fn(async (action: string, _args: unknown, _timeout?: number, _options?: unknown): Promise<PluginResponse> =>
-      (action === 'render_preview' ? blockedInDevelop(914) : rendered(source)));
-    const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
-    const result = await handler('get_photo_preview', { photo_id: 914, size: 1024 });
-    expect(call.mock.calls.map(([action, params]) => [action, params])).toEqual([
-      ['render_preview', { photo_ids: [914], size: 1024 }],
-      ['render_preview_in_library', { action: 'render_preview', photo_ids: [914], size: 1024 }],
-    ]);
-    expect(call.mock.calls[1][2]).toBeLessThanOrEqual(30_000);
-    expect(returnedImage(result).encoded.toString('base64')).toBe(source);
-  });
-
-  it('gives the render through Library the time the call has left', async () => {
-    jest.useFakeTimers();
-    try {
-      const call = jest.fn(async (action: string, _args: unknown, _timeout?: number, _options?: unknown): Promise<PluginResponse> => {
-        if (action !== 'render_preview') return rendered(halves(32, 16));
-        jest.advanceTimersByTime(4_000);
-        return blockedInDevelop(914);
-      });
-      await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })('get_photo_preview', { photo_id: 914 });
-      expect(call.mock.calls.map(([action, , timeout]) => [action, timeout])).toEqual(
-        [['render_preview', 30_000], ['render_preview_in_library', 26_000]]);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it.each<[string, (action: string) => PluginResponse]>([
-    ['answers failed', (action) => (action === 'render_preview' ? blockedInDevelop(914)
-      : { id: 'p', result: { failed: [{ photo_id: '914', reason: 'Library module did not open' }] } })],
-    ['times out', (action) => {
-      if (action === 'render_preview') return blockedInDevelop(914);
-      throw new Error('Plugin request timed out after 29000 ms');
-    }],
-  ])('answers the photo open in Develop as failed when its render through Library %s', async (_what, answer) => {
-    const call = jest.fn(async (action: string) => answer(action));
-    const envelope = envelopeOf(await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })('get_photo_preview', { photo_id: 914 }));
+  it('answers the photo open in Develop as failed with the way out, sending nothing more', async () => {
+    const { handler, call } = makeHandler(blockedInDevelop(914));
+    const envelope = envelopeOf(await handler('get_photo_preview', { photo_id: 914 }));
     expect(envelope.outcome).toBe('failed');
-    expect(envelope.failed).toEqual([{ photo_id: '914', reason: expect.stringMatching(/Library module did not open|timed out/) }]);
+    expect(envelope.failed).toEqual([{ photo_id: '914', reason: `${OPEN_IN_DEVELOP_REASON(914)}.${WAY_OUT}` }]);
+    expect(call).toHaveBeenCalledTimes(1);
   });
 
   it('answers an image Lightroom could not render as failed for that photo', async () => {
@@ -391,46 +356,13 @@ describe('get_photo_previews', () => {
     expect(call).toHaveBeenCalledTimes(3);
   });
 
-  it('renders the others first, then the photo open in Develop through Library, and answers in request order', async () => {
-    const call = jest.fn(async (action: string, params: unknown, _timeout?: number, _options?: unknown): Promise<PluginResponse> => {
-      const id = (params as { photo_ids: number[] }).photo_ids[0];
-      return action === 'render_preview' && id === 7 ? blockedInDevelop(7) : rendered(halves(32, 16), id);
-    });
-    const envelope = envelopeOf(await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })(
-      'get_photo_previews', { photo_ids: [7, 1, 2] }));
-    expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(['7', '1', '2']);
-    expect(envelope.failed).toBeUndefined();
-    expect(call.mock.calls.map(([action, params]) => [action, params])).toEqual([
-      ['render_preview', { photo_ids: [7], size: 256 }], ['render_preview', { photo_ids: [1], size: 256 }],
-      ['render_preview', { photo_ids: [2], size: 256 }],
-      ['render_preview_in_library', { action: 'render_preview', photo_ids: [7], size: 256 }],
-    ]);
-  });
-
-  it('leaves the photo open in Develop remaining when no time is left for its render through Library', async () => {
-    jest.useFakeTimers();
-    try {
-      const { handler, call } = batch((id) => {
-        if (id === 7) return blockedInDevelop(7);
-        jest.advanceTimersByTime(20_001);
-        return rendered(halves(32, 16), id as number);
-      });
-      const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [7, 1] }));
-      expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(['1']);
-      expect(envelope.remaining).toEqual([7]);
-      expect(call).toHaveBeenCalledTimes(2);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('keeps the photo open in Develop remaining, in input order, when the byte budget stops the batch before its turn', async () => {
+  it('answers the photo open in Develop failed in input order and leaves remaining only what the byte budget stopped', async () => {
     const source = noise(1000, 800);
     const { handler } = batch((id) => (id === 7 ? blockedInDevelop(7) : rendered(source, id as number)));
     const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [1, 7, 2, 3, 4], size: 2048 }));
     expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(['1', '2']);
-    expect(envelope.remaining).toEqual([7, 3, 4]);
-    expect(envelope.failed).toBeUndefined();
+    expect(envelope.failed).toEqual([{ photo_id: '7', reason: `${OPEN_IN_DEVELOP_REASON(7)}.${WAY_OUT}` }]);
+    expect(envelope.remaining).toEqual([3, 4]);
   });
 
   it('keeps the previews made when the plug-in call itself fails, leaving that photo and the rest remaining', async () => {
@@ -466,6 +398,23 @@ describe('the batch preview tools', () => {
         jest.useRealTimers();
       }
     });
+
+  it.each([
+    ['get_photo_previews', 'render_preview'],
+    ['get_photo_stats', 'render_preview'],
+    ['find_duplicate_groups', 'render_duplicate_preview'],
+  ])('%s answers the photo open in Develop failed with the way out, in input order, and asks for nothing more', async (name, action) => {
+    const call = jest.fn(async (_action: string, params: unknown): Promise<PluginResponse> => {
+      const id = (params as { photo_ids: number[] }).photo_ids[0];
+      return id === 7 ? blockedInDevelop(7) : rendered(halves(32, 16), id);
+    });
+    const envelope = envelopeOf(await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })(name, { photo_ids: [1, 7, 2] }));
+    expect(envelope.failed).toEqual([{ photo_id: '7', reason: `${OPEN_IN_DEVELOP_REASON(7)}.${WAY_OUT}` }]);
+    expect(envelope.unknown).toBeUndefined();
+    expect(envelope.remaining).toBeUndefined();
+    expect(call.mock.calls.map(([sent, params]) => [sent, (params as { photo_ids: number[] }).photo_ids[0]]))
+      .toEqual([[action, 1], [action, 7], [action, 2]]);
+  });
 });
 
 describe('area-weighted downsample', () => {

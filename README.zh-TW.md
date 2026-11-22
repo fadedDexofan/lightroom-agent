@@ -97,7 +97,7 @@ Codex、Claude Desktop 與其他用戶端的安裝方式請見[安裝](#installa
 - **Lightroom（雲端應用程式）或 15.0 之前的 Lightroom Classic。** 只有 Lightroom Classic 15.0 以上能執行這個增效模組。
 - **需要已在 Windows 版 Lightroom 實測過的工具。** 伺服器能在 Windows 上建置並通過 CI，但還沒有人在 Windows 上搭配 Lightroom 實際執行過這個伺服器。
 - **需要建立遮色片，但手邊沒有 Mac。** 認證必須執行實機測試套件，這套測試需要 macOS。
-- **必須保持不變的編目。** 這些工具會寫入目前開啟的編目，所以連線前請先在 Lightroom 中開啟這個編目的副本。`LIGHTROOM_AGENT_READ_ONLY=true` 會關閉寫入工具，適合單純瀏覽；但包括讀取在內的每次呼叫，都會提交你在「編輯相片」中尚未完成的滑桿調整。
+- **必須保持不變的編目。** 這些工具會寫入目前開啟的編目，所以連線前請先在 Lightroom 中開啟這個編目的副本。`LIGHTROOM_AGENT_READ_ONLY=true` 會關閉寫入工具，適合單純瀏覽；但除了預覽之外，包括讀取在內的每次呼叫，都會提交你在「編輯相片」中尚未完成的滑桿調整。
 
 <a id="installation"></a>
 

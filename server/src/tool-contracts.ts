@@ -9,8 +9,9 @@ import { setCrop } from "./crop.js";
 import { describeDevelopKeys } from "./describe-develop-keys.js";
 import { setDevelopSettings } from "./develop-write.js";
 import { getPhotoPreviews, renderPreview } from "./photo-preview.js";
+import { RENDITION_JPEG_QUALITY, renderPhoto } from "./photo-render.js";
 import { previewStartLimitMs } from "./preview-item.js";
-import { previewSizeSchema } from "./preview-sizes.js";
+import { MAX_IMAGE_BYTES, previewSizeSchema } from "./preview-sizes.js";
 import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
 import type { PluginReply } from "./tool-result.js";
 import {
@@ -516,8 +517,7 @@ const fitsFrame = (region: { x: number; y: number; width: number; height: number
 export const PLUGIN_ACTIONS: readonly PluginAction[] = [
   { name: "render_preview", plugin: "HandlerPreview.renderPreview" },
   { name: "render_duplicate_preview", plugin: "HandlerPreview.renderDuplicatePreview" },
-  { name: "render_preview_in_library", plugin: "HandlerPreview.renderPreviewInLibrary", develop: "drives" },
-  { name: "render_detail_source", plugin: "HandlerExport.renderDetailSource" },
+  { name: "render_source", plugin: "HandlerExport.renderSource" },
   { name: "write_develop_settings", plugin: "HandlerDevelop.setDevelopSettings", develop: "settings" },
   { name: "plan_crop", plugin: "HandlerCrop.plan", develop: "reads" },
   { name: "read_develop_ranges", plugin: "HandlerDevelopKeys.ranges", develop: "drives" },
@@ -540,7 +540,7 @@ const pagingProperties = (items: string) => ({
   offset: { type: "integer", minimum: 0, description: `Number of ${items} to skip (default 0)` },
 });
 
-const OPEN_IN_DEVELOP_RENDER = (when: string) => `Lightroom renders no preview of the photo open in Develop, so that photo is rendered ${when}from Library once running Develop operations finish: Lightroom switches to Library for about a second and back, restoring module, active photo, selection and source but not an open masking panel or the Develop tool.`;
+const NO_THUMBNAIL_IN_DEVELOP = "The photo open in Develop gets no thumbnail, since Lightroom's thumbnail there can be stale or an enlarged low-resolution copy: it fails at once, naming render_photo.";
 const PREVIEW_CACHE_ENLARGES = "Lightroom's preview cache can answer with an enlargement of a smaller cached preview, most often on a cropped photo, without saying so; judge fine sharpness with get_photo_detail.";
 const PREVIEW_START_LIMIT = `${previewStartLimitMs(TIMEOUT_MS_BY_DURATION.quick) / 1000} s`;
 
@@ -628,7 +628,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { server: serverTool(renderPreview) },
     description:
-      `Lightroom-rendered JPEG with Develop edits (raw supported). region crops the rendered frame after develop crop/rotation: normalized x/y/width/height, origin top-left, x right, y down. width/height/bytes are actual; requested_size is the edge asked of Lightroom; scaled_by_server is true when the server scaled Lightroom's larger image down. Lightroom sometimes answers that it has no preview pixels for a photo, typically right after a change; the call asks again for about ${previewStartLimitMs(TIMEOUT_MS_BY_DURATION.quick) / 1000} s and, if it still has none, fails with that reason: ask again later. ${OPEN_IN_DEVELOP_RENDER("")} ${PREVIEW_CACHE_ENLARGES} See size for cost/edge rules.`,
+      `Lightroom-rendered JPEG with Develop edits (raw supported). region crops the rendered frame after develop crop/rotation: normalized x/y/width/height, origin top-left, x right, y down. width/height/bytes are actual; requested_size is the edge asked of Lightroom; scaled_by_server is true when the server scaled Lightroom's larger image down. Lightroom sometimes answers that it has no preview pixels for a photo, typically right after a change; the call asks again for about ${previewStartLimitMs(TIMEOUT_MS_BY_DURATION.quick) / 1000} s and, if it still has none, fails with that reason: ask again later. ${NO_THUMBNAIL_IN_DEVELOP} ${PREVIEW_CACHE_ENLARGES} See size for cost/edge rules.`,
     rules: [{
       text: "region must fit within the rendered frame (x + width and y + height at most 1)",
       holds: (args) => {
@@ -661,7 +661,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     duration: "long",
     run: { server: serverTool(getPhotoDetail) },
     description:
-      "Cut 1-4 regions from a full-resolution render of a photo with its current Develop settings, one rendered pixel per returned pixel, to judge sharpness of a detail such as the nearest eye. The render is a temporary export (JPEG quality 100, sRGB, output sharpening off, no catalog add), deleted before the call returns (one left by a timed-out or cancelled call, by a later detail call); it takes seconds, and a render that starts while another export or detail render runs is refused, not queued. Its first step reads the cropped frame and waits for the Develop calls before it, as every read of a photo's develop state does; the render runs alongside them. Each call adds one Export history step to the photo and marks it exported, so summarize_develop_settings' exported_only counts it; Develop settings and pixels stay unchanged, and no cached preview, selection or module changes. Returns photo_id, crop_jpeg_quality (95), per region its pixel box in the render and the image (JPEG 95), plus render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}: source says how the render was made, a string (\"export\" today); left_on_photo says what the render left on the photo, a list of phrases (\"one Export history step\", \"the exported mark\"). A region larger than max_edge, measured against the cropped frame get_crop reports, is refused before the render with the largest normalized size this photo allows; nothing is scaled. A call refused before the render (unknown photo, the cropped frame not read, region over max_edge, export running) is failed with nothing left; an error once the render started is unknown and names the export and what it leaves on the photo.",
+      "Cut 1-4 regions from a full-resolution render of a photo with its current Develop settings, one rendered pixel per returned pixel, to judge sharpness of a detail such as the nearest eye. The render is a temporary export (JPEG quality 100, sRGB, output sharpening off, no catalog add), deleted before the call returns (one left by a timed-out or cancelled call, by a later detail call); it takes seconds, and a render that starts while another export or detail render runs is refused, not queued. Its first step reads the cropped frame and waits for the Develop calls before it, as every read of a photo's develop state does; the render runs alongside them. Each call adds one Export history step to the photo and marks it exported, so summarize_develop_settings' exported_only counts it; Develop settings and pixels stay unchanged unless Lightroom's AI Updates Recommended dialog is answered with \"Update affected photos\" checked, which first updates the AI masks, and no cached preview, selection or module changes. Returns photo_id, crop_jpeg_quality (95), per region its pixel box in the render and the image (JPEG 95), plus render {width, height, jpeg_quality, color_space, output_sharpening, source, left_on_photo}: source says how the render was made, a string (\"export\" today); left_on_photo says what the render left on the photo, a list of phrases (\"one Export history step\", \"the exported mark\"). A region larger than max_edge, measured against the cropped frame get_crop reports, is refused before the render with the largest normalized size this photo allows; nothing is scaled. A call refused before the render (unknown photo, the cropped frame not read, region over max_edge, export running) is failed with nothing left; an error once the render started is unknown and names the export and what it leaves on the photo.",
     rules: [{
       text: "every region must fit within the rendered frame (x + width and y + height at most 1)",
       holds: (args) => (args.regions as { x: number; y: number; width: number; height: number }[]).every(fitsFrame),
@@ -689,13 +689,31 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "render_photo",
+    toolset: "core",
+    title: "Render photo",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    run: { server: serverTool(renderPhoto) },
+    description:
+      `Render one photo's whole frame, after crop and rotation, with its current Develop settings by a temporary export (JPEG quality ${RENDITION_JPEG_QUALITY}, sRGB, output sharpening off, no catalog add) at the requested long edge, never enlarged; any photo, the one open in Develop included, whose thumbnail the preview tools refuse. Returns photo_id, width, height, bytes, jpeg_quality, left_on_photo and the image, which is Lightroom's JPEG unchanged: a rendition over ${MAX_IMAGE_BYTES / 1024 / 1024} MiB is not re-encoded but answered unknown, so ask for a smaller size. Each call adds one Export history step to the photo and marks it exported (left_on_photo: "one Export history step", "the exported mark"); Develop settings and pixels stay unchanged unless the AI Updates dialog updates the masks (below). Call it once per edit, not on every check. Like other writes it first commits a slider change pending in Develop, then renders the saved settings the export reads: a slider still moving or an AI update still pending may be missing. It runs alongside Develop calls. While this plug-in's export_photos, get_photo_detail or another render_photo runs, it is refused, not queued, with nothing written; an export started from Lightroom's own menu does not take that lock, and the lock lapses 300 s after the running export last started a photo, though a still-open export session or dialog can make the next rendition wait or time out. A photo with outdated AI masks opens Lightroom's AI Updates Recommended dialog, which blocks the call until dismissed: Export with "Update affected photos" unchecked renders the existing AI computation; checked, it first updates the AI masks, which can visibly change the photo; Cancel stops before rendering, so no Export step is created, but the call is unknown and names the possible trace; a timeout while the dialog is open is unknown. A call refused before the render (unknown photo, export running) is failed with nothing left; an error once the render started is unknown and names the export and what it leaves on the photo.`,
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        size: previewSizeSchema("Long edge of the rendition: cull is 864, review 1728, the default; numeric 64-2048 means that edge. A photo whose cropped frame is smaller is rendered at its own size. Image tokens grow with pixel area (Claude: about width x height / 750) and repeat each turn in history."),
+      },
+      required: ["photo_id"],
+    },
+  },
+  {
     name: "get_photo_previews",
     toolset: "core",
     title: "Get batch photo previews",
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { server: serverTool(getPhotoPreviews) },
     description:
-      `Get JPEG thumbnails for 1–20 photos in input order for culling. Each preview names its photo_id and 1-based image_index, with width, height, bytes and scaled_by_server as in get_photo_preview; a photo that cannot be rendered is failed, the others still arrive; a photo Lightroom answers it has no preview pixels for is asked again within the time, which can leave the photos after it remaining. ${OPEN_IN_DEVELOP_RENDER("after the others, ")} Total budget 8 MiB. Photos not reached by ${PREVIEW_START_LIMIT} or beyond the budget are remaining; resend them. ${PREVIEW_CACHE_ENLARGES} Catalog unchanged.`,
+      `Get JPEG thumbnails for 1–20 photos in input order for culling. Each preview names its photo_id and 1-based image_index, with width, height, bytes and scaled_by_server as in get_photo_preview; a photo that cannot be rendered is failed, the others still arrive; a photo Lightroom answers it has no preview pixels for is asked again within the time, which can leave the photos after it remaining. Total budget 8 MiB. Photos not reached by ${PREVIEW_START_LIMIT} or beyond the budget are remaining; resend them. ${NO_THUMBNAIL_IN_DEVELOP} ${PREVIEW_CACHE_ENLARGES} Catalog unchanged.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -716,7 +734,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { server: serverTool(findDuplicateGroups) },
     description:
-      `Group near-duplicates/bursts from up to 100 IDs/paths using 64-bit dHash of current JPEG previews (minimum edge 64) and raw capture time. Every pair must meet inclusive time_window_seconds (default 5) and max_hamming_distance (default 10). Input-order groups omit singletons and repeated photos. Similarity does not rank frames. photos gives raw capture_time in Lightroom seconds (second precision, no timezone normalization). No hash cache or catalog changes. At ${PREVIEW_START_LIMIT} returns the groups so far and the unreached inputs as remaining; preview and missing-time failures are failed with reasons. ${OPEN_IN_DEVELOP_RENDER("after the others, ")} Resend remaining together with the originals to grow groups.`,
+      `Group near-duplicates/bursts from up to 100 IDs/paths using 64-bit dHash of current JPEG previews (minimum edge 64) and raw capture time. Every pair must meet inclusive time_window_seconds (default 5) and max_hamming_distance (default 10). Input-order groups omit singletons and repeated photos. Similarity does not rank frames. photos gives raw capture_time in Lightroom seconds (second precision, no timezone normalization). No hash cache or catalog changes. At ${PREVIEW_START_LIMIT} returns the groups so far and the unreached inputs as remaining; preview and missing-time failures are failed with reasons. ${NO_THUMBNAIL_IN_DEVELOP} Resend remaining together with the originals to grow groups.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -735,7 +753,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { server: serverTool(getPhotoStats) },
     description:
-      `Measure current rendered JPEG previews for up to 20 photos; results by photo_id, failures as failed, photos not started within ${PREVIEW_START_LIMIT} as remaining. histogram: 64 normalized Rec.709 luma bins (0-255, four levels/bin); mean_luminance same scale; shadow_fraction <=1, highlight_fraction >=254. sharpness: four-neighbor Laplacian variance after area resampling to 512px long edge (enlarges small previews); higher=sharper. These measure JPEG previews, not raw clipping/full-resolution focus. ${OPEN_IN_DEVELOP_RENDER("after the others, ")} Catalog unchanged.`,
+      `Measure current rendered JPEG previews for up to 20 photos; results by photo_id, failures as failed, photos not started within ${PREVIEW_START_LIMIT} as remaining. histogram: 64 normalized Rec.709 luma bins (0-255, four levels/bin); mean_luminance same scale; shadow_fraction <=1, highlight_fraction >=254. sharpness: four-neighbor Laplacian variance after area resampling to 512px long edge (enlarges small previews); higher=sharper. These measure JPEG previews, not raw clipping/full-resolution focus. ${NO_THUMBNAIL_IN_DEVELOP} Catalog unchanged.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,

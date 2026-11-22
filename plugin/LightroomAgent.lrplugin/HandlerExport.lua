@@ -428,34 +428,51 @@ local function detailSettings(directory)
     }
 end
 
-local function renderFullResolution(context, photo, run)
-    local directory = newDetailDirectory()
-    local beforeFolder = context.ledger:mark()
-    local created = CatalogWrite.createFolder(context, directory) or directory
-    local afterFolder = context.ledger:mark()
-    run.lastPhotoAt = LrDate.currentTime()
-    local plan = { exportSettings = detailSettings(directory), collisionHandling = 'overwrite' }
-    local rendered, outcome = LrTasks.pcall(exportOne, context, plan, photo, 1, 1)
-    if rendered and #outcome.files == 1 and #outcome.failures == 0 then
-        return { path = outcome.files[1].path, source = "export", left_on_photo = EXPORT_LEAVES }
-    end
-    if LrFileUtils.exists(directory) == "directory" then removeDirectory(directory) end
-    if created ~= directory and LrFileUtils.exists(created) == "directory" then LrFileUtils.delete(created) end
-    if not LrFileUtils.exists(created) then context.ledger:undone(beforeFolder, afterFolder) end
-    local problem = not rendered and outcome or outcome.failures[1] or "Lightroom rendered no file"
-    local class, reason = Reply.stopped(problem, context.ledger:since(beforeFolder))
-    return nil, reason, class
+local function renditionSettings(directory, edge)
+    local settings = detailSettings(directory)
+    settings.LR_jpeg_quality = Contract.RENDITION_JPEG_QUALITY / 100
+    settings.LR_size_doConstrain = true
+    settings.LR_size_resizeType = 'longEdge'
+    settings.LR_size_units = 'pixels'
+    settings.LR_size_maxWidth = edge
+    settings.LR_size_maxHeight = edge
+    settings.LR_size_doNotEnlarge = true
+    return settings
 end
 
-function ExportHandler.renderDetailSource(args, context)
-    return withExportLock("get_photo_detail", function(run)
+local function discardRender(context, render)
+    if LrFileUtils.exists(render.directory) == "directory" then removeDirectory(render.directory) end
+    if render.created ~= render.directory and LrFileUtils.exists(render.created) == "directory" then
+        LrFileUtils.delete(render.created)
+    end
+    if not LrFileUtils.exists(render.created) then context.ledger:undone(render.beforeFolder, render.afterFolder) end
+end
+
+local function renderToFile(context, photo, run, settingsOf)
+    local render = { directory = newDetailDirectory(), beforeFolder = context.ledger:mark() }
+    render.created = CatalogWrite.createFolder(context, render.directory) or render.directory
+    render.afterFolder = context.ledger:mark()
+    run.lastPhotoAt = LrDate.currentTime()
+    local plan = { exportSettings = settingsOf(render.directory), collisionHandling = 'overwrite' }
+    local rendered, outcome = LrTasks.pcall(exportOne, context, plan, photo, 1, 1)
+    if rendered and #outcome.files == 1 and #outcome.failures == 0 then return outcome.files[1].path end
+    discardRender(context, render)
+    return nil, not rendered and outcome or outcome.failures[1] or "Lightroom rendered no file", render.beforeFolder
+end
+
+function ExportHandler.renderSource(args, context)
+    return withExportLock(args.tool, function(run)
         local photo = PhotoLookup.resolveOne(LrApplication.activeCatalog(), args.photo_id)
         if not photo then return Reply.parts({ not_found = { args.photo_id } }) end
         local photoId = tostring(photo.localIdentifier)
-        local render, problem, outcome = renderFullResolution(context, photo, run)
-        if not render then return Reply.parts({ [outcome] = { { photo_id = photoId, reason = problem } } }) end
-        render.photo_id = photoId
-        return render
+        local settingsOf = detailSettings
+        if args.long_edge then settingsOf = function(directory) return renditionSettings(directory, args.long_edge) end end
+        local path, problem, mark = renderToFile(context, photo, run, settingsOf)
+        if not path then
+            local class, reason = Reply.stopped(problem, context.ledger:since(mark))
+            return Reply.parts({ [class] = { { photo_id = photoId, reason = reason } } })
+        end
+        return { photo_id = photoId, path = path, source = "export", left_on_photo = EXPORT_LEAVES }
     end)
 end
 

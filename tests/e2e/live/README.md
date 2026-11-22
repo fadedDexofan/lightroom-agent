@@ -247,7 +247,7 @@ Positions are always in the frame of the rendered preview, after crop, straighte
 
 - Lightroom starts the plug-in only when its window first comes to the front; after a relaunch behind another app, no server starts. `setup-catalog.mjs` and `ensureLightroomFrontmost()` bring it forward.
 - After a launch, the "Enable address lookup?" dialog blocks the window; run `dismissBlockingModals()`.
-- A preview of the photo open in Develop renders through a Library round trip: Lightroom shows Library for about a second and returns to Develop with the photo, selection and source restored, but with the masking panel and the Develop tool closed. A check that depends on Develop's panel or tool state takes its previews before opening them; pixel checks go through `measureChange`.
+- The preview tools take no thumbnail of the photo open in Develop: they fail at once, naming `render_photo`, which renders it by an export and adds an Export history step to the photo. Take preview checks of an edited photo in Library, or call `render_photo` knowing its trace; pixel checks go through `measureChange`.
 - A photo's develop row in the catalog lags until another photo is opened, and the Develop panel can show a change Lightroom never saves: verify through history or `readFlushedSettings`.
 - Develop zoom changes between photos; use View → Toggle Zoom View for Fit before pixel work.
 - Reload Plug-in does not load an added `.lua` file; restart Lightroom. When `mise run plugin:reload` cannot close Plug-in Manager, its window blocks clicks: `closePluginManager()`.

@@ -93,7 +93,7 @@ The decisions behind the first three rows are in [docs/adr](docs/adr/). A [live 
 - **Lightroom (the cloud app) or Lightroom Classic before 15.0.** Only Lightroom Classic 15.0 or later runs the plug-in.
 - **Windows, if you need it proven.** The server builds and passes CI on Windows, but nobody has run it against Lightroom there.
 - **Building masks without a Mac.** Certification runs the live kit, which needs macOS.
-- **A catalog that must stay unchanged.** The tools write to the open catalog, so open a copy of it in Lightroom before connecting. `LIGHTROOM_AGENT_READ_ONLY=true` turns off the write tools for browsing, but every call, reads included, commits a slider change you left pending in Develop.
+- **A catalog that must stay unchanged.** The tools write to the open catalog, so open a copy of it in Lightroom before connecting. `LIGHTROOM_AGENT_READ_ONLY=true` turns off the write tools for browsing, but every call, reads included and previews excepted, commits a slider change you left pending in Develop.
 
 ## Installation
 

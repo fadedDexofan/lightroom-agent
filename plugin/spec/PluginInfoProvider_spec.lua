@@ -374,15 +374,21 @@ describe("PluginInfoProvider server task", function()
         end)
     end)
 
-    it("commits Develop's pending edit before the handler of every action but ping", function()
+    it("commits Develop's pending edit before the handler of every action but ping and the thumbnail reads", function()
         local events = {}
         local binds, _, state = serving({ develop = events })
-        package.loaded.HandlerSearch = { searchPhotos = function() events[#events + 1] = "handler" return {} end }
+        package.loaded.HandlerSearch = { searchPhotos = function() events[#events + 1] = "search" return {} end }
+        package.loaded.HandlerPreview = {
+            renderPreview = function() events[#events + 1] = "preview" return {} end,
+            renderDuplicatePreview = function() events[#events + 1] = "duplicate preview" return {} end,
+        }
 
-        binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"s1","action":"search_photos"}')
-        binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p1","action":"ping"}')
+        for _, action in ipairs({ "search_photos", "ping", "render_preview", "render_duplicate_preview" }) do
+            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"' .. action .. '","action":"'
+                .. action .. '"}')
+        end
 
-        assert.are.same({ "commit true", "handler" }, events)
+        assert.are.same({ "commit true", "search", "preview", "duplicate preview" }, events)
     end)
 
     describe("progress", function()
