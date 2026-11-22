@@ -76,11 +76,11 @@ jobs:
         run: npm ci
 
       - name: Type check
-        if: needs.changes.outputs.code != 'false'
+        if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         run: npm run check
 
       - name: Lint
-        if: needs.changes.outputs.code != 'false'
+        if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         run: npm run lint
 
       - name: Build
@@ -110,10 +110,15 @@ jobs:
         working-directory: .
         run: for f in tests/e2e/live/*.mjs tests/e2e/live/lib/*.mjs; do node --check "$f"; done
 
-      - name: Test
-        if: needs.changes.outputs.code != 'false'
+      - name: Test with coverage
+        if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         timeout-minutes: 5
         run: npm run test:coverage -- --ci --reporters=default
+
+      - name: Test
+        if: needs.changes.outputs.code != 'false' && matrix.os != 'ubuntu-latest'
+        timeout-minutes: 5
+        run: npm test -- --ci
 
       - name: Live kit tests
         if: needs.changes.outputs.code != 'false' && matrix.os != 'windows-latest'
