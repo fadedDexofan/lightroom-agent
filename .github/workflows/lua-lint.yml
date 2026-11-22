@@ -26,10 +26,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libreadline-dev
 
-      - name: Set up mise with the Lua Lightroom runs and selene
+      - name: Set up mise with the Lua Lightroom runs, selene and StyLua
         uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
-          install_args: lua aqua:Kampfkarren/selene
+          install_args: lua aqua:Kampfkarren/selene aqua:JohnnyMorganz/StyLua
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore the Lua rocks
@@ -38,7 +38,7 @@ jobs:
           path: lua_modules
           key: lua-modules-${{ runner.os }}-${{ env.ImageOS }}-${{ hashFiles('.mise.toml') }}
 
-      - name: Run selene and luacheck
+      - name: Run selene, luacheck and StyLua
         env:
           MISE_AUTO_INSTALL: "false"
         run: mise run lua:lint

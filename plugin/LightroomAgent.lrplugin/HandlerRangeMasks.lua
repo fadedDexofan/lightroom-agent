@@ -1,15 +1,14 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local PhotoLookup = require 'PhotoLookup'
-local GuardedMaskWrite = require 'GuardedMaskWrite'
-local ImageFrame = require 'ImageFrame'
-local Log = require 'Log'
-local MaskValues = require 'MaskValues'
-local RangeMaskGeometry = require 'RangeMaskGeometry'
-local Reply = require 'Reply'
+local PhotoLookup = require "PhotoLookup"
+local GuardedMaskWrite = require "GuardedMaskWrite"
+local ImageFrame = require "ImageFrame"
+local Log = require "Log"
+local MaskValues = require "MaskValues"
+local RangeMaskGeometry = require "RangeMaskGeometry"
+local Reply = require "Reply"
 
 local RangeMaskHandler = {}
-
 
 local NO_DEPTH_MAP_PROBLEM = "Lightroom found no depth map on this photo, so a depth range would select nothing;"
     .. " depth range needs device depth such as an iPhone Portrait HEIC"
@@ -28,9 +27,7 @@ local function addRangeComponent(entries, request)
         return { entry = #entries, component = 1 }
     end
     local index, entry = GuardedMaskWrite.findCorrection(entries, request.maskId)
-    if not index then
-        Reply.refuse("Mask not found on this photo: " .. request.maskId)
-    end
+    if not index then Reply.refuse("Mask not found on this photo: " .. request.maskId) end
     entry.CorrectionMasks[#entry.CorrectionMasks + 1] = component
     return { entry = index, component = #entry.CorrectionMasks }
 end
@@ -43,7 +40,9 @@ local function sourceComponent(entries, copy, label)
     for _, component in ipairs(entry.CorrectionMasks or {}) do
         if component.MaskID ~= nil and tostring(component.MaskID) == copy.toolId then return component end
     end
-    Reply.refuse(string.format("copy_sample_from: tool %s is not in mask %s on photo %s", copy.toolId, copy.maskId, label))
+    Reply.refuse(
+        string.format("copy_sample_from: tool %s is not in mask %s on photo %s", copy.toolId, copy.maskId, label)
+    )
 end
 
 local function resolveCopiedSample(catalog, photo, photoId, request, context)
@@ -56,9 +55,7 @@ local function resolveCopiedSample(catalog, photo, photoId, request, context)
     local component = sourceComponent(GuardedMaskWrite.readEntries(catalog, sourcePhoto), copy, sourcePhotoId)
     local sourceFrame = ImageFrame.forPhoto(catalog, sourcePhoto)
     local range, problem = RangeMaskGeometry.copiableColorRange(component, sourceFrame)
-    if not range then
-        Reply.refuse(string.format("copy_sample_from: tool %s %s", copy.toolId, problem))
-    end
+    if not range then Reply.refuse(string.format("copy_sample_from: tool %s %s", copy.toolId, problem)) end
     if sourceFrame.warning and sourcePhotoId ~= photoId then
         context:warn("On the source photo " .. sourcePhotoId .. ": " .. sourceFrame.warning)
     end
@@ -116,11 +113,20 @@ function RangeMaskHandler.createRangeMask(args, context)
     result.new_mask = request.maskId == nil
     if copiedFrom ~= nil then
         result.copied_from = {
-            photo_id = copiedFrom, mask_id = displayedRequest.copy.maskId, tool_id = displayedRequest.copy.toolId,
+            photo_id = copiedFrom,
+            mask_id = displayedRequest.copy.maskId,
+            tool_id = displayedRequest.copy.toolId,
         }
     end
-    Log.info(string.format("Placed %s range mask %s in mask %s on photo %s",
-        request.kind, result.tool_id, result.mask_id, photoId))
+    Log.info(
+        string.format(
+            "Placed %s range mask %s in mask %s on photo %s",
+            request.kind,
+            result.tool_id,
+            result.mask_id,
+            photoId
+        )
+    )
     return result
 end
 

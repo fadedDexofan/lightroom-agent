@@ -1,15 +1,14 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local PhotoLookup = require 'PhotoLookup'
-local BrushStrokes = require 'BrushStrokes'
-local GuardedMaskWrite = require 'GuardedMaskWrite'
-local ImageFrame = require 'ImageFrame'
-local Log = require 'Log'
-local MaskValues = require 'MaskValues'
-local Reply = require 'Reply'
+local PhotoLookup = require "PhotoLookup"
+local BrushStrokes = require "BrushStrokes"
+local GuardedMaskWrite = require "GuardedMaskWrite"
+local ImageFrame = require "ImageFrame"
+local Log = require "Log"
+local MaskValues = require "MaskValues"
+local Reply = require "Reply"
 
 local BrushMaskHandler = {}
-
 
 local function resultFor(photoId, entries, location, strokesAdded)
     local entry = entries[location.entry]
@@ -31,9 +30,7 @@ local function addBrush(entries, request)
         return { entry = #entries, component = 1 }
     end
     local index, entry = GuardedMaskWrite.findCorrection(entries, request.maskId)
-    if not index then
-        Reply.refuse("Mask not found on this photo: " .. request.maskId)
-    end
+    if not index then Reply.refuse("Mask not found on this photo: " .. request.maskId) end
     entry.CorrectionMasks[#entry.CorrectionMasks + 1] = component
     return { entry = index, component = #entry.CorrectionMasks }
 end
@@ -68,16 +65,21 @@ function BrushMaskHandler.createBrushMask(args, context)
     if frame.warning then context:warn(frame.warning) end
     local result = resultFor(photoId, written.entries, location, #strokes)
     result.new_mask = maskId == nil
-    Log.info(string.format("Painted %d brush stroke(s) as tool %s in mask %s on photo %s",
-        #strokes, result.tool_id, result.mask_id, photoId))
+    Log.info(
+        string.format(
+            "Painted %d brush stroke(s) as tool %s in mask %s on photo %s",
+            #strokes,
+            result.tool_id,
+            result.mask_id,
+            photoId
+        )
+    )
     return result
 end
 
 local function appendToBrush(entries, request)
     local entryIndex, componentIndex, component = GuardedMaskWrite.findComponent(entries, request.toolId)
-    if not entryIndex then
-        Reply.refuse("Brush tool not found on this photo: " .. request.toolId)
-    end
+    if not entryIndex then Reply.refuse("Brush tool not found on this photo: " .. request.toolId) end
     if not BrushStrokes.isBrush(component) then
         Reply.refuse(string.format("Tool %s is a %s mask, not a brush", request.toolId, tostring(component.What)))
     end
@@ -111,8 +113,15 @@ function BrushMaskHandler.addBrushStrokes(args, context)
 
     if frame.warning then context:warn(frame.warning) end
     local result = resultFor(photoId, written.entries, location, #strokes)
-    Log.info(string.format("Added %d brush stroke(s) to tool %s in mask %s on photo %s",
-        #strokes, result.tool_id, result.mask_id, photoId))
+    Log.info(
+        string.format(
+            "Added %d brush stroke(s) to tool %s in mask %s on photo %s",
+            #strokes,
+            result.tool_id,
+            result.mask_id,
+            photoId
+        )
+    )
     return result
 end
 

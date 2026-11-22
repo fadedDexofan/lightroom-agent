@@ -1,5 +1,5 @@
-local AIMaskData = require 'AIMaskData'
-local Contract = require 'Contract'
+local AIMaskData = require "AIMaskData"
+local Contract = require "Contract"
 
 local AiMaskParts = {}
 
@@ -13,16 +13,37 @@ local PEOPLE_PARTS = Contract.PEOPLE_MASK_PARTS
 local LANDSCAPE_CATEGORIES = Contract.LANDSCAPE_MASK_CATEGORIES
 
 local ZEROED_LOCAL_FIELDS = {
-    "LocalExposure", "LocalContrast", "LocalClarity", "LocalBrightness",
-    "LocalTemperature", "LocalTint", "LocalExposure2012", "LocalContrast2012", "LocalHighlights2012",
-    "LocalShadows2012", "LocalWhites2012", "LocalBlacks2012", "LocalTexture", "LocalClarity2012",
-    "LocalDehaze", "LocalHue", "LocalSaturation", "LocalSharpness", "LocalLuminanceNoise",
-    "LocalMoire", "LocalDefringe", "LocalToningHue", "LocalToningSaturation", "LocalGrain",
+    "LocalExposure",
+    "LocalContrast",
+    "LocalClarity",
+    "LocalBrightness",
+    "LocalTemperature",
+    "LocalTint",
+    "LocalExposure2012",
+    "LocalContrast2012",
+    "LocalHighlights2012",
+    "LocalShadows2012",
+    "LocalWhites2012",
+    "LocalBlacks2012",
+    "LocalTexture",
+    "LocalClarity2012",
+    "LocalDehaze",
+    "LocalHue",
+    "LocalSaturation",
+    "LocalSharpness",
+    "LocalLuminanceNoise",
+    "LocalMoire",
+    "LocalDefringe",
+    "LocalToningHue",
+    "LocalToningSaturation",
+    "LocalGrain",
 }
 
 local function indexByName(list)
     local byName = {}
-    for _, spec in ipairs(list) do byName[spec.name] = spec end
+    for _, spec in ipairs(list) do
+        byName[spec.name] = spec
+    end
     return byName
 end
 
@@ -31,13 +52,13 @@ local LANDSCAPE_BY_NAME = indexByName(LANDSCAPE_CATEGORIES)
 
 local function specsOf(names, byName)
     local specs = {}
-    for index, name in ipairs(names) do specs[index] = byName[name] end
+    for index, name in ipairs(names) do
+        specs[index] = byName[name]
+    end
     return specs
 end
 
-function AiMaskParts.parsePeople(args)
-    return { kind = "people", specs = specsOf(args.parts, PEOPLE_BY_NAME) }
-end
+function AiMaskParts.parsePeople(args) return { kind = "people", specs = specsOf(args.parts, PEOPLE_BY_NAME) } end
 
 function AiMaskParts.parseLandscape(args)
     return { kind = "landscape", specs = specsOf(args.categories, LANDSCAPE_BY_NAME) }
@@ -76,8 +97,12 @@ end
 function AiMaskParts.partOf(component)
     if component.What ~= AIMaskData.KIND then return nil end
     local kind, list = nil, nil
-    if component.MaskSubType == ALL_PEOPLE_SUBTYPE then kind, list = "people", PEOPLE_PARTS end
-    if component.MaskSubType == LANDSCAPE_SUBTYPE then kind, list = "landscape", LANDSCAPE_CATEGORIES end
+    if component.MaskSubType == ALL_PEOPLE_SUBTYPE then
+        kind, list = "people", PEOPLE_PARTS
+    end
+    if component.MaskSubType == LANDSCAPE_SUBTYPE then
+        kind, list = "landscape", LANDSCAPE_CATEGORIES
+    end
     local name = list and categoryNamed(list, component.MaskSubCategoryID)
     if name == nil then return nil end
     return { kind = kind, name = name }
@@ -95,7 +120,9 @@ function AiMaskParts.newEntry(spec, request)
         CorrectionReferenceY = 0.5,
         LocalCurveRefineSaturation = 100,
     }
-    for _, field in ipairs(ZEROED_LOCAL_FIELDS) do entry[field] = 0 end
+    for _, field in ipairs(ZEROED_LOCAL_FIELDS) do
+        entry[field] = 0
+    end
     return entry
 end
 

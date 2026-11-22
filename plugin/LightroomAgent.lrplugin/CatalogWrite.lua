@@ -1,10 +1,10 @@
-local LrDevelopController = import 'LrDevelopController'
-local LrFileUtils = import 'LrFileUtils'
-local LrPathUtils = import 'LrPathUtils'
+local LrDevelopController = import "LrDevelopController"
+local LrFileUtils = import "LrFileUtils"
+local LrPathUtils = import "LrPathUtils"
 
-local Contract = require 'Contract'
-local DevelopSession = require 'DevelopSession'
-local Reply = require 'Reply'
+local Contract = require "Contract"
+local DevelopSession = require "DevelopSession"
+local Reply = require "Reply"
 
 local CatalogWrite = {}
 
@@ -27,20 +27,33 @@ local RAISE_INSIDE_GATE = {
     setPropertyForPlugin = { rolledBack = true, observed = "LrC 16.0, gate rows D2" },
     addPhoto = { rolledBack = false, observed = "LrC 16.0, gate rows 2026-11-16: the photo stays in the catalog" },
     applyDevelopPreset = { rolledBack = false, observed = "LrC 16.0, gate rows 2026-11-16: the preset's settings stay" },
-    deleteAllEmptyMasks = { rolledBack = false, observed = "LrC 16.0, gate rows 2026-11-16: the empty group stays deleted" },
+    deleteAllEmptyMasks = {
+        rolledBack = false,
+        observed = "LrC 16.0, gate rows 2026-11-16: the empty group stays deleted",
+    },
     applyDevelopSnapshot = { rolledBack = false, observed = "LrC 16.0, gate rows D2: the snapshot's settings stay" },
     deleteDevelopSnapshot = { rolledBack = false, observed = "LrC 16.0, gate rows D2: the snapshot stays deleted" },
-    updateAISettings = { rolledBack = false, observed = "LrC 16.0, gate rows 2026-11-16: the compute runs outside the transaction" },
+    updateAISettings = {
+        rolledBack = false,
+        observed = "LrC 16.0, gate rows 2026-11-16: the compute runs outside the transaction",
+    },
 }
 
 function CatalogWrite.run(context, catalog, title, fn)
     DevelopSession.commitPendingEdits()
     local returned
-    local outcome = catalog:withWriteAccessDo(title, function() returned = fn() end,
-        { timeout = CatalogWrite.WAIT_SECONDS })
+    local outcome = catalog:withWriteAccessDo(
+        title,
+        function() returned = fn() end,
+        { timeout = CatalogWrite.WAIT_SECONDS }
+    )
     if outcome == "aborted" then
-        Reply.refuse("The catalog stayed busy with another write for " .. CatalogWrite.WAIT_SECONDS
-            .. " s, so Lightroom did not run " .. title)
+        Reply.refuse(
+            "The catalog stayed busy with another write for "
+                .. CatalogWrite.WAIT_SECONDS
+                .. " s, so Lightroom did not run "
+                .. title
+        )
     end
     if returned ~= CatalogWrite.NOTHING then context.ledger:record(title) end
 end

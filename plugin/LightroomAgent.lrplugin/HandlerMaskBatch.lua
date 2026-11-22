@@ -1,9 +1,9 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local CatalogWrite = require 'CatalogWrite'
-local Contract = require 'Contract'
-local DevelopBatch = require 'DevelopBatch'
-local MaskCreate = require 'HandlerMaskCreate'
+local CatalogWrite = require "CatalogWrite"
+local Contract = require "Contract"
+local DevelopBatch = require "DevelopBatch"
+local MaskCreate = require "HandlerMaskCreate"
 
 local MaskBatchHandler = {}
 

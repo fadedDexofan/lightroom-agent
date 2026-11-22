@@ -1,25 +1,33 @@
-local helper = require 'spec_helper'
-local JSON = require 'JSON'
+local helper = require "spec_helper"
+local JSON = require "JSON"
 
 describe("HandlerStyleSummary", function()
     local catalog, Handler
 
     local function photo(id, rating, camera, iso, settings, exported)
-        return helper.fakePhoto({ id = tostring(id), rating = rating, cameraModel = camera,
-            isoSpeedRating = iso, developSettings = settings or {}, isExported = exported })
+        return helper.fakePhoto({
+            id = tostring(id),
+            rating = rating,
+            cameraModel = camera,
+            isoSpeedRating = iso,
+            developSettings = settings or {},
+            isExported = exported,
+        })
     end
 
     local function load(photos)
         catalog = helper.fakeCatalog({ photos = photos })
         helper.installImport({ LrApplication = { activeCatalog = function() return catalog end } })
         package.loaded.HandlerStyleSummary = nil
-        Handler = require 'HandlerStyleSummary'
+        Handler = require "HandlerStyleSummary"
     end
 
     it("summarizes numeric settings with odd and even medians", function()
-        load({ photo(1, 5, "Sony", 100, { Exposure2012 = 0.2, Contrast2012 = 10 }),
+        load({
+            photo(1, 5, "Sony", 100, { Exposure2012 = 0.2, Contrast2012 = 10 }),
             photo(2, 4, "Sony", 100, { Exposure2012 = 0.5, Contrast2012 = 20 }),
-            photo(3, 5, "Sony", 100, { Exposure2012 = 0.8 }) })
+            photo(3, 5, "Sony", 100, { Exposure2012 = 0.8 }),
+        })
         local result = Handler.summarize({})
         assert.are.equal(3, result.scanned)
         assert.are.equal(3, result.matched)
@@ -39,7 +47,10 @@ describe("HandlerStyleSummary", function()
         load({ photo(1, 5, "Sony", 100), photo(2, 4, "Sony", 100), photo(3, 3, "Sony", 100) })
         local search
         local inner = catalog.findPhotos
-        catalog.findPhotos = function(self, args) search = args.searchDesc return inner(self, args) end
+        catalog.findPhotos = function(self, args)
+            search = args.searchDesc
+            return inner(self, args)
+        end
         assert.are.equal(2, Handler.summarize({}).scanned)
         assert.are.same({ combine = "intersect", { criteria = "rating", operation = ">=", value = 4 } }, search)
         assert.is_false(catalog.getQueriedInsideReadAccess())
@@ -48,8 +59,12 @@ describe("HandlerStyleSummary", function()
     it("intersects exported flags with rating before reading settings", function()
         local no = photo(2, 5, "Sony", 100, {}, false)
         no.getDevelopSettings = function() error("unexported settings read") end
-        load({ photo(1, 4, "Sony", 100, {}, true), no, photo(3, 3, "Sony", 100, {}, true),
-            photo(4, 5, "Sony", 100) })
+        load({
+            photo(1, 4, "Sony", 100, {}, true),
+            no,
+            photo(3, 3, "Sony", 100, {}, true),
+            photo(4, 5, "Sony", 100),
+        })
         local result = Handler.summarize({ exported_only = true })
         assert.are.equal(1, result.matched)
         assert.are.equal(1, result.scanned)
@@ -67,25 +82,52 @@ describe("HandlerStyleSummary", function()
         local groups = Handler.summarize({}).groups
         assert.are.equal(7, #groups)
         local counts = {}
-        for _, group in ipairs(groups) do counts[group.camera_model .. ":" .. group.iso_bucket] = group.count end
-        assert.are.same({ ["Sony:1-400"] = 2, ["Sony:401-1600"] = 2, ["Sony:1601-6400"] = 2,
-            ["Sony:6401+"] = 1, ["Canon:1-400"] = 1, ["unknown:unknown"] = 1, ["Sony:unknown"] = 1 }, counts)
+        for _, group in ipairs(groups) do
+            counts[group.camera_model .. ":" .. group.iso_bucket] = group.count
+        end
+        assert.are.same({
+            ["Sony:1-400"] = 2,
+            ["Sony:401-1600"] = 2,
+            ["Sony:1601-6400"] = 2,
+            ["Sony:6401+"] = 1,
+            ["Canon:1-400"] = 1,
+            ["unknown:unknown"] = 1,
+            ["Sony:unknown"] = 1,
+        }, counts)
     end)
 
     it("omits photo-specific, nonnumeric, nonfinite and all-zero settings", function()
-        load({ photo(1, 5, "Sony", 100, { CropTop = 1, CropAngle = 1, CropUnknown = 1,
-            PerspectiveVertical = 2, Temperature = 6000, Tint = 8, WhiteBalance = "Custom",
-            ToneCurvePV2012 = { 0, 0, 255, 255 }, Contrast2012 = 0, Exposure2012 = -0.5,
-            Flag = true, Infinite = math.huge, Nan = 0/0 }) })
-        assert.are.same({ Exposure2012 = { min = -0.5, median = -0.5, max = -0.5 } },
-            Handler.summarize({}).groups[1].settings)
+        load({
+            photo(1, 5, "Sony", 100, {
+                CropTop = 1,
+                CropAngle = 1,
+                CropUnknown = 1,
+                PerspectiveVertical = 2,
+                Temperature = 6000,
+                Tint = 8,
+                WhiteBalance = "Custom",
+                ToneCurvePV2012 = { 0, 0, 255, 255 },
+                Contrast2012 = 0,
+                Exposure2012 = -0.5,
+                Flag = true,
+                Infinite = math.huge,
+                Nan = 0 / 0,
+            }),
+        })
+        assert.are.same(
+            { Exposure2012 = { min = -0.5, median = -0.5, max = -0.5 } },
+            Handler.summarize({}).groups[1].settings
+        )
     end)
 
     it("caps Develop reads at 200 by default and reports all matches", function()
         local photos, reads = {}, 0
         for index = 1, 205 do
             local p = photo(index, 5, "Sony", 100)
-            p.getDevelopSettings = function() reads = reads + 1 return {} end
+            p.getDevelopSettings = function()
+                reads = reads + 1
+                return {}
+            end
             photos[index] = p
         end
         load(photos)
@@ -109,7 +151,9 @@ describe("HandlerStyleSummary", function()
 
     it("bounds serialized groups and reports omitted settings", function()
         local settings = {}
-        for index = 1, 300 do settings[string.rep("setting", 8) .. index] = 1.234567890123456e100 end
+        for index = 1, 300 do
+            settings[string.rep("setting", 8) .. index] = 1.234567890123456e100
+        end
         load({ photo(1, 5, string.rep("Camera", 30), 100, settings) })
         local group = Handler.summarize({}).groups[1]
         assert.is_true(#JSON:encode(group) <= 6000)

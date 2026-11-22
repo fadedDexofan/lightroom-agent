@@ -1,9 +1,12 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 describe("HandlerCrop", function()
     local function setup(settings)
         local photo = helper.fakePhoto({
-            id = "7", path = "/7.arw", orientation = "AB", dimensions = { width = 1500, height = 1000 },
+            id = "7",
+            path = "/7.arw",
+            orientation = "AB",
+            dimensions = { width = 1500, height = 1000 },
             developSettings = settings or {},
         })
         local catalog = helper.fakeCatalog({ photos = { photo } })
@@ -11,15 +14,22 @@ describe("HandlerCrop", function()
             LrApplication = { activeCatalog = function() return catalog end },
             LrLogger = helper.defaultLrLogger(),
         })
-        for _, name in ipairs({ "HandlerCrop", "ImageFrame", "PhotoLookup", "Log" }) do package.loaded[name] = nil end
-        return require 'HandlerCrop', catalog
+        for _, name in ipairs({ "HandlerCrop", "ImageFrame", "PhotoLookup", "Log" }) do
+            package.loaded[name] = nil
+        end
+        return require "HandlerCrop", catalog
     end
 
     it("plans the keys, rectangle and pixel size of a 4:5 frame around a centre without writing", function()
         local Handler, catalog = setup()
 
-        local plan = Handler.plan({ photo_id = "7", aspect = { width = 4, height = 5 }, center = { x = 0.4, y = 0.5 },
-            scale = 0.5, angle = 0 }, helper.requestContext())
+        local plan = Handler.plan({
+            photo_id = "7",
+            aspect = { width = 4, height = 5 },
+            center = { x = 0.4, y = 0.5 },
+            scale = 0.5,
+            angle = 0,
+        }, helper.requestContext())
 
         assert.are.equal("7", plan.photo_id)
         assert.is_true(math.abs(plan.size.width - 400) < 1e-6 and math.abs(plan.size.height - 500) < 1e-6)
@@ -33,8 +43,10 @@ describe("HandlerCrop", function()
     it("plans a displayed rectangle with an angle", function()
         local Handler = setup()
 
-        local plan = Handler.plan({ photo_id = "7", rectangle = { left = 0.2, top = 0.2, right = 0.8, bottom = 0.8 },
-            angle = 3 }, helper.requestContext())
+        local plan = Handler.plan(
+            { photo_id = "7", rectangle = { left = 0.2, top = 0.2, right = 0.8, bottom = 0.8 }, angle = 3 },
+            helper.requestContext()
+        )
 
         assert.is_true(math.abs(plan.size.width - 900) < 1e-6 and math.abs(plan.size.height - 600) < 1e-6)
         assert.is_true(math.abs(plan.settings.CropAngle - 3) < 1e-9)
@@ -65,8 +77,10 @@ describe("HandlerCrop", function()
     it("plans a 4:5 frame inside the current crop and reports it in the photo's frame", function()
         local Handler = setup({ CropLeft = 0.2, CropTop = 0, CropRight = 0.8, CropBottom = 1, CropAngle = 0 })
 
-        local plan = Handler.plan({ photo_id = "7", relative_to = "crop", aspect = { width = 4, height = 5 }, angle = 0 },
-            helper.requestContext())
+        local plan = Handler.plan(
+            { photo_id = "7", relative_to = "crop", aspect = { width = 4, height = 5 }, angle = 0 },
+            helper.requestContext()
+        )
 
         assert.are.same({ width = 800, height = 1000 }, plan.size)
         assert.is_true(math.abs(plan.rectangle.left - (0.5 - 400 / 1500)) < 1e-6)
@@ -79,8 +93,12 @@ describe("HandlerCrop", function()
     it("plans a rectangle stated in the current crop's own coordinates", function()
         local Handler = setup({ CropLeft = 0.2, CropTop = 0, CropRight = 0.8, CropBottom = 1, CropAngle = 0 })
 
-        local plan = Handler.plan({ photo_id = "7", relative_to = "crop",
-            rectangle = { left = 0, top = 0, right = 0.5, bottom = 0.5 }, angle = 0 }, helper.requestContext())
+        local plan = Handler.plan({
+            photo_id = "7",
+            relative_to = "crop",
+            rectangle = { left = 0, top = 0, right = 0.5, bottom = 0.5 },
+            angle = 0,
+        }, helper.requestContext())
 
         assert.is_true(math.abs(plan.rectangle.left - 0.2) < 1e-6 and math.abs(plan.rectangle.right - 0.5) < 1e-6)
         assert.is_true(math.abs(plan.rectangle.bottom - 0.5) < 1e-6)
@@ -89,8 +107,10 @@ describe("HandlerCrop", function()
     it("keeps a straightened aspect fit inside the current crop", function()
         local Handler = setup({ CropLeft = 0.2, CropTop = 0, CropRight = 0.8, CropBottom = 1, CropAngle = 0 })
 
-        local plan = Handler.plan({ photo_id = "7", relative_to = "crop", aspect = { width = 1, height = 1 }, angle = 5 },
-            helper.requestContext())
+        local plan = Handler.plan(
+            { photo_id = "7", relative_to = "crop", aspect = { width = 1, height = 1 }, angle = 5 },
+            helper.requestContext()
+        )
 
         local radians = math.rad(plan.angle)
         local halfWidth = (plan.size.width * math.cos(radians) + plan.size.height * math.sin(radians)) / 2
@@ -103,9 +123,14 @@ describe("HandlerCrop", function()
     it("refuses a frame whose turned corners cross in the crop keys, in set_crop's own words", function()
         local Handler = setup()
 
-        local refusal = helper.failedOf(function()
-            Handler.plan({ photo_id = "7", aspect = { width = 1, height = 3 }, angle = 40 }, helper.requestContext())
-        end)
+        local refusal = helper.failedOf(
+            function()
+                Handler.plan(
+                    { photo_id = "7", aspect = { width = 1, height = 3 }, angle = 40 },
+                    helper.requestContext()
+                )
+            end
+        )
 
         assert.is_truthy(refusal:find("At angle 40 this frame's turned corners cross", 1, true))
         assert.is_nil(refusal:find("CropLeft", 1, true))
@@ -114,10 +139,14 @@ describe("HandlerCrop", function()
     it("refuses a frame inside the current crop whose turned corners cross", function()
         local Handler = setup({ CropLeft = 0.2, CropTop = 0, CropRight = 0.8, CropBottom = 1, CropAngle = 0 })
 
-        local refusal = helper.failedOf(function()
-            Handler.plan({ photo_id = "7", relative_to = "crop", aspect = { width = 1, height = 4 }, angle = 40 },
-                helper.requestContext())
-        end)
+        local refusal = helper.failedOf(
+            function()
+                Handler.plan(
+                    { photo_id = "7", relative_to = "crop", aspect = { width = 1, height = 4 }, angle = 40 },
+                    helper.requestContext()
+                )
+            end
+        )
 
         assert.is_truthy(refusal:find("turned corners cross", 1, true))
     end)

@@ -1,13 +1,19 @@
-local helper = require 'spec_helper'
-local Store = require 'fake_mask_store'
+local helper = require "spec_helper"
+local Store = require "fake_mask_store"
 
 local function twoMasks()
     return {
         Store.correction("A", { Store.linearComponent({ MaskID = "C1T1" }) }, {
-            CorrectionID = "mask-a", LocalExposure2012 = 0.125, LocalContrast2012 = 0.1, LocalShadows2012 = 0.2,
+            CorrectionID = "mask-a",
+            LocalExposure2012 = 0.125,
+            LocalContrast2012 = 0.1,
+            LocalShadows2012 = 0.2,
         }),
         Store.correction("B", { Store.linearComponent({ MaskID = "C2T1" }) }, {
-            CorrectionID = "mask-b", LocalExposure2012 = -0.25, LocalContrast2012 = -0.3, LocalShadows2012 = 0.05,
+            CorrectionID = "mask-b",
+            LocalExposure2012 = -0.25,
+            LocalContrast2012 = -0.3,
+            LocalShadows2012 = 0.05,
         }),
     }
 end
@@ -32,11 +38,17 @@ local function setup(opts)
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
     })
-    for _, name in ipairs({ "HandlerMaskAdjustments", "MaskValues", "GuardedMaskWrite", "LocalSliders", "DevelopSession",
-        "MaskSelection" }) do
+    for _, name in ipairs({
+        "HandlerMaskAdjustments",
+        "MaskValues",
+        "GuardedMaskWrite",
+        "LocalSliders",
+        "DevelopSession",
+        "MaskSelection",
+    }) do
         package.loaded[name] = nil
     end
-    return require 'HandlerMaskAdjustments', store, modules
+    return require "HandlerMaskAdjustments", store, modules
 end
 
 describe("HandlerMaskAdjustments.setMaskAdjustments", function()
@@ -69,7 +81,9 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         local Handler, store = setup()
 
         local r = Handler.setMaskAdjustments({
-            photo_id = "1", mask_id = "mask-a", adjustments = { local_Contrast = 10, local_Whites = 0 },
+            photo_id = "1",
+            mask_id = "mask-a",
+            adjustments = { local_Contrast = 10, local_Whites = 0 },
         })
 
         assert.are.same({}, r.changed)
@@ -81,7 +95,11 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
     it("accepts a numeric photo id and a file path", function()
         for _, photoId in ipairs({ 1, "/1.jpg" }) do
             local Handler = setup()
-            local r = Handler.setMaskAdjustments({ photo_id = photoId, mask_id = "mask-b", adjustments = { local_Contrast = 5 } })
+            local r = Handler.setMaskAdjustments({
+                photo_id = photoId,
+                mask_id = "mask-b",
+                adjustments = { local_Contrast = 5 },
+            })
             assert.are.equal("1", r.photo_id)
         end
     end)
@@ -89,20 +107,29 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
     it("refuses an unknown mask and writes nothing", function()
         local Handler, store = setup()
 
-        local refusal = helper.failedOf(function()
-            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-z", adjustments = { local_Contrast = 5 } })
-        end)
+        local refusal = helper.failedOf(
+            function()
+                Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-z", adjustments = { local_Contrast = 5 } })
+            end
+        )
 
-        assert.matches("Mask mask-z is not in the saved settings of photo 1 (saved masks: mask-a, mask-b)", refusal, 1, true)
+        assert.matches(
+            "Mask mask-z is not in the saved settings of photo 1 (saved masks: mask-a, mask-b)",
+            refusal,
+            1,
+            true
+        )
         assert.are.equal(0, store.attempts)
     end)
 
     it("names an unknown photo", function()
         local Handler = setup()
 
-        local missing = helper.notFoundOf(function()
-            Handler.setMaskAdjustments({ photo_id = "99", mask_id = "mask-a", adjustments = { local_Contrast = 5 } })
-        end)
+        local missing = helper.notFoundOf(
+            function()
+                Handler.setMaskAdjustments({ photo_id = "99", mask_id = "mask-a", adjustments = { local_Contrast = 5 } })
+            end
+        )
 
         assert.are.equal("99", missing)
     end)
@@ -111,7 +138,9 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         local Handler, store = setup()
 
         local r = Handler.setMaskAdjustments({
-            photo_id = "1", mask_id = "mask-a", adjustments = { local_colorgradeMidtoneHue = 61.83, local_glow = 25 },
+            photo_id = "1",
+            mask_id = "mask-a",
+            adjustments = { local_colorgradeMidtoneHue = 61.83, local_glow = 25 },
         })
 
         assert.are.same({ local_colorgradeMidtoneHue = 62, local_glow = 25 }, r.adjustments)
@@ -122,8 +151,13 @@ end)
 
 describe("HandlerMaskAdjustments.setMaskAdjustments on a hidden mask", function()
     for _, case in ipairs({
-        { hidden = true, warnings = { "mask mask-a was hidden (CorrectionActive false); this write showed it again,"
-            .. " as Lightroom's own sliders do" } },
+        {
+            hidden = true,
+            warnings = {
+                "mask mask-a was hidden (CorrectionActive false); this write showed it again,"
+                    .. " as Lightroom's own sliders do",
+            },
+        },
         { hidden = false, warnings = {} },
     }) do
         it((case.hidden and "warns that the write showed it again" or "says nothing when it was shown"), function()
@@ -131,7 +165,10 @@ describe("HandlerMaskAdjustments.setMaskAdjustments on a hidden mask", function(
             store.entries[1].CorrectionActive = not case.hidden
             local context = helper.requestContext()
 
-            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 1 } }, context)
+            Handler.setMaskAdjustments(
+                { photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 1 } },
+                context
+            )
 
             assert.is_true(store.entries[1].CorrectionActive)
             assert.are.same(case.warnings, context.warnings)
@@ -143,7 +180,10 @@ describe("HandlerMaskAdjustments.setMaskAdjustments on a hidden mask", function(
         store.entries[1].CorrectionActive = false
         local context = helper.requestContext()
 
-        Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 0.5 } }, context)
+        Handler.setMaskAdjustments(
+            { photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 0.5 } },
+            context
+        )
 
         assert.is_false(store.entries[1].CorrectionActive)
         assert.are.same({}, context.warnings)
@@ -152,7 +192,7 @@ end)
 
 describe("LocalSliders", function()
     it("lists unique local_ names with the stored field Lightroom writes", function()
-        local LocalSliders = require 'LocalSliders'
+        local LocalSliders = require "LocalSliders"
         local seen = {}
 
         for _, slider in ipairs(LocalSliders.list) do
@@ -171,7 +211,8 @@ describe("a local slider added to the table", function()
         helper.withFixtureSlider(function()
             local Handler, store = setup()
 
-            local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Fixture = 5 } })
+            local r =
+                Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Fixture = 5 } })
 
             assert.are.equal(5, r.adjustments.local_Fixture)
             assert.are.equal(0.05, store.entries[1].LocalFixture)

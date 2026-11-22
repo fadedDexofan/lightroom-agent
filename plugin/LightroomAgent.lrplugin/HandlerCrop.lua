@@ -1,16 +1,14 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local ImageFrame = require 'ImageFrame'
-local PhotoLookup = require 'PhotoLookup'
+local ImageFrame = require "ImageFrame"
+local PhotoLookup = require "PhotoLookup"
 
 local Handler = {}
 
 local CENTER = { x = 0.5, y = 0.5 }
 local DECIMALS = 1e6
 
-local function round(value)
-    return math.floor(value * DECIMALS + 0.5) / DECIMALS
-end
+local function round(value) return math.floor(value * DECIMALS + 0.5) / DECIMALS end
 
 local function stated(frame, args)
     if args.rectangle ~= nil then return ImageFrame.cropOfRectangle(frame, args.rectangle, args.angle) end
@@ -28,7 +26,9 @@ end
 
 local function described(photo, read, crop)
     local rectangle = ImageFrame.rectangleOf(read, crop)
-    for key, value in pairs(rectangle) do rectangle[key] = round(value) end
+    for key, value in pairs(rectangle) do
+        rectangle[key] = round(value)
+    end
     return {
         photo_id = tostring(photo.localIdentifier),
         rectangle = rectangle,

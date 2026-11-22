@@ -1,13 +1,16 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local RangeMaskGeometry
 
 helper.installImport({})
-local UPRIGHT = require('ImageFrame').of({ orientation = "AB", dimensions = { width = 3000, height = 2000 }, settings = {} })
+local UPRIGHT =
+    require("ImageFrame").of({ orientation = "AB", dimensions = { width = 3000, height = 2000 }, settings = {} })
 
 local function sample(overrides)
     local value = { x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }
-    for key, item in pairs(overrides or {}) do value[key] = item end
+    for key, item in pairs(overrides or {}) do
+        value[key] = item
+    end
     return value
 end
 
@@ -30,25 +33,33 @@ local LIGHTROOM_AUTHORED_SAMPLES = {
 
 local function sampleOf(stored)
     local values = {}
-    for token in stored:gmatch("%S+") do values[#values + 1] = tonumber(token) end
+    for token in stored:gmatch("%S+") do
+        values[#values + 1] = tonumber(token)
+    end
     return { l = values[1], a = values[2], b = values[3], x = values[4], y = values[5] }
 end
 
 local function luminanceArgs(overrides)
     local args = { type = "luminance", luminance = { min = 0.3, max = 0.6, falloff = 0.1 } }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
 local function depthArgs(overrides)
     local args = { type = "depth", depth = { min = 0, max = 0.1, falloff = 0.25 } }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
 local function colorArgs(overrides)
     local args = { type = "color", color = { sample = sample(), amount = 0.4 } }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
@@ -56,7 +67,7 @@ describe("RangeMaskGeometry", function()
     before_each(function()
         helper.installImport({})
         package.loaded.RangeMaskGeometry = nil
-        RangeMaskGeometry = require 'RangeMaskGeometry'
+        RangeMaskGeometry = require "RangeMaskGeometry"
     end)
 
     describe("parseCreate", function()
@@ -83,7 +94,6 @@ describe("RangeMaskGeometry", function()
             assert.are.equal(0.5, request.range.amount)
             assert.are.same(sample(), request.range.sample)
         end)
-
     end)
 
     describe("newComponent", function()
@@ -102,8 +112,9 @@ describe("RangeMaskGeometry", function()
         end)
 
         it("clips the ramps at the ends of the tonal scale", function()
-            local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(
-                luminanceArgs({ luminance = { min = 0.05, max = 0.95, falloff = 0.2 } })))
+            local component = RangeMaskGeometry.newComponent(
+                RangeMaskGeometry.parseCreate(luminanceArgs({ luminance = { min = 0.05, max = 0.95, falloff = 0.2 } }))
+            )
 
             assert.are.equal("0.000000 0.050000 0.950000 1.000000", component.CorrectionRangeMask.LumRange)
         end)
@@ -123,21 +134,34 @@ describe("RangeMaskGeometry", function()
 
         it("always writes a LumRange and a DepthRange ordered a <= b <= c <= d within 0..1", function()
             local cases = {
-                { 0, 0.99, 0 }, { 0.01, 1, 1 }, { 0.5, 0.6, 0.3 }, { 0.3, 0.7, 0 }, { 0.99, 1, 0.5 },
-                { 0.1, 0.30000000000000004, 0.19999999999999998 }, { 0, 0.01, 0.1 }, { 0.99, 1, 0.1 },
+                { 0, 0.99, 0 },
+                { 0.01, 1, 1 },
+                { 0.5, 0.6, 0.3 },
+                { 0.3, 0.7, 0 },
+                { 0.99, 1, 0.5 },
+                { 0.1, 0.30000000000000004, 0.19999999999999998 },
+                { 0, 0.01, 0.1 },
+                { 0.99, 1, 0.1 },
             }
             for _, case in ipairs(cases) do
                 for _, kind in ipairs({ "luminance", "depth" }) do
-                    local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(
-                        { type = kind, [kind] = { min = case[1], max = case[2], falloff = case[3] } }))
+                    local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate({
+                        type = kind,
+                        [kind] = { min = case[1], max = case[2], falloff = case[3] },
+                    }))
                     local range = component.CorrectionRangeMask
                     local values = {}
                     for token in (range.LumRange or range.DepthRange):gmatch("%S+") do
                         values[#values + 1] = tonumber(token)
                     end
                     assert.are.equal(4, #values)
-                    assert.is_true(values[1] >= 0 and values[1] <= values[2] and values[2] <= values[3]
-                        and values[3] <= values[4] and values[4] <= 1)
+                    assert.is_true(
+                        values[1] >= 0
+                            and values[1] <= values[2]
+                            and values[2] <= values[3]
+                            and values[3] <= values[4]
+                            and values[4] <= 1
+                    )
                 end
             end
         end)
@@ -157,16 +181,20 @@ describe("RangeMaskGeometry", function()
 
         it("writes the stored triple of every Lightroom-authored sample unchanged", function()
             for _, authored in ipairs(LIGHTROOM_AUTHORED_SAMPLES) do
-                local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(
-                    colorArgs({ color = { sample = sampleOf(authored.stored), amount = 0.5 } })))
+                local component = RangeMaskGeometry.newComponent(
+                    RangeMaskGeometry.parseCreate(
+                        colorArgs({ color = { sample = sampleOf(authored.stored), amount = 0.5 } })
+                    )
+                )
 
                 assert.are.equal(authored.stored, component.CorrectionRangeMask.PointModels[1])
             end
         end)
 
         it("maps invert and subtract onto the component", function()
-            local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(
-                luminanceArgs({ mask_id = "C1", mode = "subtract", invert = true })))
+            local component = RangeMaskGeometry.newComponent(
+                RangeMaskGeometry.parseCreate(luminanceArgs({ mask_id = "C1", mode = "subtract", invert = true }))
+            )
 
             assert.is_true(component.MaskInverted)
             assert.are.equal(1, component.MaskBlendMode)
@@ -177,7 +205,9 @@ describe("RangeMaskGeometry", function()
     describe("copy_sample_from", function()
         local function copyArgs(overrides)
             local args = { type = "color", copy_sample_from = { mask_id = "C1", tool_id = "C1T1" } }
-            for key, item in pairs(overrides or {}) do args[key] = item end
+            for key, item in pairs(overrides or {}) do
+                args[key] = item
+            end
             return args
         end
 
@@ -191,7 +221,10 @@ describe("RangeMaskGeometry", function()
 
         it("accepts a source photo and tweaks the amount, invert and mode", function()
             local request = RangeMaskGeometry.parseCreate(copyArgs({
-                color = { amount = 0.2 }, invert = true, mask_id = "C2", mode = "subtract",
+                color = { amount = 0.2 },
+                invert = true,
+                mask_id = "C2",
+                mode = "subtract",
                 copy_sample_from = { mask_id = "C1", tool_id = "C1T1", photo_id = 77 },
             }))
 
@@ -221,25 +254,51 @@ describe("RangeMaskGeometry", function()
             end
 
             assert.are.equal("is not a range mask", reason({ What = "Mask/Gradient" }))
-            assert.are.equal("is a luminance range, not a color range", reason({
-                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 2, LumRange = "0 0.1 0.2 0.3" },
-            }))
-            assert.are.equal("is a depth range, not a color range", reason({
-                What = "Mask/RangeMask", CorrectionRangeMask = { Type = -1, DepthRange = "0 0.1 0.2 0.3" },
-            }))
-            assert.are.equal("is a range of an unsupported type, not a color range", reason({
-                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 3 },
-            }))
-            assert.are.equal("has 2 color sample points; exactly one can be copied", reason({
-                What = "Mask/RangeMask",
-                CorrectionRangeMask = { Type = 1, PointModels = { "0.1 0.2 0.3 0.4 0.5 0", "0.2 0.2 0.3 0.4 0.5 0" } },
-            }))
-            assert.are.equal("has 0 color sample points; exactly one can be copied", reason({
-                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 1, PointModels = {} },
-            }))
-            assert.are.equal("has a color sample that cannot be read", reason({
-                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "a b" } },
-            }))
+            assert.are.equal(
+                "is a luminance range, not a color range",
+                reason({
+                    What = "Mask/RangeMask",
+                    CorrectionRangeMask = { Type = 2, LumRange = "0 0.1 0.2 0.3" },
+                })
+            )
+            assert.are.equal(
+                "is a depth range, not a color range",
+                reason({
+                    What = "Mask/RangeMask",
+                    CorrectionRangeMask = { Type = -1, DepthRange = "0 0.1 0.2 0.3" },
+                })
+            )
+            assert.are.equal(
+                "is a range of an unsupported type, not a color range",
+                reason({
+                    What = "Mask/RangeMask",
+                    CorrectionRangeMask = { Type = 3 },
+                })
+            )
+            assert.are.equal(
+                "has 2 color sample points; exactly one can be copied",
+                reason({
+                    What = "Mask/RangeMask",
+                    CorrectionRangeMask = {
+                        Type = 1,
+                        PointModels = { "0.1 0.2 0.3 0.4 0.5 0", "0.2 0.2 0.3 0.4 0.5 0" },
+                    },
+                })
+            )
+            assert.are.equal(
+                "has 0 color sample points; exactly one can be copied",
+                reason({
+                    What = "Mask/RangeMask",
+                    CorrectionRangeMask = { Type = 1, PointModels = {} },
+                })
+            )
+            assert.are.equal(
+                "has a color sample that cannot be read",
+                reason({
+                    What = "Mask/RangeMask",
+                    CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "a b" } },
+                })
+            )
         end)
     end)
 
@@ -291,12 +350,16 @@ describe("RangeMaskGeometry", function()
 
         it("returns nil for other masks, other range types and malformed values", function()
             assert.is_nil(RangeMaskGeometry.rangeOf({ What = "Mask/Gradient" }, UPRIGHT))
-            assert.is_nil(RangeMaskGeometry.rangeOf({ What = "Mask/RangeMask", CorrectionRangeMask = { Type = 3 } }, UPRIGHT))
+            assert.is_nil(
+                RangeMaskGeometry.rangeOf({ What = "Mask/RangeMask", CorrectionRangeMask = { Type = 3 } }, UPRIGHT)
+            )
             assert.is_nil(RangeMaskGeometry.rangeOf({
-                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 2, LumRange = "a b" },
+                What = "Mask/RangeMask",
+                CorrectionRangeMask = { Type = 2, LumRange = "a b" },
             }, UPRIGHT))
             assert.is_nil(RangeMaskGeometry.rangeOf({
-                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 1, ColorAmount = 1, PointModels = {} },
+                What = "Mask/RangeMask",
+                CorrectionRangeMask = { Type = 1, ColorAmount = 1, PointModels = {} },
             }, UPRIGHT))
         end)
     end)
@@ -308,7 +371,7 @@ describe("RangeMaskGeometry number text", function()
     it("writes range strings and color samples with a decimal point under a comma-decimal locale", function()
         helper.installImport({})
         package.loaded.RangeMaskGeometry = nil
-        local Geometry = require 'RangeMaskGeometry'
+        local Geometry = require "RangeMaskGeometry"
         assert.truthy(os.setlocale("ru_RU.UTF-8", "numeric"))
 
         local luminance = Geometry.newComponent(Geometry.parseCreate(luminanceArgs())).CorrectionRangeMask

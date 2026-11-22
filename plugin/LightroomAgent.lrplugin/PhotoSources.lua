@@ -1,11 +1,11 @@
-local LrFileUtils = import 'LrFileUtils'
-local LrPathUtils = import 'LrPathUtils'
-local LrTasks = import 'LrTasks'
+local LrFileUtils = import "LrFileUtils"
+local LrPathUtils = import "LrPathUtils"
+local LrTasks = import "LrTasks"
 
 local PhotoSources = {}
 
 local function folderList(catalog, photos)
-    local raw = catalog:batchGetRawMetadata(photos, { 'path' }) or {}
+    local raw = catalog:batchGetRawMetadata(photos, { "path" }) or {}
     local folders, seen = {}, {}
     for _, photo in ipairs(photos) do
         local path = (raw[photo] or {}).path

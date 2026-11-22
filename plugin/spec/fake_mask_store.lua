@@ -3,14 +3,18 @@ local FakeMaskStore = {}
 function FakeMaskStore.clone(value)
     if type(value) ~= "table" then return value end
     local copy = {}
-    for key, item in pairs(value) do copy[key] = FakeMaskStore.clone(item) end
+    for key, item in pairs(value) do
+        copy[key] = FakeMaskStore.clone(item)
+    end
     return copy
 end
 
 local clone = FakeMaskStore.clone
 
 local function merge(base, overrides)
-    for key, value in pairs(overrides or {}) do base[key] = value end
+    for key, value in pairs(overrides or {}) do
+        base[key] = value
+    end
     return base
 end
 
@@ -22,7 +26,10 @@ function FakeMaskStore.linearComponent(overrides)
         MaskBlendMode = 0,
         MaskValue = 1,
         MaskName = "Linear Gradient",
-        ZeroX = 0.5, ZeroY = 0.6, FullX = 0.5, FullY = 0.2,
+        ZeroX = 0.5,
+        ZeroY = 0.6,
+        FullX = 0.5,
+        FullY = 0.2,
     }, overrides)
 end
 
@@ -34,8 +41,15 @@ function FakeMaskStore.radialComponent(overrides)
         MaskBlendMode = 0,
         MaskValue = 1,
         MaskName = "Radial Gradient",
-        Top = 0.2, Left = 0.3, Bottom = 0.8, Right = 0.7,
-        Angle = 10, Feather = 50, Midpoint = 50, Roundness = 0, Version = 2,
+        Top = 0.2,
+        Left = 0.3,
+        Bottom = 0.8,
+        Right = 0.7,
+        Angle = 10,
+        Feather = 50,
+        Midpoint = 50,
+        Roundness = 0,
+        Version = 2,
     }, overrides)
 end
 
@@ -82,7 +96,9 @@ local function storedIds(entries)
         if type(entry) == "table" then
             if entry.CorrectionID ~= nil then ids[tostring(entry.CorrectionID)] = true end
             for _, component in ipairs(type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
-                if type(component) == "table" and component.MaskID ~= nil then ids[tostring(component.MaskID)] = true end
+                if type(component) == "table" and component.MaskID ~= nil then
+                    ids[tostring(component.MaskID)] = true
+                end
             end
         end
     end
@@ -102,9 +118,7 @@ function FakeMaskStore.lightroomFillsDerivedFields(written, counter, known)
             if component.MaskSyncID == nil and component.MaskID ~= nil and not known[tostring(component.MaskID)] then
                 component.MaskSyncID = "S" .. tostring(component.MaskID)
             end
-            if component.What == "Mask/CircularGradient" then
-                component.Flipped = not component.MaskInverted
-            end
+            if component.What == "Mask/CircularGradient" then component.Flipped = not component.MaskInverted end
         end
     end
     return written
@@ -160,12 +174,18 @@ function FakeMaskStore.attach(photo, opts)
         if type(entry) == "table" and entry.CorrectionID == nil then
             entry.CorrectionID, entry.CorrectionSyncID = "E" .. index, "ES" .. index
         end
-        for position, component in ipairs(type(entry) == "table" and type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
+        for position, component in
+            ipairs(type(entry) == "table" and type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {})
+        do
             if type(component) == "table" and component.MaskID == nil then
                 component.MaskID = tostring(entry.CorrectionID) .. "T" .. position
                 component.MaskSyncID = "S" .. component.MaskID
             end
-            if type(component) == "table" and component.What == "Mask/CircularGradient" and component.Flipped == nil then
+            if
+                type(component) == "table"
+                and component.What == "Mask/CircularGradient"
+                and component.Flipped == nil
+            then
                 component.Flipped = not component.MaskInverted
             end
         end
@@ -200,7 +220,9 @@ function FakeMaskStore.attach(photo, opts)
         state.previousEntries = state.entries
         state.readsSinceWrite = 0
         local stored = FakeMaskStore.lightroomFillsDerivedFields(written, state.counter, state.seenIds)
-        for id in pairs(storedIds(stored)) do state.seenIds[id] = true end
+        for id in pairs(storedIds(stored)) do
+            state.seenIds[id] = true
+        end
         if opts.transformWrite then stored = opts.transformWrite(stored, writeNumber) end
         state.entries = stored
     end
@@ -215,7 +237,9 @@ function FakeMaskStore.computeAI(state, outcomeOf)
             if component.What == "Mask/Image" then
                 local outcome = outcomeOf and outcomeOf(entry, component) or "computed"
                 if type(outcome) == "table" then
-                    for key, value in pairs(outcome) do component[key] = value end
+                    for key, value in pairs(outcome) do
+                        component[key] = value
+                    end
                 elseif component.MaskDigest == nil and (component.ErrorReason or 0) == 0 then
                     if outcome == "absent" then
                         component.ErrorReason = 1
@@ -248,13 +272,15 @@ function FakeMaskStore.trackGates(state, catalog)
 end
 
 function FakeMaskStore.guardedHandler(handlerName, modules, opts)
-    local helper = require 'spec_helper'
+    local helper = require "spec_helper"
     opts = opts or {}
     local photos, stores, storeOf = {}, {}, {}
     local catalog
     for _, spec in ipairs(opts.photos or { { id = "1" } }) do
         local photo = helper.fakePhoto({
-            id = spec.id, path = "/" .. spec.id .. ".jpg", orientation = spec.orientation or "AB",
+            id = spec.id,
+            path = "/" .. spec.id .. ".jpg",
+            orientation = spec.orientation or "AB",
             dimensions = not spec.noDimensions and (spec.dimensions or { width = 3000, height = 2000 }) or nil,
         })
         stores[spec.id] = FakeMaskStore.attach(photo, spec)
@@ -265,7 +291,9 @@ function FakeMaskStore.guardedHandler(handlerName, modules, opts)
     local module = "library"
     local calls = { modules = {}, getAllMasks = 0 }
     catalog = helper.fakeCatalog({ photos = photos })
-    for _, photo in ipairs(photos) do FakeMaskStore.trackGates(storeOf[photo], catalog) end
+    for _, photo in ipairs(photos) do
+        FakeMaskStore.trackGates(storeOf[photo], catalog)
+    end
     catalog.getTargetPhoto = function() return active end
     local recordSelection = catalog.setSelectedPhotos
     catalog.setSelectedPhotos = function(self, photo, selected)
@@ -313,9 +341,18 @@ function FakeMaskStore.guardedHandler(handlerName, modules, opts)
         LrTasks = { pcall = pcall, sleep = function() end },
         LrLogger = helper.defaultLrLogger(),
     })
-    for _, name in ipairs(modules) do package.loaded[name] = nil end
-    for _, name in ipairs({ handlerName, "GuardedMaskWrite", "DevelopSession", "Log",
-        "MaskValues", "MaskSelection", "LocalSliders" }) do
+    for _, name in ipairs(modules) do
+        package.loaded[name] = nil
+    end
+    for _, name in ipairs({
+        handlerName,
+        "GuardedMaskWrite",
+        "DevelopSession",
+        "Log",
+        "MaskValues",
+        "MaskSelection",
+        "LocalSliders",
+    }) do
         package.loaded[name] = nil
     end
     return require(handlerName), stores, calls, catalog

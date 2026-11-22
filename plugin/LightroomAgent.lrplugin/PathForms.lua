@@ -1,4 +1,4 @@
-local Reply = require 'Reply'
+local Reply = require "Reply"
 
 local PathForms = {}
 
@@ -957,19 +957,17 @@ local function isMark(character)
     return KANA_MARKS[character] or (#character == 2 and MARK_LEAD_BYTES[character:sub(1, 1)])
 end
 
-function PathForms.isAscii(path)
-    return not path:find("[\128-\255]")
-end
+function PathForms.isAscii(path) return not path:find("[\128-\255]") end
 
 function PathForms.toNfd(path)
-    return (path:gsub(UTF8_CHARACTER, function(character)
-        return TO_NFD[character] or decomposedHangul(character)
-    end))
+    return (path:gsub(UTF8_CHARACTER, function(character) return TO_NFD[character] or decomposedHangul(character) end))
 end
 
 local function composedHangul(path)
     local characters = {}
-    for character in path:gmatch(UTF8_CHARACTER) do characters[#characters + 1] = character end
+    for character in path:gmatch(UTF8_CHARACTER) do
+        characters[#characters + 1] = character
+    end
     local parts = {}
     local index = 1
     while index <= #characters do
@@ -977,7 +975,10 @@ local function composedHangul(path)
         local vowel = jamoIndex(characters[index + 1], VOWEL_BASE, VOWEL_COUNT)
         if lead and vowel then
             local tail = jamoIndex(characters[index + 2], TAIL_BASE, TAIL_COUNT)
-            local syllable = HANGUL_BASE + lead * SYLLABLES_PER_LEAD + vowel * TAILS_PER_VOWEL + (tail and tail + 1 or 0)
+            local syllable = HANGUL_BASE
+                + lead * SYLLABLES_PER_LEAD
+                + vowel * TAILS_PER_VOWEL
+                + (tail and tail + 1 or 0)
             parts[#parts + 1] = encode(syllable)
             index = index + (tail and 3 or 2)
         else
@@ -992,9 +993,7 @@ function PathForms.toNfc(path)
     local parts = {}
     local base, marks = "", ""
     local function flush()
-        if base ~= "" or marks ~= "" then
-            parts[#parts + 1] = TO_NFC[base .. marks] or (base .. marks)
-        end
+        if base ~= "" or marks ~= "" then parts[#parts + 1] = TO_NFC[base .. marks] or (base .. marks) end
     end
     for character in PathForms.toNfd(path):gmatch(UTF8_CHARACTER) do
         if isMark(character) then
@@ -1008,9 +1007,7 @@ function PathForms.toNfc(path)
     return composedHangul(table.concat(parts))
 end
 
-function PathForms.same(left, right)
-    return left == right or PathForms.toNfd(left) == PathForms.toNfd(right)
-end
+function PathForms.same(left, right) return left == right or PathForms.toNfd(left) == PathForms.toNfd(right) end
 
 local PRIVATE_ALIASES = { "/private/tmp", "/private/var", "/private/etc" }
 
@@ -1037,7 +1034,9 @@ end
 local function canonical(path, name)
     local separator = WIN_ENV and "\\" or "/"
     local separatorPattern = WIN_ENV and "%\\" or "/"
-    local problem = name .. " must be written canonically: " .. separator
+    local problem = name
+        .. " must be written canonically: "
+        .. separator
         .. " between names, no empty, '.' or '..' names"
     if path:find(WIN_ENV and "/" or "\\", 1, true) then Reply.refuse(problem) end
     local root = WIN_ENV and (path:match("^%a:\\") or path:match("^\\\\")) or "/"
@@ -1054,10 +1053,8 @@ end
 -- Lightroom's working directory ("/" on macOS), which fails with an unhelpful
 -- "Read-only file system".
 function PathForms.absolute(path, name)
-    local LrPathUtils = import 'LrPathUtils'
-    if path:match("^~[/\\]") then
-        path = LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), path:sub(3))
-    end
+    local LrPathUtils = import "LrPathUtils"
+    if path:match("^~[/\\]") then path = LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), path:sub(3)) end
     local absolute
     if WIN_ENV then
         absolute = path:match("^%a:[/\\]") or path:match("^\\\\")

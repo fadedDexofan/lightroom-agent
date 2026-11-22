@@ -1,7 +1,7 @@
-local CatalogWrite = require 'CatalogWrite'
-local Log = require 'Log'
-local PhotoLookup = require 'PhotoLookup'
-local Reply = require 'Reply'
+local CatalogWrite = require "CatalogWrite"
+local Log = require "Log"
+local PhotoLookup = require "PhotoLookup"
+local Reply = require "Reply"
 
 local PhotoWrites = {}
 

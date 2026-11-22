@@ -1,15 +1,17 @@
-local KeywordTree = require 'KeywordTree'
-local PhotoMarks = require 'PhotoMarks'
+local KeywordTree = require "KeywordTree"
+local PhotoMarks = require "PhotoMarks"
 
 local PhotoRecord = {}
 
-local SHARED_RAW_KEYS = PhotoMarks.withRawKeys({ 'keywords', 'gps', 'gpsAltitude' })
-local SHARED_FORMATTED_KEYS = { 'location', 'city', 'stateProvince', 'country', 'isoCountryCode' }
+local SHARED_RAW_KEYS = PhotoMarks.withRawKeys({ "keywords", "gps", "gpsAltitude" })
+local SHARED_FORMATTED_KEYS = { "location", "city", "stateProvince", "country", "isoCountryCode" }
 
 local function joined(...)
     local all = {}
     for _, list in ipairs({ ... }) do
-        for _, key in ipairs(list) do all[#all + 1] = key end
+        for _, key in ipairs(list) do
+            all[#all + 1] = key
+        end
     end
     return all
 end
@@ -74,7 +76,9 @@ function PhotoRecord.shared(raw, formatted, readKeywords)
 end
 
 function PhotoRecord.merged(record, shared)
-    for key, value in pairs(shared) do record[key] = value end
+    for key, value in pairs(shared) do
+        record[key] = value
+    end
     return record
 end
 

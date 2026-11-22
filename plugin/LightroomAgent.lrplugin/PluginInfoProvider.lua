@@ -1,20 +1,20 @@
-local LrTasks = import 'LrTasks'
-local LrDialogs = import 'LrDialogs'
-local LrFunctionContext = import 'LrFunctionContext'
-local LrSocket = import 'LrSocket'
-local LrPrefs = import 'LrPrefs'
-local LrView = import 'LrView'
-local LrUUID = import 'LrUUID'
-local LrFileUtils = import 'LrFileUtils'
+local LrTasks = import "LrTasks"
+local LrDialogs = import "LrDialogs"
+local LrFunctionContext = import "LrFunctionContext"
+local LrSocket = import "LrSocket"
+local LrPrefs = import "LrPrefs"
+local LrView = import "LrView"
+local LrUUID = import "LrUUID"
+local LrFileUtils = import "LrFileUtils"
 
-local JSON = require 'JSON'
-local PluginFiles = require 'PluginFiles'
-local Contract = require 'Contract'
-local DevelopSession = require 'DevelopSession'
-local Reply = require 'Reply'
-local RequestContext = require 'RequestContext'
-local Log = require 'Log'
-local HandlerLoads = require 'HandlerLoads'
+local JSON = require "JSON"
+local PluginFiles = require "PluginFiles"
+local Contract = require "Contract"
+local DevelopSession = require "DevelopSession"
+local Reply = require "Reply"
+local RequestContext = require "RequestContext"
+local Log = require "Log"
+local HandlerLoads = require "HandlerLoads"
 
 local DEFAULT_REQUEST_PORT = 58763
 local DEFAULT_RESPONSE_PORT = 58764
@@ -27,9 +27,7 @@ local function isNoClientError(errStr)
     return false
 end
 
-local function validPort(n)
-    return type(n) == "number" and n == math.floor(n) and n >= 1 and n <= 65535
-end
+local function validPort(n) return type(n) == "number" and n == math.floor(n) and n >= 1 and n <= 65535 end
 
 local function readPortPrefs()
     local prefs = LrPrefs.prefsForPlugin()
@@ -72,9 +70,7 @@ end
 
 local pluginState = _G.LightroomAgent_State
 
-local function shutdownRequested()
-    return pluginState.shuttingDown == true
-end
+local function shutdownRequested() return pluginState.shuttingDown == true end
 
 -- "failed to open" is also what LrSocket reports when something else already
 -- listens on the port: another process, or a pre-reload instance of this
@@ -87,15 +83,11 @@ local BIND_FAILURE_LOG_INTERVAL_SECONDS = 10
 local LOADED_AT = os.date("%H:%M:%S")
 local lastBindFailureLog = {}
 
-local function isBindFailure(errStr)
-    return errStr:find("failed to open", 1, true) ~= nil
-end
+local function isBindFailure(errStr) return errStr:find("failed to open", 1, true) ~= nil end
 
 local function addLog(msg)
     table.insert(pluginState.log, os.date("%H:%M:%S") .. " - " .. msg)
-    if #pluginState.log > 100 then
-        table.remove(pluginState.log, 1)
-    end
+    if #pluginState.log > 100 then table.remove(pluginState.log, 1) end
     Log.info(msg)
 end
 
@@ -104,9 +96,17 @@ local function logBindFailure(side, port, errStr, now)
     local last = lastBindFailureLog[side]
     if last and now - last < BIND_FAILURE_LOG_INTERVAL_SECONDS then return false end
     lastBindFailureLog[side] = now
-    addLog(side .. " port " .. tostring(port) .. " failed to open (" .. errStr
-        .. ", instance loaded " .. LOADED_AT .. "); if this repeats, another process"
-        .. " or a leftover pre-reload instance holds it")
+    addLog(
+        side
+            .. " port "
+            .. tostring(port)
+            .. " failed to open ("
+            .. errStr
+            .. ", instance loaded "
+            .. LOADED_AT
+            .. "); if this repeats, another process"
+            .. " or a leftover pre-reload instance holds it"
+    )
     return true
 end
 
@@ -226,7 +226,12 @@ local function sendResponse(response, waitLimitSeconds)
             return
         end
         if not selfHealRequested and waited >= SEND_REBIND_TRIGGER_SECONDS then
-            addLog("sendResponse stalled " .. SEND_REBIND_TRIGGER_SECONDS .. "s, requesting rebind id=" .. tostring(response.id))
+            addLog(
+                "sendResponse stalled "
+                    .. SEND_REBIND_TRIGGER_SECONDS
+                    .. "s, requesting rebind id="
+                    .. tostring(response.id)
+            )
             pluginState.responseNeedsRebind = true
             selfHealRequested = true
         end
@@ -243,7 +248,8 @@ local function sendResponse(response, waitLimitSeconds)
         payload = JSON:encode({
             id = response.id,
             effect = "unknown",
-            error = "The plug-in's reply could not be encoded as JSON (" .. tostring(payload)
+            error = "The plug-in's reply could not be encoded as JSON ("
+                .. tostring(payload)
                 .. "); the operation may have run, so check Lightroom before retrying.",
         })
     end
@@ -279,9 +285,7 @@ local function dispatchAction(request)
     -- 100-line ring buffer used by the status panel and drown out real
     -- request activity.
     local isHeartbeat = (action == "ping")
-    if not isHeartbeat then
-        addLog("Request id=" .. tostring(id) .. " action=" .. tostring(action))
-    end
+    if not isHeartbeat then addLog("Request id=" .. tostring(id) .. " action=" .. tostring(action)) end
 
     -- Tracked so the stale-connection monitor can defer a restart while a
     -- real request is in flight. Held through sendResponse (not just the
@@ -321,9 +325,9 @@ end
 -- live token.
 local function consumeMessage(message)
     pluginState.lastEvent = os.date("%H:%M:%S")
-    pluginState.lastRequestTime = os.time()  -- track for stale connection detection; a
-                                              -- heartbeat ping counts as activity same as
-                                              -- any other message.
+    pluginState.lastRequestTime = os.time() -- track for stale connection detection; a
+    -- heartbeat ping counts as activity same as
+    -- any other message.
 
     local parsedOk, request = pcall(function() return JSON:decode(message) end)
     if not parsedOk or type(request) ~= "table" then
@@ -344,9 +348,9 @@ local function consumeMessage(message)
         -- sendResponse uses LrTasks.sleep and onMessage cannot yield.
         addLog("Auth failed (token mismatch) id=" .. tostring(request.id))
         if request.id then
-            LrTasks.startAsyncTask(function()
-                sendResponse({ id = request.id, error = TOKEN_MISMATCH_MESSAGE, effect = "none" })
-            end)
+            LrTasks.startAsyncTask(
+                function() sendResponse({ id = request.id, error = TOKEN_MISMATCH_MESSAGE, effect = "none" }) end
+            )
         end
         return nil
     end
@@ -378,9 +382,7 @@ local function startServer()
 
     pluginState.token = generateToken()
     local tokenWritten = writeTokenFile(pluginState.token)
-    if tokenWritten then
-        addLog("Token written to " .. PluginFiles.token())
-    end
+    if tokenWritten then addLog("Token written to " .. PluginFiles.token()) end
 
     local requestPort, responsePort = readPortPrefs()
     pluginState.requestPort = requestPort
@@ -409,12 +411,8 @@ local function startServer()
             end
             addLog("Server task context cleanup")
             pluginState.running = false
-            if pluginState.requestSocket then
-                pcall(function() pluginState.requestSocket:close() end)
-            end
-            if pluginState.responseSocket then
-                pcall(function() pluginState.responseSocket:close() end)
-            end
+            if pluginState.requestSocket then pcall(function() pluginState.requestSocket:close() end) end
+            if pluginState.responseSocket then pcall(function() pluginState.responseSocket:close() end) end
             pluginState.requestSocket = nil
             pluginState.responseSocket = nil
             pluginState.sendConnected = false
@@ -478,13 +476,9 @@ local function startServer()
                 onError = function(_, err)
                     if not isLive() then return end
                     local errStr = tostring(err)
-                    if isBindFailure(errStr) then
-                        logBindFailure("REQUEST", requestPort, errStr)
-                    end
+                    if isBindFailure(errStr) then logBindFailure("REQUEST", requestPort, errStr) end
                     if isNoClientError(errStr) then
-                        if not pluginState.receiveConnected then
-                            pluginState.requestNeedsReconnect = true
-                        end
+                        if not pluginState.receiveConnected then pluginState.requestNeedsReconnect = true end
                     else
                         pluginState.receiveConnected = false
                         pluginState.requestNeedsRebind = true
@@ -537,13 +531,9 @@ local function startServer()
                 onError = function(_, err)
                     if not isLive() then return end
                     local errStr = tostring(err)
-                    if isBindFailure(errStr) then
-                        logBindFailure("RESPONSE", responsePort, errStr)
-                    end
+                    if isBindFailure(errStr) then logBindFailure("RESPONSE", responsePort, errStr) end
                     if isNoClientError(errStr) then
-                        if not pluginState.sendConnected then
-                            pluginState.responseNeedsReconnect = true
-                        end
+                        if not pluginState.sendConnected then pluginState.responseNeedsReconnect = true end
                     else
                         pluginState.sendConnected = false
                         pluginState.responseNeedsRebind = true
@@ -577,9 +567,7 @@ local function startServer()
             if pluginState.requestNeedsRebind then
                 pluginState.requestGen = pluginState.requestGen + 1
                 local newGen = pluginState.requestGen
-                if pluginState.requestSocket then
-                    pcall(function() pluginState.requestSocket:close() end)
-                end
+                if pluginState.requestSocket then pcall(function() pluginState.requestSocket:close() end) end
                 pluginState.receiveConnected = false
                 LrTasks.sleep(0.1)
                 if shutdownRequested() then break end
@@ -607,9 +595,7 @@ local function startServer()
                 -- suspected Windows trigger.
                 pluginState.responseGen = pluginState.responseGen + 1
                 local newGen = pluginState.responseGen
-                if pluginState.responseSocket then
-                    pcall(function() pluginState.responseSocket:close() end)
-                end
+                if pluginState.responseSocket then pcall(function() pluginState.responseSocket:close() end) end
                 pluginState.sendConnected = false
                 -- Brief yield so any kernel cleanup of the just-closed
                 -- listener completes before we try to bind the same port
@@ -656,7 +642,11 @@ local function startServer()
                 if ref then
                     local idle = os.time() - ref
                     local restart, suffix = shouldRestartForStaleConnection(
-                        idle, pluginState.inFlightRequests, STALE_RECONNECT_SECONDS, STALE_RESTART_HARD_CAP_SECONDS)
+                        idle,
+                        pluginState.inFlightRequests,
+                        STALE_RECONNECT_SECONDS,
+                        STALE_RESTART_HARD_CAP_SECONDS
+                    )
                     if restart then
                         addLog("Stale connection: " .. idle .. "s since last heartbeat, scheduling restart" .. suffix)
                         pluginState.lastRequestTime = nil
@@ -686,7 +676,9 @@ local function stopServer()
     end
     addLog("Stopping LrSocket servers")
     pluginState.running = false
-    for _, activeRequest in pairs(activeRequests) do activeRequest.cancelled = true end
+    for _, activeRequest in pairs(activeRequests) do
+        activeRequest.cancelled = true
+    end
 end
 
 -- Called by PluginInit on plugin load/reload (never on a Plug-in Manager
@@ -702,12 +694,8 @@ local function resetForReload()
     if not pluginState.running then return end
     addLog("Reload detected - resetting previous server instance")
     pluginState.running = false
-    if pluginState.requestSocket then
-        pcall(function() pluginState.requestSocket:close() end)
-    end
-    if pluginState.responseSocket then
-        pcall(function() pluginState.responseSocket:close() end)
-    end
+    if pluginState.requestSocket then pcall(function() pluginState.requestSocket:close() end) end
+    if pluginState.responseSocket then pcall(function() pluginState.responseSocket:close() end) end
     pluginState.requestSocket = nil
     pluginState.responseSocket = nil
     pluginState.sendConnected = false
@@ -769,22 +757,18 @@ local PluginInfoProvider = {
 
 function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
     local prefs = LrPrefs.prefsForPlugin()
-    if prefs.autoStartServer == nil then
-        prefs.autoStartServer = true
-    end
+    if prefs.autoStartServer == nil then prefs.autoStartServer = true end
     propertyTable.autoStartServer = prefs.autoStartServer
-    propertyTable:addObserver('autoStartServer', function(_, _, value)
-        prefs.autoStartServer = value
-    end)
+    propertyTable:addObserver("autoStartServer", function(_, _, value) prefs.autoStartServer = value end)
 
     local cfgRequestPort, cfgResponsePort = readPortPrefs()
     propertyTable.requestPort = cfgRequestPort
     propertyTable.responsePort = cfgResponsePort
-    propertyTable:addObserver('requestPort', function(_, _, value)
+    propertyTable:addObserver("requestPort", function(_, _, value)
         local n = tonumber(value)
         if validPort(n) then prefs.requestPort = n end
     end)
-    propertyTable:addObserver('responsePort', function(_, _, value)
+    propertyTable:addObserver("responsePort", function(_, _, value)
         local n = tonumber(value)
         if validPort(n) then prefs.responsePort = n end
     end)
@@ -818,12 +802,12 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
             },
             f:checkbox {
                 title = "Auto-start server on Lightroom launch",
-                value = LrView.bind('autoStartServer'),
+                value = LrView.bind("autoStartServer"),
             },
             f:row {
                 f:static_text { title = "Request port:", width = 110 },
                 f:edit_field {
-                    value = LrView.bind('requestPort'),
+                    value = LrView.bind("requestPort"),
                     width_in_chars = 7,
                     precision = 0,
                     min = 1,
@@ -834,7 +818,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
             f:row {
                 f:static_text { title = "Response port:", width = 110 },
                 f:edit_field {
-                    value = LrView.bind('responsePort'),
+                    value = LrView.bind("responsePort"),
                     width_in_chars = 7,
                     precision = 0,
                     min = 1,
@@ -867,9 +851,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                 },
                 f:push_button {
                     title = "Stop Server",
-                    action = function()
-                        stopServer()
-                    end,
+                    action = function() stopServer() end,
                 },
                 f:push_button {
                     title = "Show Status",

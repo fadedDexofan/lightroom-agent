@@ -1,16 +1,16 @@
-local LrTasks = import 'LrTasks'
-local LrUUID = import 'LrUUID'
+local LrTasks = import "LrTasks"
+local LrUUID = import "LrUUID"
 
-local AIMaskData = require 'AIMaskData'
-local BrushStrokes = require 'BrushStrokes'
-local CatalogWrite = require 'CatalogWrite'
-local DevelopReadBack = require 'DevelopReadBack'
-local LocalSliders = require 'LocalSliders'
-local Reply = require 'Reply'
-local Log = require 'Log'
-local DecimalText = require 'DecimalText'
-local JsonValue = require 'JsonValue'
-local MaskWriteAdmission = require 'MaskWriteAdmission'
+local AIMaskData = require "AIMaskData"
+local BrushStrokes = require "BrushStrokes"
+local CatalogWrite = require "CatalogWrite"
+local DevelopReadBack = require "DevelopReadBack"
+local LocalSliders = require "LocalSliders"
+local Reply = require "Reply"
+local Log = require "Log"
+local DecimalText = require "DecimalText"
+local JsonValue = require "JsonValue"
+local MaskWriteAdmission = require "MaskWriteAdmission"
 
 local GuardedMaskWrite = {}
 
@@ -59,8 +59,16 @@ local COMPONENT_SCHEMAS = {
     },
     ["Mask/CircularGradient"] = {
         required = {
-            What = "string", Top = "number", Left = "number", Bottom = "number", Right = "number",
-            Angle = "number", Feather = "number", Midpoint = "number", Roundness = "number", Version = "number",
+            What = "string",
+            Top = "number",
+            Left = "number",
+            Bottom = "number",
+            Right = "number",
+            Angle = "number",
+            Feather = "number",
+            Midpoint = "number",
+            Roundness = "number",
+            Version = "number",
         },
         optional = {},
     },
@@ -70,7 +78,11 @@ local COMPONENT_SCHEMAS = {
     },
     ["Mask/Paint"] = {
         required = {
-            What = "string", Dabs = "table", Radius = "number", Flow = "number", CenterWeight = "number",
+            What = "string",
+            Dabs = "table",
+            Radius = "number",
+            Flow = "number",
+            CenterWeight = "number",
         },
         optional = {},
     },
@@ -106,14 +118,10 @@ local function hasType(value, expected)
     return type(value) == expected
 end
 
-local function addProblem(problems, text)
-    problems[#problems + 1] = text
-end
+local function addProblem(problems, text) problems[#problems + 1] = text end
 
 local function checkFields(item, required, optional, isAllowedExtra, where, problems, before)
-    local function unchanged(name)
-        return before ~= nil and JsonValue.equal(item[name], before[name])
-    end
+    local function unchanged(name) return before ~= nil and JsonValue.equal(item[name], before[name]) end
     for name, expected in pairs(required) do
         local value = item[name]
         if not unchanged(name) then
@@ -151,12 +159,19 @@ local function validateRange(range, where, problems)
     end
     local typeFields = RANGE_TYPE_FIELDS[range.Type]
     if typeFields == nil then
-        addProblem(problems, where .. ": unsupported range Type " .. tostring(range.Type)
-            .. " (only luminance 2, color 1 and depth -1 are supported)")
+        addProblem(
+            problems,
+            where
+                .. ": unsupported range Type "
+                .. tostring(range.Type)
+                .. " (only luminance 2, color 1 and depth -1 are supported)"
+        )
         return
     end
     local required = { Type = "number" }
-    for name, expected in pairs(typeFields) do required[name] = expected end
+    for name, expected in pairs(typeFields) do
+        required[name] = expected
+    end
     checkFields(range, required, RANGE_OPTIONAL_FIELDS, never, where, problems)
     if range.Type == RANGE_TYPE_COLOR and type(range.PointModels) == "table" then
         if #range.PointModels ~= 1 then
@@ -179,8 +194,12 @@ local function validateComponent(component, where, problems)
         return
     end
     local optional = {}
-    for name, expected in pairs(COMPONENT_OPTIONAL_FIELDS) do optional[name] = expected end
-    for name, expected in pairs(schema.optional) do optional[name] = expected end
+    for name, expected in pairs(COMPONENT_OPTIONAL_FIELDS) do
+        optional[name] = expected
+    end
+    for name, expected in pairs(schema.optional) do
+        optional[name] = expected
+    end
     checkFields(component, schema.required, optional, never, where, problems)
     if component.What == "Mask/Aggregate" and type(component.Masks) == "table" then
         for index, child in ipairs(component.Masks) do
@@ -192,7 +211,9 @@ local function validateComponent(component, where, problems)
 end
 
 local function heldComponent(component, before)
-    for _, held in ipairs(type(before) == "table" and type(before.CorrectionMasks) == "table" and before.CorrectionMasks or {}) do
+    for _, held in
+        ipairs(type(before) == "table" and type(before.CorrectionMasks) == "table" and before.CorrectionMasks or {})
+    do
         if JsonValue.equal(held, component) then return true end
     end
     return false
@@ -218,24 +239,28 @@ end
 
 function GuardedMaskWrite.formatProblems(entries)
     local problems = {}
-    for index, entry in ipairs(entries) do validateEntry(entry, "existing mask " .. index, problems) end
+    for index, entry in ipairs(entries) do
+        validateEntry(entry, "existing mask " .. index, problems)
+    end
     table.sort(problems)
     return problems
 end
 
-local function newId()
-    return LrUUID.generateUUID():upper()
-end
+local function newId() return LrUUID.generateUUID():upper() end
 
 local function requireNamed(entries)
     for index, entry in ipairs(entries) do
         local mask = string.format('mask %d ("%s")', index, tostring(entry.CorrectionName))
         local unnamed = entry.CorrectionID == nil and mask or nil
         for _, component in ipairs(type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}) do
-            if unnamed == nil and type(component) == "table" and component.MaskID == nil then unnamed = "a tool of " .. mask end
+            if unnamed == nil and type(component) == "table" and component.MaskID == nil then
+                unnamed = "a tool of " .. mask
+            end
         end
         if unnamed ~= nil then
-            Reply.refuse(unnamed .. " has no id yet; Lightroom names a mask a few seconds after it is written; call again")
+            Reply.refuse(
+                unnamed .. " has no id yet; Lightroom names a mask a few seconds after it is written; call again"
+            )
         end
     end
 end
@@ -280,40 +305,36 @@ local function planConstruction(before, proposed)
     local plan = plannedEntries(before, proposed)
     local problems = {}
     for index, entry in ipairs(proposed) do
-        if not plan[index].preserved then
-            validateEntry(entry, "new mask " .. index, problems, plan[index].before)
-        end
+        if not plan[index].preserved then validateEntry(entry, "new mask " .. index, problems, plan[index].before) end
     end
     if #problems > 0 then
         table.sort(problems)
-        Reply.refuse("The requested mask change does not match the format this tool was tested with: "
-            .. describeProblems(problems))
+        Reply.refuse(
+            "The requested mask change does not match the format this tool was tested with: "
+                .. describeProblems(problems)
+        )
     end
     return plan
 end
 
-local function closeEnough(left, right)
-    return math.abs(left - right) <= TOLERANCE * math.max(1, math.abs(left))
-end
+local function closeEnough(left, right) return math.abs(left - right) <= TOLERANCE * math.max(1, math.abs(left)) end
 
 local function numbersIn(text)
     local numbers = {}
-    for token in text:gmatch("%S+") do numbers[#numbers + 1] = DecimalText.parse(token) end
+    for token in text:gmatch("%S+") do
+        numbers[#numbers + 1] = DecimalText.parse(token)
+    end
     return numbers
 end
 
-local function isNumberList(text)
-    return text:match("^[%d%.%-%s]+$") ~= nil
-end
+local function isNumberList(text) return text:match("^[%d%.%-%s]+$") ~= nil end
 
 local function sameNumberList(expected, actual)
     if not (isNumberList(expected) and isNumberList(actual)) then return false end
     local left, right = numbersIn(expected), numbersIn(actual)
     if #left == 0 or #left ~= #right then return false end
     for index = 1, #left do
-        if left[index] == nil or right[index] == nil or not closeEnough(left[index], right[index]) then
-            return false
-        end
+        if left[index] == nil or right[index] == nil or not closeEnough(left[index], right[index]) then return false end
     end
     return true
 end
@@ -366,7 +387,9 @@ local function compareDabs(expected, actual, where, problems)
         local compared = expectedTag == POSITION_TOKEN and 2 or 1
         local same = expectedTag == actualTag and #actualNumbers >= compared
         for position = 1, compared do
-            same = same and expectedNumbers[position] ~= nil and actualNumbers[position] ~= nil
+            same = same
+                and expectedNumbers[position] ~= nil
+                and actualNumbers[position] ~= nil
                 and closeEnough(expectedNumbers[position], actualNumbers[position])
         end
         if not same then addProblem(problems, where .. ": dab " .. index .. " changed") end
@@ -379,7 +402,9 @@ local function pathOf(parent, name)
 end
 
 local function isLocalAdjustmentOmittedAtDefault(name, expected, actual)
-    return actual == nil and isLocalAdjustment(name) and type(expected) == "number"
+    return actual == nil
+        and isLocalAdjustment(name)
+        and type(expected) == "number"
         and closeEnough(expected, LocalSliders.storedNeutralOf(name))
 end
 
@@ -401,8 +426,14 @@ local function compareValue(name, expected, actual, parent, problems, valueIsWri
         end
         for key, value in pairs(expected) do
             if not (expected.What == AIMaskData.KIND and AIMaskData.isComputed(key)) then
-                compareValue(key, value, actual[key], where, problems,
-                    expected.What == PAINT_WHAT or expected.What == AIMaskData.KIND)
+                compareValue(
+                    key,
+                    value,
+                    actual[key],
+                    where,
+                    problems,
+                    expected.What == PAINT_WHAT or expected.What == AIMaskData.KIND
+                )
             end
         end
         return
@@ -433,7 +464,10 @@ local function mismatchesFor(plan)
         for index, entry in ipairs(expected) do
             if plan[index] and plan[index].preserved then
                 for _, path in ipairs(JsonValue.differences(entry, actual[index])) do
-                    addProblem(problems, string.format("masks[%d], left alone by this call, changed at %s", index, path))
+                    addProblem(
+                        problems,
+                        string.format("masks[%d], left alone by this call, changed at %s", index, path)
+                    )
                 end
             else
                 compareValue(index, entry, actual[index], "masks", problems)
@@ -444,9 +478,7 @@ local function mismatchesFor(plan)
     end
 end
 
-local function entriesOf(settings)
-    return deepClone(settings.MaskGroupBasedCorrections or {}), settings.ProcessVersion
-end
+local function entriesOf(settings) return deepClone(settings.MaskGroupBasedCorrections or {}), settings.ProcessVersion end
 
 local function readEntries(catalog, photo)
     local settings
@@ -454,9 +486,7 @@ local function readEntries(catalog, photo)
     return entriesOf(settings)
 end
 
-function GuardedMaskWrite.readEntries(catalog, photo)
-    return (readEntries(catalog, photo))
-end
+function GuardedMaskWrite.readEntries(catalog, photo) return (readEntries(catalog, photo)) end
 
 function GuardedMaskWrite.inspect(catalog, photo)
     local entries, processVersion = readEntries(catalog, photo)
@@ -468,9 +498,13 @@ function GuardedMaskWrite.inspect(catalog, photo)
 end
 
 local function writeEntries(context, catalog, photo, description, entries)
-    CatalogWrite.developSettings(context, catalog, photo, description, function()
-        return { MaskGroupBasedCorrections = entries }
-    end)
+    CatalogWrite.developSettings(
+        context,
+        catalog,
+        photo,
+        description,
+        function() return { MaskGroupBasedCorrections = entries } end
+    )
 end
 
 local function readBackUntilMatching(catalog, photo, expected, mismatchesOf)
@@ -478,9 +512,7 @@ local function readBackUntilMatching(catalog, photo, expected, mismatchesOf)
     while true do
         local actual = readEntries(catalog, photo)
         local mismatches = mismatchesOf(expected, actual)
-        if #mismatches == 0 or waited >= READ_BACK_TIMEOUT_SECONDS then
-            return actual, mismatches
-        end
+        if #mismatches == 0 or waited >= READ_BACK_TIMEOUT_SECONDS then return actual, mismatches end
         LrTasks.sleep(READ_BACK_POLL_SECONDS)
         waited = waited + READ_BACK_POLL_SECONDS
     end
@@ -503,11 +535,18 @@ local function failAfterRollback(context, catalog, photo, previous, problems, ma
     local summary = describeProblems(problems)
     Log.warn(string.format("Guarded mask write failed (restored=%s): %s", tostring(restored), summary))
     if restored then
-        Reply.refuse("Lightroom did not keep the mask data that was written, so the photo's previous masks were"
-            .. " restored: " .. summary)
+        Reply.refuse(
+            "Lightroom did not keep the mask data that was written, so the photo's previous masks were"
+                .. " restored: "
+                .. summary
+        )
     end
-    error("Lightroom did not keep the mask data that was written, and the previous masks could not be"
-        .. " confirmed restored; check the photo's masks in Develop: " .. summary, 0)
+    error(
+        "Lightroom did not keep the mask data that was written, and the previous masks could not be"
+            .. " confirmed restored; check the photo's masks in Develop: "
+            .. summary,
+        0
+    )
 end
 
 function GuardedMaskWrite.precheck(catalog, photo, proposed, processVersion)
@@ -524,7 +563,12 @@ function GuardedMaskWrite.submit(context, catalog, photo, spec)
     end
     local previous, proposed, sent, settings
     local mark = context.ledger:mark()
-    local wrote, writeError = LrTasks.pcall(CatalogWrite.developSettings, context, catalog, photo, spec.description,
+    local wrote, writeError = LrTasks.pcall(
+        CatalogWrite.developSettings,
+        context,
+        catalog,
+        photo,
+        spec.description,
         function()
             settings = DevelopReadBack.saved(photo)
             previous = entriesOf(settings)
@@ -533,25 +577,28 @@ function GuardedMaskWrite.submit(context, catalog, photo, spec)
             if proposed == nil then return nil end
             sent = true
             return { MaskGroupBasedCorrections = deepClone(proposed) }
-        end)
+        end
+    )
     if not wrote and not sent then error(writeError, 0) end
     if not wrote then
-        failAfterRollback(context, catalog, photo, previous, { "Lightroom rejected the write: " .. tostring(writeError) },
-            mark)
+        failAfterRollback(
+            context,
+            catalog,
+            photo,
+            previous,
+            { "Lightroom rejected the write: " .. tostring(writeError) },
+            mark
+        )
     end
     if proposed == nil then return { previous = previous, entries = previous, settings = settings } end
 
     local read, actual, mismatches = LrTasks.pcall(readBackUntilMatching, catalog, photo, proposed, spec.mismatches)
-    if not read then
-        mismatches = { "the masks could not be read back: " .. tostring(actual) }
-    end
+    if not read then mismatches = { "the masks could not be read back: " .. tostring(actual) } end
     if #mismatches == 0 and spec.readBackProblem then
         local problem = spec.readBackProblem(actual)
         if problem then mismatches = { problem } end
     end
-    if #mismatches > 0 then
-        failAfterRollback(context, catalog, photo, previous, mismatches, mark)
-    end
+    if #mismatches > 0 then failAfterRollback(context, catalog, photo, previous, mismatches, mark) end
     return { previous = previous, entries = actual, settings = settings }
 end
 
@@ -585,9 +632,7 @@ end
 
 function GuardedMaskWrite.findCorrection(entries, maskId)
     for index, entry in ipairs(entries) do
-        if entry.CorrectionID ~= nil and tostring(entry.CorrectionID) == tostring(maskId) then
-            return index, entry
-        end
+        if entry.CorrectionID ~= nil and tostring(entry.CorrectionID) == tostring(maskId) then return index, entry end
     end
     return nil
 end
@@ -595,13 +640,10 @@ end
 function GuardedMaskWrite.findComponent(entries, toolId)
     for entryIndex, entry in ipairs(entries) do
         for componentIndex, component in ipairs(entry.CorrectionMasks or {}) do
-            if tostring(component.MaskID) == tostring(toolId) then
-                return entryIndex, componentIndex, component
-            end
+            if tostring(component.MaskID) == tostring(toolId) then return entryIndex, componentIndex, component end
         end
     end
     return nil
 end
-
 
 return GuardedMaskWrite

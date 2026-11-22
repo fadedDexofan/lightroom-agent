@@ -1,4 +1,4 @@
-local Reply = require 'Reply'
+local Reply = require "Reply"
 
 local MaskPointColors = {}
 
@@ -27,13 +27,13 @@ local DEFAULT_VARIANCE = 0
 local function storedNumbers(text)
     local numbers = {}
     if type(text) ~= "string" then return numbers end
-    for item in text:gmatch("[^,]+") do numbers[#numbers + 1] = tonumber(item) or false end
+    for item in text:gmatch("[^,]+") do
+        numbers[#numbers + 1] = tonumber(item) or false
+    end
     return numbers
 end
 
-local function storedCount()
-    return #STORED_SCALARS + #RANGES * #RANGE_EDGES
-end
+local function storedCount() return #STORED_SCALARS + #RANGES * #RANGE_EDGES end
 
 local function readable(numbers)
     if #numbers ~= storedCount() then return false end
@@ -54,9 +54,7 @@ function MaskPointColors.fromStored(colors, variances)
     local swatches = {}
     if type(colors) ~= "table" then return swatches end
     local unreadable = MaskPointColors.unreadableIndex(colors)
-    if unreadable then
-        Reply.refuse("Lightroom stored an unreadable Point Color swatch at index " .. unreadable)
-    end
+    if unreadable then Reply.refuse("Lightroom stored an unreadable Point Color swatch at index " .. unreadable) end
     for index, text in ipairs(colors) do
         local numbers = storedNumbers(text)
         local swatch, position = {}, 0
@@ -79,9 +77,13 @@ end
 
 function MaskPointColors.toStored(swatch)
     local texts = {}
-    for _, name in ipairs(STORED_SCALARS) do texts[#texts + 1] = string.format(STORED_FORMAT, swatch[name]) end
+    for _, name in ipairs(STORED_SCALARS) do
+        texts[#texts + 1] = string.format(STORED_FORMAT, swatch[name])
+    end
     for _, range in ipairs(RANGES) do
-        for _, edge in ipairs(RANGE_EDGES) do texts[#texts + 1] = string.format(STORED_FORMAT, swatch[range][edge]) end
+        for _, edge in ipairs(RANGE_EDGES) do
+            texts[#texts + 1] = string.format(STORED_FORMAT, swatch[range][edge])
+        end
     end
     return table.concat(texts, STORED_SEPARATOR), string.format(STORED_FORMAT, swatch[VARIANCE] or DEFAULT_VARIANCE)
 end
@@ -92,10 +94,19 @@ function MaskPointColors.requireOrderedRanges(swatch, index)
         for position = 2, #RANGE_EDGES do
             if edges[RANGE_EDGES[position - 1]] > edges[RANGE_EDGES[position]] then
                 local values = {}
-                for _, edge in ipairs(RANGE_EDGES) do values[#values + 1] = tostring(edges[edge]) end
-                Reply.refuse(string.format("Point Color swatch %d's %s edges are not ordered (%s): %s; Lightroom drops"
-                    .. " every swatch of a mask that holds such a range", index, range, table.concat(RANGE_EDGES, " <= "),
-                    table.concat(values, ", ")))
+                for _, edge in ipairs(RANGE_EDGES) do
+                    values[#values + 1] = tostring(edges[edge])
+                end
+                Reply.refuse(
+                    string.format(
+                        "Point Color swatch %d's %s edges are not ordered (%s): %s; Lightroom drops"
+                            .. " every swatch of a mask that holds such a range",
+                        index,
+                        range,
+                        table.concat(RANGE_EDGES, " <= "),
+                        table.concat(values, ", ")
+                    )
+                )
             end
         end
     end
@@ -108,13 +119,17 @@ end
 
 local function copyRange(range)
     local copied = {}
-    for _, edge in ipairs(RANGE_EDGES) do copied[edge] = range[edge] end
+    for _, edge in ipairs(RANGE_EDGES) do
+        copied[edge] = range[edge]
+    end
     return copied
 end
 
 function MaskPointColors.copySwatch(swatch)
     local copied = {}
-    for _, scalar in ipairs(SCALARS) do copied[scalar.name] = swatch[scalar.name] end
+    for _, scalar in ipairs(SCALARS) do
+        copied[scalar.name] = swatch[scalar.name]
+    end
     for _, range in ipairs(RANGES) do
         if swatch[range] then copied[range] = copyRange(swatch[range]) end
     end
@@ -132,9 +147,7 @@ function MaskPointColors.merge(current, patch)
     return merged
 end
 
-local function storedText(value)
-    return string.format(STORED_FORMAT, value)
-end
+local function storedText(value) return string.format(STORED_FORMAT, value) end
 
 function MaskPointColors.sameSource(left, right)
     for _, name in ipairs({ "SrcHue", "SrcSat", "SrcLum" }) do
@@ -166,9 +179,7 @@ end
 
 local SOURCE_STEP = 0.01
 
-local function sourceOf(value)
-    return math.floor(value / SOURCE_STEP + 0.5) * SOURCE_STEP
-end
+local function sourceOf(value) return math.floor(value / SOURCE_STEP + 0.5) * SOURCE_STEP end
 
 function MaskPointColors.newSwatch(fields)
     local srcSat, srcLum = sourceOf(fields.SrcSat), sourceOf(fields.SrcLum)

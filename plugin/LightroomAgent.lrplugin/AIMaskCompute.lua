@@ -1,12 +1,12 @@
-local LrTasks = import 'LrTasks'
+local LrTasks = import "LrTasks"
 
-local AIMaskData = require 'AIMaskData'
-local Contract = require 'Contract'
-local CatalogWrite = require 'CatalogWrite'
-local DevelopReadBack = require 'DevelopReadBack'
-local GuardedMaskWrite = require 'GuardedMaskWrite'
-local JsonValue = require 'JsonValue'
-local Reply = require 'Reply'
+local AIMaskData = require "AIMaskData"
+local Contract = require "Contract"
+local CatalogWrite = require "CatalogWrite"
+local DevelopReadBack = require "DevelopReadBack"
+local GuardedMaskWrite = require "GuardedMaskWrite"
+local JsonValue = require "JsonValue"
+local Reply = require "Reply"
 
 local AIMaskCompute = {}
 
@@ -34,15 +34,11 @@ end
 
 local POLL_SECONDS = 0.1
 
-local function idOf(entry)
-    return entry.CorrectionID ~= nil and tostring(entry.CorrectionID) or nil
-end
+local function idOf(entry) return entry.CorrectionID ~= nil and tostring(entry.CorrectionID) or nil end
 
 local function errorReasonOf(entry)
     for _, component in ipairs(entry.CorrectionMasks or {}) do
-        if (component.ErrorReason or 0) ~= 0 then
-            return component.ErrorReason
-        end
+        if (component.ErrorReason or 0) ~= 0 then return component.ErrorReason end
     end
     return nil
 end
@@ -83,7 +79,9 @@ end
 
 local function namedKeys(keys)
     local named = {}
-    for index = 1, math.min(#keys, MAX_NAMED_KEYS) do named[index] = keys[index] end
+    for index = 1, math.min(#keys, MAX_NAMED_KEYS) do
+        named[index] = keys[index]
+    end
     if #keys > MAX_NAMED_KEYS then named[#named + 1] = string.format("%d more", #keys - MAX_NAMED_KEYS) end
     return table.concat(named, ", ")
 end
@@ -95,8 +93,13 @@ local function restoreAndRefuse(context, catalog, photo, write, reason)
     if #context.ledger:since(write.to) > 0 then
         local changed = keysOutsideMasksChangedSince(catalog, photo, write.settings)
         if #changed > 0 then
-            error(reason .. "; the new masks were removed, but Update AI Settings also changed " .. namedKeys(changed)
-                .. " on the photo", 0)
+            error(
+                reason
+                    .. "; the new masks were removed, but Update AI Settings also changed "
+                    .. namedKeys(changed)
+                    .. " on the photo",
+                0
+            )
         end
         context.ledger:undone(write.to)
     end
@@ -117,9 +120,14 @@ local function changedByRecompute(previous, entry)
     local now = aiComponentsById(entry)
     for maskId, held in pairs(aiComponentsById(previous)) do
         local component = now[maskId]
-        if AIMaskData.componentState(held) == "computed" and component ~= nil
-            and (AIMaskData.componentState(component) == "failed"
-                or component[AIMaskData.COMPUTATION_MARKER_KEY] ~= held[AIMaskData.COMPUTATION_MARKER_KEY]) then
+        if
+            AIMaskData.componentState(held) == "computed"
+            and component ~= nil
+            and (
+                AIMaskData.componentState(component) == "failed"
+                or component[AIMaskData.COMPUTATION_MARKER_KEY] ~= held[AIMaskData.COMPUTATION_MARKER_KEY]
+            )
+        then
             return true
         end
     end
@@ -131,15 +139,26 @@ local function warnAboutExisting(context, photoId, before, after)
     for _, entry in ipairs(before) do
         local reason = AIMaskData.computeState(entry) == "failed" and errorReasonOf(entry)
         if reason then
-            context:warn(string.format("Photo %s: mask %s was already failed (%s) before this call",
-                photoId, idOf(entry), AIMaskData.errorReasonText(reason)))
+            context:warn(
+                string.format(
+                    "Photo %s: mask %s was already failed (%s) before this call",
+                    photoId,
+                    idOf(entry),
+                    AIMaskData.errorReasonText(reason)
+                )
+            )
         end
     end
     for _, entry in ipairs(after) do
         local previous = beforeById[idOf(entry) or ""]
         if previous and changedByRecompute(previous, entry) then
-            context:warn(string.format("Photo %s: Lightroom's photo-wide AI recompute changed mask %s; check it",
-                photoId, idOf(entry)))
+            context:warn(
+                string.format(
+                    "Photo %s: Lightroom's photo-wide AI recompute changed mask %s; check it",
+                    photoId,
+                    idOf(entry)
+                )
+            )
         end
     end
 end
@@ -162,7 +181,9 @@ local function ownOf(spec, existing, after)
     for _, entry in ipairs(after) do
         if beforeById[idOf(entry) or ""] == nil then
             own[#own + 1] = entry
-            for _, component in pairs(aiComponentsById(entry)) do components[#components + 1] = component end
+            for _, component in pairs(aiComponentsById(entry)) do
+                components[#components + 1] = component
+            end
         end
     end
     return own, components
@@ -177,12 +198,20 @@ local function failureText(spec, own, failedComponents, photoId)
         if component.ErrorReason ~= 1 then nothingFound = false end
     end
     if not nothingFound then
-        return string.format("Lightroom could not compute %s on photo %s (%s)", spec.subject, photoId,
-            table.concat(reasons, "; "))
+        return string.format(
+            "Lightroom could not compute %s on photo %s (%s)",
+            spec.subject,
+            photoId,
+            table.concat(reasons, "; ")
+        )
     end
     if spec.nothingFound then return spec.nothingFound(own) end
-    return string.format("Lightroom found nothing for %s on photo %s (%s)", spec.subject, photoId,
-        table.concat(names, ", "))
+    return string.format(
+        "Lightroom found nothing for %s on photo %s (%s)",
+        spec.subject,
+        photoId,
+        table.concat(names, ", ")
+    )
 end
 
 function AIMaskCompute.run(context, catalog, photo, spec)
@@ -191,7 +220,8 @@ function AIMaskCompute.run(context, catalog, photo, spec)
     local write
     if spec.build then
         local from = context.ledger:mark()
-        local applied = GuardedMaskWrite.apply(context, catalog, photo, { description = spec.description, build = spec.build })
+        local applied =
+            GuardedMaskWrite.apply(context, catalog, photo, { description = spec.description, build = spec.build })
         previous = applied.previous
         write = { previous = previous, settings = applied.settings, from = from, to = context.ledger:mark() }
     end
@@ -205,14 +235,27 @@ function AIMaskCompute.run(context, catalog, photo, spec)
     if not compute.entered then fail(computeError) end
     local after, pending = settled(catalog, photo)
     if pending then
-        error(string.format("%sLightroom has not finished computing the AI masks of photo %s within %d s, so nothing more"
-            .. " was written to it. Do not write to this photo until its masks show in Develop: a write while"
-            .. " Lightroom still computes can freeze Lightroom.", computeError and computeError .. "; " or "", photoId,
-            Contract.AI_MASK_COMPUTE_WAIT_SECONDS), 0)
+        error(
+            string.format(
+                "%sLightroom has not finished computing the AI masks of photo %s within %d s, so nothing more"
+                    .. " was written to it. Do not write to this photo until its masks show in Develop: a write while"
+                    .. " Lightroom still computes can freeze Lightroom.",
+                computeError and computeError .. "; " or "",
+                photoId,
+                Contract.AI_MASK_COMPUTE_WAIT_SECONDS
+            ),
+            0
+        )
     end
     if computeError then
-        context:warn(string.format("Photo %s: %s; nothing on the photo was still computing afterwards, so the call judged"
-            .. " the photo as it stands", photoId, computeError))
+        context:warn(
+            string.format(
+                "Photo %s: %s; nothing on the photo was still computing afterwards, so the call judged"
+                    .. " the photo as it stands",
+                photoId,
+                computeError
+            )
+        )
     end
     local existing = spec.replaces and {} or previous
     local own, components = ownOf(spec, existing, after)

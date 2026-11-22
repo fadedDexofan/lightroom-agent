@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local function setup(states)
     local reads, undos = 0, 0
@@ -12,7 +12,7 @@ local function setup(states)
         },
     })
     package.loaded.HandlerUndo = nil
-    return require 'HandlerUndo', function() return reads, undos end
+    return require "HandlerUndo", function() return reads, undos end
 end
 
 describe("HandlerUndo.undoLastStep", function()

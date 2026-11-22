@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local BrushStrokes
 
@@ -6,14 +6,16 @@ local function point(x, y) return { x = x, y = y } end
 
 local function stroke(overrides)
     local value = { points = { point(0.2, 0.3), point(0.3, 0.3) } }
-    for key, item in pairs(overrides or {}) do value[key] = item end
+    for key, item in pairs(overrides or {}) do
+        value[key] = item
+    end
     return value
 end
 
 local function load()
     helper.installImport({})
     package.loaded.BrushStrokes = nil
-    BrushStrokes = require 'BrushStrokes'
+    BrushStrokes = require "BrushStrokes"
 end
 
 describe("BrushStrokes.parseStrokes", function()
@@ -28,9 +30,10 @@ describe("BrushStrokes.parseStrokes", function()
         assert.are.same({ point(0.2, 0.3), point(0.3, 0.3) }, parsed[1].points)
     end)
 
-    it("rounds flow to the four decimals of the stored flow token", function()
-        assert.are.equal(0.3333, BrushStrokes.parseStrokes({ stroke({ flow = 1 / 3 }) })[1].flow)
-    end)
+    it(
+        "rounds flow to the four decimals of the stored flow token",
+        function() assert.are.equal(0.3333, BrushStrokes.parseStrokes({ stroke({ flow = 1 / 3 }) })[1].flow) end
+    )
 
     it("defaults to the soft, full density add brush Lightroom starts with", function()
         local parsed = BrushStrokes.parseStrokes({ stroke() })[1]
@@ -46,7 +49,8 @@ describe("BrushStrokes.newAggregate", function()
 
     it("builds an aggregate with one paint per stroke in the stored form", function()
         local aggregate = BrushStrokes.newAggregate(BrushStrokes.parseStrokes({
-            stroke({ radius = 0.05 }), stroke({ points = { point(0.7, 0.8) } }),
+            stroke({ radius = 0.05 }),
+            stroke({ points = { point(0.7, 0.8) } }),
         }))
 
         assert.are.equal("Mask/Aggregate", aggregate.What)
@@ -122,8 +126,10 @@ describe("BrushStrokes feather, density and erase", function()
             })[1]
 
             assert.is_true(math.abs(parsed.radius - sample.radius) < 1e-5, "radius at feather " .. sample.feather)
-            assert.is_true(math.abs(parsed.centerWeight - sample.centerWeight) < 1e-5,
-                "center weight at feather " .. sample.feather)
+            assert.is_true(
+                math.abs(parsed.centerWeight - sample.centerWeight) < 1e-5,
+                "center weight at feather " .. sample.feather
+            )
         end
     end)
 
@@ -142,8 +148,10 @@ describe("BrushStrokes feather, density and erase", function()
             local parsed = BrushStrokes.parseStrokes({ stroke({ radius = 1, feather = sample.feather }) })[1]
 
             assert.is_true(math.abs(parsed.radius - sample.scale) < 0.002, "radius at feather " .. sample.feather)
-            assert.is_true(math.abs(parsed.centerWeight - sample.centerWeight) < 0.003,
-                "center weight at feather " .. sample.feather)
+            assert.is_true(
+                math.abs(parsed.centerWeight - sample.centerWeight) < 0.003,
+                "center weight at feather " .. sample.feather
+            )
         end
     end)
 
@@ -191,7 +199,8 @@ describe("BrushStrokes feather, density and erase", function()
 
     it("stores density as the paint value", function()
         local aggregate = BrushStrokes.newAggregate(BrushStrokes.parseStrokes({
-            stroke({ density = 0.3 }), stroke(),
+            stroke({ density = 0.3 }),
+            stroke(),
         }))
 
         assert.are.equal(0.3, aggregate.Masks[1].MaskValue)
@@ -204,7 +213,6 @@ describe("BrushStrokes feather, density and erase", function()
         assert.are.equal(0, aggregate.Masks[1].MaskValue)
         assert.are.equal(0, aggregate.Masks[1].MaskBlendMode)
     end)
-
 end)
 
 describe("BrushStrokes.toStoredFrame", function()
@@ -213,8 +221,10 @@ describe("BrushStrokes.toStoredFrame", function()
     local function frameOf(orientation, settings)
         helper.installImport({})
         package.loaded.ImageFrame = nil
-        return require('ImageFrame').of({
-            orientation = orientation, dimensions = { width = 3000, height = 2000 }, settings = settings or {},
+        return require("ImageFrame").of({
+            orientation = orientation,
+            dimensions = { width = 3000, height = 2000 },
+            settings = settings or {},
         })
     end
 
@@ -226,9 +236,11 @@ describe("BrushStrokes.toStoredFrame", function()
         local points = { point(0, 0), point(1, 1) }
 
         assert.is_true(pcall(stored, { stroke({ points = points, radius = 0.0016 }) }))
-        assert.is_truthy(helper.failedOf(function()
-            stored({ stroke({ points = points, radius = 0.0016, feather = 0 }) })
-        end):find("strokes[1] would need", 1, true))
+        assert.is_truthy(
+            helper
+                .failedOf(function() stored({ stroke({ points = points, radius = 0.0016, feather = 0 }) }) end)
+                :find("strokes[1] would need", 1, true)
+        )
     end)
 
     it("budgets dabs on the stored path, so a stroke across a portrait crop counts the dabs it writes", function()
@@ -242,7 +254,7 @@ describe("BrushStrokes.toStoredFrame", function()
     end)
 
     it("rounds the radius once, in the stored frame", function()
-        local BrushFeather = require 'BrushFeather'
+        local BrushFeather = require "BrushFeather"
         local radius = 2.4e-6 / BrushFeather.radiusScale(BrushFeather.fromPercent(0))
         local portrait = frameOf("AB", { CropLeft = 1 / 3, CropRight = 2 / 3 })
 
@@ -286,7 +298,10 @@ describe("BrushStrokes.toStoredFrame", function()
 
         local aggregate = BrushStrokes.newAggregate(BrushStrokes.toStoredFrame(parsed, frameOf("BC")))
 
-        assert.are.same({ "d 0.500000 1.000000", "d 0.500000 0.950000", "d 0.500000 0.900000" }, aggregate.Masks[1].Dabs)
+        assert.are.same(
+            { "d 0.500000 1.000000", "d 0.500000 0.950000", "d 0.500000 0.900000" },
+            aggregate.Masks[1].Dabs
+        )
     end)
 end)
 

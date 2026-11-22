@@ -1,19 +1,15 @@
-local LrTasks = import 'LrTasks'
+local LrTasks = import "LrTasks"
 
 local Ledger = {}
 Ledger.__index = Ledger
 
-function Ledger.new()
-    return setmetatable({ entries = {} }, Ledger)
-end
+function Ledger.new() return setmetatable({ entries = {} }, Ledger) end
 
 function Ledger:record(what, byController)
     self.entries[#self.entries + 1] = { what = what, byController = byController == true }
 end
 
-function Ledger:mark()
-    return #self.entries
-end
+function Ledger:mark() return #self.entries end
 
 function Ledger:controllerWroteSince(mark)
     for index = mark + 1, #self.entries do
@@ -23,7 +19,9 @@ function Ledger:controllerWroteSince(mark)
 end
 
 function Ledger:undone(mark, upTo)
-    for index = mark + 1, upTo or #self.entries do self.entries[index].undone = true end
+    for index = mark + 1, upTo or #self.entries do
+        self.entries[index].undone = true
+    end
 end
 
 function Ledger:since(mark, upTo)
@@ -38,9 +36,7 @@ function Ledger:since(mark, upTo)
     return names
 end
 
-function Ledger:live()
-    return self:since(0)
-end
+function Ledger:live() return self:since(0) end
 
 function Ledger:attempt(fn, ...)
     local mark = self:mark()

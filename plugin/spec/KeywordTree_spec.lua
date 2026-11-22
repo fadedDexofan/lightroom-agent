@@ -1,11 +1,11 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 -- A fresh module per spec: the top-level index outlives a call.
 local function setup(keywords)
     local catalog = helper.fakeCatalog({ keywords = keywords })
     helper.installImport({})
     package.loaded.KeywordTree = nil
-    return catalog, require 'KeywordTree'
+    return catalog, require "KeywordTree"
 end
 
 describe("KeywordTree.childIndex", function()

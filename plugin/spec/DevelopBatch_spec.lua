@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local function setup()
     local photos = {
@@ -17,13 +17,13 @@ local function setup()
     })
     package.loaded.DevelopSession = nil
     package.loaded.DevelopBatch = nil
-    return require 'DevelopBatch', catalog
+    return require "DevelopBatch", catalog
 end
 
 describe("DevelopBatch.run", function()
     it("files a photo under failed when nothing was written for it and under unknown when something was", function()
         local DevelopBatch, catalog = setup()
-        local Reply = require 'Reply'
+        local Reply = require "Reply"
         local context = helper.requestContext()
 
         local reply = DevelopBatch.run(context, catalog, {
@@ -40,10 +40,14 @@ describe("DevelopBatch.run", function()
             end,
         })
 
-        assert.are.same({ { photo_id = "1", reason = "nothing to change" }, { photo_id = "2", reason = "write rejected" } },
-            reply.failed)
-        assert.are.same({ { photo_id = "3", reason = "the value did not read back; written before this stopped: setValue" } },
-            reply.unknown)
+        assert.are.same(
+            { { photo_id = "1", reason = "nothing to change" }, { photo_id = "2", reason = "write rejected" } },
+            reply.failed
+        )
+        assert.are.same(
+            { { photo_id = "3", reason = "the value did not read back; written before this stopped: setValue" } },
+            reply.unknown
+        )
         assert.are.same({ { status = "done", photo_id = "4" } }, reply.data.results)
     end)
 
@@ -64,36 +68,43 @@ describe("DevelopBatch.run", function()
         assert.are.equal(1, prepared)
     end)
 
-    it("refuses every input of a photo listed twice, by id and by path, refused on a rule or not, and writes the rest", function()
-        local DevelopBatch, catalog = setup()
-        local seen = {}
-        local reply = DevelopBatch.run(helper.requestContext(), catalog, {
-            inputs = { "1", "/1.jpg", "2", "/3.jpg", "3", "4" },
-            duplicates = "refuse",
-            held = function(entry) if entry.index == 4 or entry.index == 6 then return { reason = "Refused before writing: rule" } end end,
-            reserveSeconds = 0,
-            each = function(photo, _, entry)
-                seen[#seen + 1] = tostring(photo.localIdentifier) .. "@" .. entry.index
-                return {}
-            end,
-        })
+    it(
+        "refuses every input of a photo listed twice, by id and by path, refused on a rule or not, and writes the rest",
+        function()
+            local DevelopBatch, catalog = setup()
+            local seen = {}
+            local reply = DevelopBatch.run(helper.requestContext(), catalog, {
+                inputs = { "1", "/1.jpg", "2", "/3.jpg", "3", "4" },
+                duplicates = "refuse",
+                held = function(entry)
+                    if entry.index == 4 or entry.index == 6 then return { reason = "Refused before writing: rule" } end
+                end,
+                reserveSeconds = 0,
+                each = function(photo, _, entry)
+                    seen[#seen + 1] = tostring(photo.localIdentifier) .. "@" .. entry.index
+                    return {}
+                end,
+            })
 
-        assert.are.same({ "2@3" }, seen)
-        assert.are.same({
-            { photo_id = "1", reason = "listed twice, as 1 and /1.jpg; this is 1" },
-            { photo_id = "1", reason = "listed twice, as 1 and /1.jpg; this is /1.jpg" },
-            { photo_id = "3", reason = "listed twice, as /3.jpg and 3; this is /3.jpg" },
-            { photo_id = "3", reason = "listed twice, as /3.jpg and 3; this is 3" },
-            { photo_id = "4", reason = "Refused before writing: rule" },
-        }, reply.failed)
-    end)
+            assert.are.same({ "2@3" }, seen)
+            assert.are.same({
+                { photo_id = "1", reason = "listed twice, as 1 and /1.jpg; this is 1" },
+                { photo_id = "1", reason = "listed twice, as 1 and /1.jpg; this is /1.jpg" },
+                { photo_id = "3", reason = "listed twice, as /3.jpg and 3; this is /3.jpg" },
+                { photo_id = "3", reason = "listed twice, as /3.jpg and 3; this is 3" },
+                { photo_id = "4", reason = "Refused before writing: rule" },
+            }, reply.failed)
+        end
+    )
 
     it("refuses both inputs of a photo listed twice even when the caller holds one of them back", function()
         local DevelopBatch, catalog = setup()
         local reply = DevelopBatch.run(helper.requestContext(), catalog, {
             inputs = { "1", "/1.jpg", "2" },
             duplicates = "refuse",
-            held = function(entry) if entry.index == 2 then return { remaining = true } end end,
+            held = function(entry)
+                if entry.index == 2 then return { remaining = true } end
+            end,
             reserveSeconds = 0,
             each = function() return {} end,
         })
@@ -110,9 +121,14 @@ describe("DevelopBatch.run", function()
         local seen = {}
         local reply = DevelopBatch.run(helper.requestContext(), catalog, {
             inputs = { "1", "/2.jpg", "3" },
-            held = function(entry) if entry.index == 2 then return { remaining = true } end end,
+            held = function(entry)
+                if entry.index == 2 then return { remaining = true } end
+            end,
             reserveSeconds = 0,
-            each = function(photo) seen[#seen + 1] = tostring(photo.localIdentifier) return {} end,
+            each = function(photo)
+                seen[#seen + 1] = tostring(photo.localIdentifier)
+                return {}
+            end,
         })
 
         assert.are.same({ "1", "3" }, seen)
@@ -125,9 +141,14 @@ describe("DevelopBatch.run", function()
         local seen = {}
         local reply = DevelopBatch.run(helper.requestContext(), catalog, {
             inputs = { "1", "2", "3" },
-            held = function(entry) if entry.index == 1 then return { reason = "Refused before writing: rule" } end end,
+            held = function(entry)
+                if entry.index == 1 then return { reason = "Refused before writing: rule" } end
+            end,
             reserveSeconds = 0,
-            each = function(photo) seen[#seen + 1] = tostring(photo.localIdentifier) return { status = "done" } end,
+            each = function(photo)
+                seen[#seen + 1] = tostring(photo.localIdentifier)
+                return { status = "done" }
+            end,
         })
 
         assert.are.same({ "2", "3" }, seen)
@@ -153,7 +174,12 @@ describe("DevelopBatch.run", function()
     it("asks for a reserve that grows with every photo started", function()
         local DevelopBatch, catalog = setup()
         local asked = {}
-        local context = helper.requestContext(nil, { stopping = function(_, seconds) asked[#asked + 1] = seconds; return false end })
+        local context = helper.requestContext(nil, {
+            stopping = function(_, seconds)
+                asked[#asked + 1] = seconds
+                return false
+            end,
+        })
         DevelopBatch.run(context, catalog, {
             inputs = { "1", "2", "3" },
             reserveSeconds = function(started) return 1 + started end,

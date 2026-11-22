@@ -12,7 +12,9 @@ end
 
 function JsonValue.sortedKeys(t)
     local keys = {}
-    for key in pairs(t) do keys[#keys + 1] = key end
+    for key in pairs(t) do
+        keys[#keys + 1] = key
+    end
     table.sort(keys, keyOrder)
     return keys
 end
@@ -35,9 +37,7 @@ function JsonValue.shapeOf(t)
 end
 
 local function convert(value, depth)
-    if depth > MAX_DEPTH then
-        error("the value nests deeper than " .. MAX_DEPTH .. " levels", 0)
-    end
+    if depth > MAX_DEPTH then error("the value nests deeper than " .. MAX_DEPTH .. " levels", 0) end
     local kind = type(value)
     if kind == "string" or kind == "boolean" then return value end
     if kind == "number" then
@@ -46,18 +46,20 @@ local function convert(value, depth)
         end
         return value
     end
-    if kind ~= "table" then
-        return { [MARKER] = kind, value = tostring(value) }
-    end
+    if kind ~= "table" then return { [MARKER] = kind, value = tostring(value) } end
     local shape, count = JsonValue.shapeOf(value)
     if shape == "empty" then return {} end
     local out = {}
     if shape == "array" then
-        for index = 1, count do out[index] = convert(value[index], depth + 1) end
+        for index = 1, count do
+            out[index] = convert(value[index], depth + 1)
+        end
         return out
     end
     if shape == "object" then
-        for key, item in pairs(value) do out[key] = convert(item, depth + 1) end
+        for key, item in pairs(value) do
+            out[key] = convert(item, depth + 1)
+        end
         return out
     end
     for _, key in ipairs(JsonValue.sortedKeys(value)) do
@@ -72,13 +74,20 @@ local function collectDifferences(expected, actual, path, out)
         return
     end
     local keys = {}
-    for key in pairs(expected) do keys[#keys + 1] = key end
+    for key in pairs(expected) do
+        keys[#keys + 1] = key
+    end
     for key in pairs(actual) do
         if expected[key] == nil then keys[#keys + 1] = key end
     end
     table.sort(keys, keyOrder)
     for _, key in ipairs(keys) do
-        collectDifferences(expected[key], actual[key], path == "" and tostring(key) or path .. "." .. tostring(key), out)
+        collectDifferences(
+            expected[key],
+            actual[key],
+            path == "" and tostring(key) or path .. "." .. tostring(key),
+            out
+        )
     end
 end
 
@@ -88,12 +97,8 @@ function JsonValue.differences(expected, actual)
     return out
 end
 
-function JsonValue.equal(left, right)
-    return #JsonValue.differences(left, right) == 0
-end
+function JsonValue.equal(left, right) return #JsonValue.differences(left, right) == 0 end
 
-function JsonValue.of(value)
-    return convert(value, 1)
-end
+function JsonValue.of(value) return convert(value, 1) end
 
 return JsonValue

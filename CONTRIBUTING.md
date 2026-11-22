@@ -13,7 +13,7 @@ For a new tool or a change in how an existing tool behaves, open an issue first,
 
 ## Set up
 
-You need [mise](https://mise.jdx.dev/), which provisions the pinned Node.js, Lua 5.1.5 (the version Lightroom runs) with LuaRocks, and selene.
+You need [mise](https://mise.jdx.dev/), which provisions the pinned Node.js, Lua 5.1.5 (the version Lightroom runs) with LuaRocks, selene and StyLua.
 
 ```sh
 git clone https://github.com/fadedDexofan/lightroom-agent.git

@@ -1,6 +1,6 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
-local Store = require 'fake_mask_store'
+local Store = require "fake_mask_store"
 
 local linearComponent = Store.linearComponent
 local radialComponent = Store.radialComponent
@@ -16,7 +16,8 @@ local RUNNING_BUILD = "16.0.0 build 1234567"
 local function certification(build)
     return string.format(
         '{"lightroom":{"version":"16.0","build":"%s"},"process_versions":["15.4"],"certified_at":"2026-11-12T10:00:00Z","checks":["linear create"]}',
-        build)
+        build
+    )
 end
 
 local function setup(opts)
@@ -56,10 +57,17 @@ local function setup(opts)
         },
         LrLogger = helper.defaultLrLogger(),
     })
-    for _, name in ipairs({ "GuardedMaskWrite", "MaskWriteAdmission", "RunningLightroom", "PluginFiles", "Log", "DevelopSession" }) do
+    for _, name in ipairs({
+        "GuardedMaskWrite",
+        "MaskWriteAdmission",
+        "RunningLightroom",
+        "PluginFiles",
+        "Log",
+        "DevelopSession",
+    }) do
         package.loaded[name] = nil
     end
-    local Guard = require 'GuardedMaskWrite'
+    local Guard = require "GuardedMaskWrite"
     return Guard, catalog, photo, state
 end
 
@@ -78,7 +86,12 @@ describe("GuardedMaskWrite.apply admission", function()
             entries = { correction("A", { linearComponent() }) },
         })
 
-        Guard.apply(helper.requestContext(), catalog, photo, { description = "x", build = appendGradient(radialComponent()) })
+        Guard.apply(
+            helper.requestContext(),
+            catalog,
+            photo,
+            { description = "x", build = appendGradient(radialComponent()) }
+        )
 
         assert.are.equal(1, #state.writes)
     end)
@@ -95,7 +108,12 @@ describe("GuardedMaskWrite.apply admission", function()
             return getPath(...)
         end
 
-        Guard.apply(helper.requestContext(), catalog, photo, { description = "x", build = appendGradient(radialComponent()) })
+        Guard.apply(
+            helper.requestContext(),
+            catalog,
+            photo,
+            { description = "x", build = appendGradient(radialComponent()) }
+        )
 
         assert.are.same({ false }, insideGate)
         assert.are.equal(1, #state.writes)
@@ -108,84 +126,175 @@ describe("GuardedMaskWrite.apply admission", function()
             processVersion = "11.0",
         })
 
-        local message = helper.failedOf(function()
-            Guard.apply(helper.requestContext(), catalog, photo, { description = "x", build = appendGradient(radialComponent()) })
-        end)
+        local message = helper.failedOf(
+            function()
+                Guard.apply(
+                    helper.requestContext(),
+                    catalog,
+                    photo,
+                    { description = "x", build = appendGradient(radialComponent()) }
+                )
+            end
+        )
 
         assert.is_truthy(message:find("process version (11.0)", 1, true))
         assert.is_nil(message:find("othing was", 1, true))
         assert.are.equal(0, #state.writes)
     end)
-
 end)
 
 describe("GuardedMaskWrite.apply beside entries the call leaves alone", function()
     local function rangeComponent(rangeTable)
-        return { What = "Mask/RangeMask", MaskActive = true, MaskID = "XT1", MaskSyncID = "SXT1", CorrectionRangeMask = rangeTable }
+        return {
+            What = "Mask/RangeMask",
+            MaskActive = true,
+            MaskID = "XT1",
+            MaskSyncID = "SXT1",
+            CorrectionRangeMask = rangeTable,
+        }
     end
     local renamed = linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" })
     renamed.FullY, renamed.FullYY = nil, 0.2
 
     for _, case in ipairs({
         { held = "no components", entry = correction("X", {}, { CorrectionID = "X" }) },
-        { held = "an Extended curve field", entry = correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
-            { CorrectionID = "X", ExtendedMainCurve = { "0,0", "40,30", "255,255" } }) },
-        { held = "an unknown entry field", entry = correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
-            { CorrectionID = "X", CorrectionSomethingNew = 1 }) },
-        { held = "a component field the pinned format does not know", entry = correction("X", { renamed }, { CorrectionID = "X" }) },
-        { held = "an unknown mask type", entry = correction("X", { { What = "Mask/Teleport", MaskActive = true, MaskID = "XT1", MaskSyncID = "SXT1" } },
-            { CorrectionID = "X" }) },
-        { held = "an unsupported range type", entry = correction("X", { rangeComponent({ Type = 3, DepthRange = "0 0 1 1" }) },
-            { CorrectionID = "X" }) },
-        { held = "a curve that is not a table", entry = correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
-            { CorrectionID = "X", MainCurve = "0,0 255,255" }) },
-        { held = "a color range with two samples", entry = correction("X", { rangeComponent({ Type = 1, ColorAmount = 0.5,
-            PointModels = { "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" } }) }, { CorrectionID = "X" }) },
+        {
+            held = "an Extended curve field",
+            entry = correction(
+                "X",
+                { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
+                { CorrectionID = "X", ExtendedMainCurve = { "0,0", "40,30", "255,255" } }
+            ),
+        },
+        {
+            held = "an unknown entry field",
+            entry = correction(
+                "X",
+                { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
+                { CorrectionID = "X", CorrectionSomethingNew = 1 }
+            ),
+        },
+        {
+            held = "a component field the pinned format does not know",
+            entry = correction("X", { renamed }, { CorrectionID = "X" }),
+        },
+        {
+            held = "an unknown mask type",
+            entry = correction(
+                "X",
+                { { What = "Mask/Teleport", MaskActive = true, MaskID = "XT1", MaskSyncID = "SXT1" } },
+                { CorrectionID = "X" }
+            ),
+        },
+        {
+            held = "an unsupported range type",
+            entry = correction("X", { rangeComponent({ Type = 3, DepthRange = "0 0 1 1" }) }, { CorrectionID = "X" }),
+        },
+        {
+            held = "a curve that is not a table",
+            entry = correction(
+                "X",
+                { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
+                { CorrectionID = "X", MainCurve = "0,0 255,255" }
+            ),
+        },
+        {
+            held = "a color range with two samples",
+            entry = correction("X", {
+                rangeComponent({
+                    Type = 1,
+                    ColorAmount = 0.5,
+                    PointModels = { "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" },
+                }),
+            }, { CorrectionID = "X" }),
+        },
     }) do
-        it("admits a constructing write beside an entry with " .. case.held .. " and leaves that entry byte-identical", function()
-            local Guard, catalog, photo, state = setup({ entries = { case.entry } })
-            local held = Store.clone(state.entries[1])
+        it(
+            "admits a constructing write beside an entry with " .. case.held .. " and leaves that entry byte-identical",
+            function()
+                local Guard, catalog, photo, state = setup({ entries = { case.entry } })
+                local held = Store.clone(state.entries[1])
 
-            Guard.apply(helper.requestContext(), catalog, photo, { description = "Create gradient mask", build = appendGradient(radialComponent()) })
+                Guard.apply(
+                    helper.requestContext(),
+                    catalog,
+                    photo,
+                    { description = "Create gradient mask", build = appendGradient(radialComponent()) }
+                )
 
-            assert.are.equal(1, #state.writes)
-            assert.are.equal(2, #state.entries)
-            assert.are.same(held, state.entries[1])
-        end)
+                assert.are.equal(1, #state.writes)
+                assert.are.equal(2, #state.entries)
+                assert.are.same(held, state.entries[1])
+            end
+        )
     end
 
     for _, case in ipairs({
-        { unnamed = "a mask", strip = function(entry) entry.CorrectionID, entry.CorrectionSyncID = nil, nil end,
-            text = 'mask 1 ("X") has no id yet' },
-        { unnamed = "a tool of a mask", strip = function(entry)
-            entry.CorrectionMasks[1].MaskID, entry.CorrectionMasks[1].MaskSyncID = nil, nil
-        end, text = 'a tool of mask 1 ("X") has no id yet' },
+        {
+            unnamed = "a mask",
+            strip = function(entry)
+                entry.CorrectionID, entry.CorrectionSyncID = nil, nil
+            end,
+            text = 'mask 1 ("X") has no id yet',
+        },
+        {
+            unnamed = "a tool of a mask",
+            strip = function(entry)
+                entry.CorrectionMasks[1].MaskID, entry.CorrectionMasks[1].MaskSyncID = nil, nil
+            end,
+            text = 'a tool of mask 1 ("X") has no id yet',
+        },
     }) do
-        it("refuses a constructing write while " .. case.unnamed .. " on the photo has no id, writing nothing", function()
-            local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent() }) } })
-            case.strip(state.entries[1])
-            local held = Store.clone(state.entries[1])
+        it(
+            "refuses a constructing write while " .. case.unnamed .. " on the photo has no id, writing nothing",
+            function()
+                local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent() }) } })
+                case.strip(state.entries[1])
+                local held = Store.clone(state.entries[1])
 
-            local message = helper.failedOf(function()
-                Guard.apply(helper.requestContext(), catalog, photo, { description = "Create gradient mask", build = appendGradient(radialComponent()) })
-            end)
+                local message = helper.failedOf(
+                    function()
+                        Guard.apply(
+                            helper.requestContext(),
+                            catalog,
+                            photo,
+                            { description = "Create gradient mask", build = appendGradient(radialComponent()) }
+                        )
+                    end
+                )
 
-            assert.is_truthy(message:find(case.text .. "; Lightroom names a mask a few seconds after it is written; call again", 1, true))
-            assert.are.equal(0, #state.writes)
-            assert.are.same({ held }, state.entries)
-        end)
+                assert.is_truthy(
+                    message:find(
+                        case.text .. "; Lightroom names a mask a few seconds after it is written; call again",
+                        1,
+                        true
+                    )
+                )
+                assert.are.equal(0, #state.writes)
+                assert.are.same({ held }, state.entries)
+            end
+        )
     end
 
     it("validates an existing entry a build changed in place", function()
-        local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
-            { CorrectionID = "X" }) } })
+        local Guard, catalog, photo, state = setup({
+            entries = {
+                correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) }, { CorrectionID = "X" }),
+            },
+        })
 
         local message = helper.failedOf(function()
-            Guard.apply(helper.requestContext(), catalog, photo, { description = "Add to mask", build = function(entries)
-                entries[1].CorrectionMasks[2] = { What = "Mask/RangeMask", MaskActive = true,
-                    CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "a", "b" } } }
-                return entries
-            end })
+            Guard.apply(helper.requestContext(), catalog, photo, {
+                description = "Add to mask",
+                build = function(entries)
+                    entries[1].CorrectionMasks[2] = {
+                        What = "Mask/RangeMask",
+                        MaskActive = true,
+                        CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "a", "b" } },
+                    }
+                    return entries
+                end,
+            })
         end)
 
         assert.is_truthy(message:find("exactly one PointModels entry", 1, true))
@@ -193,60 +302,89 @@ describe("GuardedMaskWrite.apply beside entries the call leaves alone", function
     end)
 
     it("checks only what the call changed in an existing entry, admitting its Lightroom-only fields", function()
-        local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
-            { CorrectionID = "X", ExtendedMainCurve = { "0,0", "40,30", "255,255" } }) } })
+        local Guard, catalog, photo, state = setup({
+            entries = {
+                correction(
+                    "X",
+                    { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
+                    { CorrectionID = "X", ExtendedMainCurve = { "0,0", "40,30", "255,255" } }
+                ),
+            },
+        })
 
-        Guard.apply(helper.requestContext(), catalog, photo, { description = "Add to mask", build = function(entries)
-            entries[1].CorrectionMasks[2] = radialComponent()
-            return entries
-        end })
+        Guard.apply(helper.requestContext(), catalog, photo, {
+            description = "Add to mask",
+            build = function(entries)
+                entries[1].CorrectionMasks[2] = radialComponent()
+                return entries
+            end,
+        })
 
         assert.are.equal(2, #state.entries[1].CorrectionMasks)
         assert.are.same({ "0,0", "40,30", "255,255" }, state.entries[1].ExtendedMainCurve)
     end)
 
-    local twoSamples = { Type = 1, ColorAmount = 0.5, PointModels = { "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" } }
+    local twoSamples =
+        { Type = 1, ColorAmount = 0.5, PointModels = { "0.1 0.4 0.5 0.2 0.3 0", "0.6 0.5 0.4 0.7 0.8 0" } }
 
     it("finds a held entry by its CorrectionID when the build moved it to another position", function()
         local held = correction("X", { rangeComponent(twoSamples) }, { CorrectionID = "X" })
-        local Guard, catalog, photo, state = setup({ entries = {
-            correction("A", { linearComponent({ MaskID = "AT1", MaskSyncID = "SAT1" }) }, { CorrectionID = "A" }), held,
-        } })
+        local Guard, catalog, photo, state = setup({
+            entries = {
+                correction("A", { linearComponent({ MaskID = "AT1", MaskSyncID = "SAT1" }) }, { CorrectionID = "A" }),
+                held,
+            },
+        })
         local stored = Store.clone(state.entries[2])
 
-        Guard.apply(helper.requestContext(), catalog, photo, { description = "Replace mask", build = function(entries)
-            table.remove(entries, 1)
-            entries[#entries + 1] = correction("New", { radialComponent() })
-            return entries
-        end })
+        Guard.apply(helper.requestContext(), catalog, photo, {
+            description = "Replace mask",
+            build = function(entries)
+                table.remove(entries, 1)
+                entries[#entries + 1] = correction("New", { radialComponent() })
+                return entries
+            end,
+        })
 
         assert.are.equal(1, #state.writes)
         assert.are.same(stored, state.entries[1])
     end)
 
     it("leaves a held Lightroom-made component unvalidated when a component is appended beside it", function()
-        local Guard, catalog, photo, state = setup({ entries = { correction("X", { rangeComponent(twoSamples) },
-            { CorrectionID = "X" }) } })
+        local Guard, catalog, photo, state =
+            setup({ entries = { correction("X", { rangeComponent(twoSamples) }, { CorrectionID = "X" }) } })
         local stored = Store.clone(state.entries[1].CorrectionMasks[1])
 
-        Guard.apply(helper.requestContext(), catalog, photo, { description = "Add to mask", build = function(entries)
-            entries[1].CorrectionMasks[2] = radialComponent()
-            return entries
-        end })
+        Guard.apply(helper.requestContext(), catalog, photo, {
+            description = "Add to mask",
+            build = function(entries)
+                entries[1].CorrectionMasks[2] = radialComponent()
+                return entries
+            end,
+        })
 
         assert.are.equal(1, #state.writes)
         assert.are.same(stored, state.entries[1].CorrectionMasks[1])
     end)
 
     it("refuses a change to an existing entry that breaks the pinned format, writing nothing", function()
-        local Guard, catalog, photo, state = setup({ entries = { correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) },
-            { CorrectionID = "X" }) } })
+        local Guard, catalog, photo, state = setup({
+            entries = {
+                correction("X", { linearComponent({ MaskID = "XT1", MaskSyncID = "SXT1" }) }, { CorrectionID = "X" }),
+            },
+        })
 
         local message = helper.failedOf(function()
-            Guard.apply(helper.requestContext(), catalog, photo, { description = "Add to mask", build = function(entries)
-                entries[1].CorrectionMasks[2] = { What = "Mask/RangeMask", CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "a", "b" } } }
-                return entries
-            end })
+            Guard.apply(helper.requestContext(), catalog, photo, {
+                description = "Add to mask",
+                build = function(entries)
+                    entries[1].CorrectionMasks[2] = {
+                        What = "Mask/RangeMask",
+                        CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "a", "b" } },
+                    }
+                    return entries
+                end,
+            })
         end)
 
         assert.is_truthy(message:find("exactly one PointModels entry", 1, true))
@@ -254,13 +392,25 @@ describe("GuardedMaskWrite.apply beside entries the call leaves alone", function
     end)
 
     for _, case in ipairs({
-        { what = "a number moved by less than the constructed tolerance", change = function(entry) entry.CorrectionMasks[1].Feather = 50.0000001 end },
-        { what = "a derived field changed", change = function(entry) entry.CorrectionMasks[1].MaskSyncID = "OTHER" end },
+        {
+            what = "a number moved by less than the constructed tolerance",
+            change = function(entry) entry.CorrectionMasks[1].Feather = 50.0000001 end,
+        },
+        {
+            what = "a derived field changed",
+            change = function(entry) entry.CorrectionMasks[1].MaskSyncID = "OTHER" end,
+        },
         { what = "a zero local adjustment dropped", change = function(entry) entry.LocalGlow = nil end },
     }) do
         it("restores the photo when a preserved entry comes back with " .. case.what, function()
             local Guard, catalog, photo, state = setup({
-                entries = { correction("Old", { radialComponent({ MaskID = "OLDT1", MaskSyncID = "SOLDT1" }) }, { CorrectionID = "OLD", LocalGlow = 0 }) },
+                entries = {
+                    correction(
+                        "Old",
+                        { radialComponent({ MaskID = "OLDT1", MaskSyncID = "SOLDT1" }) },
+                        { CorrectionID = "OLD", LocalGlow = 0 }
+                    ),
+                },
                 transformWrite = function(stored, writeNumber)
                     if writeNumber == 1 then case.change(stored[1]) end
                     return stored
@@ -268,9 +418,16 @@ describe("GuardedMaskWrite.apply beside entries the call leaves alone", function
             })
             local held = Store.clone(state.entries[1])
 
-            local message = helper.failedOf(function()
-                Guard.apply(helper.requestContext(), catalog, photo, { description = "Create gradient mask", build = appendGradient(linearComponent()) })
-            end)
+            local message = helper.failedOf(
+                function()
+                    Guard.apply(
+                        helper.requestContext(),
+                        catalog,
+                        photo,
+                        { description = "Create gradient mask", build = appendGradient(linearComponent()) }
+                    )
+                end
+            )
 
             assert.is_truthy(message:find("previous masks were restored", 1, true), message)
             assert.are.equal(2, #state.writes)
@@ -285,7 +442,9 @@ describe("GuardedMaskWrite.apply", function()
             description = "Test write",
             build = appendGradient(component),
         }
-        for key, value in pairs(extra or {}) do spec[key] = value end
+        for key, value in pairs(extra or {}) do
+            spec[key] = value
+        end
         return Guard.apply(context or helper.requestContext(), catalog, photo, spec)
     end
 
@@ -311,7 +470,12 @@ describe("GuardedMaskWrite.apply", function()
         local existing = correction("Old", { radialComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" })
         local Guard, catalog, photo, state = setup({ entries = { existing } })
 
-        local result = Guard.apply(helper.requestContext(), catalog, photo, { description = "Clear", build = function() return {} end })
+        local result = Guard.apply(
+            helper.requestContext(),
+            catalog,
+            photo,
+            { description = "Clear", build = function() return {} end }
+        )
 
         assert.are.equal(1, #state.writes)
         assert.are.same({}, state.writes[1])
@@ -385,8 +549,13 @@ describe("GuardedMaskWrite.apply", function()
         local context = helper.requestContext()
 
         local message = helper.failedOf(function()
-            Guard.submit(context, catalog, photo, { description = "Nothing to change", build = function() return nil end })
-            require('Reply').refuse("stopped after an unchanged build")
+            Guard.submit(
+                context,
+                catalog,
+                photo,
+                { description = "Nothing to change", build = function() return nil end }
+            )
+            require("Reply").refuse("stopped after an unchanged build")
         end)
 
         assert.are.equal("stopped after an unchanged build", message)
@@ -413,9 +582,9 @@ describe("GuardedMaskWrite.apply", function()
     it("refuses a new component with a string where a number belongs, writing nothing", function()
         local Guard, catalog, photo, state = setup()
 
-        local message = helper.failedOf(function()
-            applyAppend(Guard, catalog, photo, linearComponent({ FullY = "0.2" }))
-        end)
+        local message = helper.failedOf(
+            function() applyAppend(Guard, catalog, photo, linearComponent({ FullY = "0.2" })) end
+        )
 
         assert.is_truthy(message:find("FullY must be a number", 1, true))
         assert.are.equal(0, #state.writes)
@@ -424,12 +593,12 @@ describe("GuardedMaskWrite.apply", function()
     it("refuses a boolean where a number belongs and a NaN", function()
         local Guard, catalog, photo, state = setup()
 
-        local booleanMessage = helper.failedOf(function()
-            applyAppend(Guard, catalog, photo, linearComponent({ ZeroX = true }))
-        end)
-        local nanMessage = helper.failedOf(function()
-            applyAppend(Guard, catalog, photo, linearComponent({ ZeroX = 0 / 0 }))
-        end)
+        local booleanMessage = helper.failedOf(
+            function() applyAppend(Guard, catalog, photo, linearComponent({ ZeroX = true })) end
+        )
+        local nanMessage = helper.failedOf(
+            function() applyAppend(Guard, catalog, photo, linearComponent({ ZeroX = 0 / 0 })) end
+        )
 
         assert.is_truthy(booleanMessage:find("ZeroX must be a number", 1, true))
         assert.is_truthy(nanMessage:find("ZeroX must be a number", 1, true))
@@ -452,9 +621,9 @@ describe("GuardedMaskWrite.apply", function()
         local absent = linearComponent()
         absent.What = nil
 
-        local unknown = helper.failedOf(function()
-            applyAppend(Guard, catalog, photo, linearComponent({ What = "Mask/Nope" }))
-        end)
+        local unknown = helper.failedOf(
+            function() applyAppend(Guard, catalog, photo, linearComponent({ What = "Mask/Nope" })) end
+        )
         local missing = helper.failedOf(function() applyAppend(Guard, catalog, photo, absent) end)
 
         assert.is_truthy(unknown:find("unknown mask type Mask/Nope", 1, true))
@@ -468,12 +637,14 @@ describe("GuardedMaskWrite.apply", function()
             return { What = "Mask/RangeMask", MaskActive = true, CorrectionRangeMask = rangeTable }
         end
 
-        local two = helper.failedOf(function()
-            applyAppend(Guard, catalog, photo, range({ Type = 1, ColorAmount = 0.4, PointModels = { "a", "b" } }))
-        end)
-        local unsupported = helper.failedOf(function()
-            applyAppend(Guard, catalog, photo, range({ Type = 3, DepthRange = "0 0 1 1" }))
-        end)
+        local two = helper.failedOf(
+            function()
+                applyAppend(Guard, catalog, photo, range({ Type = 1, ColorAmount = 0.4, PointModels = { "a", "b" } }))
+            end
+        )
+        local unsupported = helper.failedOf(
+            function() applyAppend(Guard, catalog, photo, range({ Type = 3, DepthRange = "0 0 1 1" })) end
+        )
 
         assert.is_truthy(two:find("exactly one PointModels entry", 1, true))
         assert.is_truthy(unsupported:find("unsupported range Type 3", 1, true))
@@ -488,9 +659,9 @@ describe("GuardedMaskWrite.apply", function()
             if timeoutParams then return "aborted" end
         end
 
-        local class, message = helper.outcomeOf(function(context)
-            applyAppend(Guard, catalog, photo, linearComponent(), nil, context)
-        end)
+        local class, message = helper.outcomeOf(
+            function(context) applyAppend(Guard, catalog, photo, linearComponent(), nil, context) end
+        )
 
         assert.are.same({ "failed", helper.catalogBusy("Test write") }, { class, message })
         assert.are.equal(0, #state.writes)
@@ -541,7 +712,10 @@ describe("GuardedMaskWrite.apply", function()
 
         local message = helper.failedOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
-        assert.is_truthy(message:find("masks[1], left alone by this call, changed at CorrectionMasks.1.Feather", 1, true), message)
+        assert.is_truthy(
+            message:find("masks[1], left alone by this call, changed at CorrectionMasks.1.Feather", 1, true),
+            message
+        )
         assert.are.equal(2, #state.writes)
     end)
 
@@ -590,14 +764,23 @@ describe("GuardedMaskWrite.apply", function()
 
     it("answers unknown when the rollback reads back different, or its gate stays busy after the write", function()
         local cases = {
-            { name = "restore read back different", writes = 2, transformWrite = function(stored)
-                stored[1].CorrectionMasks = {}
-                return stored
-            end },
-            { name = "restore gate busy", writes = 1, busyGate = 2, transformWrite = function(stored, writeNumber)
-                if writeNumber == 1 then stored[1].CorrectionMasks = {} end
-                return stored
-            end },
+            {
+                name = "restore read back different",
+                writes = 2,
+                transformWrite = function(stored)
+                    stored[1].CorrectionMasks = {}
+                    return stored
+                end,
+            },
+            {
+                name = "restore gate busy",
+                writes = 1,
+                busyGate = 2,
+                transformWrite = function(stored, writeNumber)
+                    if writeNumber == 1 then stored[1].CorrectionMasks = {} end
+                    return stored
+                end,
+            },
         }
         for _, case in ipairs(cases) do
             local Guard, catalog, photo, state = setup({
@@ -644,28 +827,35 @@ describe("GuardedMaskWrite.apply", function()
         assert.are.same({}, state.writes[2])
     end)
 
-    it("names each entry and top-level component it adds in Lightroom's id form and keeps the ids already there", function()
-        local existing = correction("Old", { radialComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" })
-        local Guard, catalog, photo, state = setup({ entries = { existing } })
+    it(
+        "names each entry and top-level component it adds in Lightroom's id form and keeps the ids already there",
+        function()
+            local existing = correction("Old", { radialComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" })
+            local Guard, catalog, photo, state = setup({ entries = { existing } })
 
-        Guard.apply(helper.requestContext(), catalog, photo, { description = "Test write", build = function(entries)
-            entries[1].CorrectionMasks[2] = linearComponent()
-            entries[2] = correction("Brush", { Store.brushComponent() })
-            return entries
-        end })
+            Guard.apply(helper.requestContext(), catalog, photo, {
+                description = "Test write",
+                build = function(entries)
+                    entries[1].CorrectionMasks[2] = linearComponent()
+                    entries[2] = correction("Brush", { Store.brushComponent() })
+                    return entries
+                end,
+            })
 
-        local written = state.writes[1]
-        local GUID = "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
-        assert.are.equal("OLD", written[1].CorrectionID)
-        assert.are.equal("OLDT1", written[1].CorrectionMasks[1].MaskID)
-        local added = { written[1].CorrectionMasks[2].MaskID, written[2].CorrectionID, written[2].CorrectionMasks[1].MaskID }
-        for index = 1, 3 do
-            assert.is_string(added[index])
-            assert.matches(GUID, added[index])
-            assert.are.equal(added[index]:upper(), added[index])
+            local written = state.writes[1]
+            local GUID = "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
+            assert.are.equal("OLD", written[1].CorrectionID)
+            assert.are.equal("OLDT1", written[1].CorrectionMasks[1].MaskID)
+            local added =
+                { written[1].CorrectionMasks[2].MaskID, written[2].CorrectionID, written[2].CorrectionMasks[1].MaskID }
+            for index = 1, 3 do
+                assert.is_string(added[index])
+                assert.matches(GUID, added[index])
+                assert.are.equal(added[index]:upper(), added[index])
+            end
+            assert.is_nil(written[2].CorrectionMasks[1].Masks[1].MaskID)
         end
-        assert.is_nil(written[2].CorrectionMasks[1].Masks[1].MaskID)
-    end)
+    )
 
     it("hands the check of the saved read-back the stored entries", function()
         local Guard, catalog, photo = setup()
@@ -701,15 +891,26 @@ describe("GuardedMaskWrite.apply", function()
 
         local message = helper.failedOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
-        assert.is_truthy(message:find("masks[1], left alone by this call, changed at CorrectionMasks.1.What", 1, true), message)
+        assert.is_truthy(
+            message:find("masks[1], left alone by this call, changed at CorrectionMasks.1.What", 1, true),
+            message
+        )
         assert.are.equal(2, #state.writes)
     end)
 end)
 
 describe("GuardedMaskWrite.apply reading back a constructed AI component", function()
     local function intersect()
-        return { What = "Mask/Image", MaskVersion = 1, MaskSubType = 1, MaskName = "Subject 1", MaskActive = true,
-            MaskBlendMode = 1, MaskValue = 1, MaskInverted = true }
+        return {
+            What = "Mask/Image",
+            MaskVersion = 1,
+            MaskSubType = 1,
+            MaskName = "Subject 1",
+            MaskActive = true,
+            MaskBlendMode = 1,
+            MaskValue = 1,
+            MaskInverted = true,
+        }
     end
 
     for _, case in ipairs({
@@ -726,10 +927,16 @@ describe("GuardedMaskWrite.apply reading back a constructed AI component", funct
                 end,
             })
 
-            local message = helper.failedOf(function()
-                Guard.apply(helper.requestContext(), catalog, photo, { description = "Add to Mask",
-                    build = appendGradient(intersect()) })
-            end)
+            local message = helper.failedOf(
+                function()
+                    Guard.apply(
+                        helper.requestContext(),
+                        catalog,
+                        photo,
+                        { description = "Add to Mask", build = appendGradient(intersect()) }
+                    )
+                end
+            )
 
             assert.is_truthy(message:find(case.field, 1, true), message)
             assert.are.equal(2, #state.writes)
@@ -748,9 +955,15 @@ describe("GuardedMaskWrite.apply reading back a constructed AI component", funct
             end,
         })
         local sent = intersect()
-        sent.FullMaskSize, sent.Origin, sent.WholeImageArea, sent.ReferencePoint = "6000,4000", "10,20", "0 0 6000 4000", "0.5 0.5"
+        sent.FullMaskSize, sent.Origin, sent.WholeImageArea, sent.ReferencePoint =
+            "6000,4000", "10,20", "0 0 6000 4000", "0.5 0.5"
 
-        Guard.apply(helper.requestContext(), catalog, photo, { description = "Add to Mask", build = appendGradient(sent) })
+        Guard.apply(
+            helper.requestContext(),
+            catalog,
+            photo,
+            { description = "Add to Mask", build = appendGradient(sent) }
+        )
 
         assert.are.equal(1, #state.writes)
     end)
@@ -758,7 +971,12 @@ describe("GuardedMaskWrite.apply reading back a constructed AI component", funct
     it("accepts the component when Lightroom keeps every field it was written with", function()
         local Guard, catalog, photo, state = setup()
 
-        Guard.apply(helper.requestContext(), catalog, photo, { description = "Add to Mask", build = appendGradient(intersect()) })
+        Guard.apply(
+            helper.requestContext(),
+            catalog,
+            photo,
+            { description = "Add to Mask", build = appendGradient(intersect()) }
+        )
 
         assert.are.equal(1, #state.writes)
     end)
@@ -777,23 +995,30 @@ describe("GuardedMaskWrite read-back of a constructed mask", function()
 
     local function readBackProblems(expected, actual)
         expected, actual = named(Store.clone(expected)), named(Store.clone(actual))
-        local guard, catalog, photo = setup({ transformWrite = function(stored, writeNumber)
-            if writeNumber == 1 then return Store.clone(actual) end
-            return stored
-        end })
-        local ok, err = pcall(guard.apply, helper.requestContext(), catalog, photo,
-            { description = "Read-back", build = function() return Store.clone(expected) end })
+        local guard, catalog, photo = setup({
+            transformWrite = function(stored, writeNumber)
+                if writeNumber == 1 then return Store.clone(actual) end
+                return stored
+            end,
+        })
+        local ok, err = pcall(
+            guard.apply,
+            helper.requestContext(),
+            catalog,
+            photo,
+            { description = "Read-back", build = function() return Store.clone(expected) end }
+        )
         if ok then return {} end
-        local message = require('Reply').messageOf(err)
+        local message = require("Reply").messageOf(err)
         local summary = assert(message:match("previous masks were restored: (.*)$"), message)
         local problems = {}
-        for problem in (summary .. "; "):gmatch("(.-); ") do problems[#problems + 1] = problem end
+        for problem in (summary .. "; "):gmatch("(.-); ") do
+            problems[#problems + 1] = problem
+        end
         return problems
     end
 
-    local function oneEntry(component, overrides)
-        return { correction("A", { component }, overrides) }
-    end
+    local function oneEntry(component, overrides) return { correction("A", { component }, overrides) } end
 
     it("accepts numbers within 1e-5 and rejects 1e-4", function()
         local expected = oneEntry(linearComponent({ FullY = 0.2 }))
@@ -833,22 +1058,40 @@ describe("GuardedMaskWrite read-back of a constructed mask", function()
     end)
 
     local LOCAL_SLIDER_FIELDS = {
-        "LocalExposure2012", "LocalContrast2012", "LocalHighlights2012", "LocalShadows2012",
-        "LocalWhites2012", "LocalBlacks2012", "LocalTexture", "LocalClarity2012", "LocalDehaze",
-        "LocalTemperature", "LocalTint", "LocalSaturation", "LocalSharpness", "LocalLuminanceNoise",
-        "LocalMoire", "LocalDefringe",
+        "LocalExposure2012",
+        "LocalContrast2012",
+        "LocalHighlights2012",
+        "LocalShadows2012",
+        "LocalWhites2012",
+        "LocalBlacks2012",
+        "LocalTexture",
+        "LocalClarity2012",
+        "LocalDehaze",
+        "LocalTemperature",
+        "LocalTint",
+        "LocalSaturation",
+        "LocalSharpness",
+        "LocalLuminanceNoise",
+        "LocalMoire",
+        "LocalDefringe",
     }
 
     local function fieldsAt(value, extra)
         local fields = {}
-        for _, name in ipairs(LOCAL_SLIDER_FIELDS) do fields[name] = value end
-        for name, item in pairs(extra or {}) do fields[name] = item end
+        for _, name in ipairs(LOCAL_SLIDER_FIELDS) do
+            fields[name] = value
+        end
+        for name, item in pairs(extra or {}) do
+            fields[name] = item
+        end
         return fields
     end
 
     local function entryWithout(overrides, omitted)
         local entry = correction("A", { linearComponent() }, overrides)
-        for _, name in ipairs(omitted) do entry[name] = nil end
+        for _, name in ipairs(omitted) do
+            entry[name] = nil
+        end
         return { entry }
     end
 
@@ -891,10 +1134,14 @@ describe("GuardedMaskWrite read-back of a constructed mask", function()
     end)
 
     it("compares an omitted local adjustment with the slider's own neutral value", function()
-        local atNeutral = readBackProblems(oneEntry(linearComponent(), { LocalColorGradeBlending = 50 }),
-            entryWithout({}, { "LocalColorGradeBlending" }))
-        local atZero = readBackProblems(oneEntry(linearComponent(), { LocalColorGradeBlending = 0 }),
-            entryWithout({}, { "LocalColorGradeBlending" }))
+        local atNeutral = readBackProblems(
+            oneEntry(linearComponent(), { LocalColorGradeBlending = 50 }),
+            entryWithout({}, { "LocalColorGradeBlending" })
+        )
+        local atZero = readBackProblems(
+            oneEntry(linearComponent(), { LocalColorGradeBlending = 0 }),
+            entryWithout({}, { "LocalColorGradeBlending" })
+        )
 
         assert.are.same({}, atNeutral)
         assert.are.equal(1, #atZero)
@@ -924,12 +1171,21 @@ describe("GuardedMaskWrite read-back of a constructed mask", function()
             }
         end
 
-        assert.are.same({}, readBackProblems(oneEntry(range("0.3 0.4 0.5 0.6", "Lum 1")),
-            oneEntry(range("0.300000 0.400000 0.500000 0.600000", "Lum 1"))))
-        assert.are_not.same({}, readBackProblems(oneEntry(range("0.3 0.4 0.5 0.6", "Lum 1")),
-            oneEntry(range("0.3 0.4 0.5 0.7", "Lum 1"))))
-        assert.are_not.same({}, readBackProblems(oneEntry(range("0.3 0.4 0.5 0.6", "Lum 1")),
-            oneEntry(range("0.3 0.4 0.5 0.6", "Lum 2"))))
+        assert.are.same(
+            {},
+            readBackProblems(
+                oneEntry(range("0.3 0.4 0.5 0.6", "Lum 1")),
+                oneEntry(range("0.300000 0.400000 0.500000 0.600000", "Lum 1"))
+            )
+        )
+        assert.are_not.same(
+            {},
+            readBackProblems(oneEntry(range("0.3 0.4 0.5 0.6", "Lum 1")), oneEntry(range("0.3 0.4 0.5 0.7", "Lum 1")))
+        )
+        assert.are_not.same(
+            {},
+            readBackProblems(oneEntry(range("0.3 0.4 0.5 0.6", "Lum 1")), oneEntry(range("0.3 0.4 0.5 0.6", "Lum 2")))
+        )
     end)
 
     it("compares dab positions and tolerates a dropped third value", function()
@@ -940,11 +1196,15 @@ describe("GuardedMaskWrite read-back of a constructed mask", function()
             }
         end
 
-        assert.are.same({}, readBackProblems(oneEntry(brush({ "d 0.1 0.2 0.5" })),
-            oneEntry(brush({ "d 0.100000 0.200000" }))))
+        assert.are.same(
+            {},
+            readBackProblems(oneEntry(brush({ "d 0.1 0.2 0.5" })), oneEntry(brush({ "d 0.100000 0.200000" })))
+        )
         assert.are_not.same({}, readBackProblems(oneEntry(brush({ "d 0.1 0.2" })), oneEntry(brush({ "d 0.1 0.3" }))))
-        assert.are_not.same({}, readBackProblems(oneEntry(brush({ "d 0.1 0.2" })),
-            oneEntry(brush({ "d 0.1 0.2", "d 0.3 0.3" }))))
+        assert.are_not.same(
+            {},
+            readBackProblems(oneEntry(brush({ "d 0.1 0.2" })), oneEntry(brush({ "d 0.1 0.2", "d 0.3 0.3" })))
+        )
     end)
 
     it("ignores a flow token one side lacks but compares it when both have it", function()
@@ -955,16 +1215,32 @@ describe("GuardedMaskWrite read-back of a constructed mask", function()
             }
         end
 
-        assert.are.same({}, readBackProblems(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
-            oneEntry(brush({ "d 0.100000 0.200000" }))))
-        assert.are.same({}, readBackProblems(oneEntry(brush({ "d 0.1 0.2" })),
-            oneEntry(brush({ "f 0.3000", "d 0.100000 0.200000" }))))
-        assert.are.same({}, readBackProblems(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
-            oneEntry(brush({ "f 0.299998", "d 0.100000 0.200000" }))))
-        assert.are_not.same({}, readBackProblems(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
-            oneEntry(brush({ "f 0.5000", "d 0.100000 0.200000" }))))
-        assert.are_not.same({}, readBackProblems(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
-            oneEntry(brush({ "f 0.3000", "d 0.1 0.3" }))))
+        assert.are.same(
+            {},
+            readBackProblems(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })), oneEntry(brush({ "d 0.100000 0.200000" })))
+        )
+        assert.are.same(
+            {},
+            readBackProblems(oneEntry(brush({ "d 0.1 0.2" })), oneEntry(brush({ "f 0.3000", "d 0.100000 0.200000" })))
+        )
+        assert.are.same(
+            {},
+            readBackProblems(
+                oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+                oneEntry(brush({ "f 0.299998", "d 0.100000 0.200000" }))
+            )
+        )
+        assert.are_not.same(
+            {},
+            readBackProblems(
+                oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+                oneEntry(brush({ "f 0.5000", "d 0.100000 0.200000" }))
+            )
+        )
+        assert.are_not.same(
+            {},
+            readBackProblems(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })), oneEntry(brush({ "f 0.3000", "d 0.1 0.3" })))
+        )
     end)
 
     it("treats a center weight token like a flow token and compares it when both sides have it", function()
@@ -975,20 +1251,37 @@ describe("GuardedMaskWrite read-back of a constructed mask", function()
             }
         end
 
-        assert.are.same({}, readBackProblems(oneEntry(brush({ "h 0.4194", "d 0.1 0.2" })),
-            oneEntry(brush({ "d 0.100000 0.200000" }))))
-        assert.are.same({}, readBackProblems(oneEntry(brush({ "d 0.1 0.2" })),
-            oneEntry(brush({ "h 0.4194", "d 0.100000 0.200000" }))))
-        assert.are_not.same({}, readBackProblems(oneEntry(brush({ "h 0.4194", "d 0.1 0.2" })),
-            oneEntry(brush({ "h 0.1621", "d 0.100000 0.200000" }))))
+        assert.are.same(
+            {},
+            readBackProblems(oneEntry(brush({ "h 0.4194", "d 0.1 0.2" })), oneEntry(brush({ "d 0.100000 0.200000" })))
+        )
+        assert.are.same(
+            {},
+            readBackProblems(oneEntry(brush({ "d 0.1 0.2" })), oneEntry(brush({ "h 0.4194", "d 0.100000 0.200000" })))
+        )
+        assert.are_not.same(
+            {},
+            readBackProblems(
+                oneEntry(brush({ "h 0.4194", "d 0.1 0.2" })),
+                oneEntry(brush({ "h 0.1621", "d 0.100000 0.200000" }))
+            )
+        )
     end)
 
     it("compares the value of a paint and leaves it uncompared on other components", function()
         local brush = function(value)
             return {
                 What = "Mask/Aggregate",
-                Masks = { { What = "Mask/Paint", MaskValue = value, Dabs = { "d 0.1 0.2" }, Radius = 0.1, Flow = 1,
-                    CenterWeight = 0 } },
+                Masks = {
+                    {
+                        What = "Mask/Paint",
+                        MaskValue = value,
+                        Dabs = { "d 0.1 0.2" },
+                        Radius = 0.1,
+                        Flow = 1,
+                        CenterWeight = 0,
+                    },
+                },
             }
         end
 
@@ -1016,7 +1309,11 @@ end)
 describe("GuardedMaskWrite lookups", function()
     local Guard = setup()
     local entries = {
-        correction("A", { linearComponent({ MaskID = "T1" }), radialComponent({ MaskID = "T2" }) }, { CorrectionID = "C1" }),
+        correction(
+            "A",
+            { linearComponent({ MaskID = "T1" }), radialComponent({ MaskID = "T2" }) },
+            { CorrectionID = "C1" }
+        ),
         correction("B", { linearComponent({ MaskID = "T3" }) }, { CorrectionID = "C2" }),
     }
 

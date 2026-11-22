@@ -1,12 +1,12 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local CatalogWrite = require 'CatalogWrite'
-local Contract = require 'Contract'
-local KeywordTree = require 'KeywordTree'
-local PhotoLookup = require 'PhotoLookup'
-local PhotoWrites = require 'PhotoWrites'
-local Log = require 'Log'
-local Reply = require 'Reply'
+local CatalogWrite = require "CatalogWrite"
+local Contract = require "Contract"
+local KeywordTree = require "KeywordTree"
+local PhotoLookup = require "PhotoLookup"
+local PhotoWrites = require "PhotoWrites"
+local Log = require "Log"
+local Reply = require "Reply"
 
 local OrganizationHandler = {}
 
@@ -32,9 +32,7 @@ local function parseKeywordList(keywords)
             -- Trimmed like a path level, so the keyword created for it is found
             -- again by name.
             local name = KeywordTree.trim(kw)
-            if name == "" then
-                Reply.refuse("Invalid keyword (empty): '" .. kw .. "'")
-            end
+            if name == "" then Reply.refuse("Invalid keyword (empty): '" .. kw .. "'") end
             entry = { name = name, key = name }
             -- Exact: a plain-name remove matches exact case, so "Paris" and
             -- "paris" are two removals. Case variants of an add are deduped
@@ -55,9 +53,7 @@ local function findUnresolvable(catalog, addEntries)
     local problems = {}
     for _, entry in ipairs(addEntries) do
         if entry.parts then
-            if not KeywordTree.resolve(catalog, entry.parts) then
-                table.insert(problems, "not found: " .. entry.key)
-            end
+            if not KeywordTree.resolve(catalog, entry.parts) then table.insert(problems, "not found: " .. entry.key) end
         else
             local matches = KeywordTree.findByName(catalog, entry.name)
             if #matches == 0 then
@@ -67,8 +63,7 @@ local function findUnresolvable(catalog, addEntries)
                 for _, match in ipairs(matches) do
                     table.insert(paths, match.path)
                 end
-                table.insert(problems, "ambiguous: " .. entry.name
-                    .. " (" .. table.concat(paths, ", ") .. ")")
+                table.insert(problems, "ambiguous: " .. entry.name .. " (" .. table.concat(paths, ", ") .. ")")
             end
         end
     end
@@ -122,7 +117,9 @@ local function createMissingLevels(context, catalog, pathsToEnsure)
                         end
                         if not existing then
                             table.insert(missing, {
-                                parent = parent, name = parts[depth], path = KeywordTree.join(prefixOf(parts, depth)),
+                                parent = parent,
+                                name = parts[depth],
+                                path = KeywordTree.join(prefixOf(parts, depth)),
                             })
                         end
                     end
@@ -143,7 +140,6 @@ local function createMissingLevels(context, catalog, pathsToEnsure)
 end
 
 function OrganizationHandler.setKeywords(args, context)
-
     -- Default true: a plain name that does not exist yet is created.
     local createMissing = args.create_missing ~= false
 
@@ -172,12 +168,9 @@ function OrganizationHandler.setKeywords(args, context)
     -- write gate, so a strict call that cannot be honoured changes nothing.
     if not createMissing and #addEntries > 0 then
         local problems = {}
-        catalog:withReadAccessDo(function()
-            problems = findUnresolvable(catalog, addEntries)
-        end)
+        catalog:withReadAccessDo(function() problems = findUnresolvable(catalog, addEntries) end)
         if #problems > 0 then
-            Reply.refuse("Keywords not resolved (create_missing is false): "
-                .. table.concat(problems, "; "))
+            Reply.refuse("Keywords not resolved (create_missing is false): " .. table.concat(problems, "; "))
         end
     end
 
@@ -214,13 +207,9 @@ function OrganizationHandler.setKeywords(args, context)
                 -- Looked up again rather than carried across gates: the check
                 -- above only proved the name resolved then.
                 local matches = KeywordTree.findByName(catalog, entry.name)
-                if #matches == 1 then
-                    keyword = matches[1].keyword
-                end
+                if #matches == 1 then keyword = matches[1].keyword end
             end
-            if not keyword then
-                error("Keyword not resolved: " .. entry.key)
-            end
+            if not keyword then error("Keyword not resolved: " .. entry.key) end
             -- "Summer" and "summer" resolve to one keyword.
             if not seenKeywords[keyword] then
                 seenKeywords[keyword] = true
@@ -235,13 +224,12 @@ function OrganizationHandler.setKeywords(args, context)
             end
 
             if next(removeNames) or hasRemovePaths then
-                local existingKeywords = photo:getRawMetadata('keywords')
+                local existingKeywords = photo:getRawMetadata("keywords")
                 if existingKeywords then
                     for _, kw in ipairs(existingKeywords) do
                         -- A plain name removes every keyword so named; a
                         -- path removes only the keyword at that place.
-                        local byPath = hasRemovePaths
-                            and removePaths[KeywordTree.fold(KeywordTree.pathOf(kw))]
+                        local byPath = hasRemovePaths and removePaths[KeywordTree.fold(KeywordTree.pathOf(kw))]
                         if removeNames[kw:getName()] or byPath then
                             CatalogWrite.call(context, photo, "removeKeyword", kw)
                         end
@@ -284,14 +272,16 @@ function OrganizationHandler.removeKeywordSubtree(args, context)
         local entries
         entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
         if #entries == 0 then return Reply.parts({ not_found = notFound }) end
-        for i, entry in ipairs(entries) do photos[i] = entry.photo end
+        for i, entry in ipairs(entries) do
+            photos[i] = entry.photo
+        end
     end
 
     local updated, removed = 0, 0
     CatalogWrite.run(context, catalog, "Remove Keyword Subtree", function()
         for _, photo in ipairs(photos) do
             local changed = false
-            for _, keyword in ipairs(photo:getRawMetadata('keywords') or {}) do
+            for _, keyword in ipairs(photo:getRawMetadata("keywords") or {}) do
                 if subtree[keyword] then
                     CatalogWrite.call(context, photo, "removeKeyword", keyword)
                     removed = removed + 1
@@ -305,7 +295,9 @@ function OrganizationHandler.removeKeywordSubtree(args, context)
 end
 
 local PICK_STATUS = {}
-for _, flag in ipairs(Contract.PHOTO_FLAGS) do PICK_STATUS[flag.name] = flag.pickStatus end
+for _, flag in ipairs(Contract.PHOTO_FLAGS) do
+    PICK_STATUS[flag.name] = flag.pickStatus
+end
 
 function OrganizationHandler.setRatingAndFlag(args, context)
     local hasRating = args.rating ~= nil
@@ -316,16 +308,22 @@ function OrganizationHandler.setRatingAndFlag(args, context)
     local ratingValue = args.rating
     if ratingValue == 0 then ratingValue = nil end
 
-    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Rating and Flag", write = function(call)
-        if hasRating then call('setRawMetadata', 'rating', ratingValue) end
-        if hasFlag then call('setRawMetadata', 'pickStatus', pickStatus) end
-    end })
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), {
+        photo_ids = args.photo_ids,
+        title = "Set Rating and Flag",
+        write = function(call)
+            if hasRating then call("setRawMetadata", "rating", ratingValue) end
+            if hasFlag then call("setRawMetadata", "pickStatus", pickStatus) end
+        end,
+    })
 end
 
 function OrganizationHandler.setColorLabel(args, context)
-    return PhotoWrites.each(context, LrApplication.activeCatalog(), { photo_ids = args.photo_ids, title = "Set Color Label", write = function(call)
-        call('setRawMetadata', 'colorNameForLabel', args.label)
-    end })
+    return PhotoWrites.each(context, LrApplication.activeCatalog(), {
+        photo_ids = args.photo_ids,
+        title = "Set Color Label",
+        write = function(call) call("setRawMetadata", "colorNameForLabel", args.label) end,
+    })
 end
 
 return OrganizationHandler

@@ -6,9 +6,7 @@ local function requireFinite(value)
     end
 end
 
-local function localeSeparator()
-    return string.format("%.1f", 0.5):sub(2, 2)
-end
+local function localeSeparator() return string.format("%.1f", 0.5):sub(2, 2) end
 
 function DecimalText.fixed(value, places)
     requireFinite(value)
@@ -38,9 +36,7 @@ end
 
 function DecimalText.number(value)
     requireFinite(value)
-    if value == math.floor(value) and math.abs(value) < 2 ^ 53 then
-        return string.format("%d", value)
-    end
+    if value == math.floor(value) and math.abs(value) < 2 ^ 53 then return string.format("%d", value) end
     for digits = 15, 16 do
         local text = DecimalText.significant(value, digits)
         if DecimalText.parse(text) == value then return text end

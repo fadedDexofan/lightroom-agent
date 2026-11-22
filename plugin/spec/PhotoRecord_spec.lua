@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 describe("PhotoRecord", function()
     local PhotoRecord
@@ -6,7 +6,7 @@ describe("PhotoRecord", function()
     before_each(function()
         helper.installImport({})
         package.loaded.PhotoRecord = nil
-        PhotoRecord = require 'PhotoRecord'
+        PhotoRecord = require "PhotoRecord"
     end)
 
     it("keeps a group only when one of its fields carries a value", function()
@@ -18,12 +18,19 @@ describe("PhotoRecord", function()
         local parent = helper.fakeKeyword("Animals")
         local bird = helper.fakeKeyword("Bird", { parent = parent })
         local shared = PhotoRecord.shared({
-            rating = 3, pickStatus = 1, colorNameForLabel = "green",
-            keywords = { bird }, gps = { latitude = 35.6, longitude = 139.7 }, gpsAltitude = 12,
+            rating = 3,
+            pickStatus = 1,
+            colorNameForLabel = "green",
+            keywords = { bird },
+            gps = { latitude = 35.6, longitude = 139.7 },
+            gpsAltitude = 12,
         }, { city = "Tokyo", country = "" }, PhotoRecord.keywordReader())
         assert.are.same({
-            rating = 3, flag = "pick", color_label = "green",
-            keywords = { "Bird" }, keyword_paths = { "Animals|Bird" },
+            rating = 3,
+            flag = "pick",
+            color_label = "green",
+            keywords = { "Bird" },
+            keyword_paths = { "Animals|Bird" },
             gps = { latitude = 35.6, longitude = 139.7, altitude = 12 },
             location = { city = "Tokyo", country = "" },
         }, shared)
@@ -35,7 +42,10 @@ describe("PhotoRecord", function()
         local bird = helper.fakeKeyword("Bird", { parent = parent })
         local walks = 0
         local getParent = bird.getParent
-        bird.getParent = function(self) walks = walks + 1; return getParent(self) end
+        bird.getParent = function(self)
+            walks = walks + 1
+            return getParent(self)
+        end
         local read = PhotoRecord.keywordReader()
         read({ bird })
         read({ bird })
@@ -47,7 +57,10 @@ describe("PhotoRecord", function()
         local bird = helper.fakeKeyword("Bird", { parent = parent })
         local reads = 0
         local getName = bird.getName
-        bird.getName = function(self) reads = reads + 1; return getName(self) end
+        bird.getName = function(self)
+            reads = reads + 1
+            return getName(self)
+        end
         local read = PhotoRecord.keywordReader()
 
         read({ bird })

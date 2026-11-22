@@ -1,11 +1,11 @@
-local LrPrefs = import 'LrPrefs'
-local LrTasks = import 'LrTasks'
-local LrFunctionContext = import 'LrFunctionContext'
+local LrPrefs = import "LrPrefs"
+local LrTasks = import "LrTasks"
+local LrFunctionContext = import "LrFunctionContext"
 
-local PluginInfoProvider = require 'PluginInfoProvider'
-local HandlerLoads = require 'HandlerLoads'
-local Contract = require 'Contract'
-local Log = require 'Log'
+local PluginInfoProvider = require "PluginInfoProvider"
+local HandlerLoads = require "HandlerLoads"
+local Contract = require "Contract"
+local Log = require "Log"
 
 -- LrInitPlugin runs on plugin load AND on "Reload Plug-in", but NOT when
 -- Lightroom merely renders the Plug-in Manager panel. On reload a prior
@@ -15,7 +15,9 @@ local Log = require 'Log'
 -- body) is what keeps opening the manager from killing a live server
 -- (issues #121, #137).
 PluginInfoProvider.resetForReload()
-for _, problem in ipairs(HandlerLoads.loadAll(Contract.DISPATCH)) do Log.error(problem) end
+for _, problem in ipairs(HandlerLoads.loadAll(Contract.DISPATCH)) do
+    Log.error(problem)
+end
 
 local prefs = LrPrefs.prefsForPlugin()
 local autoStart = prefs.autoStartServer

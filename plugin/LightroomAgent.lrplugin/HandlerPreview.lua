@@ -1,13 +1,13 @@
-local LrApplication = import 'LrApplication'
-local LrApplicationView = import 'LrApplicationView'
-local LrDate = import 'LrDate'
-local LrStringUtils = import 'LrStringUtils'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrApplicationView = import "LrApplicationView"
+local LrDate = import "LrDate"
+local LrStringUtils = import "LrStringUtils"
+local LrTasks = import "LrTasks"
 
-local Contract = require 'Contract'
-local PhotoLookup = require 'PhotoLookup'
-local Log = require 'Log'
-local Reply = require 'Reply'
+local Contract = require "Contract"
+local PhotoLookup = require "PhotoLookup"
+local Log = require "Log"
+local Reply = require "Reply"
 
 local PreviewHandler = {}
 
@@ -40,13 +40,15 @@ local function requestThumbnail(photo, size, deadline)
     return done, data, failure
 end
 
-local function isNoPixels(failure)
-    return type(failure) == "string" and failure:find(NO_PIXELS_ANSWER, 1, true) ~= nil
-end
+local function isNoPixels(failure) return type(failure) == "string" and failure:find(NO_PIXELS_ANSWER, 1, true) ~= nil end
 
 local function stillNoPixels(photo)
-    return string.format("Lightroom still had no preview pixels for photo %s (it answered \"%s\" until the time ran"
-        .. " out); ask again later", tostring(photo.localIdentifier), NO_PIXELS_ANSWER)
+    return string.format(
+        'Lightroom still had no preview pixels for photo %s (it answered "%s" until the time ran'
+            .. " out); ask again later",
+        tostring(photo.localIdentifier),
+        NO_PIXELS_ANSWER
+    )
 end
 
 local function openInDevelop(photo)
@@ -56,9 +58,14 @@ end
 
 local function declineOpenInDevelop(photo)
     if not openInDevelop(photo) then return end
-    Reply.refuse(string.format("This tool takes no thumbnail of photo %s while it is the photo open in Develop:"
-        .. " Lightroom's thumbnail there can be stale or an enlarged low-resolution copy", tostring(photo.localIdentifier)),
-        OPEN_IN_DEVELOP)
+    Reply.refuse(
+        string.format(
+            "This tool takes no thumbnail of photo %s while it is the photo open in Develop:"
+                .. " Lightroom's thumbnail there can be stale or an enlarged low-resolution copy",
+            tostring(photo.localIdentifier)
+        ),
+        OPEN_IN_DEVELOP
+    )
 end
 
 local function thumbnailOf(photo, size, deadline)
@@ -90,15 +97,12 @@ local function previewOf(photo, data)
     }
 end
 
-local function preview(photo, args, deadline)
-    return previewOf(photo, thumbnailOf(photo, args.size, deadline))
-end
+local function preview(photo, args, deadline) return previewOf(photo, thumbnailOf(photo, args.size, deadline)) end
 
 local function duplicatePreview(photo, _, deadline)
     local captureTime
-    LrApplication.activeCatalog():withReadAccessDo(function()
-        captureTime = photo:getRawMetadata("dateTimeOriginal")
-    end)
+    LrApplication.activeCatalog()
+        :withReadAccessDo(function() captureTime = photo:getRawMetadata("dateTimeOriginal") end)
     if type(captureTime) ~= "number" then error("No raw capture time", 0) end
     local result = previewOf(photo, thumbnailOf(photo, DUPLICATE_SIZE, deadline))
     result.capture_time = captureTime
@@ -111,17 +115,19 @@ local function onePhoto(render, args, context)
     if not photo then return Reply.parts({ not_found = { input } }) end
     local ok, value = LrTasks.pcall(render, photo, args, deadlineOf(context))
     if ok then return Reply.parts({ data = value }) end
-    return Reply.parts({ failed = { {
-        photo_id = tostring(photo.localIdentifier), reason = Reply.messageOf(value), cause = Reply.causeOf(value),
-    } } })
+    return Reply.parts({
+        failed = {
+            {
+                photo_id = tostring(photo.localIdentifier),
+                reason = Reply.messageOf(value),
+                cause = Reply.causeOf(value),
+            },
+        },
+    })
 end
 
-function PreviewHandler.renderPreview(args, context)
-    return onePhoto(preview, args, context)
-end
+function PreviewHandler.renderPreview(args, context) return onePhoto(preview, args, context) end
 
-function PreviewHandler.renderDuplicatePreview(args, context)
-    return onePhoto(duplicatePreview, args, context)
-end
+function PreviewHandler.renderDuplicatePreview(args, context) return onePhoto(duplicatePreview, args, context) end
 
 return PreviewHandler

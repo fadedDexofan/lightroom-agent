@@ -6,7 +6,8 @@ function HandlerLoads.resolve(module)
     local record = first[module]
     if record == nil then
         local loaded, value = pcall(require, module)
-        record = { loaded = loaded, value = loaded and value or ("Could not load " .. module .. ": " .. tostring(value)) }
+        record =
+            { loaded = loaded, value = loaded and value or ("Could not load " .. module .. ": " .. tostring(value)) }
         first[module] = record
     end
     if not record.loaded then error(record.value, 0) end

@@ -1,4 +1,4 @@
-local Contract = require 'Contract'
+local Contract = require "Contract"
 
 local DevelopCurves = {}
 
@@ -22,7 +22,9 @@ end
 
 function DevelopCurves.forWrite(settings)
     local written = {}
-    for key, value in pairs(settings) do written[key] = value end
+    for key, value in pairs(settings) do
+        written[key] = value
+    end
     for key, extended in pairs(EXTENDED) do
         local value = DevelopCurves.read(settings, key)
         if value ~= nil then

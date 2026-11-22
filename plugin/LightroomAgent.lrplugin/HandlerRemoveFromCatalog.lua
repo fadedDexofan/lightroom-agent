@@ -1,14 +1,14 @@
-local LrApplication = import 'LrApplication'
-local LrApplicationView = import 'LrApplicationView'
-local LrSelection = import 'LrSelection'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrApplicationView = import "LrApplicationView"
+local LrSelection = import "LrSelection"
+local LrTasks = import "LrTasks"
 
-local CatalogWrite = require 'CatalogWrite'
-local DevelopSession = require 'DevelopSession'
-local PhotoSources = require 'PhotoSources'
-local Log = require 'Log'
-local PhotoLookup = require 'PhotoLookup'
-local Reply = require 'Reply'
+local CatalogWrite = require "CatalogWrite"
+local DevelopSession = require "DevelopSession"
+local PhotoSources = require "PhotoSources"
+local Log = require "Log"
+local PhotoLookup = require "PhotoLookup"
+local Reply = require "Reply"
 
 local Handler = {}
 
@@ -22,7 +22,7 @@ local function selectExactly(catalog, photos)
 end
 
 local function surviving(catalog, photos)
-    local raw = catalog:batchGetRawMetadata(photos, { 'uuid' }) or {}
+    local raw = catalog:batchGetRawMetadata(photos, { "uuid" }) or {}
     local result = {}
     for _, photo in ipairs(photos) do
         if (raw[photo] or {}).uuid then result[#result + 1] = photo end
@@ -32,7 +32,9 @@ end
 
 local function restore(catalog, view)
     local problems = {}
-    if not PhotoSources.show(catalog, view.sources) then problems[#problems + 1] = "Lightroom did not reopen the previous source" end
+    if not PhotoSources.show(catalog, view.sources) then
+        problems[#problems + 1] = "Lightroom did not reopen the previous source"
+    end
     local ok, result = LrTasks.pcall(function()
         local photos = surviving(catalog, view.selection)
         if #photos > 0 then
@@ -44,9 +46,7 @@ local function restore(catalog, view)
             for _, photo in ipairs(photos) do
                 if photo ~= active then ordered[#ordered + 1] = photo end
             end
-            if not selectExactly(catalog, ordered) then
-                error("Lightroom did not restore the surviving selection")
-            end
+            if not selectExactly(catalog, ordered) then error("Lightroom did not restore the surviving selection") end
         else
             LrSelection.selectNone()
             if not DevelopSession.waitFor(function() return catalog:getTargetPhoto() == nil end, 10) then
@@ -70,14 +70,21 @@ function Handler.removePhotos(args, context)
     end
     catalog:withReadAccessDo(function()
         local raw = catalog:batchGetRawMetadata(photos, {
-            'virtualCopies', 'masterPhoto', 'isInStackInFolder', 'stackInFolderIsCollapsed',
-            'topOfStackInFolderContainingPhoto',
+            "virtualCopies",
+            "masterPhoto",
+            "isInStackInFolder",
+            "stackInFolderIsCollapsed",
+            "topOfStackInFolderContainingPhoto",
         }) or {}
         for _, entry in ipairs(resolved) do
             local info = entry.photo and raw[entry.photo] or {}
             if tonumber(entry.id) == nil and (info.masterPhoto or #(info.virtualCopies or {}) > 0) then
-                Reply.refuse("The path " .. tostring(entry.id) .. " names a master and its virtual copies; "
-                    .. "pass each photo's numeric id instead")
+                Reply.refuse(
+                    "The path "
+                        .. tostring(entry.id)
+                        .. " names a master and its virtual copies; "
+                        .. "pass each photo's numeric id instead"
+                )
             end
         end
         for _, photo in ipairs(photos) do
@@ -89,10 +96,15 @@ function Handler.removePhotos(args, context)
             end
             if info.isInStackInFolder and info.stackInFolderIsCollapsed then
                 local top = info.topOfStackInFolderContainingPhoto
-                Reply.refuse("Photo " .. tostring(photo.localIdentifier) .. " is in a collapsed stack whose top photo is "
-                    .. tostring(top and top.localIdentifier) .. "; expand the stack in Lightroom first, then call again"
-                    .. " (Lightroom cannot select a collapsed stack's hidden photos, and removing its top alone"
-                    .. " could remove the whole stack)")
+                Reply.refuse(
+                    "Photo "
+                        .. tostring(photo.localIdentifier)
+                        .. " is in a collapsed stack whose top photo is "
+                        .. tostring(top and top.localIdentifier)
+                        .. "; expand the stack in Lightroom first, then call again"
+                        .. " (Lightroom cannot select a collapsed stack's hidden photos, and removing its top alone"
+                        .. " could remove the whole stack)"
+                )
             end
         end
     end)
@@ -112,13 +124,20 @@ function Handler.removePhotos(args, context)
             if not inFolders and not PhotoSources.show(catalog, { catalog.kAllPhotos }) then
                 Reply.refuse("Lightroom did not show the photos' folders or All Photographs; nothing was removed")
             end
-            Log.info(string.format("remove_photos_from_catalog: selecting %d photo(s) in %s", #photos,
-                inFolders and (#folders .. " folder(s)") or "All Photographs"))
+            Log.info(
+                string.format(
+                    "remove_photos_from_catalog: selecting %d photo(s) in %s",
+                    #photos,
+                    inFolders and (#folders .. " folder(s)") or "All Photographs"
+                )
+            )
             if not selectExactly(catalog, photos) then
                 Reply.refuse("Lightroom did not select exactly the requested photos; nothing was removed")
             end
-            if LrApplicationView.getCurrentModuleName() ~= "library"
-                or not DevelopSession.selectionMatches(catalog, photos[1], photos) then
+            if
+                LrApplicationView.getCurrentModuleName() ~= "library"
+                or not DevelopSession.selectionMatches(catalog, photos[1], photos)
+            then
                 Reply.refuse("The selection changed; nothing was removed")
             end
             CatalogWrite.invoke(context, "Remove from Catalog", LrSelection.removeFromCatalog)
@@ -129,8 +148,12 @@ function Handler.removePhotos(args, context)
         end)
         local restored, restoreError = LrTasks.pcall(restore, catalog, view)
         if not restored then
-            error((ok and "Photos removed" or Reply.messageOf(result))
-                .. "; could not restore selection: " .. Reply.messageOf(restoreError), 0)
+            error(
+                (ok and "Photos removed" or Reply.messageOf(result))
+                    .. "; could not restore selection: "
+                    .. Reply.messageOf(restoreError),
+                0
+            )
         end
         if not ok then error(result, 0) end
         return result

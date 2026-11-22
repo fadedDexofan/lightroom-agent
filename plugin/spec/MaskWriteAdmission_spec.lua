@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local HOME = "/Users/tester"
 local CERTIFICATION_FILE = HOME .. "/.config/lightroom-agent/mask-certification.json"
@@ -24,7 +24,7 @@ local function load(files, versionTable)
     package.loaded.MaskWriteAdmission = nil
     package.loaded.PluginFiles = nil
     package.loaded.RunningLightroom = nil
-    return require 'MaskWriteAdmission'
+    return require "MaskWriteAdmission"
 end
 
 local THROWAWAY_CATALOG = HOME .. "/Pictures/lragent-live-1/lragent-live-1.lrcat"
@@ -34,7 +34,9 @@ local catalog = { getPath = function() return PERSONAL_CATALOG end }
 local throwaway = { getPath = function() return THROWAWAY_CATALOG end }
 
 local function certification(build)
-    return '{"lightroom":{"version":"16.0","build":"' .. build .. '"},'
+    return '{"lightroom":{"version":"16.0","build":"'
+        .. build
+        .. '"},'
         .. '"process_versions":["15.4","15.3"],"certified_at":"2026-11-12T10:00:00Z","checks":["linear create"]}'
 end
 
@@ -44,7 +46,11 @@ describe("MaskWriteAdmission.status", function()
 
         assert.is_false(status.admitted)
         assert.is_false(status.throwaway_catalog)
-        assert.are.same({ version = "16.0", build = RUNNING_BUILD, version_table = { major = 16, minor = 0, revision = 0, build = 1234567 } }, status.running)
+        assert.are.same({
+            version = "16.0",
+            build = RUNNING_BUILD,
+            version_table = { major = 16, minor = 0, revision = 0, build = 1234567 },
+        }, status.running)
         assert.are.equal(CERTIFICATION_FILE, status.certification_file)
         assert.is_nil(status.certified)
         assert.is_truthy(status.reason:find("certified: none", 1, true))
@@ -52,15 +58,20 @@ describe("MaskWriteAdmission.status", function()
 
     it("reports the certified build, process versions, time and checks", function()
         local status = load({
-            [CERTIFICATION_FILE] = '{"lightroom":{"version":"16.0","build":"' .. RUNNING_BUILD .. '"},'
+            [CERTIFICATION_FILE] = '{"lightroom":{"version":"16.0","build":"'
+                .. RUNNING_BUILD
+                .. '"},'
                 .. '"process_versions":["15.4"],"certified_at":"2026-11-12T10:00:00Z","checks":["linear create","sky batch"]}',
         }).status(catalog)
 
         assert.is_true(status.admitted)
         assert.is_nil(status.reason)
         assert.are.same({
-            version = "16.0", build = RUNNING_BUILD, process_versions = { "15.4" },
-            certified_at = "2026-11-12T10:00:00Z", checks = { "linear create", "sky batch" },
+            version = "16.0",
+            build = RUNNING_BUILD,
+            process_versions = { "15.4" },
+            certified_at = "2026-11-12T10:00:00Z",
+            checks = { "linear create", "sky batch" },
         }, status.certified)
     end)
 
@@ -75,7 +86,13 @@ describe("MaskWriteAdmission.status", function()
     end)
 
     it("does not admit on a certification file it cannot read as a record", function()
-        for _, content in ipairs({ "not json", '{"lightroom":{"version":"16.0"}}', '{"lightroom":{"version":"16.0","build":"' .. RUNNING_BUILD .. '"},"process_versions":[],"certified_at":"x"}' }) do
+        for _, content in ipairs({
+            "not json",
+            '{"lightroom":{"version":"16.0"}}',
+            '{"lightroom":{"version":"16.0","build":"'
+                .. RUNNING_BUILD
+                .. '"},"process_versions":[],"certified_at":"x"}',
+        }) do
             local status = load({ [CERTIFICATION_FILE] = content }).status(catalog)
 
             assert.is_false(status.admitted)
@@ -85,9 +102,7 @@ describe("MaskWriteAdmission.status", function()
     end)
 end)
 
-local function decideWith(Admission, at, processVersion)
-    return Admission.decide(Admission.status(at), processVersion)
-end
+local function decideWith(Admission, at, processVersion) return Admission.decide(Admission.status(at), processVersion) end
 
 describe("MaskWriteAdmission.decide", function()
     it("admits the running build for a process version its certification exercised", function()
@@ -100,13 +115,16 @@ describe("MaskWriteAdmission.decide", function()
         local decision = decideWith(load({}), catalog, "15.4")
 
         assert.is_false(decision.admitted)
-        assert.is_truthy(decision.reason:find("Lightroom Classic 16.0 (" .. RUNNING_BUILD .. ") is not certified", 1, true))
+        assert.is_truthy(
+            decision.reason:find("Lightroom Classic 16.0 (" .. RUNNING_BUILD .. ") is not certified", 1, true)
+        )
         assert.is_truthy(decision.reason:find("certified: none", 1, true))
         assert.is_truthy(decision.reason:find("certify-mask-writes.mjs", 1, true))
     end)
 
     it("refuses a certification for another build and names that build", function()
-        local decision = decideWith(load({ [CERTIFICATION_FILE] = certification("16.0.0 build 7654321") }), catalog, "15.4")
+        local decision =
+            decideWith(load({ [CERTIFICATION_FILE] = certification("16.0.0 build 7654321") }), catalog, "15.4")
 
         assert.is_false(decision.admitted)
         assert.is_truthy(decision.reason:find("certified: 16.0.0 build 7654321", 1, true))

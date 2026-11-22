@@ -1,35 +1,36 @@
-local LrApplication = import 'LrApplication'
-local LrDate = import 'LrDate'
-local LrDevelopController = import 'LrDevelopController'
-local LrFileUtils = import 'LrFileUtils'
-local LrPathUtils = import 'LrPathUtils'
-local LrStringUtils = import 'LrStringUtils'
-local LrTasks = import 'LrTasks'
+local LrApplication = import "LrApplication"
+local LrDate = import "LrDate"
+local LrDevelopController = import "LrDevelopController"
+local LrFileUtils = import "LrFileUtils"
+local LrPathUtils = import "LrPathUtils"
+local LrStringUtils = import "LrStringUtils"
+local LrTasks = import "LrTasks"
 
-local AIMaskData = require 'AIMaskData'
-local CatalogWrite = require 'CatalogWrite'
-local Contract = require 'Contract'
-local PathForms = require 'PathForms'
-local PhotoLookup = require 'PhotoLookup'
-local DevelopBatch = require 'DevelopBatch'
-local DevelopCurves = require 'DevelopCurves'
-local DevelopReadBack = require 'DevelopReadBack'
-local DevelopSession = require 'DevelopSession'
-local AIMaskCompute = require 'AIMaskCompute'
-local GuardedMaskWrite = require 'GuardedMaskWrite'
-local HandlerSnapshots = require 'HandlerSnapshots'
-local Log = require 'Log'
-local MaskWriteAdmission = require 'MaskWriteAdmission'
-local JSON = require 'JSON'
-local JsonValue = require 'JsonValue'
-local Reply = require 'Reply'
+local AIMaskData = require "AIMaskData"
+local CatalogWrite = require "CatalogWrite"
+local Contract = require "Contract"
+local PathForms = require "PathForms"
+local PhotoLookup = require "PhotoLookup"
+local DevelopBatch = require "DevelopBatch"
+local DevelopCurves = require "DevelopCurves"
+local DevelopReadBack = require "DevelopReadBack"
+local DevelopSession = require "DevelopSession"
+local AIMaskCompute = require "AIMaskCompute"
+local GuardedMaskWrite = require "GuardedMaskWrite"
+local HandlerSnapshots = require "HandlerSnapshots"
+local Log = require "Log"
+local MaskWriteAdmission = require "MaskWriteAdmission"
+local JSON = require "JSON"
+local JsonValue = require "JsonValue"
+local Reply = require "Reply"
 
 local DevelopHandler = {}
 
 local SETTINGS_BATCH_RESERVE_SECONDS = 10
 
 local function batchReserve(gates, computesAIMasks)
-    return SETTINGS_BATCH_RESERVE_SECONDS + gates * CatalogWrite.WAIT_SECONDS
+    return SETTINGS_BATCH_RESERVE_SECONDS
+        + gates * CatalogWrite.WAIT_SECONDS
         + (computesAIMasks and Contract.AI_MASK_COMPUTE_WAIT_SECONDS or 0)
 end
 
@@ -53,13 +54,9 @@ end
 
 local function callPresetMethod(preset, methodName)
     local method = preset and preset[methodName]
-    if type(method) ~= "function" then
-        return nil
-    end
+    if type(method) ~= "function" then return nil end
     local ok, value = pcall(method, preset)
-    if not ok then
-        return nil
-    end
+    if not ok then return nil end
     return value
 end
 
@@ -101,13 +98,9 @@ end
 
 local function sharesOneUuid(matches)
     local uuid = matches[1].uuid
-    if uuid == nil then
-        return false
-    end
+    if uuid == nil then return false end
     for index = 2, #matches do
-        if matches[index].uuid ~= uuid then
-            return false
-        end
+        if matches[index].uuid ~= uuid then return false end
     end
     return true
 end
@@ -119,13 +112,9 @@ local function findPreset(args)
         local nameMatches = args.preset_name == nil or entry.name == args.preset_name
         local folderMatches = args.preset_folder == nil or entry.folder == args.preset_folder
         local scopeMatches = args.preset_scope == nil or entry.scope == args.preset_scope
-        if uuidMatches and nameMatches and folderMatches and scopeMatches then
-            table.insert(matches, entry)
-        end
+        if uuidMatches and nameMatches and folderMatches and scopeMatches then table.insert(matches, entry) end
     end
-    if #matches == 0 then
-        Reply.refuse("Preset not found")
-    end
+    if #matches == 0 then Reply.refuse("Preset not found") end
     -- Lightroom can expose the same preset more than once (for example, as a
     -- favourite and in its original group). Those aliases share one UUID, so
     -- a UUID selector is still exact even when the flattened folder list has
@@ -138,12 +127,8 @@ end
 
 local function cloneSerializable(value, depth, seen)
     local valueType = type(value)
-    if valueType == "number" or valueType == "string" or valueType == "boolean" then
-        return value, true
-    end
-    if valueType ~= "table" or depth >= 6 or seen[value] then
-        return nil, false
-    end
+    if valueType == "number" or valueType == "string" or valueType == "boolean" then return value, true end
+    if valueType ~= "table" or depth >= 6 or seen[value] then return nil, false end
 
     seen[value] = true
     local out = {}
@@ -171,13 +156,9 @@ end
 
 local function normalizedPresetSettings(preset)
     local settings = callPresetMethod(preset, "getSetting")
-    if type(settings) ~= "table" then
-        Reply.refuse("Preset settings are unavailable")
-    end
+    if type(settings) ~= "table" then Reply.refuse("Preset settings are unavailable") end
     local normalized, supported = cloneSerializable(settings, 0, {})
-    if not supported then
-        Reply.refuse("Preset settings contain unsupported nested values")
-    end
+    if not supported then Reply.refuse("Preset settings contain unsupported nested values") end
     return normalized
 end
 
@@ -193,9 +174,7 @@ local function withoutVolatileIds(value)
     if type(value) ~= "table" then return value end
     local out = {}
     for key, item in pairs(value) do
-        if not VOLATILE_SETTING_KEYS[key] then
-            out[key] = withoutVolatileIds(item)
-        end
+        if not VOLATILE_SETTING_KEYS[key] then out[key] = withoutVolatileIds(item) end
     end
     return out
 end
@@ -215,8 +194,12 @@ local function queryTokens(query)
         if not isPunctuationOnly(token) then tokens[#tokens + 1] = token end
     end
     if #tokens == 0 then
-        Reply.refuse("The query " .. string.format("%q", query) .. " has no word to search: it holds only ASCII punctuation"
-            .. " and spaces; leave query out to list every preset")
+        Reply.refuse(
+            "The query "
+                .. string.format("%q", query)
+                .. " has no word to search: it holds only ASCII punctuation"
+                .. " and spaces; leave query out to list every preset"
+        )
     end
     return tokens
 end
@@ -236,8 +219,7 @@ function DevelopHandler.listDevelopPresets(args)
     local out = {}
     local count = 0
     for _, entry in ipairs(allDevelopPresetEntries()) do
-        if (not args.folder or entry.folder == args.folder)
-            and (not tokens or presetMatches(entry, tokens)) then
+        if (not args.folder or entry.folder == args.folder) and (not tokens or presetMatches(entry, tokens)) then
             count = count + 1
             if count > offset and #out < limit then
                 table.insert(out, {
@@ -274,11 +256,17 @@ function DevelopHandler.compareDevelopPresets(args)
     local baseSettings = normalizedPresetSettings(base.preset)
     local candidateSettings = normalizedPresetSettings(candidate.preset)
     local keys = {}
-    for key, _ in pairs(baseSettings) do keys[key] = true end
-    for key, _ in pairs(candidateSettings) do keys[key] = true end
+    for key, _ in pairs(baseSettings) do
+        keys[key] = true
+    end
+    for key, _ in pairs(candidateSettings) do
+        keys[key] = true
+    end
 
     local keyList = {}
-    for key, _ in pairs(keys) do table.insert(keyList, key) end
+    for key, _ in pairs(keys) do
+        table.insert(keyList, key)
+    end
     table.sort(keyList)
 
     local changes = {}
@@ -321,15 +309,19 @@ function DevelopHandler.createDevelopPreset(args, context)
     local presetSettings = {}
     for _, key in ipairs(args.settings) do
         local value = DevelopCurves.read(sourceSettings, key)
-        if value == nil then
-            Reply.refuse("Source photo has no develop setting: " .. key)
-        end
+        if value == nil then Reply.refuse("Source photo has no develop setting: " .. key) end
         presetSettings[key] = value
     end
     presetSettings = DevelopCurves.forWrite(presetSettings)
 
-    local preset = CatalogWrite.invoke(context, "the plugin preset " .. args.preset_name,
-        LrApplication.addDevelopPresetForPlugin, _PLUGIN, args.preset_name, presetSettings)
+    local preset = CatalogWrite.invoke(
+        context,
+        "the plugin preset " .. args.preset_name,
+        LrApplication.addDevelopPresetForPlugin,
+        _PLUGIN,
+        args.preset_name,
+        presetSettings
+    )
     if not preset then error("Lightroom did not create the plugin preset") end
     local entry = presetEntry(preset, "Plugin Develop Presets", "plugin")
     local result = presetSummary(entry)
@@ -367,14 +359,10 @@ function DevelopHandler.exportDevelopPreset(args, context)
 
     local destinationDir = PathForms.absolute(args.destination_dir, "destination_dir")
     CatalogWrite.createFolder(context, destinationDir)
-    if LrFileUtils.exists(destinationDir) ~= "directory" then
-        Reply.refuse("destination_dir is not a directory")
-    end
+    if LrFileUtils.exists(destinationDir) ~= "directory" then Reply.refuse("destination_dir is not a directory") end
 
     local destination = LrPathUtils.child(destinationDir, filename)
-    if LrFileUtils.exists(destination) then
-        Reply.refuse("destination preset already exists; choose a new filename")
-    end
+    if LrFileUtils.exists(destination) then Reply.refuse("destination preset already exists; choose a new filename") end
     CatalogWrite.copyFile(context, source, destination)
 
     local result = presetSummary(entry)
@@ -383,7 +371,6 @@ function DevelopHandler.exportDevelopPreset(args, context)
     Log.info(string.format("Exported preset %s to %s", tostring(entry.name), destination))
     return result
 end
-
 
 local containsAIMasks = AIMaskData.containsAIMasks
 local withoutComputedAIMaskData = AIMaskData.withoutComputedData
@@ -402,9 +389,7 @@ local function enhanceFilterOf(settings)
     return found
 end
 
-local function presetContainsAIMasks(preset)
-    return containsAIMasks(callPresetMethod(preset, "getSetting"))
-end
+local function presetContainsAIMasks(preset) return containsAIMasks(callPresetMethod(preset, "getSetting")) end
 
 local PRESET_AI_MASKS = "the preset's AI masks"
 
@@ -425,7 +410,9 @@ local DRY_RUN_MISSING_BUDGET = 4000
 local function previewValue(value)
     if type(value) == "table" then
         local count = 0
-        for _ in pairs(value) do count = count + 1 end
+        for _ in pairs(value) do
+            count = count + 1
+        end
         return { type = "table", entries = count }
     end
     if type(value) == "string" and #value > 128 then
@@ -556,19 +543,31 @@ function DevelopHandler.applyDevelopPreset(args, context)
             local computed = applied
             if applied and aiPreset then
                 local notComputed
-                computed, notComputed = LrTasks.pcall(AIMaskCompute.run, context, catalog, photo,
-                    { subject = PRESET_AI_MASKS, before = entriesBefore })
+                computed, notComputed = LrTasks.pcall(
+                    AIMaskCompute.run,
+                    context,
+                    catalog,
+                    photo,
+                    { subject = PRESET_AI_MASKS, before = entriesBefore }
+                )
                 if computed then
                     aiUpdated = aiUpdated + 1
                 else
-                    problem = Reply.messageOf(notComputed) .. "; check the photo's AI masks in Develop before writing to it"
+                    problem = Reply.messageOf(notComputed)
+                        .. "; check the photo's AI masks in Develop before writing to it"
                 end
             end
             if computed then
                 written[#written + 1] = { photo = photo, settings = presetSettings, before = before }
             else
-                written[#written + 1] = { photo = photo, settings = presetSettings, before = before,
-                    error = Reply.messageOf(problem), from = from, to = context.ledger:mark() }
+                written[#written + 1] = {
+                    photo = photo,
+                    settings = presetSettings,
+                    before = before,
+                    error = Reply.messageOf(problem),
+                    from = from,
+                    to = context.ledger:mark(),
+                }
                 stopped = not applied
             end
         end
@@ -576,8 +575,14 @@ function DevelopHandler.applyDevelopPreset(args, context)
 
     local checked = DevelopReadBack.check(context, catalog, written)
     local appliedCount = #verifiedIds(checked)
-    Log.info(string.format("Applied preset %s to %d photos (AI masks recomputed: %d)",
-        selectedPreset.name, appliedCount, aiUpdated))
+    Log.info(
+        string.format(
+            "Applied preset %s to %d photos (AI masks recomputed: %d)",
+            selectedPreset.name,
+            appliedCount,
+            aiUpdated
+        )
+    )
 
     return DevelopReadBack.parts(checked, {
         applied = appliedCount,
@@ -600,8 +605,13 @@ end
 local function replaceMasks(context, catalog, photo, target, masks, aiMasks, processVersion)
     if processVersion ~= nil and processVersion ~= target.processVersion then
         GuardedMaskWrite.precheck(catalog, photo, masks, processVersion)
-        CatalogWrite.developSettings(context, catalog, photo, "Set Process Version " .. tostring(processVersion),
-            function() return { ProcessVersion = processVersion } end)
+        CatalogWrite.developSettings(
+            context,
+            catalog,
+            photo,
+            "Set Process Version " .. tostring(processVersion),
+            function() return { ProcessVersion = processVersion } end
+        )
     end
     return copyMasks(context, catalog, photo, masks, aiMasks)
 end
@@ -628,16 +638,25 @@ function DevelopHandler.copyDevelopSettings(args, context)
             filterNames[#filterNames + 1] = type(filter) == "table" and tostring(filter.Name) or "unnamed"
         end
         if #filterNames > 0 then
-            context:warn("A full copy leaves out the source's FilterList (" .. table.concat(filterNames, ", ")
-                .. "): Lightroom computes those results for each image, so each target keeps its own")
+            context:warn(
+                "A full copy leaves out the source's FilterList ("
+                    .. table.concat(filterNames, ", ")
+                    .. "): Lightroom computes those results for each image, so each target keeps its own"
+            )
         end
     end
     if type(toApply.MaskGroupBasedCorrections) == "table" and #toApply.MaskGroupBasedCorrections > 0 then
-        local safe, reason = LrTasks.pcall(MaskWriteAdmission.requireAdmitted,
-            MaskWriteAdmission.status(catalog), sourceSettings.ProcessVersion)
+        local safe, reason = LrTasks.pcall(
+            MaskWriteAdmission.requireAdmitted,
+            MaskWriteAdmission.status(catalog),
+            sourceSettings.ProcessVersion
+        )
         if not safe then
-            Reply.refuse("The source's masks cannot be copied: " .. Reply.messageOf(reason)
-                .. " Name the settings to copy with settings to leave masks out.")
+            Reply.refuse(
+                "The source's masks cannot be copied: "
+                    .. Reply.messageOf(reason)
+                    .. " Name the settings to copy with settings to leave masks out."
+            )
         end
     end
     toApply = DevelopCurves.forWrite(withoutComputedAIMaskData(toApply))
@@ -647,9 +666,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
         masks = type(toApply.MaskGroupBasedCorrections) == "table" and toApply.MaskGroupBasedCorrections or {}
     end
     local entries, missingIds, resolved = PhotoLookup.resolveDistinct(catalog, args.target_ids)
-    if args.dry_run then
-        return previewDevelopSettings(catalog, resolved, toApply, false, masks)
-    end
+    if args.dry_run then return previewDevelopSettings(catalog, resolved, toApply, false, masks) end
     local written = {}
     if masks then
         rest = {}
@@ -668,35 +685,62 @@ function DevelopHandler.copyDevelopSettings(args, context)
         else
             local read, settings = LrTasks.pcall(savedOf, catalog, entry.photo)
             if not read then
-                failed[#failed + 1] = { photo_id = tostring(entry.photo.localIdentifier), reason = Reply.messageOf(settings) }
+                failed[#failed + 1] =
+                    { photo_id = tostring(entry.photo.localIdentifier), reason = Reply.messageOf(settings) }
             else
                 local existing = settings.MaskGroupBasedCorrections
-                local target = { processVersion = settings.ProcessVersion, maskCount = type(existing) == "table" and #existing or 0 }
+                local target = {
+                    processVersion = settings.ProcessVersion,
+                    maskCount = type(existing) == "table" and #existing or 0,
+                }
                 local before = DevelopReadBack.before(settings)
                 local from = context.ledger:mark()
                 local masked, previous = true, nil
                 if masks and (#masks > 0 or target.maskCount > 0) then
-                    masked, previous = LrTasks.pcall(replaceMasks, context, catalog, entry.photo, target, masks, aiMasks,
-                        rest.ProcessVersion)
+                    masked, previous = LrTasks.pcall(
+                        replaceMasks,
+                        context,
+                        catalog,
+                        entry.photo,
+                        target,
+                        masks,
+                        aiMasks,
+                        rest.ProcessVersion
+                    )
                 end
                 if not masked then
                     written[#written + 1] = {
-                        photo = entry.photo, settings = rest, before = before, from = from, to = context.ledger:mark(),
+                        photo = entry.photo,
+                        settings = rest,
+                        before = before,
+                        from = from,
+                        to = context.ledger:mark(),
                         error = "the masks could not be copied: " .. Reply.messageOf(previous),
                     }
                 else
                     local ok, reason = LrTasks.pcall(function()
-                        CatalogWrite.developSettings(context, catalog, entry.photo, "Copy Develop Settings",
-                            function() return rest end)
+                        CatalogWrite.developSettings(
+                            context,
+                            catalog,
+                            entry.photo,
+                            "Copy Develop Settings",
+                            function() return rest end
+                        )
                     end)
                     if ok then
                         written[#written + 1] = {
-                            photo = entry.photo, settings = rest, before = before,
+                            photo = entry.photo,
+                            settings = rest,
+                            before = before,
                             masksRemoved = masks and #masks == 0 and previous and #previous > 0 and #previous or nil,
                         }
                     else
                         written[#written + 1] = {
-                            photo = entry.photo, settings = rest, before = before, from = from, to = context.ledger:mark(),
+                            photo = entry.photo,
+                            settings = rest,
+                            before = before,
+                            from = from,
+                            to = context.ledger:mark(),
                             error = Reply.messageOf(reason),
                         }
                     end
@@ -733,7 +777,7 @@ function DevelopHandler.matchPhotoStyle(args, context)
     local targets, missing = PhotoLookup.resolveDistinct(catalog, args.target_ids)
     for _, entry in ipairs(targets) do
         if entry.photo.localIdentifier == source.localIdentifier then
-            Reply.refuse('Reference photo must not appear in target_ids')
+            Reply.refuse("Reference photo must not appear in target_ids")
         end
     end
 
@@ -741,7 +785,9 @@ function DevelopHandler.matchPhotoStyle(args, context)
     catalog:withReadAccessDo(function()
         local reference = DevelopReadBack.saved(source)
         grayscale = reference.ConvertToGrayscale == true
-        for key in pairs(STYLE_KEYS) do settings[key] = DevelopCurves.read(reference, key) end
+        for key in pairs(STYLE_KEYS) do
+            settings[key] = DevelopCurves.read(reference, key)
+        end
     end)
     local results, failures, written, remaining = {}, {}, {}, {}
     for _, entry in ipairs(targets) do
@@ -764,22 +810,41 @@ function DevelopHandler.matchPhotoStyle(args, context)
                     if not JsonValue.equal(value, DevelopCurves.read(current, key)) then changed = changed + 1 end
                 end
                 styleMatchSerial = styleMatchSerial + 1
-                local name = string.format('Style match from %s at %.3f #%d',
-                    tostring(source.localIdentifier), LrDate.currentTime(), styleMatchSerial)
+                local name = string.format(
+                    "Style match from %s at %.3f #%d",
+                    tostring(source.localIdentifier),
+                    LrDate.currentTime(),
+                    styleMatchSerial
+                )
                 local snapshot
                 local from = context.ledger:mark()
                 local ok, reason = LrTasks.pcall(function()
                     snapshot = HandlerSnapshots.create({ photo_id = photoId, name = name }, context).snapshot
-                    CatalogWrite.developSettings(context, catalog, entry.photo, "Match Photo Style",
-                        function() return DevelopCurves.forWrite(settings) end)
+                    CatalogWrite.developSettings(
+                        context,
+                        catalog,
+                        entry.photo,
+                        "Match Photo Style",
+                        function() return DevelopCurves.forWrite(settings) end
+                    )
                     written[#written + 1] = { photo = entry.photo, settings = settings, before = before }
                     results[#results + 1] = { photo_id = photoId, snapshot = snapshot, settings_changed = changed }
                 end)
                 if not ok then
                     written[#written + 1] = {
-                        photo = entry.photo, settings = settings, before = before, from = from, to = context.ledger:mark(),
-                        error = Reply.messageOf(reason) .. (snapshot and "; the style was not confirmed stored and"
-                            .. " recovery snapshot " .. tostring(snapshot.name) .. " was kept" or ""),
+                        photo = entry.photo,
+                        settings = settings,
+                        before = before,
+                        from = from,
+                        to = context.ledger:mark(),
+                        error = Reply.messageOf(reason)
+                            .. (
+                                snapshot
+                                    and "; the style was not confirmed stored and" .. " recovery snapshot " .. tostring(
+                                        snapshot.name
+                                    ) .. " was kept"
+                                or ""
+                            ),
                     }
                 end
             end
@@ -787,14 +852,18 @@ function DevelopHandler.matchPhotoStyle(args, context)
     end
     local checked = DevelopReadBack.check(context, catalog, written)
     local verified = {}
-    for _, id in ipairs(verifiedIds(checked)) do verified[id] = true end
+    for _, id in ipairs(verifiedIds(checked)) do
+        verified[id] = true
+    end
     local matched = {}
     for _, result in ipairs(results) do
         if verified[result.photo_id] then matched[#matched + 1] = result end
     end
-    return DevelopReadBack.parts(checked,
+    return DevelopReadBack.parts(
+        checked,
         { reference_id = tostring(source.localIdentifier), matched = #matched, results = matched },
-        { failed = failures, not_found = missing, remaining = remaining })
+        { failed = failures, not_found = missing, remaining = remaining }
+    )
 end
 
 local READ_BACK_PER_PHOTO_SECONDS = 0.1
@@ -820,13 +889,13 @@ end
 function DevelopHandler.setDevelopSettingsBatch(args, context)
     local catalog = LrApplication.activeCatalog()
     local items, inputs = args.photos, {}
-    for index, item in ipairs(items) do inputs[index] = item.photo_id end
+    for index, item in ipairs(items) do
+        inputs[index] = item.photo_id
+    end
     return DevelopBatch.run(context, catalog, {
         inputs = inputs,
         duplicates = "refuse",
-        reserveSeconds = function(started)
-            return batchReserve(1) + READ_BACK_PER_PHOTO_SECONDS * (started + 1)
-        end,
+        reserveSeconds = function(started) return batchReserve(1) + READ_BACK_PER_PHOTO_SECONDS * (started + 1) end,
         held = function(entry)
             local item = items[entry.index]
             if item.remaining then return { remaining = true } end
@@ -906,12 +975,9 @@ local function denoisePhoto(context, catalog, photo, amount)
     end
     local confirmed = waitFor(function()
         local now = LrDevelopController.getEnhancePanelState()
-        return catalog:getTargetPhoto() == photo
-            and now ~= nil and now.denoiseState and now.denoiseAmount == amount
+        return catalog:getTargetPhoto() == photo and now ~= nil and now.denoiseState and now.denoiseAmount == amount
     end, DENOISE_CONFIRM_TIMEOUT_SECONDS)
-    if not confirmed then
-        error("the Develop panel did not show the new amount; check this photo", 0)
-    end
+    if not confirmed then error("the Develop panel did not show the new amount; check this photo", 0) end
     if not waitForSavedChange(catalog, photo, digestBefore) then
         local reverted = change
         if change then
@@ -922,12 +988,21 @@ local function denoisePhoto(context, catalog, photo, amount)
             end, DENOISE_CONFIRM_TIMEOUT_SECONDS)
         end
         if reverted then
-            error(string.format("Lightroom did not confirm saving the Denoise change in time; the panel shows the"
-                .. " previous amount %s again, but Lightroom may still save either amount: read this photo's Denoise"
-                .. " state before retrying", tostring(panel.denoiseAmount)), 0)
+            error(
+                string.format(
+                    "Lightroom did not confirm saving the Denoise change in time; the panel shows the"
+                        .. " previous amount %s again, but Lightroom may still save either amount: read this photo's Denoise"
+                        .. " state before retrying",
+                    tostring(panel.denoiseAmount)
+                ),
+                0
+            )
         end
-        error("Lightroom did not confirm saving the Denoise change in time and may have saved it since;"
-            .. " read this photo's Denoise state before retrying", 0)
+        error(
+            "Lightroom did not confirm saving the Denoise change in time and may have saved it since;"
+                .. " read this photo's Denoise state before retrying",
+            0
+        )
     end
     return {
         status = change and "amount_changed" or "applied",
@@ -937,8 +1012,10 @@ end
 
 function DevelopHandler.applyDenoise(args, context)
     local amount = args.amount
-    DevelopSession.requireControllerFunctions("apply_denoise",
-        { "getEnhancePanelState", "setEnhance", "changeDenoiseAmount" })
+    DevelopSession.requireControllerFunctions(
+        "apply_denoise",
+        { "getEnhancePanelState", "setEnhance", "changeDenoiseAmount" }
+    )
 
     local catalog = LrApplication.activeCatalog()
     local reply = DevelopBatch.run(context, catalog, {
@@ -955,44 +1032,43 @@ function DevelopHandler.applyDenoise(args, context)
             return denoisePhoto(context, catalog, photo, amount)
         end,
     })
-    if reply.data then
-        context:warn("Denoise runs in Lightroom's background; the Activity Center shows progress.")
-    end
+    if reply.data then context:warn("Denoise runs in Lightroom's background; the Activity Center shows progress.") end
     return reply
 end
 
 local PROCESS_VERSION_PHOTO_AND_RESTORE_SECONDS = 60
 
 local PROCESS_VERSIONS = {
-    ["Version 1"] = 1, ["Version 2"] = 2, ["Version 3"] = 3,
-    ["Version 4"] = 4, ["Version 5"] = 5, ["Version 6"] = 6,
+    ["Version 1"] = 1,
+    ["Version 2"] = 2,
+    ["Version 3"] = 3,
+    ["Version 4"] = 4,
+    ["Version 5"] = 5,
+    ["Version 6"] = 6,
 }
 
 local function refuseMaskedDowngrade(catalog, photo)
     local masks = savedOf(catalog, photo).MaskGroupBasedCorrections
     if masks and next(masks) ~= nil then
-        Reply.refuse("Process-version downgrades are refused on photos with masks;"
-            .. " keep the current version to preserve mask editing")
+        Reply.refuse(
+            "Process-version downgrades are refused on photos with masks;"
+                .. " keep the current version to preserve mask editing"
+        )
     end
 end
 
 local function changeProcessVersion(context, catalog, photo, version, state)
     DevelopSession.openPhoto(catalog, photo, state)
     local previous = LrDevelopController.getProcessVersion()
-    if not PROCESS_VERSIONS[previous] then
-        Reply.refuse("Lightroom returned an unknown process version")
-    end
-    if previous == version then
-        return { status = "unchanged", previous_version = previous, new_version = previous }
-    end
+    if not PROCESS_VERSIONS[previous] then Reply.refuse("Lightroom returned an unknown process version") end
+    if previous == version then return { status = "unchanged", previous_version = previous, new_version = previous } end
     if PROCESS_VERSIONS[version] < PROCESS_VERSIONS[previous] then refuseMaskedDowngrade(catalog, photo) end
-    if catalog:getTargetPhoto() ~= photo then
-        Reply.refuse("another photo became active before the version change")
-    end
+    if catalog:getTargetPhoto() ~= photo then Reply.refuse("another photo became active before the version change") end
     CatalogWrite.develop(context, "setProcessVersion", version)
-    local confirmed = DevelopSession.waitFor(function()
-        return catalog:getTargetPhoto() == photo and LrDevelopController.getProcessVersion() == version
-    end, 5)
+    local confirmed = DevelopSession.waitFor(
+        function() return catalog:getTargetPhoto() == photo and LrDevelopController.getProcessVersion() == version end,
+        5
+    )
     if not confirmed then
         local current = catalog:getTargetPhoto() == photo and LrDevelopController.getProcessVersion() or "unreadable"
         error("Lightroom did not confirm " .. version .. "; the photo reads " .. tostring(current), 0)
@@ -1011,8 +1087,14 @@ function DevelopHandler.setProcessVersion(args, context)
 end
 
 local AUTO_TONE_KEYS = {
-    "Exposure2012", "Contrast2012", "Highlights2012", "Shadows2012", "Whites2012", "Blacks2012",
-    "Vibrance", "Saturation",
+    "Exposure2012",
+    "Contrast2012",
+    "Highlights2012",
+    "Shadows2012",
+    "Whites2012",
+    "Blacks2012",
+    "Vibrance",
+    "Saturation",
 }
 local AUTO_WHITE_BALANCE_KEYS = { "WhiteBalance", "Temperature", "Tint" }
 local AUTO_PHOTO_AND_RESTORE_SECONDS = 60
@@ -1022,7 +1104,9 @@ local function autoValues(catalog, photo, keys)
     local values = {}
     catalog:withReadAccessDo(function()
         local settings = DevelopReadBack.saved(photo)
-        for _, key in ipairs(keys) do values[key] = settings[key] end
+        for _, key in ipairs(keys) do
+            values[key] = settings[key]
+        end
     end)
     return values
 end
@@ -1040,9 +1124,7 @@ local function autoOperation(context, catalog, photo, name, keys, controllerFunc
     DevelopSession.commitPendingEdits()
     local previous, stable, elapsed = before, 0, 0
     local settled = waitFor(function()
-        if catalog:getTargetPhoto() ~= photo then
-            error("another photo became active while applying Auto", 0)
-        end
+        if catalog:getTargetPhoto() ~= photo then error("another photo became active while applying Auto", 0) end
         local current = autoValues(catalog, photo, keys)
         stable = sameAutoValues(previous, current, keys) and stable + 0.1 or 0
         previous = current
@@ -1051,16 +1133,21 @@ local function autoOperation(context, catalog, photo, name, keys, controllerFunc
     end, AUTO_SETTLE_TIMEOUT_SECONDS)
     if settled then return end
     if sameAutoValues(before, previous, keys) then
-        error(string.format("%s was requested but no change was observed within %d s; it may still be applied,"
-            .. " so read this photo's settings before writing to it", name, AUTO_SETTLE_TIMEOUT_SECONDS), 0)
+        error(
+            string.format(
+                "%s was requested but no change was observed within %d s; it may still be applied,"
+                    .. " so read this photo's settings before writing to it",
+                name,
+                AUTO_SETTLE_TIMEOUT_SECONDS
+            ),
+            0
+        )
     end
     error("Auto settings did not settle; check this photo before retrying", 0)
 end
 
 local function autoPhoto(context, catalog, photo, args)
-    if args.tone then
-        autoOperation(context, catalog, photo, "Auto Tone", AUTO_TONE_KEYS, "setAutoTone")
-    end
+    if args.tone then autoOperation(context, catalog, photo, "Auto Tone", AUTO_TONE_KEYS, "setAutoTone") end
     if args.white_balance then
         autoOperation(context, catalog, photo, "Auto White Balance", AUTO_WHITE_BALANCE_KEYS, "setAutoWhiteBalance")
     end
@@ -1092,10 +1179,16 @@ local function resetPhoto(context, catalog, photo)
     DevelopSession.commitPendingEdits()
     LrTasks.sleep(RESET_LANDING_WAIT_SECONDS)
     if #DevelopReadBack.changedEdits(before, savedOf(catalog, photo)) == 0 then
-        error(string.format("no edit a reset clears (develop sliders, crop, Upright, profile, masks, spots, Enhance)"
-            .. " changed in the saved settings %d s after the reset: the photo may have had nothing to reset, since an"
-            .. " unedited photo reads the same before and after, or Lightroom may not have reset it; read the photo before"
-            .. " retrying", RESET_LANDING_WAIT_SECONDS), 0)
+        error(
+            string.format(
+                "no edit a reset clears (develop sliders, crop, Upright, profile, masks, spots, Enhance)"
+                    .. " changed in the saved settings %d s after the reset: the photo may have had nothing to reset, since an"
+                    .. " unedited photo reads the same before and after, or Lightroom may not have reset it; read the photo before"
+                    .. " retrying",
+                RESET_LANDING_WAIT_SECONDS
+            ),
+            0
+        )
     end
     return { status = "reset" }
 end

@@ -1,18 +1,20 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
-local function tool(id)
-    return { ID = id, Name = "Tool " .. id, Type = "brush", Hidden = false, Inverted = false }
-end
+local function tool(id) return { ID = id, Name = "Tool " .. id, Type = "brush", Hidden = false, Inverted = false } end
 
 local function mask(id, toolIds)
     local tools = {}
-    for _, toolId in ipairs(toolIds) do tools[#tools + 1] = tool(toolId) end
+    for _, toolId in ipairs(toolIds) do
+        tools[#tools + 1] = tool(toolId)
+    end
     return { ID = id, Name = "Mask " .. id, Hidden = false, Tools = tools }
 end
 
 local function idsOf(masks)
     local ids = {}
-    for _, m in ipairs(masks) do ids[#ids + 1] = m.ID end
+    for _, m in ipairs(masks) do
+        ids[#ids + 1] = m.ID
+    end
     return ids
 end
 
@@ -20,7 +22,9 @@ local function savedSettingsOf(masks)
     local groups = {}
     for _, m in ipairs(masks) do
         local correctionMasks = {}
-        for _, t in ipairs(m.Tools) do correctionMasks[#correctionMasks + 1] = { MaskID = t.ID } end
+        for _, t in ipairs(m.Tools) do
+            correctionMasks[#correctionMasks + 1] = { MaskID = t.ID }
+        end
         groups[#groups + 1] = { CorrectionID = m.ID, CorrectionMasks = correctionMasks }
     end
     return { MaskGroupBasedCorrections = groups }
@@ -76,18 +80,21 @@ local function setup(opts)
     package.loaded.HandlerMaskDelete = nil
     package.loaded.GuardedMaskWrite = nil
     package.loaded.DevelopSession = nil
-    return require 'HandlerMaskDelete', calls, catalog, masksOf, photos
+    return require "HandlerMaskDelete", calls, catalog, masksOf, photos
 end
 
-local Store = require 'fake_mask_store'
+local Store = require "fake_mask_store"
 
 local function savedSetup(opts)
     opts = opts or {}
     local photo = helper.fakePhoto({ id = "1", path = "/1.jpg" })
     local store = Store.attach(photo, {
         entries = opts.entries or {
-            Store.correction("A", { Store.linearComponent({ MaskID = "A1" }), Store.radialComponent({ MaskID = "A2" }) },
-                { CorrectionID = "mask-a", LocalExposure2012 = 0.25, LocalGlow = 0 }),
+            Store.correction(
+                "A",
+                { Store.linearComponent({ MaskID = "A1" }), Store.radialComponent({ MaskID = "A2" }) },
+                { CorrectionID = "mask-a", LocalExposure2012 = 0.25, LocalGlow = 0 }
+            ),
             Store.correction("B", { Store.linearComponent({ MaskID = "B1" }) }, { CorrectionID = "mask-b" }),
             Store.correction("C", { Store.radialComponent({ MaskID = "C1" }) }, { CorrectionID = "mask-c" }),
         },
@@ -111,12 +118,14 @@ local function savedSetup(opts)
     for _, name in ipairs({ "HandlerMaskDelete", "GuardedMaskWrite", "DevelopSession", "CatalogWrite" }) do
         package.loaded[name] = nil
     end
-    return require 'HandlerMaskDelete', store, modules, catalog
+    return require "HandlerMaskDelete", store, modules, catalog
 end
 
 local function entryIds(store)
     local ids = {}
-    for _, entry in ipairs(store.entries) do ids[#ids + 1] = entry.CorrectionID end
+    for _, entry in ipairs(store.entries) do
+        ids[#ids + 1] = entry.CorrectionID
+    end
     return ids
 end
 
@@ -188,13 +197,23 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
     end)
 
     for _, case in ipairs({
-        { kind = "mask", args = { mask_ids = { "mask-a", "nope", "gone" } }, message = "Unknown mask id(s) on photo 1: nope, gone; nothing was deleted" },
-        { kind = "tool", args = { tool_ids = { "A1", "nope" } }, message = "Unknown tool id(s) on photo 1: nope; nothing was deleted" },
+        {
+            kind = "mask",
+            args = { mask_ids = { "mask-a", "nope", "gone" } },
+            message = "Unknown mask id(s) on photo 1: nope, gone; nothing was deleted",
+        },
+        {
+            kind = "tool",
+            args = { tool_ids = { "A1", "nope" } },
+            message = "Unknown tool id(s) on photo 1: nope; nothing was deleted",
+        },
     }) do
         it("deletes nothing and names every unknown " .. case.kind .. " id", function()
             local Handler, store = savedSetup()
             local args = { photo_id = "1" }
-            for key, value in pairs(case.args) do args[key] = value end
+            for key, value in pairs(case.args) do
+                args[key] = value
+            end
 
             local err = helper.failedOf(function() Handler.deleteMasks(args) end)
 
@@ -205,16 +224,20 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
 
     for _, case in ipairs({
         { what = "a slider", change = function(survivor) survivor.LocalExposure2012 = 0.5 end },
-        { what = "a number by less than the constructed tolerance", change = function(survivor)
-            survivor.LocalExposure2012 = 0.2500001 end },
+        {
+            what = "a number by less than the constructed tolerance",
+            change = function(survivor) survivor.LocalExposure2012 = 0.2500001 end,
+        },
         { what = "a derived field", change = function(survivor) survivor.CorrectionMasks[1].MaskSyncID = "OTHER" end },
         { what = "a zero local adjustment dropped", change = function(survivor) survivor.LocalGlow = nil end },
     }) do
         it("restores the photo and refuses when Lightroom changes a surviving mask by " .. case.what, function()
-            local Handler, store = savedSetup({ transformWrite = function(stored, writeNumber)
-                if writeNumber == 1 then case.change(stored[1]) end
-                return stored
-            end })
+            local Handler, store = savedSetup({
+                transformWrite = function(stored, writeNumber)
+                    if writeNumber == 1 then case.change(stored[1]) end
+                    return stored
+                end,
+            })
             local before = Store.clone(store.entries)
 
             local err = helper.failedOf(function() Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b" } }) end)
@@ -254,7 +277,9 @@ describe("HandlerMaskDelete.deleteMasks beside a mask Lightroom has not named ye
         local Handler, store = savedSetup()
         store.entries = { store.entries[1] }
         store.entries[1].CorrectionID, store.entries[1].CorrectionSyncID = nil, nil
-        for _, component in ipairs(store.entries[1].CorrectionMasks) do component.MaskID, component.MaskSyncID = nil, nil end
+        for _, component in ipairs(store.entries[1].CorrectionMasks) do
+            component.MaskID, component.MaskSyncID = nil, nil
+        end
 
         local refusal = helper.failedOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
 
@@ -278,9 +303,13 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
 
         local r = Handler.deleteEmptyMasks({ photo_ids = { "1", "2", "3", "4" } })
 
-        assert.are.same({ photos_checked = 4, changed = {
-            { photo_id = "1", masks_removed = 1 }, { photo_id = "3", masks_removed = 2 },
-        } }, r.data)
+        assert.are.same({
+            photos_checked = 4,
+            changed = {
+                { photo_id = "1", masks_removed = 1 },
+                { photo_id = "3", masks_removed = 2 },
+            },
+        }, r.data)
         assert.is_nil(r.not_found)
         assert.are.same({ "a" }, idsOf(masksOf[photos[1]]))
         assert.are.same({ "b" }, idsOf(masksOf[photos[2]]))
@@ -289,12 +318,14 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
 
     it("fails without deleting when the catalog stays busy", function()
         local Handler, calls, _, masksOf, photos = setup({
-            photos = photosWithEmptyMasks(), writeAccessAborts = function() return true end,
+            photos = photosWithEmptyMasks(),
+            writeAccessAborts = function() return true end,
         })
 
-        assert.are.same({ "failed", helper.catalogBusy("Delete Empty Masks") }, { helper.outcomeOf(function(context)
-            Handler.deleteEmptyMasks({ photo_ids = { "1" } }, context)
-        end) })
+        assert.are.same(
+            { "failed", helper.catalogBusy("Delete Empty Masks") },
+            { helper.outcomeOf(function(context) Handler.deleteEmptyMasks({ photo_ids = { "1" } }, context) end) }
+        )
         assert.are.same({}, calls.deleteAllEmpty)
         assert.are.same({ "a", "empty-a" }, idsOf(masksOf[photos[1]]))
     end)

@@ -1,5 +1,5 @@
-local Contract = require 'Contract'
-local Reply = require 'Reply'
+local Contract = require "Contract"
+local Reply = require "Reply"
 local GradientGeometry = {}
 
 local LINEAR = "linear"
@@ -31,13 +31,13 @@ local RADIAL_ROUNDNESS = 0
 local MIN_LINEAR_LENGTH = 1e-6
 local STORED_SCALE = 10 ^ Contract.STORED_MASK_DECIMAL_PLACES
 
-local function fail(message)
-    Reply.refuse(message)
-end
+local function fail(message) Reply.refuse(message) end
 
 local function givenFields(args, fields)
     local changes = {}
-    for _, field in ipairs(fields) do changes[field] = args[field] end
+    for _, field in ipairs(fields) do
+        changes[field] = args[field]
+    end
     return changes
 end
 
@@ -84,16 +84,14 @@ end
 
 local ALL_FIELDS = {}
 for _, shape in ipairs({ LINEAR, RADIAL }) do
-    for _, field in ipairs(SHAPE_FIELDS[shape]) do ALL_FIELDS[#ALL_FIELDS + 1] = field end
+    for _, field in ipairs(SHAPE_FIELDS[shape]) do
+        ALL_FIELDS[#ALL_FIELDS + 1] = field
+    end
 end
 
-function GradientGeometry.parseUpdate(args)
-    return { toolId = args.tool_id, changes = givenFields(args, ALL_FIELDS) }
-end
+function GradientGeometry.parseUpdate(args) return { toolId = args.tool_id, changes = givenFields(args, ALL_FIELDS) } end
 
-local function round(value)
-    return math.floor(value * STORED_SCALE + 0.5) / STORED_SCALE
-end
+local function round(value) return math.floor(value * STORED_SCALE + 0.5) / STORED_SCALE end
 
 local function mappedPoints(shape, geometry, mapPoint)
     local carried = copyGeometry(geometry)
@@ -127,7 +125,9 @@ function GradientGeometry.toDisplayedFrame(shape, geometry, frame)
     if shape == RADIAL then
         local width, height = geometry.width * frame.storedSize.width, geometry.height * frame.storedSize.height
         local turn, swapped = turnWithin45(round(frame.turnToDisplayed(geometry.rotation)))
-        if swapped then width, height = height, width end
+        if swapped then
+            width, height = height, width
+        end
         displayed.width = round(width / frame.displayedSize.width)
         displayed.height = round(height / frame.displayedSize.height)
         displayed.rotation = round(turn)
@@ -135,47 +135,57 @@ function GradientGeometry.toDisplayedFrame(shape, geometry, frame)
     return displayed
 end
 
-function GradientGeometry.shapeOf(component)
-    return SHAPE_OF_WHAT[component.What]
-end
+function GradientGeometry.shapeOf(component) return SHAPE_OF_WHAT[component.What] end
 
 function GradientGeometry.geometryOf(component, ratio)
     local shape = GradientGeometry.shapeOf(component)
     if shape == nil then return nil end
     if shape == LINEAR then
-        return shape, {
-            start = { x = round(component.FullX), y = round(component.FullY) },
-            ["end"] = { x = round(component.ZeroX), y = round(component.ZeroY) },
-        }
+        return shape,
+            {
+                start = { x = round(component.FullX), y = round(component.FullY) },
+                ["end"] = { x = round(component.ZeroX), y = round(component.ZeroY) },
+            }
     end
     local radians = math.rad(component.Angle)
     local cosine, sine = math.cos(radians), math.sin(radians)
     local boxHalfWidth = (component.Right - component.Left) / 2 * ratio
     local boxHalfHeight = (component.Bottom - component.Top) / 2
-    return shape, {
-        center = {
-            x = round((component.Left + component.Right) / 2),
-            y = round((component.Top + component.Bottom) / 2),
-        },
-        width = round(2 * math.abs(boxHalfWidth * cosine + boxHalfHeight * sine) / ratio),
-        height = round(2 * math.abs(boxHalfHeight * cosine - boxHalfWidth * sine)),
-        rotation = round(component.Angle),
-        feather = round(component.Feather),
-        area = component.MaskInverted and AREA_OUTSIDE or AREA_INSIDE,
-    }
+    return shape,
+        {
+            center = {
+                x = round((component.Left + component.Right) / 2),
+                y = round((component.Top + component.Bottom) / 2),
+            },
+            width = round(2 * math.abs(boxHalfWidth * cosine + boxHalfHeight * sine) / ratio),
+            height = round(2 * math.abs(boxHalfHeight * cosine - boxHalfWidth * sine)),
+            rotation = round(component.Angle),
+            feather = round(component.Feather),
+            area = component.MaskInverted and AREA_OUTSIDE or AREA_INSIDE,
+        }
 end
 
 function GradientGeometry.mergeChanges(shape, geometry, changes)
     for field in pairs(changes) do
         local belongs = false
-        for _, own in ipairs(SHAPE_FIELDS[shape]) do belongs = belongs or own == field end
+        for _, own in ipairs(SHAPE_FIELDS[shape]) do
+            belongs = belongs or own == field
+        end
         if not belongs then
-            fail(string.format("%s only applies to %s gradients, but this tool is a %s gradient",
-                field, OTHER_SHAPE[shape], shape))
+            fail(
+                string.format(
+                    "%s only applies to %s gradients, but this tool is a %s gradient",
+                    field,
+                    OTHER_SHAPE[shape],
+                    shape
+                )
+            )
         end
     end
     local merged = copyGeometry(geometry)
-    for field, value in pairs(changes) do merged[field] = value end
+    for field, value in pairs(changes) do
+        merged[field] = value
+    end
     validateGeometry(shape, merged)
     return merged
 end
@@ -192,7 +202,9 @@ function GradientGeometry.applyGeometry(shape, component, geometry, ratio)
     local radians = math.rad(storedTurn)
     local cosine, sine = math.cos(radians), math.sin(radians)
     local semiWidth, semiHeight = geometry.width / 2 * ratio, geometry.height / 2
-    if axesSwapped then semiWidth, semiHeight = semiHeight, semiWidth end
+    if axesSwapped then
+        semiWidth, semiHeight = semiHeight, semiWidth
+    end
     local boxHalfWidth = (semiWidth * cosine - semiHeight * sine) / ratio
     local boxHalfHeight = semiWidth * sine + semiHeight * cosine
     component.Left = geometry.center.x - boxHalfWidth

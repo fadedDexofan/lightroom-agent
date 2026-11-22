@@ -1,5 +1,5 @@
-local helper = require 'spec_helper'
-local Store = require 'fake_mask_store'
+local helper = require "spec_helper"
+local Store = require "fake_mask_store"
 
 local correction = Store.correction
 local brushComponent = Store.brushComponent
@@ -7,19 +7,21 @@ local paint = Store.paint
 
 local function point(x, y) return { x = x, y = y } end
 
-local function setup(opts)
-    return Store.guardedHandler("HandlerBrushMasks", { "BrushStrokes", "ImageFrame" }, opts)
-end
+local function setup(opts) return Store.guardedHandler("HandlerBrushMasks", { "BrushStrokes", "ImageFrame" }, opts) end
 
 local function stroke(overrides)
     local value = { points = { point(0.2, 0.3), point(0.3, 0.3) } }
-    for key, item in pairs(overrides or {}) do value[key] = item end
+    for key, item in pairs(overrides or {}) do
+        value[key] = item
+    end
     return value
 end
 
 local function createRequest(overrides)
     local args = { photo_id = "1", strokes = { stroke() } }
-    for key, value in pairs(overrides or {}) do args[key] = value end
+    for key, value in pairs(overrides or {}) do
+        args[key] = value
+    end
     return args
 end
 
@@ -33,24 +35,31 @@ local function existingBrush()
 end
 
 describe("HandlerBrushMasks.createBrushMask", function()
-    it("writes the requested adjustments into the new mask as Lightroom stores them, in the one guarded write", function()
-        local previous = { correction("Existing", { Store.linearComponent({ MaskID = "C1T1" }) },
-            { CorrectionID = "C1" }) }
-        local Handler, stores = setup({ photos = { { id = "1", entries = previous } } })
+    it(
+        "writes the requested adjustments into the new mask as Lightroom stores them, in the one guarded write",
+        function()
+            local previous = {
+                correction("Existing", { Store.linearComponent({ MaskID = "C1T1" }) }, { CorrectionID = "C1" }),
+            }
+            local Handler, stores = setup({ photos = { { id = "1", entries = previous } } })
 
-        Handler.createBrushMask(createRequest({ adjustments = { local_Exposure = 1, local_colorgradeMidtoneHue = 61.83 } }))
+            Handler.createBrushMask(
+                createRequest({ adjustments = { local_Exposure = 1, local_colorgradeMidtoneHue = 61.83 } })
+            )
 
-        local written = stores["1"].writes[1]
-        assert.are.equal(0.25, written[#written].LocalExposure2012)
-        assert.are.equal(62, written[#written].LocalColorGradeMidtoneHue)
-        assert.are.equal(1, #stores["1"].writes)
-    end)
+            local written = stores["1"].writes[1]
+            assert.are.equal(0.25, written[#written].LocalExposure2012)
+            assert.are.equal(62, written[#written].LocalColorGradeMidtoneHue)
+            assert.are.equal(1, #stores["1"].writes)
+        end
+    )
 
     it("paints a new brush mask and returns its ids", function()
         local Handler, stores = setup()
 
         local result = Handler.createBrushMask(createRequest({
-            name = "Face", strokes = { stroke({ radius = 0.05 }), stroke({ points = { point(0.7, 0.8) } }) },
+            name = "Face",
+            strokes = { stroke({ radius = 0.05 }), stroke({ points = { point(0.7, 0.8) } }) },
         }))
 
         local written = stores["1"].writes[1]
@@ -84,7 +93,9 @@ describe("HandlerBrushMasks.createBrushMask", function()
         local Handler, stores = setup({ photos = { { id = "1", orientation = "CD", entries = existingBrush() } } })
 
         Handler.addBrushStrokes({
-            photo_id = "1", tool_id = "C1T1", strokes = { stroke({ points = { point(0.25, 0.75) } }) },
+            photo_id = "1",
+            tool_id = "C1T1",
+            strokes = { stroke({ points = { point(0.25, 0.75) } }) },
         })
 
         local masks = stores["1"].writes[1][1].CorrectionMasks[1].Masks
@@ -102,14 +113,16 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
     it("writes a low-flow stroke with the flow token and verifies it when Lightroom reads it back", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored)
-                    local lightroomPaint = stored[1].CorrectionMasks[1].Masks[1]
-                    lightroomPaint.Flow = 0.299998
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored)
+                        local lightroomPaint = stored[1].CorrectionMasks[1].Masks[1]
+                        lightroomPaint.Flow = 0.299998
+                        return stored
+                    end,
+                },
+            },
         })
 
         Handler.createBrushMask(createRequest({ strokes = { stroke({ flow = 0.3 }) } }))
@@ -176,9 +189,13 @@ describe("HandlerBrushMasks.createBrushMask", function()
     it("rejects a path that needs too many dabs in the stored frame before writing", function()
         local Handler, stores = setup()
 
-        local message = helper.failedOf(function()
-            Handler.createBrushMask(createRequest({ strokes = { stroke({ points = { point(0, 0), point(1, 1) }, radius = 0.0001 }) } }))
-        end)
+        local message = helper.failedOf(
+            function()
+                Handler.createBrushMask(
+                    createRequest({ strokes = { stroke({ points = { point(0, 0), point(1, 1) }, radius = 0.0001 }) } })
+                )
+            end
+        )
 
         assert.is_truthy(message:find("dabs along its path", 1, true))
         assert.are.equal(0, #stores["1"].writes)
@@ -186,16 +203,18 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
     it("writes feather, density and erase strokes and verifies them when Lightroom reads them back", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored)
-                    for _, lightroomPaint in ipairs(stored[1].CorrectionMasks[1].Masks) do
-                        lightroomPaint.CenterWeight = lightroomPaint.CenterWeight + 0.0000004
-                        lightroomPaint.Radius = lightroomPaint.Radius - 0.0000004
-                    end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored)
+                        for _, lightroomPaint in ipairs(stored[1].CorrectionMasks[1].Masks) do
+                            lightroomPaint.CenterWeight = lightroomPaint.CenterWeight + 0.0000004
+                            lightroomPaint.Radius = lightroomPaint.Radius - 0.0000004
+                        end
+                        return stored
+                    end,
+                },
+            },
         })
 
         Handler.createBrushMask(createRequest({
@@ -216,18 +235,20 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
     it("rolls back when Lightroom keeps a different density", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks[1].MaskValue = 1 end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks[1].MaskValue = 1 end
+                        return stored
+                    end,
+                },
+            },
         })
 
-        local message = helper.failedOf(function()
-            Handler.createBrushMask(createRequest({ strokes = { stroke({ density = 0.3 }) } }))
-        end)
+        local message = helper.failedOf(
+            function() Handler.createBrushMask(createRequest({ strokes = { stroke({ density = 0.3 }) } })) end
+        )
 
         assert.is_truthy(message:find("MaskValue: wrote 0.3, read back 1", 1, true))
         assert.are.equal(0, #stores["1"].entries)
@@ -235,18 +256,20 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
     it("rolls back when Lightroom turns an erase stroke into an add stroke", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks[1].MaskValue = 1 end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks[1].MaskValue = 1 end
+                        return stored
+                    end,
+                },
+            },
         })
 
-        local message = helper.failedOf(function()
-            Handler.createBrushMask(createRequest({ strokes = { stroke({ erase = true }) } }))
-        end)
+        local message = helper.failedOf(
+            function() Handler.createBrushMask(createRequest({ strokes = { stroke({ erase = true }) } })) end
+        )
 
         assert.is_truthy(message:find("MaskValue: wrote 0, read back 1", 1, true))
         assert.are.equal(0, #stores["1"].entries)
@@ -255,7 +278,10 @@ describe("HandlerBrushMasks.createBrushMask", function()
     it("answers an unknown photo with not_found", function()
         local Handler = setup()
 
-        assert.are.equal("404", helper.notFoundOf(function() Handler.createBrushMask(createRequest({ photo_id = "404" })) end))
+        assert.are.equal(
+            "404",
+            helper.notFoundOf(function() Handler.createBrushMask(createRequest({ photo_id = "404" })) end)
+        )
     end)
 
     it("fails for an unknown mask id without writing", function()
@@ -268,7 +294,11 @@ describe("HandlerBrushMasks.createBrushMask", function()
     end)
 
     it("refuses on an uncertified Lightroom, leaving the photo and the view alone", function()
-        local Handler, stores = setup({ maskWrites = { refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none)." } })
+        local Handler, stores = setup({
+            maskWrites = {
+                refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none).",
+            },
+        })
 
         local message = helper.failedOf(function() Handler.createBrushMask(createRequest()) end)
 
@@ -278,14 +308,18 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
     it("restores the previous masks when Lightroom reads different dabs back", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                entries = existingBrush(),
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then stored[2].CorrectionMasks[1].Masks[1].Dabs[1] = "d 0.900000 0.900000" end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    entries = existingBrush(),
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then
+                            stored[2].CorrectionMasks[1].Masks[1].Dabs[1] = "d 0.900000 0.900000"
+                        end
+                        return stored
+                    end,
+                },
+            },
         })
 
         local message = helper.failedOf(function() Handler.createBrushMask(createRequest()) end)
@@ -298,18 +332,20 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
     it("restores the previous masks when Lightroom drops a stroke", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks = {} end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks = {} end
+                        return stored
+                    end,
+                },
+            },
         })
 
-        local message = helper.failedOf(function()
-            Handler.createBrushMask(createRequest({ strokes = { stroke(), stroke() } }))
-        end)
+        local message = helper.failedOf(
+            function() Handler.createBrushMask(createRequest({ strokes = { stroke(), stroke() } })) end
+        )
 
         assert.is_truthy(message:find("count changed from 2 to 0", 1, true))
         assert.are.equal(0, #stores["1"].entries)
@@ -317,29 +353,32 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
     it("restores the previous masks when Lightroom ignores the flow", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks[1].Flow = 1 end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks[1].Flow = 1 end
+                        return stored
+                    end,
+                },
+            },
         })
 
-        local message = helper.failedOf(function()
-            Handler.createBrushMask(createRequest({ strokes = { stroke({ flow = 0.3 }) } }))
-        end)
+        local message = helper.failedOf(
+            function() Handler.createBrushMask(createRequest({ strokes = { stroke({ flow = 0.3 }) } })) end
+        )
 
         assert.is_truthy(message:find("Flow: wrote 0.3, read back 1", 1, true))
         assert.are.equal(0, #stores["1"].entries)
     end)
-
 end)
 
 describe("HandlerBrushMasks.addBrushStrokes", function()
     local function addRequest(overrides)
         local args = { photo_id = "1", tool_id = "C1T1", strokes = { stroke({ points = { point(0.6, 0.6) } }) } }
-        for key, value in pairs(overrides or {}) do args[key] = value end
+        for key, value in pairs(overrides or {}) do
+            args[key] = value
+        end
         return args
     end
 
@@ -364,9 +403,13 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
     it("rejects a path that needs too many dabs in the stored frame before writing", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingBrush() } } })
 
-        local message = helper.failedOf(function()
-            Handler.addBrushStrokes(addRequest({ strokes = { stroke({ points = { point(0, 0), point(1, 1) }, radius = 0.0001 }) } }))
-        end)
+        local message = helper.failedOf(
+            function()
+                Handler.addBrushStrokes(
+                    addRequest({ strokes = { stroke({ points = { point(0, 0), point(1, 1) }, radius = 0.0001 }) } })
+                )
+            end
+        )
 
         assert.is_truthy(message:find("dabs along its path", 1, true))
         assert.are.equal(0, #stores["1"].writes)
@@ -374,8 +417,11 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
 
     it("fails for an unknown tool id or a tool that is not a brush, writing nothing", function()
         local entries = existingBrush()
-        entries[1].CorrectionMasks[3] = { What = "Mask/Aggregate", MaskID = "C1T3",
-            Masks = { Store.linearComponent({ MaskID = "C1T3A" }) } }
+        entries[1].CorrectionMasks[3] = {
+            What = "Mask/Aggregate",
+            MaskID = "C1T3",
+            Masks = { Store.linearComponent({ MaskID = "C1T3A" }) },
+        }
         local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
 
         local unknown = helper.failedOf(function() Handler.addBrushStrokes(addRequest({ tool_id = "NOPE" })) end)
@@ -402,14 +448,16 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
 
     it("rolls back when Lightroom reads fewer strokes back", function()
         local Handler, stores = setup({
-            photos = { {
-                id = "1",
-                entries = existingBrush(),
-                transformWrite = function(stored, writeNumber)
-                    if writeNumber == 1 then table.remove(stored[1].CorrectionMasks[1].Masks) end
-                    return stored
-                end,
-            } },
+            photos = {
+                {
+                    id = "1",
+                    entries = existingBrush(),
+                    transformWrite = function(stored, writeNumber)
+                        if writeNumber == 1 then table.remove(stored[1].CorrectionMasks[1].Masks) end
+                        return stored
+                    end,
+                },
+            },
         })
 
         local message = helper.failedOf(function() Handler.addBrushStrokes(addRequest()) end)
@@ -417,7 +465,6 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
         assert.is_truthy(message:find("previous masks were restored", 1, true))
         assert.are.equal(2, #stores["1"].entries[1].CorrectionMasks[1].Masks)
     end)
-
 end)
 
 describe("brush strokes on a cropped photo", function()
@@ -425,10 +472,14 @@ describe("brush strokes on a cropped photo", function()
 
     it("maps displayed points into the stored frame and the radius to the stored longer edge", function()
         local Uncropped, uncroppedStores = setup()
-        Uncropped.createBrushMask(createRequest({ strokes = { stroke({ points = { point(0.2, 0.5) }, radius = 0.06 }) } }))
+        Uncropped.createBrushMask(
+            createRequest({ strokes = { stroke({ points = { point(0.2, 0.5) }, radius = 0.06 }) } })
+        )
         local Handler, stores = setup({ photos = { { id = "1", settings = CROP } } })
 
-        Handler.createBrushMask(createRequest({ strokes = { stroke({ points = { point(0.2, 0.5) }, radius = 0.06 }) } }))
+        Handler.createBrushMask(
+            createRequest({ strokes = { stroke({ points = { point(0.2, 0.5) }, radius = 0.06 }) } })
+        )
 
         local painted = stores["1"].writes[1][1].CorrectionMasks[1].Masks[1]
         local reference = uncroppedStores["1"].writes[1][1].CorrectionMasks[1].Masks[1]
@@ -438,7 +489,9 @@ describe("brush strokes on a cropped photo", function()
 
     it("paints and warns when Upright is active", function()
         local settings = { PerspectiveUpright = 2 }
-        for key, value in pairs(CROP) do settings[key] = value end
+        for key, value in pairs(CROP) do
+            settings[key] = value
+        end
         local Handler, stores = setup({ photos = { { id = "1", settings = settings } } })
         local context = helper.requestContext()
 

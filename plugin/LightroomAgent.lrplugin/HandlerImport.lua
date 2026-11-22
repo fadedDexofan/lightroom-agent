@@ -1,46 +1,46 @@
-local LrApplication = import 'LrApplication'
-local LrTasks = import 'LrTasks'
-local LrFileUtils = import 'LrFileUtils'
-local LrPathUtils = import 'LrPathUtils'
+local LrApplication = import "LrApplication"
+local LrTasks = import "LrTasks"
+local LrFileUtils = import "LrFileUtils"
+local LrPathUtils = import "LrPathUtils"
 
-local CatalogFolders = require 'CatalogFolders'
-local CatalogWrite = require 'CatalogWrite'
-local CollectionsHandler = require 'HandlerCollections'
-local Log = require 'Log'
-local PathForms = require 'PathForms'
-local PhotoLookup = require 'PhotoLookup'
-local Reply = require 'Reply'
+local CatalogFolders = require "CatalogFolders"
+local CatalogWrite = require "CatalogWrite"
+local CollectionsHandler = require "HandlerCollections"
+local Log = require "Log"
+local PathForms = require "PathForms"
+local PhotoLookup = require "PhotoLookup"
+local Reply = require "Reply"
 
 local ImportHandler = {}
 
 local JPEG_SIDECAR_RAW_EXTENSIONS = {}
 local IMPORTABLE_EXTENSIONS = {}
-for ext in ([[
+for ext in
+    ([[
     3fr ari arw bay cap cr2 cr3 crw dcr dcs drf eip erf fff gpr iiq k25 kdc mdc mef mos mrw
     nef nrw orf ori pef ptx pxn raf raw rw2 rwl sr2 srf srw x3f
-]]):gmatch("%S+") do
+]]):gmatch("%S+")
+do
     JPEG_SIDECAR_RAW_EXTENSIONS[ext] = true
     IMPORTABLE_EXTENSIONS[ext] = true
 end
-for ext in ([[
+for ext in
+    ([[
     dng avif heic heif hif jpe jpeg jpg jxl png psb psd tif tiff
-]]):gmatch("%S+") do
+]]):gmatch("%S+")
+do
     IMPORTABLE_EXTENSIONS[ext] = true
 end
 
 local JPEG_EXTENSIONS = { jpe = true, jpeg = true, jpg = true }
 local PACKAGE_EXTENSIONS = { lrdata = true, lrlibrary = true, photoslibrary = true }
 
-local function lowerExtension(path)
-    return LrPathUtils.extension(path):lower()
-end
+local function lowerExtension(path) return LrPathUtils.extension(path):lower() end
 
 local function withoutSidecarJpegs(files)
     local rawStems = {}
     for _, file in ipairs(files) do
-        if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(file)] then
-            rawStems[LrPathUtils.removeExtension(file)] = true
-        end
+        if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(file)] then rawStems[LrPathUtils.removeExtension(file)] = true end
     end
     local kept = {}
     local sidecars = {}
@@ -72,7 +72,7 @@ end
 local function copiedTarget(context, source, relativePath, folder, companions)
     local target = LrPathUtils.child(folder, relativePath)
     CatalogWrite.createFolder(context, LrPathUtils.parent(target))
-    if not (LrFileUtils.exists(target) == 'file' and sameContent(source, target)) then
+    if not (LrFileUtils.exists(target) == "file" and sameContent(source, target)) then
         if LrFileUtils.exists(target) then target = LrFileUtils.chooseUniqueFileName(target) end
         CatalogWrite.copyFile(context, source, target)
     end
@@ -86,9 +86,7 @@ end
 
 local function firstExistingBeside(stem, extensions)
     for _, extension in ipairs(extensions) do
-        if LrFileUtils.exists(stem .. "." .. extension) == 'file' then
-            return stem .. "." .. extension
-        end
+        if LrFileUtils.exists(stem .. "." .. extension) == "file" then return stem .. "." .. extension end
     end
     return nil
 end
@@ -103,9 +101,7 @@ local function companionsBeside(source, separateJpegs)
     return companions
 end
 
-local function nameKey(name)
-    return PathForms.isAscii(name) and name or PathForms.toNfd(name)
-end
+local function nameKey(name) return PathForms.isAscii(name) and name or PathForms.toNfd(name) end
 
 -- The name the directory lists for `path`'s leaf: the exact bytes if present,
 -- else the same name in another Unicode form (the volume ignores the form),
@@ -116,9 +112,7 @@ local function leafSpelledOnDisk(path, entries)
     local sameName, foldedName = nil, nil
     for _, entry in ipairs(entries) do
         local entryLeaf = LrPathUtils.leafName(entry)
-        if entryLeaf == leaf then
-            return leaf
-        end
+        if entryLeaf == leaf then return leaf end
         local entryKey = nameKey(entryLeaf)
         if entryKey == key then
             sameName = entryLeaf
@@ -137,9 +131,7 @@ local function rawFileProbedBeside(path, entries)
         if JPEG_SIDECAR_RAW_EXTENSIONS[ext:lower()] and not probedExtensions[ext] then
             probedExtensions[ext] = true
             local candidate = stem .. "." .. ext
-            if LrFileUtils.exists(candidate) == 'file' then
-                return candidate
-            end
+            if LrFileUtils.exists(candidate) == "file" then return candidate end
         end
     end
     return nil
@@ -151,25 +143,22 @@ local function rawFileBeside(path)
         entries[#entries + 1] = entry
     end
     local leafOnDisk = leafSpelledOnDisk(path, entries)
-    if not leafOnDisk then
-        return rawFileProbedBeside(path, entries)
-    end
+    if not leafOnDisk then return rawFileProbedBeside(path, entries) end
     local stem = nameKey(LrPathUtils.removeExtension(leafOnDisk))
     for _, entry in ipairs(entries) do
-        if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(entry)]
+        if
+            JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(entry)]
             and nameKey(LrPathUtils.leafName(LrPathUtils.removeExtension(entry))) == stem
-            and LrFileUtils.exists(entry) == 'file' then
+            and LrFileUtils.exists(entry) == "file"
+        then
             return entry
         end
     end
     return nil
 end
 
-
 local function distinctOnDisk(existing, folder)
-    if not LrFileUtils.exists(folder) then
-        return LrFileUtils.exists(existing) == 'directory'
-    end
+    if not LrFileUtils.exists(folder) then return LrFileUtils.exists(existing) == "directory" end
     local parent = LrPathUtils.parent(existing)
     if not parent or not PathForms.same(parent, LrPathUtils.parent(folder) or "") then return false end
     local first, second = nameKey(LrPathUtils.leafName(existing)), nameKey(LrPathUtils.leafName(folder))
@@ -232,11 +221,11 @@ end
 local function catalogPhotoAt(catalog, path, beforeCopy)
     local found = PhotoLookup.findByPath(catalog, path, false)
     if not found then return nil end
-    local foundPath = found:getRawMetadata('path')
+    local foundPath = found:getRawMetadata("path")
     if foundPath == nil or PathForms.same(foundPath, path) then return found end
     local separate
     if beforeCopy then
-        separate = LrFileUtils.exists(foundPath) == 'file' and not LrFileUtils.exists(path)
+        separate = LrFileUtils.exists(foundPath) == "file" and not LrFileUtils.exists(path)
     else
         separate = distinctOnDisk(foundPath, path)
     end
@@ -244,22 +233,29 @@ local function catalogPhotoAt(catalog, path, beforeCopy)
     -- The catalog may hold this spelling too (imported before this check).
     local folder = catalog:getFolderByPath(LrPathUtils.parent(path))
     for _, photo in ipairs(folder and folder:getPhotos(false) or {}) do
-        local candidate = photo:getRawMetadata('path')
+        local candidate = photo:getRawMetadata("path")
         if candidate ~= nil and PathForms.same(candidate, path) then return photo end
     end
     return nil, foundPath
 end
 
 local function refuseCaseVariantFile(path, clash)
-    error(string.format(
-        "%s: differs only in case from %s, which is in the catalog; "
-            .. "Lightroom keeps file names case-insensitively and cannot hold both",
-        path, clash), 0)
+    error(
+        string.format(
+            "%s: differs only in case from %s, which is in the catalog; "
+                .. "Lightroom keeps file names case-insensitively and cannot hold both",
+            path,
+            clash
+        ),
+        0
+    )
 end
 
 local function describeSkipped(skipped)
     local names = {}
-    for ext in pairs(skipped) do names[#names + 1] = ext end
+    for ext in pairs(skipped) do
+        names[#names + 1] = ext
+    end
     table.sort(names)
     local parts = {}
     for _, ext in ipairs(names) do
@@ -278,9 +274,7 @@ local function prepareImport(args, catalog)
     -- Classic runtimes (nil there, e.g. 15.3.1 -- issue #129), whereas exists
     -- is stable across supported versions.
     local sourceKind = LrFileUtils.exists(args.source_path)
-    if not sourceKind then
-        error("Source path does not exist: " .. args.source_path)
-    end
+    if not sourceKind then error("Source path does not exist: " .. args.source_path) end
 
     -- Enumerate source files OUTSIDE any catalog lock; the filesystem walk
     -- needs no catalog access.
@@ -295,7 +289,7 @@ local function prepareImport(args, catalog)
         companionsOf[stem] = companionsOf[stem] or {}
         table.insert(companionsOf[stem], file)
     end
-    if sourceKind == 'directory' then
+    if sourceKind == "directory" then
         -- Import all photos from directory, including nested subfolders.
         -- LrFileUtils.files lists only the immediate directory.
         for file in LrFileUtils.recursiveFiles(args.source_path) do
@@ -314,17 +308,23 @@ local function prepareImport(args, catalog)
             local sidecars
             photosToImport, sidecars = withoutSidecarJpegs(photosToImport)
             sidecarJpegCount = #sidecars
-            for _, sidecar in ipairs(sidecars) do addCompanion(sidecar) end
+            for _, sidecar in ipairs(sidecars) do
+                addCompanion(sidecar)
+            end
         end
     else
         -- Import single photo
         if not args.separate_jpegs and JPEG_EXTENSIONS[lowerExtension(args.source_path)] then
             local rawFile = rawFileBeside(args.source_path)
             if rawFile then
-                error(string.format(
-                    "%s has a raw file of the same name. Import %s instead; Lightroom keeps the JPEG as its sidecar. "
-                        .. "To add the JPEG as a separate photo, set separate_jpegs to true.",
-                    args.source_path, rawFile))
+                error(
+                    string.format(
+                        "%s has a raw file of the same name. Import %s instead; Lightroom keeps the JPEG as its sidecar. "
+                            .. "To add the JPEG as a separate photo, set separate_jpegs to true.",
+                        args.source_path,
+                        rawFile
+                    )
+                )
             end
         end
         table.insert(photosToImport, args.source_path)
@@ -343,9 +343,7 @@ local function prepareImport(args, catalog)
     local function requireTargetCollection()
         return CollectionsHandler.findOneRegularCollection(catalog, args.collection_name)
     end
-    if args.collection_name then
-        catalog:withReadAccessDo(requireTargetCollection)
-    end
+    if args.collection_name then catalog:withReadAccessDo(requireTargetCollection) end
     return {
         sourceKind = sourceKind,
         photosToImport = photosToImport,
@@ -385,18 +383,29 @@ function ImportHandler.importPhotos(args, context)
         local directory = LrPathUtils.parent(path)
         local other, fresh = caseVariantFolder(knownFolders, directory)
         if other then
-            error(string.format(
-                "%s: folder %s differs only in case from %s, which is in the catalog or earlier in this import; "
-                    .. "Lightroom would file the photo under %s",
-                path, directory, other, other), 0)
+            error(
+                string.format(
+                    "%s: folder %s differs only in case from %s, which is in the catalog or earlier in this import; "
+                        .. "Lightroom would file the photo under %s",
+                    path,
+                    directory,
+                    other,
+                    other
+                ),
+                0
+            )
         end
         return function()
-            for _, folder in ipairs(fresh) do CatalogFolders.remember(knownFolders, folder) end
+            for _, folder in ipairs(fresh) do
+                CatalogFolders.remember(knownFolders, folder)
+            end
         end
     end
     for index, filePath in ipairs(photosToImport) do
         if context:stopping(IMPORT_PHOTO_RESERVE_SECONDS) then
-            for nextIndex = index, #photosToImport do remaining[#remaining + 1] = photosToImport[nextIndex] end
+            for nextIndex = index, #photosToImport do
+                remaining[#remaining + 1] = photosToImport[nextIndex]
+            end
             break
         end
         context:report(processed, #photosToImport, filePath)
@@ -404,10 +413,11 @@ function ImportHandler.importPhotos(args, context)
             local photoPath = filePath
             local rememberFolders
             if args.copy_to then
-                local relativePath = sourceKind == 'directory' and PathForms.relative(args.source_path, filePath)
+                local relativePath = sourceKind == "directory" and PathForms.relative(args.source_path, filePath)
                     or LrPathUtils.leafName(filePath)
                 local companions = companionsOf[LrPathUtils.removeExtension(filePath)]
-                    or (sourceKind ~= 'directory' and companionsBeside(filePath, args.separate_jpegs)) or {}
+                    or (sourceKind ~= "directory" and companionsBeside(filePath, args.separate_jpegs))
+                    or {}
                 local target = LrPathUtils.child(args.copy_to, relativePath)
                 rememberFolders = refuseCaseVariantFolder(target)
                 local _, targetClash = catalogPhotoAt(catalog, target, true)
@@ -438,9 +448,7 @@ function ImportHandler.importPhotos(args, context)
             rememberFolders()
         end)
         if not imported then
-            if sourceKind ~= 'directory' then
-                error(filePath .. ": " .. Reply.messageOf(importError), 0)
-            end
+            if sourceKind ~= "directory" then error(filePath .. ": " .. Reply.messageOf(importError), 0) end
             local class, reason = Reply.stopped(importError, written)
             local list = class == "failed" and failed or unknown
             list[#list + 1] = { path = filePath, reason = reason }
@@ -453,19 +461,34 @@ function ImportHandler.importPhotos(args, context)
     local addedToCollection = 0
     local problem
     if args.collection_name and #collectionPhotos > 0 then
-        local ok, outcome = LrTasks.pcall(CatalogWrite.run, context, catalog, "Add Imported Photos to Collection", function()
-            CatalogWrite.call(context, requireTargetCollection(), "addPhotos", collectionPhotos)
-        end)
+        local ok, outcome = LrTasks.pcall(
+            CatalogWrite.run,
+            context,
+            catalog,
+            "Add Imported Photos to Collection",
+            function() CatalogWrite.call(context, requireTargetCollection(), "addPhotos", collectionPhotos) end
+        )
         if not ok then
-            problem = "the photos were not added to collection " .. args.collection_name .. ": " .. Reply.messageOf(outcome)
+            problem = "the photos were not added to collection "
+                .. args.collection_name
+                .. ": "
+                .. Reply.messageOf(outcome)
         else
             addedToCollection = #collectionPhotos
             Log.info(string.format("Added %d photos to collection: %s", addedToCollection, args.collection_name))
         end
     end
 
-    Log.info(string.format("Imported %d photos from: %s (skipped %d, sidecar JPEGs %d, already in catalog %d)",
-        importedCount, args.source_path, plan.skippedCount, plan.sidecarJpegCount, alreadyInCatalogCount))
+    Log.info(
+        string.format(
+            "Imported %d photos from: %s (skipped %d, sidecar JPEGs %d, already in catalog %d)",
+            importedCount,
+            args.source_path,
+            plan.skippedCount,
+            plan.sidecarJpegCount,
+            alreadyInCatalogCount
+        )
+    )
 
     return Reply.parts({
         data = (importedCount > 0 or alreadyInCatalogCount > 0) and {

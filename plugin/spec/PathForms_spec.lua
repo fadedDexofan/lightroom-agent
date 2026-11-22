@@ -1,4 +1,4 @@
-local PathForms = require 'PathForms'
+local PathForms = require "PathForms"
 
 local NFC = "/Zdj\196\153cia/w\196\133\197\188.jpg"
 local NFD = "/Zdje\204\168cia/wa\204\168z\204\135.jpg"
@@ -45,13 +45,15 @@ describe("PathForms.relative", function()
         assert.are.equal("a.jpg", PathForms.relative("/private/var/folders/out/", "/var/folders/out/a.jpg"))
     end)
 
-    it("finds a file under a root spelled the same way", function()
-        assert.are.equal("d/a.arw", PathForms.relative("/card", "/card/d/a.arw"))
-    end)
+    it(
+        "finds a file under a root spelled the same way",
+        function() assert.are.equal("d/a.arw", PathForms.relative("/card", "/card/d/a.arw")) end
+    )
 
-    it("finds a file under a root in the other Unicode form", function()
-        assert.are.equal("a.jpg", PathForms.relative("/w\196\133", "/wa\204\168/a.jpg"))
-    end)
+    it(
+        "finds a file under a root in the other Unicode form",
+        function() assert.are.equal("a.jpg", PathForms.relative("/w\196\133", "/wa\204\168/a.jpg")) end
+    )
 
     it("answers nil for a file outside the root", function()
         assert.is_nil(PathForms.relative("/card", "/cardx/a.arw"))

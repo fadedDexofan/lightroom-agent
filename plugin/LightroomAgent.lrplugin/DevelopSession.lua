@@ -1,11 +1,11 @@
-local LrApplicationView = import 'LrApplicationView'
-local LrDevelopController = import 'LrDevelopController'
-local LrSelection = import 'LrSelection'
-local LrTasks = import 'LrTasks'
+local LrApplicationView = import "LrApplicationView"
+local LrDevelopController = import "LrDevelopController"
+local LrSelection = import "LrSelection"
+local LrTasks = import "LrTasks"
 
-local Log = require 'Log'
-local PhotoSources = require 'PhotoSources'
-local Reply = require 'Reply'
+local Log = require "Log"
+local PhotoSources = require "PhotoSources"
+local Reply = require "Reply"
 
 local DevelopSession = {}
 
@@ -14,7 +14,6 @@ local FIRST_TRY_SECONDS = 2
 local RESELECT_SECONDS = 1
 local POLL_SECONDS = 0.1
 local PHOTO_SETTLE_SECONDS = 0.5
-
 
 local runningTool = nil
 
@@ -49,7 +48,9 @@ local retryUntil = DevelopSession.retryUntil
 function DevelopSession.selectionMatches(catalog, photo, selection)
     if catalog:getTargetPhoto() ~= photo then return false end
     local expected = {}
-    for _, selected in ipairs(selection or { photo }) do expected[selected] = true end
+    for _, selected in ipairs(selection or { photo }) do
+        expected[selected] = true
+    end
     for _, selected in ipairs(catalog:getTargetPhotos() or {}) do
         if not expected[selected] then return false end
         expected[selected] = nil
@@ -61,7 +62,9 @@ function DevelopSession.selectExactly(catalog, photo, selection, timeoutSeconds,
     return retryUntil(
         function() return DevelopSession.selectionMatches(catalog, photo, selection) end,
         function() catalog:setSelectedPhotos(photo, selection) end,
-        timeoutSeconds, intervalSeconds)
+        timeoutSeconds,
+        intervalSeconds
+    )
 end
 
 local function selectNoneAndWait(catalog)
@@ -85,7 +88,9 @@ local function withSourceFallback(catalog, photo, state, select)
         local folders = PhotoSources.foldersOf(catalog, { photo })
         if folders then
             state.folder = true
-            if switchTo(catalog, state, "its folder", folders, photo) and select(SELECT_TIMEOUT_SECONDS) then return true end
+            if switchTo(catalog, state, "its folder", folders, photo) and select(SELECT_TIMEOUT_SECONDS) then
+                return true
+            end
         end
     end
     if not switchTo(catalog, state, "All Photographs", { catalog.kAllPhotos }, photo) then return false end
@@ -94,9 +99,12 @@ local function withSourceFallback(catalog, photo, state, select)
 end
 
 function DevelopSession.selectAlone(catalog, photo, state)
-    return withSourceFallback(catalog, photo, state, function(timeoutSeconds)
-        return DevelopSession.selectExactly(catalog, photo, { photo }, timeoutSeconds)
-    end)
+    return withSourceFallback(
+        catalog,
+        photo,
+        state,
+        function(timeoutSeconds) return DevelopSession.selectExactly(catalog, photo, { photo }, timeoutSeconds) end
+    )
 end
 
 local function captureView(catalog)
@@ -130,14 +138,10 @@ local function restoreView(catalog, view, state)
     return problems
 end
 
-local function developModuleShowing()
-    return LrApplicationView.getCurrentModuleName() == "develop"
-end
+local function developModuleShowing() return LrApplicationView.getCurrentModuleName() == "develop" end
 
 function DevelopSession.openDevelop(isReady)
-    if not developModuleShowing() then
-        LrApplicationView.switchToModule("develop")
-    end
+    if not developModuleShowing() then LrApplicationView.switchToModule("develop") end
     if not DevelopSession.waitFor(isReady or developModuleShowing, SELECT_TIMEOUT_SECONDS) then
         Reply.refuse("Develop module did not open")
     end
@@ -147,9 +151,7 @@ function DevelopSession.commitPendingEdits()
     if developModuleShowing() then LrTasks.pcall(LrDevelopController.stopTracking, true) end
 end
 
-function DevelopSession.releaseTracking()
-    return LrDevelopController.stopTracking(false)
-end
+function DevelopSession.releaseTracking() return LrDevelopController.stopTracking(false) end
 
 local function runBody(context, catalog, restore, body)
     local state = {}
@@ -174,9 +176,7 @@ local function runBody(context, catalog, restore, body)
 end
 
 function DevelopSession.run(context, catalog, restore, body)
-    if runningTool then
-        Reply.refuse(runningTool .. " is already running; wait for it to finish, then call again")
-    end
+    if runningTool then Reply.refuse(runningTool .. " is already running; wait for it to finish, then call again") end
     runningTool = context.title
     local ok, result = LrTasks.pcall(runBody, context, catalog, restore, body)
     runningTool = nil
@@ -191,8 +191,7 @@ function DevelopSession.openPhoto(catalog, photo, state)
     end
     LrTasks.sleep(PHOTO_SETTLE_SECONDS)
     if catalog:getTargetPhoto() ~= photo then
-        Reply.refuse("Another photo became active in Develop while opening photo "
-            .. tostring(photo.localIdentifier))
+        Reply.refuse("Another photo became active in Develop while opening photo " .. tostring(photo.localIdentifier))
     end
 end
 
@@ -206,8 +205,14 @@ end
 function DevelopSession.requireControllerFunctions(toolName, names)
     for _, name in ipairs(names) do
         if type(LrDevelopController[name]) ~= "function" then
-            Reply.refuse(string.format("%s needs LrDevelopController.%s, a function outside the Lightroom SDK that"
-                .. " this Lightroom does not offer", toolName, name))
+            Reply.refuse(
+                string.format(
+                    "%s needs LrDevelopController.%s, a function outside the Lightroom SDK that"
+                        .. " this Lightroom does not offer",
+                    toolName,
+                    name
+                )
+            )
         end
     end
 end

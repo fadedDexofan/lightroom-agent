@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 -- Trimmed from a real Hard Drive preset (destination anonymised).
 local BLUESKY = [[
@@ -181,7 +181,7 @@ local function setup(opts)
     })
     package.loaded.ExportPresets = nil
     package.loaded.HandlerExport = nil
-    return require 'ExportPresets', require 'HandlerExport', exportSessionCalls
+    return require "ExportPresets", require "HandlerExport", exportSessionCalls
 end
 
 local function byName(presets, name)
@@ -257,7 +257,8 @@ describe("ExportPresets.list", function()
 
     it("includes presets stored with the catalog, after user presets", function()
         local files = defaultFiles()
-        files[CATALOG_ROOT .. "/User Presets/Catalog Only.lrtemplate"] = SPECIFIC_FOLDER:gsub("To Prints", "Catalog Only")
+        files[CATALOG_ROOT .. "/User Presets/Catalog Only.lrtemplate"] =
+            SPECIFIC_FOLDER:gsub("To Prints", "Catalog Only")
         local _, Handler = setup({ files = files })
         local presets = Handler.listExportPresets({}).presets
         assert.are.equal("catalog", presets[#presets].scope)
@@ -283,8 +284,10 @@ describe("ExportPresets.resolve", function()
         local Presets = setup()
         assert.are.equal("BlueSky", Presets.resolve("BlueSky").name)
         assert.are.equal("BlueSky", Presets.resolve("98B51E14-B94C-45A7-894A-341998926014").name)
-        assert.are.equal("Process instantly with DxO PureRAW 6",
-            select(2, pcall(Presets.resolve, "DxOPureRAWv6_proc_inst")):match("'(.-)'"))
+        assert.are.equal(
+            "Process instantly with DxO PureRAW 6",
+            select(2, pcall(Presets.resolve, "DxOPureRAWv6_proc_inst")):match("'(.-)'")
+        )
         assert.are.equal("BlueSky", Presets.resolve("bluesky").name)
     end)
 
@@ -299,19 +302,25 @@ describe("ExportPresets.resolve", function()
 
     it("explains an unknown name", function()
         local Presets = setup()
-        assert.has_error(function() Presets.resolve("Nope") end,
-            "Export preset not found: 'Nope' (use list_export_presets)")
-        assert.has_error(function() Presets.resolve("BlueSky", "Other") end,
-            "Export preset not found: 'BlueSky' in folder 'Other' (use list_export_presets)")
+        assert.has_error(
+            function() Presets.resolve("Nope") end,
+            "Export preset not found: 'Nope' (use list_export_presets)"
+        )
+        assert.has_error(
+            function() Presets.resolve("BlueSky", "Other") end,
+            "Export preset not found: 'BlueSky' in folder 'Other' (use list_export_presets)"
+        )
     end)
 
     it("refuses an ambiguous name unless a folder is given", function()
         local files = defaultFiles()
         files[ROOT .. "/Other/BlueSky.lrtemplate"] = BLUESKY
         local Presets = setup({ files = files })
-        assert.has_error(function() Presets.resolve("BlueSky") end,
+        assert.has_error(
+            function() Presets.resolve("BlueSky") end,
             "Export preset 'BlueSky' is ambiguous; pass export_preset_folder "
-            .. "(found in user:Other, user:User Presets)")
+                .. "(found in user:Other, user:User Presets)"
+        )
         assert.are.equal("Other", Presets.resolve("BlueSky", "Other").folder)
     end)
 
@@ -321,9 +330,11 @@ describe("ExportPresets.resolve", function()
         files[catalogFile] = BLUESKY
         local Presets = setup({ files = files })
         for _, folder in ipairs({ false, "User Presets" }) do
-            assert.has_error(function() Presets.resolve("BlueSky", folder or nil) end,
+            assert.has_error(
+                function() Presets.resolve("BlueSky", folder or nil) end,
                 "Export preset 'BlueSky' is ambiguous; pass its file path from list_export_presets "
-                .. "(found in user:User Presets, catalog:User Presets)")
+                    .. "(found in user:User Presets, catalog:User Presets)"
+            )
         end
         assert.are.equal("catalog", Presets.resolve(catalogFile).scope)
         assert.are.equal("user", Presets.resolve(ROOT .. "/User Presets/BlueSky.lrtemplate").scope)
@@ -338,19 +349,29 @@ describe("ExportPresets.resolve", function()
         local files = defaultFiles()
         files[ROOT .. "/User Presets/Lodz.lrtemplate"] =
             's = { title = "\197\129\195\147D\197\185", type = "Export", value = {} }'
-        files[ROOT .. "/User Presets/Cafe.lrtemplate"] =
-            's = { title = "Cafe\204\129", type = "Export", value = {} }'
+        files[ROOT .. "/User Presets/Cafe.lrtemplate"] = 's = { title = "Cafe\204\129", type = "Export", value = {} }'
         package.loaded.ExportPresets = nil
         local LrFileUtils, LrPathUtils = fakeFs(files)
         helper.installImport({
-            LrApplication = { activeCatalog = function() return { getPath = function() return "/cat/Main.lrcat" end } end },
-            LrFileUtils = LrFileUtils, LrPathUtils = LrPathUtils,
-            LrStringUtils = { lower = function(text)
-                return (text:gsub("\197\129", "\197\130"):gsub("\195\147", "\195\179")
-                    :gsub("\197\185", "\197\186"):lower())
-            end },
+            LrApplication = {
+                activeCatalog = function()
+                    return { getPath = function() return "/cat/Main.lrcat" end }
+                end,
+            },
+            LrFileUtils = LrFileUtils,
+            LrPathUtils = LrPathUtils,
+            LrStringUtils = {
+                lower = function(text)
+                    return (
+                        text:gsub("\197\129", "\197\130")
+                            :gsub("\195\147", "\195\179")
+                            :gsub("\197\185", "\197\186")
+                            :lower()
+                    )
+                end,
+            },
         })
-        local Presets = require 'ExportPresets'
+        local Presets = require "ExportPresets"
         assert.are.equal("\197\129\195\147D\197\185", Presets.resolve("\197\130\195\179d\197\186").name)
         assert.are.equal("Cafe\204\129", Presets.resolve("caf\195\169").name)
     end)
@@ -362,28 +383,34 @@ describe("ExportPresets.resolve", function()
             { 'size_maxWidth = "x"', "invalid setting: size_maxWidth must be a number" },
             { "format = 5", "invalid setting: format must be a string" },
             { 'size_doConstrain = "yes"', "invalid setting: size_doConstrain must be true or false" },
-            { 'size_doConstrain = true, size_resizeType = "percentage"',
-                "invalid setting: size_percentage must be above 0" },
-            { 'size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 0',
-                "invalid setting: size_megapixels must be above 0" },
+            {
+                'size_doConstrain = true, size_resizeType = "percentage"',
+                "invalid setting: size_percentage must be above 0",
+            },
+            {
+                'size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 0',
+                "invalid setting: size_megapixels must be above 0",
+            },
         }
         for _, case in ipairs(cases) do
-            local files = { [ROOT .. "/F/Bad.lrtemplate"] =
-                's = { title = "Bad", type = "Export", value = { ' .. case[1] .. " } }" }
+            local files = {
+                [ROOT .. "/F/Bad.lrtemplate"] = 's = { title = "Bad", type = "Export", value = { ' .. case[1] .. " } }",
+            }
             local Presets = setup({ files = files })
             local listed = Presets.list()[1]
             assert.is_false(listed.usable)
             assert.are.equal(case[2], listed.unusable_reason)
-            assert.has_error(function() Presets.resolve("Bad") end,
-                "Export preset 'Bad' cannot be used: " .. case[2])
+            assert.has_error(function() Presets.resolve("Bad") end, "Export preset 'Bad' cannot be used: " .. case[2])
         end
     end)
 
     it("refuses a preset for another export service", function()
         local Presets = setup()
-        assert.has_error(function() Presets.resolve("DxO PureRAW 6") end,
+        assert.has_error(
+            function() Presets.resolve("DxO PureRAW 6") end,
             "Export preset 'Process instantly with DxO PureRAW 6' cannot be used: "
-            .. "exports through DxO PureRAW 6, not Hard Drive")
+                .. "exports through DxO PureRAW 6, not Hard Drive"
+        )
     end)
 end)
 
@@ -421,8 +448,12 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "BlueSky" })
         assert.are.equal("rename", calls[1].exportSettings.LR_collisionHandling)
 
-        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "For Editing",
-            on_existing = "skip" })
+        Handler.exportPhotos({
+            photo_ids = { "1" },
+            destination = "/out",
+            export_preset = "For Editing",
+            on_existing = "skip",
+        })
         assert.are.equal("skip", calls[2].exportSettings.LR_collisionHandling)
         assert.are.equal("doNothing", calls[2].exportSettings.LR_export_postProcessing)
     end)
@@ -430,8 +461,14 @@ describe("HandlerExport.exportPhotos with export_preset", function()
     it("overrides only the settings passed explicitly", function()
         local _, Handler, calls = setup({ photos = { photo() } })
 
-        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "BlueSky",
-            format = "png", quality = 50, width = 2000 })
+        Handler.exportPhotos({
+            photo_ids = { "1" },
+            destination = "/out",
+            export_preset = "BlueSky",
+            format = "png",
+            quality = 50,
+            width = 2000,
+        })
 
         local s = calls[1].exportSettings
         assert.are.equal("PNG", s.LR_format)
@@ -444,12 +481,15 @@ describe("HandlerExport.exportPhotos with export_preset", function()
 
     describe("sizes", function()
         local function exportWith(value, args, dimensions)
-            local files = { [ROOT .. "/F/Size.lrtemplate"] =
-                's = { title = "Size", type = "Export", value = { ' .. value .. " } }" }
+            local files = {
+                [ROOT .. "/F/Size.lrtemplate"] = 's = { title = "Size", type = "Export", value = { ' .. value .. " } }",
+            }
             local p = helper.fakePhoto({ id = "1", path = "/a.jpg", croppedDimensions = dimensions })
             local _, Handler, calls = setup({ files = files, photos = { p } })
             local request = { photo_ids = { "1" }, destination = "/out", export_preset = "Size" }
-            for key, v in pairs(args or {}) do request[key] = v end
+            for key, v in pairs(args or {}) do
+                request[key] = v
+            end
             local r = Handler.exportPhotos(request)
             return calls[1] and calls[1].exportSettings, r, calls
         end
@@ -461,7 +501,9 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         it("limits the given edge in pixels and never enlarges", function()
             local s = settingsOf(
                 'size_doConstrain = true, size_resizeType = "longEdge", size_maxWidth = 5, size_maxHeight = 5, '
-                .. 'size_units = "inch", size_doNotEnlarge = false', { height = 400 })
+                    .. 'size_units = "inch", size_doNotEnlarge = false',
+                { height = 400 }
+            )
             assert.are.equal("wh", s.LR_size_resizeType)
             assert.are.equal("pixels", s.LR_size_units)
             assert.are.equal(400, s.LR_size_maxHeight)
@@ -477,8 +519,11 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         end)
 
         it("turns a percentage into a long edge for the photo", function()
-            local s = settingsOf('size_doConstrain = true, size_resizeType = "percentage", size_percentage = 25',
-                nil, { width = 1000, height = 800 })
+            local s = settingsOf(
+                'size_doConstrain = true, size_resizeType = "percentage", size_percentage = 25',
+                nil,
+                { width = 1000, height = 800 }
+            )
             assert.are.equal("longEdge", s.LR_size_resizeType)
             assert.are.equal(250, s.LR_size_maxWidth)
             assert.are.equal(250, s.LR_size_maxHeight)
@@ -486,23 +531,33 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         end)
 
         it("turns fractional megapixels into a long edge for the photo", function()
-            local s = settingsOf('size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 0.25',
-                nil, { width = 1000, height = 1000 })
+            local s = settingsOf(
+                'size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 0.25',
+                nil,
+                { width = 1000, height = 1000 }
+            )
             assert.are.equal("longEdge", s.LR_size_resizeType)
             assert.are.equal(500, s.LR_size_maxWidth)
         end)
 
         it("leaves whole megapixels and an unconstrained percentage to Lightroom", function()
-            local whole = settingsOf('size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 2',
-                nil, { width = 1000, height = 1000 })
+            local whole = settingsOf(
+                'size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 2',
+                nil,
+                { width = 1000, height = 1000 }
+            )
             assert.are.equal("megapixels", whole.LR_size_resizeType)
-            local off = settingsOf('size_doConstrain = false, size_resizeType = "percentage", size_percentage = 25',
-                nil, { width = 1000, height = 1000 })
+            local off = settingsOf(
+                'size_doConstrain = false, size_resizeType = "percentage", size_percentage = 25',
+                nil,
+                { width = 1000, height = 1000 }
+            )
             assert.are.equal("percentage", off.LR_size_resizeType)
         end)
 
         it("reports a photo without dimensions and does not export it", function()
-            local _, r, calls = exportWith('size_doConstrain = true, size_resizeType = "percentage", size_percentage = 25')
+            local _, r, calls =
+                exportWith('size_doConstrain = true, size_resizeType = "percentage", size_percentage = 25')
             assert.are.equal(0, #calls)
             assert.is_nil(r.data)
             assert.are.equal("Lightroom reported no dimensions for this photo", r.failed[1].reason)
@@ -511,8 +566,9 @@ describe("HandlerExport.exportPhotos with export_preset", function()
 
     describe("numbering across photos", function()
         local function exportThree(value)
-            local files = { [ROOT .. "/F/Seq.lrtemplate"] =
-                's = { title = "Seq", type = "Export", value = { ' .. value .. " } }" }
+            local files = {
+                [ROOT .. "/F/Seq.lrtemplate"] = 's = { title = "Seq", type = "Export", value = { ' .. value .. " } }",
+            }
             local photos = {
                 helper.fakePhoto({ id = "1", path = "/1.jpg" }),
                 helper.fakePhoto({ id = "2", path = "/2.jpg" }),
@@ -530,9 +586,10 @@ describe("HandlerExport.exportPhotos with export_preset", function()
             assert.are.equal(7, calls[3].exportSettings.LR_initialSequenceNumber)
         end)
 
-        it("starts at 1 without a start number", function()
-            assert.are.equal(3, exportThree("")[3].exportSettings.LR_initialSequenceNumber)
-        end)
+        it(
+            "starts at 1 without a start number",
+            function() assert.are.equal(3, exportThree("")[3].exportSettings.LR_initialSequenceNumber) end
+        )
 
         it("writes the total the sessions cannot know", function()
             local calls = exportThree('tokens = "x_{{naming_sequenceNumber_3Digits}}_{{naming_sequenceTotal_2Digits}}"')
@@ -541,8 +598,9 @@ describe("HandlerExport.exportPhotos with export_preset", function()
     end)
 
     it("turns off a file size limit when quality is passed", function()
-        local files = { [ROOT .. "/F/Limit.lrtemplate"] =
-            's = { title = "Limit", type = "Export", value = { jpeg_useLimitSize = true, jpeg_limitSize = 20 } }' }
+        local files = {
+            [ROOT .. "/F/Limit.lrtemplate"] = 's = { title = "Limit", type = "Export", value = { jpeg_useLimitSize = true, jpeg_limitSize = 20 } }',
+        }
         local _, Handler, calls = setup({ files = files, photos = { photo() } })
         Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "Limit" })
         Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "Limit", quality = 50 })
@@ -564,7 +622,7 @@ describe("HandlerExport.exportPhotos with export_preset", function()
 
     it("creates a preset's missing folder when no destination is given", function()
         local _, Handler, calls = setup({ photos = { photo() } })
-        local LrFileUtils = import 'LrFileUtils'
+        local LrFileUtils = import "LrFileUtils"
         assert.is_false(LrFileUtils.exists("/prints/Batch"))
 
         Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "To Prints" })
@@ -578,9 +636,10 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         files["/prints/Batch"] = "not a folder"
         local _, Handler, calls = setup({ files = files, photos = { photo() } })
 
-        assert.are.equal("destination is not a directory: /prints/Batch", helper.failedOf(function()
-            Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "To Prints" })
-        end))
+        assert.are.equal(
+            "destination is not a directory: /prints/Batch",
+            helper.failedOf(function() Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "To Prints" }) end)
+        )
         assert.are.equal(0, #calls)
     end)
 
@@ -589,7 +648,7 @@ describe("HandlerExport.exportPhotos with export_preset", function()
 
         Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "BlueSky" })
 
-        assert.is_false((import 'LrFileUtils').exists("/Users/someone/Desktop"))
+        assert.is_false((import "LrFileUtils").exists("/Users/someone/Desktop"))
     end)
 
     it("uses the preset's fixed destination when none is given", function()
@@ -635,18 +694,27 @@ s = {
                 { files = presetFile('export_destinationType = "sourceFolder",'), preset = "Next To Original" },
                 { files = defaultFiles(), preset = "To Prints" },
             }) do
-                local _, Handler, calls = setup({ files = case.files, photos = { inFolder() }, folders = catalogFolders() })
-                local refusal = helper.failedOf(function()
-                    Handler.exportPhotos({ photo_ids = { "1" }, export_preset = case.preset, on_existing = "overwrite" })
-                end)
+                local _, Handler, calls =
+                    setup({ files = case.files, photos = { inFolder() }, folders = catalogFolders() })
+                local refusal = helper.failedOf(
+                    function()
+                        Handler.exportPhotos({
+                            photo_ids = { "1" },
+                            export_preset = case.preset,
+                            on_existing = "overwrite",
+                        })
+                    end
+                )
                 assert.truthy(refusal:find("/prints/Batch, a folder of this catalog", 1, true))
                 assert.are.equal(0, #calls)
             end
         end)
 
         it("allows a source-folder preset that writes into a subfolder outside the catalog", function()
-            local files = presetFile('export_destinationType = "sourceFolder", export_useSubfolder = true,'
-                .. ' export_destinationPathSuffix = "Exports",')
+            local files = presetFile(
+                'export_destinationType = "sourceFolder", export_useSubfolder = true,'
+                    .. ' export_destinationPathSuffix = "Exports",'
+            )
             local _, Handler, calls = setup({ files = files, photos = { inFolder() }, folders = catalogFolders() })
             Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "Next To Original", on_existing = "overwrite" })
             assert.are.equal(1, #calls)
@@ -679,18 +747,20 @@ s = {
 
     it("requires a destination for a choose-later preset", function()
         local _, Handler, calls = setup({ photos = { photo() } })
-        assert.are.equal("Export preset 'For Editing' has no fixed destination (chooseLater); pass destination",
-            helper.failedOf(function()
-                Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "For Editing" })
-            end))
+        assert.are.equal(
+            "Export preset 'For Editing' has no fixed destination (chooseLater); pass destination",
+            helper.failedOf(function() Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "For Editing" }) end)
+        )
         assert.are.equal(0, #calls)
     end)
 
     it("refuses an unusable preset before exporting anything", function()
         local _, Handler, calls = setup({ photos = { photo() } })
-        helper.failedOf(function()
-            Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "DxO PureRAW 6" })
-        end)
+        helper.failedOf(
+            function()
+                Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "DxO PureRAW 6" })
+            end
+        )
         assert.are.equal(0, #calls)
     end)
 
@@ -703,9 +773,7 @@ s = {
 end)
 
 describe("ExportPresets preset parser", function()
-    local function presets(source)
-        return (setup({ files = { [ROOT .. "/User Presets/P.lrtemplate"] = source } }))
-    end
+    local function presets(source) return (setup({ files = { [ROOT .. "/User Presets/P.lrtemplate"] = source } })) end
 
     local function readError(source)
         local entry = presets(source).list()[1]
@@ -753,8 +821,8 @@ line]],
 
     it("reads a line continuation in a file with Windows line ends", function()
         for _, ending in ipairs({ "\n", "\r\n", "\r" }) do
-            local preset = presets('s = { title = "P", type = "Export", value = { note = "a\\' .. ending .. 'b" } }')
-                .resolve("P")
+            local preset =
+                presets('s = { title = "P", type = "Export", value = { note = "a\\' .. ending .. 'b" } }').resolve("P")
             assert.are.equal("a\nb", preset.settings.LR_note)
         end
     end)
@@ -767,7 +835,12 @@ line]],
         assert.are.equal("unfinished string at line 1", readError('s = { a = "unfinished }'))
     end)
 
-    it("refuses tables nested deeper than any preset", function()
-        assert.truthy(readError("s = " .. string.rep("{", 40) .. string.rep("}", 40)):find("nested too deeply", 1, true))
-    end)
+    it(
+        "refuses tables nested deeper than any preset",
+        function()
+            assert.truthy(
+                readError("s = " .. string.rep("{", 40) .. string.rep("}", 40)):find("nested too deeply", 1, true)
+            )
+        end
+    )
 end)

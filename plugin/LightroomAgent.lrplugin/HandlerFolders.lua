@@ -1,22 +1,18 @@
-local LrApplication = import 'LrApplication'
-local Contract = require 'Contract'
-local PathForms = require 'PathForms'
-local PhotoSummary = require 'PhotoSummary'
+local LrApplication = import "LrApplication"
+local Contract = require "Contract"
+local PathForms = require "PathForms"
+local PhotoSummary = require "PhotoSummary"
 
 local FoldersHandler = {}
 
-local function pageBounds(args)
-    return args.limit or Contract.DEFAULT_PAGE_LIMIT, args.offset or 0
-end
+local function pageBounds(args) return args.limit or Contract.DEFAULT_PAGE_LIMIT, args.offset or 0 end
 
 local function foldersInTreeOrder(catalog)
     local all = {}
     local paths = {}
     local function visit(folder)
         local path = folder:getPath()
-        if paths[path] then
-            error("Duplicate folder path in catalog: " .. path)
-        end
+        if paths[path] then error("Duplicate folder path in catalog: " .. path) end
         paths[path] = true
         table.insert(all, { folder = folder, path = path, name = folder:getName() })
         for _, child in ipairs(folder:getChildren() or {}) do

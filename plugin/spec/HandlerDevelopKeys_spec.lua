@@ -1,5 +1,5 @@
-local fake = require 'fake_mask_develop'
-local helper = require 'spec_helper'
+local fake = require "fake_mask_develop"
+local helper = require "spec_helper"
 
 local function setup(opts)
     opts = opts or {}
@@ -34,7 +34,10 @@ describe("HandlerDevelopKeys.ranges", function()
     it("reports a key with a range, leaves out keys without one and names the build and process version", function()
         local ctx = setup()
 
-        local r = ctx.Handler.ranges({ photo_id = "1", keys = { "Exposure2012", "Temperature", "Texture" } }, helper.requestContext())
+        local r = ctx.Handler.ranges(
+            { photo_id = "1", keys = { "Exposure2012", "Temperature", "Texture" } },
+            helper.requestContext()
+        )
 
         assert.are.same({ Exposure2012 = { -5, 5 } }, r.ranges)
         assert.are.same({ version = "16.0", build = "16.0.0 build 202611041403" }, r.lightroom)
@@ -47,7 +50,10 @@ describe("HandlerDevelopKeys.ranges", function()
         local ctx = setup()
 
         local r = ctx.Handler.ranges({
-            photo_id = "1", keys = { "Exposure2012" }, mask_id = "mask-a", local_keys = { "local_Exposure" },
+            photo_id = "1",
+            keys = { "Exposure2012" },
+            mask_id = "mask-a",
+            local_keys = { "local_Exposure" },
         }, helper.requestContext())
 
         assert.are.same({ local_Exposure = { -4, 4 } }, r.local_ranges)
@@ -57,12 +63,19 @@ describe("HandlerDevelopKeys.ranges", function()
     it("refuses the local ranges when another mask was selected while they were read", function()
         local ctx = setup({ clickedDuringRead = "mask-b" })
 
-        local message = helper.failedOf(function()
-            ctx.Handler.ranges({ photo_id = "1", keys = {}, mask_id = "mask-a", local_keys = { "local_Exposure" } },
-                helper.requestContext())
-        end)
+        local message = helper.failedOf(
+            function()
+                ctx.Handler.ranges(
+                    { photo_id = "1", keys = {}, mask_id = "mask-a", local_keys = { "local_Exposure" } },
+                    helper.requestContext()
+                )
+            end
+        )
 
-        assert.are.equal("Mask mask-b became selected in Develop while mask mask-a was read on photo 1; call again"
-            .. " without changing the selection", message)
+        assert.are.equal(
+            "Mask mask-b became selected in Develop while mask mask-a was read on photo 1; call again"
+                .. " without changing the selection",
+            message
+        )
     end)
 end)

@@ -1,4 +1,4 @@
-local Contract = require 'Contract'
+local Contract = require "Contract"
 
 local LocalSliders = {}
 
@@ -9,9 +9,7 @@ for _, slider in ipairs(LocalSliders.list) do
     LocalSliders.byStored[slider.stored] = slider
 end
 
-function LocalSliders.neutralOf(slider)
-    return slider.neutral or 0
-end
+function LocalSliders.neutralOf(slider) return slider.neutral or 0 end
 
 local REPORTED_DIGITS = "%.10g"
 
@@ -20,9 +18,7 @@ function LocalSliders.storedOf(slider, value)
     return tonumber(string.format("%." .. places .. "f", value / slider.scale))
 end
 
-function LocalSliders.valueOf(slider, stored)
-    return tonumber(string.format(REPORTED_DIGITS, stored * slider.scale))
-end
+function LocalSliders.valueOf(slider, stored) return tonumber(string.format(REPORTED_DIGITS, stored * slider.scale)) end
 
 function LocalSliders.storedNeutralOf(stored)
     local slider = LocalSliders.byStored[stored]

@@ -1,14 +1,13 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local CatalogWrite = require 'CatalogWrite'
-local GuardedMaskWrite = require 'GuardedMaskWrite'
-local JsonValue = require 'JsonValue'
-local Log = require 'Log'
-local Reply = require 'Reply'
-local PhotoLookup = require 'PhotoLookup'
+local CatalogWrite = require "CatalogWrite"
+local GuardedMaskWrite = require "GuardedMaskWrite"
+local JsonValue = require "JsonValue"
+local Log = require "Log"
+local Reply = require "Reply"
+local PhotoLookup = require "PhotoLookup"
 
 local MaskDeleteHandler = {}
-
 
 local function uniqueIds(values)
     local ids, seen = {}, {}
@@ -39,9 +38,7 @@ local function componentsOf(entry)
     return type(entry) == "table" and type(entry.CorrectionMasks) == "table" and entry.CorrectionMasks or {}
 end
 
-local function idOf(value)
-    return value ~= nil and tostring(value) or nil
-end
+local function idOf(value) return value ~= nil and tostring(value) or nil end
 
 local function planDeletion(entries, target, photoId)
     local maskIds, toolIds = {}, {}
@@ -55,17 +52,31 @@ local function planDeletion(entries, target, photoId)
     if target.kind == "mask_ids" then
         local unknown = listUnknown(target.ids, function(id) return maskIds[id] end)
         if #unknown > 0 then
-            Reply.refuse("Unknown mask id(s) on photo " .. photoId .. ": " .. table.concat(unknown, ", ")
-                .. "; nothing was deleted")
+            Reply.refuse(
+                "Unknown mask id(s) on photo "
+                    .. photoId
+                    .. ": "
+                    .. table.concat(unknown, ", ")
+                    .. "; nothing was deleted"
+            )
         end
-        for _, id in ipairs(target.ids) do removeMask[id] = true end
+        for _, id in ipairs(target.ids) do
+            removeMask[id] = true
+        end
     elseif target.kind == "tool_ids" then
         local unknown = listUnknown(target.ids, function(id) return toolIds[id] end)
         if #unknown > 0 then
-            Reply.refuse("Unknown tool id(s) on photo " .. photoId .. ": " .. table.concat(unknown, ", ")
-                .. "; nothing was deleted")
+            Reply.refuse(
+                "Unknown tool id(s) on photo "
+                    .. photoId
+                    .. ": "
+                    .. table.concat(unknown, ", ")
+                    .. "; nothing was deleted"
+            )
         end
-        for _, id in ipairs(target.ids) do removeTool[id] = true end
+        for _, id in ipairs(target.ids) do
+            removeTool[id] = true
+        end
     end
     local plan = { kept = {}, deletedMaskIds = {}, deletedToolIds = {}, removed = 0 }
     for _, entry in ipairs(entries) do
@@ -80,7 +91,9 @@ local function planDeletion(entries, target, photoId)
                 survivors[#survivors + 1] = component
             end
         end
-        for _, toolId in ipairs(removed) do plan.deletedToolIds[#plan.deletedToolIds + 1] = toolId end
+        for _, toolId in ipairs(removed) do
+            plan.deletedToolIds[#plan.deletedToolIds + 1] = toolId
+        end
         plan.removed = plan.removed + dropped
         if target.kind == "all" or removeMask[maskId] or (dropped > 0 and #survivors == 0) then
             plan.removed = plan.removed + 1
@@ -93,9 +106,7 @@ local function planDeletion(entries, target, photoId)
     return plan
 end
 
-local function nothingDeleted(plan)
-    return plan.removed == 0
-end
+local function nothingDeleted(plan) return plan.removed == 0 end
 
 function MaskDeleteHandler.deleteMasks(args, context)
     local target = parseTarget(args)
@@ -116,8 +127,14 @@ function MaskDeleteHandler.deleteMasks(args, context)
     })
     plan = plan or { deletedMaskIds = {}, deletedToolIds = {} }
 
-    Log.info(string.format("Deleted %d masks and %d mask tools from photo %s",
-        #plan.deletedMaskIds, #plan.deletedToolIds, photoId))
+    Log.info(
+        string.format(
+            "Deleted %d masks and %d mask tools from photo %s",
+            #plan.deletedMaskIds,
+            #plan.deletedToolIds,
+            photoId
+        )
+    )
 
     return {
         photo_id = photoId,
@@ -141,12 +158,17 @@ function MaskDeleteHandler.deleteEmptyMasks(args, context)
     local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
     if #entries == 0 then return Reply.parts({ not_found = notFound }) end
     local photos = {}
-    for i, entry in ipairs(entries) do photos[i] = entry.photo end
+    for i, entry in ipairs(entries) do
+        photos[i] = entry.photo
+    end
 
     local groupsBefore = countGroups(catalog, photos)
-    CatalogWrite.run(context, catalog, "Delete Empty Masks", function()
-        CatalogWrite.call(context, catalog, "deleteAllEmptyMasks", photos)
-    end)
+    CatalogWrite.run(
+        context,
+        catalog,
+        "Delete Empty Masks",
+        function() CatalogWrite.call(context, catalog, "deleteAllEmptyMasks", photos) end
+    )
     local groupsAfter = countGroups(catalog, photos)
     local changed = {}
     for _, photo in ipairs(photos) do
@@ -156,8 +178,9 @@ function MaskDeleteHandler.deleteEmptyMasks(args, context)
         end
     end
 
-    Log.info(string.format("Deleted empty masks: %d of %d photos changed (%d ids not found)",
-        #changed, #photos, #notFound))
+    Log.info(
+        string.format("Deleted empty masks: %d of %d photos changed (%d ids not found)", #changed, #photos, #notFound)
+    )
 
     return Reply.parts({ data = { photos_checked = #photos, changed = changed }, not_found = notFound })
 end

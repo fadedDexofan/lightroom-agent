@@ -1,18 +1,16 @@
-local LrApplication = import 'LrApplication'
+local LrApplication = import "LrApplication"
 
-local PhotoLookup = require 'PhotoLookup'
-local AIMaskCompute = require 'AIMaskCompute'
-local AIMaskData = require 'AIMaskData'
-local AiMaskParts = require 'AiMaskParts'
-local Log = require 'Log'
+local PhotoLookup = require "PhotoLookup"
+local AIMaskCompute = require "AIMaskCompute"
+local AIMaskData = require "AIMaskData"
+local AiMaskParts = require "AiMaskParts"
+local Log = require "Log"
 
 local AiMaskHandler = {}
 
 local stateOf = AIMaskData.computeState
 
-local function labelOf(request, index)
-    return request.specs[index].name
-end
+local function labelOf(request, index) return request.specs[index].name end
 
 local function listNames(request, fresh, wantedState)
     local names = {}

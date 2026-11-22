@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 -- Stub everything PluginInfoProvider / PluginInit pull in so requiring them
 -- has no real side effects. The lifecycle logic under test lives in the
@@ -20,8 +20,13 @@ local function installStubs(prefs, asyncTasks, opts)
     opts = opts or {}
     helper.installImport({
         LrProgressScope = function()
-            return { setCancelable = function() end, setPortionComplete = function() end,
-                setCaption = function() end, isCanceled = function() return false end, done = function() end }
+            return {
+                setCancelable = function() end,
+                setPortionComplete = function() end,
+                setCaption = function() end,
+                isCanceled = function() return false end,
+                done = function() end,
+            }
         end,
         LrTasks = {
             startAsyncTask = function(fn)
@@ -32,9 +37,7 @@ local function installStubs(prefs, asyncTasks, opts)
                 end
             end,
             sleep = function()
-                if opts.stopLoopOnSleep and _G.LightroomAgent_State then
-                    _G.LightroomAgent_State.running = false
-                end
+                if opts.stopLoopOnSleep and _G.LightroomAgent_State then _G.LightroomAgent_State.running = false end
                 if opts.onSleep then opts.onSleep(_G.LightroomAgent_State) end
             end,
             pcall = pcall,
@@ -86,7 +89,7 @@ local function installStubs(prefs, asyncTasks, opts)
     })
     package.loaded.JSON = {}
     package.loaded.HandlerLoads = nil
-    for _, target in pairs(require('Contract').DISPATCH) do
+    for _, target in pairs(require("Contract").DISPATCH) do
         package.loaded[target[1]] = {}
     end
 end
@@ -96,13 +99,15 @@ end
 -- _G persists across the load (same Lua state).
 local function loadInfoProvider()
     package.loaded.PluginInfoProvider = nil
-    return require 'PluginInfoProvider'
+    return require "PluginInfoProvider"
 end
 
 local function serving(opts, asyncTasks)
     local binds, sends = {}, {}
     local stubOpts = { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds, sends = sends }
-    for key, value in pairs(opts or {}) do stubOpts[key] = value end
+    for key, value in pairs(opts or {}) do
+        stubOpts[key] = value
+    end
     installStubs(nil, asyncTasks, stubOpts)
     package.loaded.JSON = nil
     package.loaded.Reply = nil
@@ -117,7 +122,7 @@ end
 local function loadPluginInit()
     package.loaded.PluginInfoProvider = nil
     package.loaded.PluginInit = nil
-    require 'PluginInit'
+    require "PluginInit"
 end
 
 describe("PluginInfoProvider lifecycle", function()
@@ -180,9 +185,7 @@ end)
 -- Auto-start scheduling itself is covered by PluginInit_spec.lua; here we
 -- only assert that PluginInit wires the reload teardown into the real module.
 describe("PluginInit reload reset", function()
-    before_each(function()
-        _G.LightroomAgent_State = nil
-    end)
+    before_each(function() _G.LightroomAgent_State = nil end)
 
     it("resets a surviving running instance on reload", function()
         installStubs({ autoStartServer = false })
@@ -227,15 +230,11 @@ describe("PluginInfoProvider server task", function()
         -- io.open(path):read(), and a fake handle there breaks module loading.
         realOpen = io.open
         io.open = function(path, mode, ...)
-            if mode and mode:find("w", 1, true) then
-                return { write = function() end, close = function() end }
-            end
+            if mode and mode:find("w", 1, true) then return { write = function() end, close = function() end } end
             return realOpen(path, mode, ...)
         end
     end)
-    after_each(function()
-        io.open = realOpen
-    end)
+    after_each(function() io.open = realOpen end)
 
     local function pluginModules()
         local names = {}
@@ -249,7 +248,12 @@ describe("PluginInfoProvider server task", function()
     local function permissiveImports()
         local installed = _G.import
         local function anything()
-            return setmetatable({}, { __index = function() return function() end end, __call = function() end })
+            return setmetatable({}, {
+                __index = function()
+                    return function() end
+                end,
+                __call = function() end,
+            })
         end
         _G.import = function(name)
             local found, module = pcall(installed, name)
@@ -261,11 +265,15 @@ describe("PluginInfoProvider server task", function()
     it("loads every module a call can run when the plug-in initialises, before any request names it", function()
         installStubs({ autoStartServer = false })
         permissiveImports()
-        for _, name in ipairs(pluginModules()) do package.loaded[name] = nil end
+        for _, name in ipairs(pluginModules()) do
+            package.loaded[name] = nil
+        end
 
         loadPluginInit()
 
-        for _, target in pairs(require('Contract').DISPATCH) do assert.is_table(package.loaded[target[1]], target[1]) end
+        for _, target in pairs(require("Contract").DISPATCH) do
+            assert.is_table(package.loaded[target[1]], target[1])
+        end
         assert.is_table(package.loaded.HandlerAiMasks)
     end)
 
@@ -289,18 +297,30 @@ describe("PluginInfoProvider server task", function()
         local binds, sends
         local function initialised(prefs)
             binds, sends = {}, {}
-            installStubs(prefs or { autoStartServer = false }, nil,
-                { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds, sends = sends })
+            installStubs(
+                prefs or { autoStartServer = false },
+                nil,
+                { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds, sends = sends }
+            )
             package.loaded.JSON, package.loaded.Reply, package.loaded.DevelopSession = nil, nil, nil
         end
         local function startFromPanel()
-            require('PluginInfoProvider').startServerFromPanel()
+            require("PluginInfoProvider").startServerFromPanel()
             _G.LightroomAgent_State.sendConnected = true
         end
         local function answer(action)
             local state = _G.LightroomAgent_State
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"' .. action .. '","action":"' .. action .. '"}')
-            return require('JSON'):decode(sends[#sends])
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"'
+                    .. state.token
+                    .. '","id":"'
+                    .. action
+                    .. '","action":"'
+                    .. action
+                    .. '"}'
+            )
+            return require("JSON"):decode(sends[#sends])
         end
         local function failingOnce(name, cause, module)
             local attempts = 0
@@ -313,27 +333,39 @@ describe("PluginInfoProvider server task", function()
             return function() return attempts end
         end
         after_each(function()
-            for _, name in ipairs({ "HandlerSearch", "HandlerBrushMasks", "DevelopCurves" }) do package.preload[name] = nil end
+            for _, name in ipairs({ "HandlerSearch", "HandlerBrushMasks", "DevelopCurves" }) do
+                package.preload[name] = nil
+            end
         end)
 
-        it("is the module loaded at init, even when its source changes before the server starts from the panel", function()
-            initialised()
-            package.loaded.HandlerSearch = nil
-            package.preload.HandlerSearch = function() return { searchPhotos = function() return { loaded = "at init" } end } end
-            loadPluginInit()
-            package.preload.HandlerSearch = function() return { searchPhotos = function() return { loaded = "later" } end } end
+        it(
+            "is the module loaded at init, even when its source changes before the server starts from the panel",
+            function()
+                initialised()
+                package.loaded.HandlerSearch = nil
+                package.preload.HandlerSearch = function()
+                    return { searchPhotos = function() return { loaded = "at init" } end }
+                end
+                loadPluginInit()
+                package.preload.HandlerSearch = function()
+                    return { searchPhotos = function() return { loaded = "later" } end }
+                end
 
-            startFromPanel()
+                startFromPanel()
 
-            assert.are.equal("at init", answer("search_photos").result.data.loaded)
-        end)
+                assert.are.equal("at init", answer("search_photos").result.data.loaded)
+            end
+        )
 
         it("answers every action of a module whose first load failed with that cause, loading it once", function()
             initialised()
             local healthy = { searchPhotos = function() return { healthy = true } end }
             package.loaded.HandlerSearch = healthy
-            local attempts = failingOnce("HandlerBrushMasks", "HandlerBrushMasks.lua:7: broken",
-                { createBrushMask = function() return {} end, addBrushStrokes = function() return {} end })
+            local attempts = failingOnce(
+                "HandlerBrushMasks",
+                "HandlerBrushMasks.lua:7: broken",
+                { createBrushMask = function() return {} end, addBrushStrokes = function() return {} end }
+            )
             loadPluginInit()
             startFromPanel()
 
@@ -377,15 +409,34 @@ describe("PluginInfoProvider server task", function()
     it("commits Develop's pending edit before the handler of every action but ping and the thumbnail reads", function()
         local events = {}
         local binds, _, state = serving({ develop = events })
-        package.loaded.HandlerSearch = { searchPhotos = function() events[#events + 1] = "search" return {} end }
+        package.loaded.HandlerSearch = {
+            searchPhotos = function()
+                events[#events + 1] = "search"
+                return {}
+            end,
+        }
         package.loaded.HandlerPreview = {
-            renderPreview = function() events[#events + 1] = "preview" return {} end,
-            renderDuplicatePreview = function() events[#events + 1] = "duplicate preview" return {} end,
+            renderPreview = function()
+                events[#events + 1] = "preview"
+                return {}
+            end,
+            renderDuplicatePreview = function()
+                events[#events + 1] = "duplicate preview"
+                return {}
+            end,
         }
 
         for _, action in ipairs({ "search_photos", "ping", "render_preview", "render_duplicate_preview" }) do
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"' .. action .. '","action":"'
-                .. action .. '"}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"'
+                    .. state.token
+                    .. '","id":"'
+                    .. action
+                    .. '","action":"'
+                    .. action
+                    .. '"}'
+            )
         end
 
         assert.are.same({ "commit true", "search", "preview", "duplicate preview" }, events)
@@ -394,7 +445,11 @@ describe("PluginInfoProvider server task", function()
     describe("progress", function()
         it("drops a progress event at once while the response socket is down, and still answers", function()
             local sleeps, reporting = 0, false
-            local binds, sends, state = serving({ onSleep = function() if reporting then sleeps = sleeps + 1 end end })
+            local binds, sends, state = serving({
+                onSleep = function()
+                    if reporting then sleeps = sleeps + 1 end
+                end,
+            })
             package.loaded.HandlerSearch = {
                 searchPhotos = function(_, context)
                     state.sendConnected = false
@@ -406,10 +461,15 @@ describe("PluginInfoProvider server task", function()
                 end,
             }
 
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p1","action":"search_photos","reportProgress":true}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"'
+                    .. state.token
+                    .. '","id":"p1","action":"search_photos","reportProgress":true}'
+            )
 
             assert.are.equal(0, sleeps)
-            assert.are.same({ done = true }, require('JSON'):decode(sends[#sends]).result.data)
+            assert.are.same({ done = true }, require("JSON"):decode(sends[#sends]).result.data)
         end)
     end)
 
@@ -426,7 +486,7 @@ describe("PluginInfoProvider server task", function()
             assert.is_not_nil(sends[1])
             assert.is_nil(sends[2])
             assert.is_not_nil(sends[1]:find('"id":"req_1"', 1, true))
-            assert.is_not_nil(sends[1]:find('Malformed request', 1, true))
+            assert.is_not_nil(sends[1]:find("Malformed request", 1, true))
         end)
 
         it("answers a well-formed request with a wrong token", function()
@@ -436,7 +496,7 @@ describe("PluginInfoProvider server task", function()
 
             assert.is_not_nil(sends[1])
             assert.is_not_nil(sends[1]:find('"id":"req_1"', 1, true))
-            assert.is_not_nil(sends[1]:find('token does not match', 1, true))
+            assert.is_not_nil(sends[1]:find("token does not match", 1, true))
         end)
 
         it("stays silent when the salvaged token does not match", function()
@@ -462,30 +522,50 @@ describe("PluginInfoProvider server task", function()
             package.loaded.HandlerSearch = {
                 searchPhotos = function() error(message, level) end,
             }
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"e1","action":"search_photos"}')
-            return require('JSON'):decode(sends[1]).error
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"e1","action":"search_photos"}'
+            )
+            return require("JSON"):decode(sends[1]).error
         end
 
-        it("removes only the leading Lua position from a raised handler error", function()
-            assert.are.equal("photo_ids is required", dispatchError("photo_ids is required", 1))
-        end)
+        it(
+            "removes only the leading Lua position from a raised handler error",
+            function() assert.are.equal("photo_ids is required", dispatchError("photo_ids is required", 1)) end
+        )
 
         it("removes abbreviated Lua source paths containing spaces", function()
             local compile = loadstring or load
-            local handler = assert(compile('error("photo_ids is required")',
-                "@/Users/person/Documents/Lightroom Plug-ins/LightroomAgent.lrplugin/HandlerOrganization.lua"))
+            local handler = assert(
+                compile(
+                    'error("photo_ids is required")',
+                    "@/Users/person/Documents/Lightroom Plug-ins/LightroomAgent.lrplugin/HandlerOrganization.lua"
+                )
+            )
             local _, message = pcall(handler)
             assert.is_not_nil(message:match("^%.%.%."))
             assert.are.equal("photo_ids is required", dispatchError(message, 0))
         end)
 
-        it("removes the position Lightroom gives a plug-in chunk", function()
-            assert.are.equal("Include every virtual copy when removing its master",
-                dispatchError('[string "HandlerRemoveFromCatalog.lua"]:144: Include every virtual copy when removing its master', 0))
-        end)
+        it(
+            "removes the position Lightroom gives a plug-in chunk",
+            function()
+                assert.are.equal(
+                    "Include every virtual copy when removing its master",
+                    dispatchError(
+                        '[string "HandlerRemoveFromCatalog.lua"]:144: Include every virtual copy when removing its master',
+                        0
+                    )
+                )
+            end
+        )
 
         it("keeps plain messages and embedded Lua file names unchanged", function()
-            for _, message in ipairs({ "photo_ids is required", "Cannot read settings.lua:42: invalid file", "file.jpg:42: missing" }) do
+            for _, message in ipairs({
+                "photo_ids is required",
+                "Cannot read settings.lua:42: invalid file",
+                "file.jpg:42: missing",
+            }) do
                 assert.are.equal(message, dispatchError(message, 0))
             end
         end)
@@ -494,13 +574,20 @@ describe("PluginInfoProvider server task", function()
             local binds, sends, state = serving()
             local received
             package.loaded.HandlerRawDevelopSettings = {
-                get = function(params) received = params; return { photos = { { photo_id = "7", keys = {} } } } end,
+                get = function(params)
+                    received = params
+                    return { photos = { { photo_id = "7", keys = {} } } }
+                end,
             }
 
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token
-                .. '","id":"r1","action":"get_develop_settings","params":{"photo_ids":["7"]}}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"'
+                    .. state.token
+                    .. '","id":"r1","action":"get_develop_settings","params":{"photo_ids":["7"]}}'
+            )
 
-            local reply = require('JSON'):decode(sends[1])
+            local reply = require("JSON"):decode(sends[1])
             assert.is_nil(reply.error)
             assert.are.equal("7", reply.result.data.photos[1].photo_id)
             assert.are.same({ "7" }, received.photo_ids)
@@ -510,13 +597,20 @@ describe("PluginInfoProvider server task", function()
             local binds, sends, state = serving()
             local received
             package.loaded.HandlerMaskAdmission = {
-                get = function(params) received = params; return { admitted = false } end,
+                get = function(params)
+                    received = params
+                    return { admitted = false }
+                end,
             }
 
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token
-                .. '","id":"r1","action":"get_mask_write_admission","params":{"photo_id":"7"}}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"'
+                    .. state.token
+                    .. '","id":"r1","action":"get_mask_write_admission","params":{"photo_id":"7"}}'
+            )
 
-            local reply = require('JSON'):decode(sends[1])
+            local reply = require("JSON"):decode(sends[1])
             assert.is_nil(reply.error)
             assert.is_false(reply.result.data.admitted)
             assert.are.equal("7", received.photo_id)
@@ -529,35 +623,45 @@ describe("PluginInfoProvider server task", function()
                 searchPhotos = function(_, context)
                     seen.left = context:timeLeft()
                     seen.before = context:isCanceled()
-                    binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token
-                        .. '","action":"cancel","params":{"request_id":"c1"}}')
+                    binds[1].onMessage(
+                        nil,
+                        '{"budget_ms":30000,"hello":"'
+                            .. state.token
+                            .. '","action":"cancel","params":{"request_id":"c1"}}'
+                    )
                     seen.after = context:isCanceled()
                     return {}
                 end,
             }
 
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token
-                .. '","id":"c1","action":"search_photos"}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"c1","action":"search_photos"}'
+            )
 
             assert.are.same({ left = 30, before = false, after = true }, seen)
         end)
 
         it("sends a handler's parts as the result and wraps a plain return as data", function()
             local binds, sends, state = serving()
-            local Reply = require 'Reply'
+            local Reply = require "Reply"
             package.loaded.HandlerSearch = {
                 searchPhotos = function() return { photos = {} } end,
             }
             package.loaded.HandlerCollections = {
-                listCollections = function()
-                    return Reply.parts({ data = { collections = {} }, not_found = { "x" } })
-                end,
+                listCollections = function() return Reply.parts({ data = { collections = {} }, not_found = { "x" } }) end,
             }
 
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p1","action":"search_photos"}')
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p2","action":"list_collections"}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p1","action":"search_photos"}'
+            )
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"p2","action":"list_collections"}'
+            )
 
-            local JSON = require 'JSON'
+            local JSON = require "JSON"
             assert.are.same({ data = { photos = {} } }, JSON:decode(sends[1]).result)
             assert.are.same({ data = { collections = {} }, not_found = { "x" } }, JSON:decode(sends[2]).result)
         end)
@@ -575,10 +679,16 @@ describe("PluginInfoProvider server task", function()
 
         local function answers(handlersFrom)
             local binds, sends, state = serving()
-            package.loaded.HandlerOrganization = handlersFrom(require 'Reply', require 'CatalogWrite')
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"r1","action":"set_rating_and_flag"}')
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"r2","action":"set_color_label"}')
-            local JSON = require 'JSON'
+            package.loaded.HandlerOrganization = handlersFrom(require "Reply", require "CatalogWrite")
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"r1","action":"set_rating_and_flag"}'
+            )
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"r2","action":"set_color_label"}'
+            )
+            local JSON = require "JSON"
             return JSON:decode(sends[1]), JSON:decode(sends[2])
         end
 
@@ -607,13 +717,18 @@ describe("PluginInfoProvider server task", function()
                     end,
                 }
             end)
-            local CatalogWrite = require 'CatalogWrite'
+            local CatalogWrite = require "CatalogWrite"
 
-            assert.are.same({ "the rating did not read back; written before this stopped: Set Rating", "unknown" },
-                { refused.error, refused.effect })
-            assert.are.same({ "The catalog stayed busy with another write for " .. CatalogWrite.WAIT_SECONDS
-                .. " s, so Lightroom did not run Set Keywords; written before this stopped: Create Keywords", "unknown" },
-                { failed.error, failed.effect })
+            assert.are.same(
+                { "the rating did not read back; written before this stopped: Set Rating", "unknown" },
+                { refused.error, refused.effect }
+            )
+            assert.are.same({
+                "The catalog stayed busy with another write for "
+                    .. CatalogWrite.WAIT_SECONDS
+                    .. " s, so Lightroom did not run Set Keywords; written before this stopped: Create Keywords",
+                "unknown",
+            }, { failed.error, failed.effect })
         end)
 
         it("answers unknown rather than not_found when a photo goes missing after a write", function()
@@ -627,25 +742,32 @@ describe("PluginInfoProvider server task", function()
                 }
             end)
 
-            assert.are.same({ "Photo not found: 404; written before this stopped: Set Rating", "unknown" },
-                { missing.error, missing.effect })
+            assert.are.same(
+                { "Photo not found: 404; written before this stopped: Set Rating", "unknown" },
+                { missing.error, missing.effect }
+            )
         end)
 
         it("answers a photo a handler could not find with not_found", function()
             local binds, sends, state = serving()
-            local Reply = require 'Reply'
+            local Reply = require "Reply"
             package.loaded.HandlerMasks = { listMasks = function(params) Reply.notFound(params.photo_id) end }
 
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"n1","action":"list_masks","params":{"photo_id":404}}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"'
+                    .. state.token
+                    .. '","id":"n1","action":"list_masks","params":{"photo_id":404}}'
+            )
 
-            local reply = require('JSON'):decode(sends[1])
+            local reply = require("JSON"):decode(sends[1])
             assert.is_nil(reply.error)
             assert.are.same({ not_found = { 404 } }, reply.result)
         end)
 
         it("adds the request's warnings to the parts of a result and to the text of an error", function()
             local binds, sends, state = serving()
-            local Reply = require 'Reply'
+            local Reply = require "Reply"
             package.loaded.HandlerOrganization = {
                 setRatingAndFlag = function(_, context)
                     context:warn("view not restored")
@@ -653,19 +775,32 @@ describe("PluginInfoProvider server task", function()
                 end,
                 setColorLabel = function(_, context)
                     context:warn("view not restored")
-                    Reply.refuse("The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Color Label")
+                    Reply.refuse(
+                        "The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Color Label"
+                    )
                 end,
             }
 
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"w1","action":"set_rating_and_flag"}')
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"w2","action":"set_color_label"}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"w1","action":"set_rating_and_flag"}'
+            )
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"w2","action":"set_color_label"}'
+            )
 
-            local JSON = require 'JSON'
-            assert.are.same({ data = { done = true }, warnings = { "own warning", "view not restored" } },
-                JSON:decode(sends[1]).result)
+            local JSON = require "JSON"
+            assert.are.same(
+                { data = { done = true }, warnings = { "own warning", "view not restored" } },
+                JSON:decode(sends[1]).result
+            )
             local refused = JSON:decode(sends[2])
-            assert.are.same({ "The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Color Label"
-                .. " Warnings: view not restored", "none" }, { refused.error, refused.effect })
+            assert.are.same({
+                "The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Color Label"
+                    .. " Warnings: view not restored",
+                "none",
+            }, { refused.error, refused.effect })
         end)
 
         it("answers with an error for the request when its result cannot be encoded", function()
@@ -674,10 +809,13 @@ describe("PluginInfoProvider server task", function()
                 searchPhotos = function() return { score = 0 / 0 } end,
             }
 
-            binds[1].onMessage(nil, '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"e2","action":"search_photos"}')
+            binds[1].onMessage(
+                nil,
+                '{"budget_ms":30000,"hello":"' .. state.token .. '","id":"e2","action":"search_photos"}'
+            )
 
             assert.are.equal(1, #sends)
-            local reply = require('JSON'):decode(sends[1])
+            local reply = require("JSON"):decode(sends[1])
             assert.are.equal("e2", reply.id)
             assert.is_nil(reply.result)
             assert.truthy(reply.error:find("could not be encoded", 1, true))
@@ -771,7 +909,10 @@ describe("PluginInfoProvider server task", function()
     local function runTicks(opts, onTick, lastTick)
         local binds, ops, cleanups, ticks = {}, {}, {}, 0
         installStubs(nil, nil, {
-            runTask = true, cleanups = cleanups, capturedBinds = binds, socketOps = ops,
+            runTask = true,
+            cleanups = cleanups,
+            capturedBinds = binds,
+            socketOps = ops,
             reconnectError = opts.reconnectError,
             onSleep = function(state)
                 ticks = ticks + 1
@@ -851,56 +992,57 @@ describe("PluginInfoProvider server task", function()
     end)
 end)
 
-
 describe("stale-connection follow-up fixes (PR #151 re-review)", function()
     local realOpen
     before_each(function()
         _G.LightroomAgent_State = nil
         realOpen = io.open
         io.open = function(path, mode, ...)
-            if mode and mode:find("w", 1, true) then
-                return { write = function() end, close = function() end }
-            end
+            if mode and mode:find("w", 1, true) then return { write = function() end, close = function() end } end
             return realOpen(path, mode, ...)
         end
     end)
-    after_each(function()
-        io.open = realOpen
-    end)
+    after_each(function() io.open = realOpen end)
 
-    it("clears a stale lastRequestTime on a fresh REQUEST connect so it doesn't leak into the new idle clock", function()
-        local binds = {}
-        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds })
-        local mod = loadInfoProvider()
+    it(
+        "clears a stale lastRequestTime on a fresh REQUEST connect so it doesn't leak into the new idle clock",
+        function()
+            local binds = {}
+            installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds })
+            local mod = loadInfoProvider()
 
-        mod.startServer()
-        -- Simulate a prior session's activity timestamp surviving past a
-        -- manual Stop/Start (or any reconnect) that happens long after it
-        -- sat idle. Without clearing it here, the monitor loop's very next
-        -- tick would see a huge idle value and restart immediately.
-        _G.LightroomAgent_State.lastRequestTime = os.time() - 999
-        binds[1].onConnected()
+            mod.startServer()
+            -- Simulate a prior session's activity timestamp surviving past a
+            -- manual Stop/Start (or any reconnect) that happens long after it
+            -- sat idle. Without clearing it here, the monitor loop's very next
+            -- tick would see a huge idle value and restart immediately.
+            _G.LightroomAgent_State.lastRequestTime = os.time() - 999
+            binds[1].onConnected()
 
-        assert.is_nil(_G.LightroomAgent_State.lastRequestTime)
-        assert.is_not_nil(_G.LightroomAgent_State.lastConnectedTime)
-    end)
+            assert.is_nil(_G.LightroomAgent_State.lastRequestTime)
+            assert.is_not_nil(_G.LightroomAgent_State.lastConnectedTime)
+        end
+    )
 
-    it("keeps a request counted in-flight until sendResponse actually completes, not just until the handler returns", function()
-        local binds, _, state = serving()
-        state.responseSocket = {
-            send = function()
-                -- If inFlightRequests were decremented right after the
-                -- handler returns (the pre-fix behavior), the monitor loop
-                -- could see 0 in-flight and restart the server while this
-                -- send is still happening — defeating the blast-radius fix.
-                assert.are.equal(1, state.inFlightRequests)
-            end,
-        }
+    it(
+        "keeps a request counted in-flight until sendResponse actually completes, not just until the handler returns",
+        function()
+            local binds, _, state = serving()
+            state.responseSocket = {
+                send = function()
+                    -- If inFlightRequests were decremented right after the
+                    -- handler returns (the pre-fix behavior), the monitor loop
+                    -- could see 0 in-flight and restart the server while this
+                    -- send is still happening — defeating the blast-radius fix.
+                    assert.are.equal(1, state.inFlightRequests)
+                end,
+            }
 
-        binds[1].onMessage(nil, '{"budget_ms":30000,"id":1,"action":"ping","hello":"' .. state.token .. '"}')
+            binds[1].onMessage(nil, '{"budget_ms":30000,"id":1,"action":"ping","hello":"' .. state.token .. '"}')
 
-        assert.are.equal(0, state.inFlightRequests)
-    end)
+            assert.are.equal(0, state.inFlightRequests)
+        end
+    )
 end)
 
 describe("superseded instance after Reload Plug-in (issue #225)", function()
@@ -925,9 +1067,7 @@ describe("superseded instance after Reload Plug-in (issue #225)", function()
             return realOpen(path, mode, ...)
         end
     end)
-    after_each(function()
-        io.open = realOpen
-    end)
+    after_each(function() io.open = realOpen end)
 
     it("treats only a readable, different token as proof of a newer instance", function()
         local mod = loadInfoProvider()
@@ -991,7 +1131,7 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
 
     it("ping handler answers pong with the plug-in's version and build", function()
         local mod = loadInfoProvider()
-        local Contract = require('Contract')
+        local Contract = require("Contract")
         assert.are.same({ pong = true, version = Contract.VERSION, build = Contract.BUILD }, mod.handlePing({}))
         assert.is_string(Contract.VERSION)
         assert.is_string(Contract.BUILD)
@@ -1023,7 +1163,11 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
         it("does not restart while idle is within the soft threshold", function()
             local mod = loadInfoProvider()
             local restart, suffix = mod.shouldRestartForStaleConnection(
-                89, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+                89,
+                0,
+                mod.STALE_RECONNECT_SECONDS,
+                mod.STALE_RESTART_HARD_CAP_SECONDS
+            )
             assert.is_false(restart)
             assert.are.equal("", suffix)
         end)
@@ -1031,23 +1175,38 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
         it("restarts once idle passes the soft threshold with nothing in flight", function()
             local mod = loadInfoProvider()
             local restart, suffix = mod.shouldRestartForStaleConnection(
-                91, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+                91,
+                0,
+                mod.STALE_RECONNECT_SECONDS,
+                mod.STALE_RESTART_HARD_CAP_SECONDS
+            )
             assert.is_true(restart)
             assert.are.equal("", suffix)
         end)
 
-        it("defers the restart past the soft threshold while a request is genuinely in flight (blast radius fix)", function()
-            local mod = loadInfoProvider()
-            local restart, suffix = mod.shouldRestartForStaleConnection(
-                91, 1, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
-            assert.is_false(restart)
-            assert.are.equal("", suffix)
-        end)
+        it(
+            "defers the restart past the soft threshold while a request is genuinely in flight (blast radius fix)",
+            function()
+                local mod = loadInfoProvider()
+                local restart, suffix = mod.shouldRestartForStaleConnection(
+                    91,
+                    1,
+                    mod.STALE_RECONNECT_SECONDS,
+                    mod.STALE_RESTART_HARD_CAP_SECONDS
+                )
+                assert.is_false(restart)
+                assert.are.equal("", suffix)
+            end
+        )
 
         it("still restarts past the hard cap even if a request is in flight, to bound the wait", function()
             local mod = loadInfoProvider()
             local restart, suffix = mod.shouldRestartForStaleConnection(
-                121, 1, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+                121,
+                1,
+                mod.STALE_RECONNECT_SECONDS,
+                mod.STALE_RESTART_HARD_CAP_SECONDS
+            )
             assert.is_true(restart)
             assert.are.equal(" [hard cap, request still in flight]", suffix)
         end)
@@ -1055,7 +1214,11 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
         it("treats exactly-at-threshold idle as not yet past it (strict greater-than)", function()
             local mod = loadInfoProvider()
             local restart = mod.shouldRestartForStaleConnection(
-                90, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+                90,
+                0,
+                mod.STALE_RECONNECT_SECONDS,
+                mod.STALE_RESTART_HARD_CAP_SECONDS
+            )
             assert.is_false(restart)
         end)
     end)
@@ -1069,12 +1232,8 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         logOpens = 0
         realOpen = io.open
         io.open = function(path, mode, ...)
-            if path and path:find("LightroomAgent.log", 1, true) then
-                logOpens = logOpens + 1
-            end
-            if mode and mode:find("w", 1, true) then
-                return { write = function() end, close = function() end }
-            end
+            if path and path:find("LightroomAgent.log", 1, true) then logOpens = logOpens + 1 end
+            if mode and mode:find("w", 1, true) then return { write = function() end, close = function() end } end
             return realOpen(path, mode, ...)
         end
     end)
@@ -1143,7 +1302,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         state.requestNeedsRebind = true
 
         package.loaded.PluginShutdown = nil
-        local shutdownModule = require 'PluginShutdown'
+        local shutdownModule = require "PluginShutdown"
         local done = false
         shutdownModule.LrShutdownFunction(function() done = true end)
 
@@ -1158,7 +1317,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         loadInfoProvider()
 
         package.loaded.PluginShutdown = nil
-        local shutdownModule = require 'PluginShutdown'
+        local shutdownModule = require "PluginShutdown"
 
         assert.has_no.errors(function() shutdownModule.LrShutdownFunction() end)
     end)
@@ -1168,7 +1327,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         package.loaded.PluginShutdown = nil
         package.loaded.PluginInfoProvider = nil
 
-        local shutdownModule = require 'PluginShutdown'
+        local shutdownModule = require "PluginShutdown"
         local done = false
         shutdownModule.LrShutdownFunction(function() done = true end)
 
@@ -1353,5 +1512,4 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         assert.is_false(_G.LightroomAgent_State.shuttingDown)
         assert.is_not_nil(_G.LightroomAgent_State.token)
     end)
-
 end)

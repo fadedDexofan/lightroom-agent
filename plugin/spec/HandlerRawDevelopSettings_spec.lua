@@ -1,4 +1,4 @@
-local helper = require 'spec_helper'
+local helper = require "spec_helper"
 
 local MASKS = {
     {
@@ -46,7 +46,7 @@ local function setup(settingsById)
     })
     package.loaded.HandlerRawDevelopSettings = nil
     package.loaded.JSON = nil
-    return require 'HandlerRawDevelopSettings', inside
+    return require "HandlerRawDevelopSettings", inside
 end
 
 describe("HandlerRawDevelopSettings.get", function()
@@ -56,16 +56,67 @@ describe("HandlerRawDevelopSettings.get", function()
         local reply = Handler.get({ photo_ids = { "1", "2", "3" }, keys = { "Exposure2012" } }, helper.requestContext())
 
         assert.are.same({ "1", "3" }, { reply.data.photos[1].photo_id, reply.data.photos[2].photo_id })
-        assert.are.same({ { photo_id = "2", reason = "Lightroom returned no saved settings for photo 2" } }, reply.failed)
+        assert.are.same(
+            { { photo_id = "2", reason = "Lightroom returned no saved settings for photo 2" } },
+            reply.failed
+        )
     end)
 
     it("returns a point curve from its Extended field first, and the Extended field itself when named", function()
-        local long = { 0, 0, 13, 15, 27, 31, 40, 46, 54, 61, 67, 76, 81, 91, 94, 105, 107, 119, 121, 133, 134, 146, 148, 160, 161, 172, 174, 186, 188, 199, 201, 212, 214, 226, 228, 238, 241, 249, 255, 255 }
-        local Handler = setup({ ["7"] = { ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 }, ExtendedToneCurvePV2012 = long,
-            ToneCurvePV2012Red = { 0, 0, 255, 250 } } })
+        local long = {
+            0,
+            0,
+            13,
+            15,
+            27,
+            31,
+            40,
+            46,
+            54,
+            61,
+            67,
+            76,
+            81,
+            91,
+            94,
+            105,
+            107,
+            119,
+            121,
+            133,
+            134,
+            146,
+            148,
+            160,
+            161,
+            172,
+            174,
+            186,
+            188,
+            199,
+            201,
+            212,
+            214,
+            226,
+            228,
+            238,
+            241,
+            249,
+            255,
+            255,
+        }
+        local Handler = setup({
+            ["7"] = {
+                ToneCurvePV2012 = { 0, 0, 128, 120, 255, 255 },
+                ExtendedToneCurvePV2012 = long,
+                ToneCurvePV2012Red = { 0, 0, 255, 250 },
+            },
+        })
 
-        local reply = Handler.get({ photo_ids = { "7" }, keys = { "ToneCurvePV2012", "ToneCurvePV2012Red", "ExtendedToneCurvePV2012" } },
-            helper.requestContext())
+        local reply = Handler.get(
+            { photo_ids = { "7" }, keys = { "ToneCurvePV2012", "ToneCurvePV2012Red", "ExtendedToneCurvePV2012" } },
+            helper.requestContext()
+        )
 
         local settings = reply.data.photos[1].settings
         assert.are.same(long, settings.ToneCurvePV2012)
@@ -73,21 +124,34 @@ describe("HandlerRawDevelopSettings.get", function()
         assert.are.same(long, settings.ExtendedToneCurvePV2012)
     end)
 
-    it("lists one photo's top-level keys with their type and table size, without values, inside the read gate", function()
-        local Handler, inside = setup({ ["7"] = {
-            ProcessVersion = "15.4", Exposure2012 = 0.5, AutoGrayscaleMix = true, MaskGroupBasedCorrections = MASKS,
-        } })
+    it(
+        "lists one photo's top-level keys with their type and table size, without values, inside the read gate",
+        function()
+            local Handler, inside = setup({
+                ["7"] = {
+                    ProcessVersion = "15.4",
+                    Exposure2012 = 0.5,
+                    AutoGrayscaleMix = true,
+                    MaskGroupBasedCorrections = MASKS,
+                },
+            })
 
-        local reply = Handler.get({ photo_ids = { "7" } }, helper.requestContext())
+            local reply = Handler.get({ photo_ids = { "7" } }, helper.requestContext())
 
-        assert.are.same({ { photo_id = "7", keys = {
-            { name = "AutoGrayscaleMix", type = "boolean" },
-            { name = "Exposure2012", type = "number" },
-            { name = "MaskGroupBasedCorrections", type = "table", count = 1 },
-            { name = "ProcessVersion", type = "string" },
-        } } }, reply.data.photos)
-        assert.are.same({ true }, inside)
-    end)
+            assert.are.same({
+                {
+                    photo_id = "7",
+                    keys = {
+                        { name = "AutoGrayscaleMix", type = "boolean" },
+                        { name = "Exposure2012", type = "number" },
+                        { name = "MaskGroupBasedCorrections", type = "table", count = 1 },
+                        { name = "ProcessVersion", type = "string" },
+                    },
+                },
+            }, reply.data.photos)
+            assert.are.same({ true }, inside)
+        end
+    )
 
     it("returns each photo's requested keys unrenamed and lists per photo the names it does not carry", function()
         local Handler = setup({
@@ -95,8 +159,10 @@ describe("HandlerRawDevelopSettings.get", function()
             ["8"] = { ProcessVersion = "15.4", DepthMapInfo = { 1 } },
         })
 
-        local reply = Handler.get({ photo_ids = { "7", "/8.cr2", "404" },
-            keys = { "ProcessVersion", "MaskGroupBasedCorrections", "DepthMapInfo" } }, helper.requestContext())
+        local reply = Handler.get({
+            photo_ids = { "7", "/8.cr2", "404" },
+            keys = { "ProcessVersion", "MaskGroupBasedCorrections", "DepthMapInfo" },
+        }, helper.requestContext())
 
         local first, second = reply.data.photos[1], reply.data.photos[2]
         assert.are.equal("7", first.photo_id)
@@ -106,35 +172,43 @@ describe("HandlerRawDevelopSettings.get", function()
         assert.are.same({ 1 }, second.settings.DepthMapInfo)
         assert.are.same({ "MaskGroupBasedCorrections" }, second.absent)
         assert.are.same({ "404" }, reply.not_found)
-        local JSON = require 'JSON'
+        local JSON = require "JSON"
         assert.are.same(MASKS, JSON:decode(JSON:encode(reply.data)).photos[1].settings.MaskGroupBasedCorrections)
     end)
 
     it("marks values JSON cannot carry instead of failing or dropping them", function()
         local fn = function() end
-        local Handler = setup({ ["7"] = {
-            Gapped = { 1, nil, 3 },
-            Mixed = { 10, label = "x" },
-            NotANumber = 0 / 0,
-            Infinite = { level = math.huge },
-            Callable = fn,
-        } })
+        local Handler = setup({
+            ["7"] = {
+                Gapped = { 1, nil, 3 },
+                Mixed = { 10, label = "x" },
+                NotANumber = 0 / 0,
+                Infinite = { level = math.huge },
+                Callable = fn,
+            },
+        })
 
-        local settings = Handler.get({ photo_ids = { "7" }, keys = { "Gapped", "Mixed", "NotANumber", "Infinite", "Callable" } },
-            helper.requestContext()).data.photos[1].settings
+        local settings = Handler.get(
+            { photo_ids = { "7" }, keys = { "Gapped", "Mixed", "NotANumber", "Infinite", "Callable" } },
+            helper.requestContext()
+        ).data.photos[1].settings
 
         assert.are.same({ ["$lua"] = "table", entries = { { 1, 1 }, { 3, 3 } } }, settings.Gapped)
         assert.are.same({ ["$lua"] = "table", entries = { { 1, 10 }, { "label", "x" } } }, settings.Mixed)
         assert.are.equal("number", settings.NotANumber["$lua"])
         assert.are.same({ level = { ["$lua"] = "number", value = tostring(math.huge) } }, settings.Infinite)
         assert.are.same({ ["$lua"] = "function", value = tostring(fn) }, settings.Callable)
-        assert.is_true(pcall(function() return require('JSON'):encode(settings) end))
+        assert.is_true(pcall(function() return require("JSON"):encode(settings) end))
     end)
 
     it("leaves the photos that no longer fit the reply size remaining, and fails a photo too big alone", function()
         local half = string.rep("x", 600000)
-        local Handler = setup({ ["7"] = { Big = half }, ["8"] = { Big = half }, ["9"] = { Big = "small" },
-            ["10"] = { Big = string.rep("x", 1000001) } })
+        local Handler = setup({
+            ["7"] = { Big = half },
+            ["8"] = { Big = half },
+            ["9"] = { Big = "small" },
+            ["10"] = { Big = string.rep("x", 1000001) },
+        })
 
         local reply = Handler.get({ photo_ids = { "7", "8", "9" }, keys = { "Big" } }, helper.requestContext())
         assert.are.same({ "7" }, { reply.data.photos[1].photo_id })
@@ -149,8 +223,10 @@ describe("HandlerRawDevelopSettings.get", function()
 
     it("leaves the photos past the request's time remaining", function()
         local Handler = setup({ ["7"] = { A = 1 }, ["8"] = { A = 2 } })
-        local reply = Handler.get({ photo_ids = { "7", "8" }, keys = { "A" } },
-            helper.requestContext(nil, { isCanceled = function() return true end }))
+        local reply = Handler.get(
+            { photo_ids = { "7", "8" }, keys = { "A" } },
+            helper.requestContext(nil, { isCanceled = function() return true end })
+        )
         assert.is_nil(reply.data)
         assert.are.same({ "7", "8" }, reply.remaining)
     end)
@@ -160,14 +236,18 @@ describe("HandlerRawDevelopSettings.byInput", function()
     it("answers one row per input in order: aliases share their photo's values, then not found", function()
         local Handler = setup({ ["7"] = { Exposure2012 = 0.5, Contrast2012 = 10 } })
 
-        local reply = Handler.byInput({ photo_ids = { "7", "/7.cr2", "404" }, keys = { "Exposure2012" } },
-            helper.requestContext())
+        local reply = Handler.byInput(
+            { photo_ids = { "7", "/7.cr2", "404" }, keys = { "Exposure2012" } },
+            helper.requestContext()
+        )
 
-        assert.are.same({ rows = {
-            { photo_id = "7", settings = { Exposure2012 = 0.5 } },
-            { photo_id = "7", settings = { Exposure2012 = 0.5 } },
-            { not_found = true },
-        } }, reply)
+        assert.are.same({
+            rows = {
+                { photo_id = "7", settings = { Exposure2012 = 0.5 } },
+                { photo_id = "7", settings = { Exposure2012 = 0.5 } },
+                { not_found = true },
+            },
+        }, reply)
     end)
 
     it("fails a row whose read returns nothing and lists the photos past the budget as remaining", function()
@@ -176,11 +256,13 @@ describe("HandlerRawDevelopSettings.byInput", function()
 
         local reply = Handler.byInput({ photo_ids = { "1", "2", "3", "/3.cr2" }, keys = { "Exposure2012" } }, context)
 
-        assert.are.same({ rows = {
-            { photo_id = "1", failed = "Lightroom returned no saved settings for photo 1" },
-            { photo_id = "2", settings = { Exposure2012 = 2 } },
-            { remaining = true },
-            { remaining = true },
-        } }, reply)
+        assert.are.same({
+            rows = {
+                { photo_id = "1", failed = "Lightroom returned no saved settings for photo 1" },
+                { photo_id = "2", settings = { Exposure2012 = 2 } },
+                { remaining = true },
+                { remaining = true },
+            },
+        }, reply)
     end)
 end)

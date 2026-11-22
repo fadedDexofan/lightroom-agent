@@ -14,8 +14,13 @@ local function formOf(semiAlong, semiAcross, degrees, centerX, centerY)
 end
 
 function RadialEllipse.ofGeometry(geometry, aspect)
-    return formOf(geometry.width / 2 * aspect, geometry.height / 2, geometry.rotation,
-        geometry.center.x, geometry.center.y)
+    return formOf(
+        geometry.width / 2 * aspect,
+        geometry.height / 2,
+        geometry.rotation,
+        geometry.center.x,
+        geometry.center.y
+    )
 end
 
 function RadialEllipse.ofComponent(component, aspect)
@@ -23,8 +28,13 @@ function RadialEllipse.ofComponent(component, aspect)
     local boxHalfHeight = (component.Bottom - component.Top) / 2
     local radians = math.rad(component.Angle)
     local cosine, sine = math.cos(radians), math.sin(radians)
-    return formOf(boxHalfWidth * cosine + boxHalfHeight * sine, boxHalfHeight * cosine - boxHalfWidth * sine,
-        component.Angle, (component.Left + component.Right) / 2, (component.Top + component.Bottom) / 2)
+    return formOf(
+        boxHalfWidth * cosine + boxHalfHeight * sine,
+        boxHalfHeight * cosine - boxHalfWidth * sine,
+        component.Angle,
+        (component.Left + component.Right) / 2,
+        (component.Top + component.Bottom) / 2
+    )
 end
 
 function RadialEllipse.differenceBetween(left, right)
