@@ -441,6 +441,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
                 Contrast2012 = 12,
                 ToneCurvePV2012 = { 0, 0, 64, 58, 255, 255 },
                 CropTop = 0.1,
+                RedHue = 18,
             },
         })
         local _, Handler, state = setup({ photos = { photo } })
@@ -448,7 +449,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         local r = Handler.createDevelopPreset({
             photo_id = "7",
             preset_name = "John Warm v2",
-            settings = { "Contrast2012", "ToneCurvePV2012" },
+            settings = { "Contrast2012", "ToneCurvePV2012", "RedHue" },
         })
 
         assert.is_false(r.visible_in_develop)
@@ -460,6 +461,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
             Contrast2012 = 12,
             ToneCurvePV2012 = { 0, 0, 64, 58, 255, 255 },
             ExtendedToneCurvePV2012 = { 0, 0, 64, 58, 255, 255 },
+            RedHue = 18,
         }, state.pluginPresets[1]:getSetting())
     end)
 

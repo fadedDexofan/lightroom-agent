@@ -72,6 +72,14 @@ describe('reference style matching', function()
             ExtendedToneCurvePV2012 = { 0, 0, 255, 255 }, FixtureLook = 3 }, applied['2'])
     end)
 
+    it('transfers a calibration key and leaves a perspective offset, by the generated style flags', function()
+        reference:getDevelopSettings().RedHue = 20
+        reference:getDevelopSettings().PerspectiveX = 10
+        handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2' } })
+        assert.equals(20, applied['2'].RedHue)
+        assert.is_nil(applied['2'].PerspectiveX)
+    end)
+
     it('matches a target named twice once, with one snapshot and one result', function()
         local reply = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '2', 2 } })
         assert.same({ 'snapshot:2', 'apply:2' }, events)
