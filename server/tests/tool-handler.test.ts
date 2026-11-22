@@ -192,7 +192,7 @@ describe('time budget', () => {
   });
 
   it.each([
-    ['set_develop_settings', 'get_develop_settings', { photo_id: 914, settings: { GlowStyle: 2 } }],
+    ['set_develop_settings', 'read_settings_by_input', { photo_id: 914, settings: { GlowStyle: 2 } }],
     ['set_crop', 'plan_crop', { photo_id: 914, aspect: { width: 1, height: 1 } }],
   ])('hands the write of %s the budget left after its pre-read', async (tool, preRead, args) => {
     jest.useFakeTimers();
@@ -205,7 +205,7 @@ describe('time budget', () => {
         if (action === 'plan_crop') {
           return { id: '1', result: { data: { photo_id: '914', settings: { CropLeft: 0.1, CropTop: 0.1, CropRight: 0.9, CropBottom: 0.9, CropAngle: 0 }, rectangle: {}, angle: 0, size: {} } } };
         }
-        return { id: '1', result: { data: { photos: [{ photo_id: '914', settings: { Glow: 60 }, absent: [] }] } } };
+        return { id: '1', result: { data: { rows: [{ photo_id: '914', settings: { Glow: 60 } }] } } };
       } });
 
       expect(envelopeOf(await handler(tool, args)).outcome).toBe('done');
@@ -530,32 +530,71 @@ describe('set_develop_settings precision', () => {
   });
 });
 
+type StoredPhoto = Record<string, unknown> | 'unread' | 'remaining';
+
+function storedRead(stored: Record<string, StoredPhoto>, action: string, params: unknown): PluginResponse | undefined {
+  const { photo_ids: inputs, keys } = params as { photo_ids: (string | number)[]; keys: string[] };
+  const idOf = (input: string | number) => /^\/(\d+)\.arw$/.exec(String(input))?.[1] ?? String(input);
+  const valuesOf = (photo: Record<string, unknown>) => Object.fromEntries(keys.flatMap((key) => (key in photo ? [[key, photo[key]]] : [])));
+  if (action === 'read_settings_by_input') {
+    return { id: 'r', result: { data: { rows: inputs.map((input) => {
+      const id = idOf(input);
+      const photo = stored[id];
+      if (photo === undefined) return { not_found: true };
+      if (photo === 'remaining') return { remaining: true };
+      if (photo === 'unread') return { photo_id: id, failed: `Lightroom returned no saved settings for photo ${id}` };
+      return { photo_id: id, settings: valuesOf(photo) };
+    }) } } };
+  }
+  return undefined;
+}
+
 describe('set_develop_settings rules on stored values', () => {
   function photoWith(stored: Record<string, unknown>) {
     const calls: [string, unknown][] = [];
     const handler = makeHandler({ call: async (action, params) => {
       calls.push([action, params]);
-      if (action === 'get_develop_settings') {
-        const keys = (params as { keys: string[] }).keys;
-        const settings = Object.fromEntries(keys.flatMap((key) => (key in stored ? [[key, stored[key]]] : [])));
-        return { id: '1', result: { data: { photos: [{ photo_id: '914', settings, absent: [] }] } } };
-      }
-      return { id: '1', result: { data: { photo_id: '914' } } };
+      return storedRead({ 914: stored }, action, params) ?? { id: '1', result: { data: { photo_id: '914' } } };
     } });
     return { calls, write: (settings: Record<string, unknown>) => handler('set_develop_settings', { photo_id: 914, settings }) };
   }
+
+  it('answers an input that is not in the catalog not_found, reading it and writing nothing', async () => {
+    const calls: string[] = [];
+    const result = await makeHandler({ call: async (action, params) => {
+      calls.push(action);
+      return storedRead({}, action, params) ?? { id: '1', result: { data: {} } };
+    } })('set_develop_settings', { photo_id: 404, settings: { GlowStyle: 2 } });
+    expect(envelopeOf(result)).toMatchObject({ not_found: [404] });
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each<[string, StoredPhoto, Record<string, unknown>]>([
+    ['not read within the time budget is remaining', 'remaining', { remaining: ['/914.arw'] }],
+    ['whose read returned nothing is failed under the id it was read as', 'unread', { failed: [{
+      photo_id: '914', reason: 'its stored settings were not read: Lightroom returned no saved settings for photo 914; nothing was written',
+    }] }],
+  ])('answers an input whose stored settings were %s, writing nothing', async (_what, stored, parts) => {
+    const calls: string[] = [];
+    const result = await makeHandler({ call: async (action, params) => {
+      calls.push(action);
+      return storedRead({ 914: stored }, action, params) ?? { id: '1', result: { data: {} } };
+    } })('set_develop_settings', { photo_id: '/914.arw', settings: { GlowStyle: 2 } });
+    expect(envelopeOf(result)).toMatchObject(parts);
+    expect(calls).toEqual(['read_settings_by_input']);
+  });
 
   it('refuses a Glow style while the photo has no Glow, reading the stored amount first', async () => {
     const { calls, write } = photoWith({ Glow: 0 });
     const result = await write({ GlowStyle: 2 });
     expect(envelopeOf(result)).toEqual({ outcome: 'failed', error: expect.stringContaining('GlowStyle needs Glow above 0') });
-    expect(calls).toEqual([['get_develop_settings', { photo_ids: [914], keys: ['Glow'] }]]);
+    expect(calls).toEqual([['read_settings_by_input', { photo_ids: [914], keys: ['Glow'] }]]);
   });
 
   it('writes a Glow style when the stored amount or the same write gives Glow', async () => {
     const stored = photoWith({ Glow: 60 });
     expect(envelopeOf(await stored.write({ GlowStyle: 2 })).outcome).toBe('done');
-    expect(stored.calls.map(([action]) => action)).toEqual(['get_develop_settings', 'write_develop_settings']);
+    expect(stored.calls.map(([action]) => action)).toEqual(['read_settings_by_input', 'write_develop_settings']);
     const same = photoWith({ Glow: 0 });
     expect(envelopeOf(await same.write({ Glow: 40, GlowStyle: 3, GlowDirection: 90 })).outcome).toBe('done');
     expect(same.calls.map(([action]) => action)).toEqual(['write_develop_settings']);
@@ -564,7 +603,7 @@ describe('set_develop_settings rules on stored values', () => {
   it('refuses a Glow direction unless the style is directional', async () => {
     const { calls, write } = photoWith({ Glow: 60, GlowStyle: 1 });
     expect(envelopeOf(await write({ GlowDirection: 90 })).error).toContain('GlowDirection needs GlowStyle 3 (motion) or 4 (streak)');
-    expect(calls.map(([action]) => action)).toEqual(['get_develop_settings']);
+    expect(calls.map(([action]) => action)).toEqual(['read_settings_by_input']);
   });
 
   it.each([
@@ -591,10 +630,10 @@ describe('set_develop_settings rules on stored values', () => {
     const color = photoWith({ ConvertToGrayscale: false });
     expect(envelopeOf(await color.write({ GrayMixerRed: -40 })).error)
       .toContain('GrayMixer keys need a black and white photo');
-    expect(color.calls).toEqual([['get_develop_settings', { photo_ids: [914], keys: ['ConvertToGrayscale'] }]]);
+    expect(color.calls).toEqual([['read_settings_by_input', { photo_ids: [914], keys: ['ConvertToGrayscale'] }]]);
     const grey = photoWith({ ConvertToGrayscale: true });
     expect(envelopeOf(await grey.write({ GrayMixerRed: -40, GrayMixerBlue: 20 })).outcome).toBe('done');
-    expect(grey.calls.map(([action]) => action)).toEqual(['get_develop_settings', 'write_develop_settings']);
+    expect(grey.calls.map(([action]) => action)).toEqual(['read_settings_by_input', 'write_develop_settings']);
   });
 
   it('checks crop edges against the stored opposite edge', async () => {
@@ -623,7 +662,7 @@ describe('a read before the write that does not come back', () => {
     ['times out', () => { throw new PluginTimeoutError(30_000); }],
     ['answers an error', () => ({ id: '1', error: 'Lightroom is busy', effect: 'unknown' as const })],
   ])('answers failed, nothing written, when the pre-read %s', async (_case, failure) => {
-    const develop = lost('get_develop_settings', failure);
+    const develop = lost('read_settings_by_input', failure);
     const crop = lost('plan_crop', failure);
 
     for (const result of [
@@ -636,16 +675,12 @@ describe('a read before the write that does not come back', () => {
 });
 
 describe('set_develop_settings_batch', () => {
-  function batchWith(stored: Record<string, Record<string, unknown>>, write?: () => never) {
+  function batchWith(stored: Record<string, StoredPhoto>, write?: () => never) {
     const calls: [string, unknown][] = [];
     const handler = makeHandler({ call: async (action, params) => {
       calls.push([action, params]);
-      if (action === 'get_develop_settings') {
-        const { photo_ids, keys } = params as { photo_ids: number[]; keys: string[] };
-        return { id: '1', result: { data: { photos: photo_ids.map((id) => ({
-          photo_id: String(id), settings: Object.fromEntries(keys.flatMap((key) => (key in (stored[id] ?? {}) ? [[key, stored[id][key]]] : []))), absent: [],
-        })) } } };
-      }
+      const read = storedRead(stored, action, params);
+      if (read) return read;
       if (write) write();
       return { id: '1', result: { data: { results: [{ photo_id: '1', settings: {} }] } } };
     } });
@@ -664,7 +699,7 @@ describe('set_develop_settings_batch', () => {
   it('sends a photo refused on a rule against its stored values marked refused, so the plug-in still resolves every input', async () => {
     const { calls, run } = batchWith({ 1: { Glow: 0 }, 2: { Glow: 60 } });
     await run([{ photo_id: 1, settings: { GlowStyle: 2 } }, { photo_id: 2, settings: { GlowStyle: 2 } }]);
-    expect(calls[0]).toEqual(['get_develop_settings', { photo_ids: [1, 2], keys: ['Glow'] }]);
+    expect(calls[0]).toEqual(['read_settings_by_input', { photo_ids: [1, 2], keys: ['Glow'] }]);
     expect(calls[1]).toEqual(['write_develop_settings_batch', { photos: [
       { photo_id: 1, refused: expect.stringContaining('Refused before writing: GlowStyle needs Glow above 0') },
       { photo_id: 2, settings: { GlowStyle: 2 } },
@@ -688,6 +723,70 @@ describe('set_develop_settings_batch', () => {
     const envelope = envelopeOf(await run([{ photo_id: 1, settings: { GlowStyle: 2 } }, { photo_id: 2, settings: { GlowStyle: 2 } }]));
     expect(envelope.outcome).toBe(outcome);
     expect(envelope).toMatchObject(lists);
+  });
+
+  const STYLE = { GlowStyle: 2 };
+  const written = (calls: [string, unknown][]) => (calls.find(([action]) => action === 'write_develop_settings_batch')?.[1] as { photos: unknown[] } | undefined)?.photos;
+
+  it('judges each input on the stored values of the photo it names, an id and a path of one photo included', async () => {
+    const { calls, run } = batchWith({ 1: { Glow: 10 }, 2: { Glow: 0 }, 3: { Glow: 60 } });
+    await run([{ photo_id: 1, settings: STYLE }, { photo_id: '/1.arw', settings: STYLE }, { photo_id: 2, settings: STYLE }, { photo_id: 3, settings: STYLE }]);
+    expect(written(calls)).toEqual([
+      { photo_id: 1, settings: STYLE }, { photo_id: '/1.arw', settings: STYLE },
+      { photo_id: 2, refused: expect.stringContaining('GlowStyle needs Glow above 0') }, { photo_id: 3, settings: STYLE },
+    ]);
+  });
+
+  it('writes the other inputs when one input is not in the catalog, sending it for the plug-in to resolve', async () => {
+    const { calls, run } = batchWith({ 2: { Glow: 60 } });
+    await run([{ photo_id: 404, settings: STYLE }, { photo_id: 2, settings: { Exposure2012: 1 } }]);
+    expect(written(calls)).toEqual([
+      { photo_id: 404, refused: 'not found when its stored settings were read' }, { photo_id: 2, settings: { Exposure2012: 1 } },
+    ]);
+  });
+
+  it('holds back an input whose stored settings were not read in time and fails one whose read returned nothing', async () => {
+    const { calls, run } = batchWith({ 1: 'remaining', 2: 'unread', 3: { Glow: 60 } });
+    await run([{ photo_id: 1, settings: STYLE }, { photo_id: 2, settings: STYLE }, { photo_id: 3, settings: STYLE }]);
+    expect(written(calls)).toEqual([
+      { photo_id: 1, remaining: true },
+      { photo_id: 2, refused: 'its stored settings were not read: Lightroom returned no saved settings for photo 2; nothing was written' },
+      { photo_id: 3, settings: STYLE },
+    ]);
+  });
+
+  it('keeps the split by input when the write reply is lost after a cancel', async () => {
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const handler = makeHandler({ call: async (action, params) => {
+      calls.push(action);
+      const read = storedRead({ 1: { Glow: 0 }, 2: { Glow: 60 } }, action, params);
+      if (read) return read;
+      controller.abort();
+      throw new Error('Lost link');
+    } });
+    const envelope = envelopeOf(await handler('set_develop_settings_batch',
+      { photos: [{ photo_id: 1, settings: STYLE }, { photo_id: 2, settings: STYLE }] }, { signal: controller.signal }));
+    expect(envelope).toMatchObject({
+      outcome: 'unknown',
+      failed: [{ photo_id: '1', reason: expect.stringContaining('GlowStyle needs Glow above 0') }],
+      unknown: [{ photo_id: '2', reason: 'the write was sent and its reply was lost (Lost link)' }],
+    });
+  });
+
+  it('names a lost photo by the id its stored settings were read under, else by its path', async () => {
+    const { run } = batchWith({ 1: { Glow: 0 } }, () => { throw new Error('Lost link'); });
+    const envelope = envelopeOf(await run([{ photo_id: '/1.arw', settings: STYLE }, { photo_id: '/2.arw', settings: { Exposure2012: 1 } }]));
+    expect(envelope).toMatchObject({
+      failed: [{ photo_id: '1', reason: expect.stringContaining('GlowStyle needs Glow above 0') }],
+      unknown: [{ path: '/2.arw', reason: 'the write was sent and its reply was lost (Lost link)' }],
+    });
+  });
+
+  it('refuses a key another tool writes, naming the photo it is in', () => {
+    expect(validateToolArgs('set_develop_settings_batch', {
+      photos: [{ photo_id: 1, settings: { Exposure2012: 1 } }, { photo_id: 2, settings: { ConvertToGrayscale: true } }],
+    })).toContain('photo 2 (photos[1])');
   });
 });
 

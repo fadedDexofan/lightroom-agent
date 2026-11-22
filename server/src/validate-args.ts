@@ -60,5 +60,7 @@ export function validateToolArgs({ contract, validate }: CheckedContract, args: 
     return `Invalid arguments for ${contract.name}: ${unique.join("; ")}`;
   }
   const broken = (contract.rules ?? []).find((rule) => !rule.holds(args));
-  return broken ? `Invalid arguments for ${contract.name}: ${broken.text}` : null;
+  if (!broken) return null;
+  const where = broken.where?.(args);
+  return `Invalid arguments for ${contract.name}: ${broken.text}${where ? ` (${where})` : ""}`;
 }

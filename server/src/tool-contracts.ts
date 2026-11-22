@@ -58,6 +58,7 @@ export type ToolArgs = Readonly<Record<string, unknown>>;
 export interface ArgumentRule {
   text: string;
   holds: (args: ToolArgs) => boolean;
+  where?: (args: ToolArgs) => string | undefined;
 }
 
 export type ServerTool = (
@@ -96,6 +97,10 @@ const developSettingsRules: readonly ArgumentRule[] = [
 const eachPhotoRule = (rule: ArgumentRule): ArgumentRule => ({
   text: `in each photo, ${rule.text}`,
   holds: (args) => (args.photos as { settings: unknown }[]).every((photo) => rule.holds(photo as ToolArgs)),
+  where: (args) => {
+    const index = (args.photos as { settings: unknown }[]).findIndex((photo) => !rule.holds(photo as ToolArgs));
+    return index < 0 ? undefined : `photo ${index + 1} (photos[${index}])`;
+  },
 });
 
 const photosOnceRule: ArgumentRule = {
@@ -534,6 +539,7 @@ export const PLUGIN_ACTIONS: readonly PluginAction[] = [
   { name: "render_preview", plugin: "HandlerPreview.renderPreview" },
   { name: "render_duplicate_preview", plugin: "HandlerPreview.renderDuplicatePreview" },
   { name: "render_source", plugin: "HandlerExport.renderSource" },
+  { name: "read_settings_by_input", plugin: "HandlerRawDevelopSettings.byInput", develop: "reads" },
   { name: "write_develop_settings", plugin: "HandlerDevelop.setDevelopSettings", develop: "settings" },
   { name: "write_develop_settings_batch", plugin: "HandlerDevelop.setDevelopSettingsBatch", develop: "settings" },
   { name: "plan_crop", plugin: "HandlerCrop.plan", develop: "reads" },
@@ -1527,7 +1533,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerDevelop.applyDevelopPreset" },
     description:
-      `Apply an exact Develop preset; provide preset_uuid or preset_name. Returns applied (the photos finished), resolved preset identity and ai_updated (the photos whose AI masks from the preset Lightroom computed); unknown photos are not_found. With AI masks, each photo's AI masks are computed right after the preset is applied to it, and a photo starts only while the time budget still covers its apply, an AI compute wait of up to ${AI_MASK_COMPUTE_WAIT_SECONDS} s and the read-back; the preset's own masks are the entries that were not on the photo before the apply (a reapplied preset replaces its mask with a new one, so it is judged too): a photo where anything is still computing ${AI_MASK_COMPUTE_WAIT_SECONDS} s after the compute, or whose preset AI masks Lightroom could not compute, keeps the preset, has nothing rolled back and is unknown with the reason: check its masks in Develop before writing to it. An existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the preset, is named in a warning and does not decide. Earlier versions refuse an AI preset before writing; non-AI presets apply normally. A photo whose apply stopped is failed when nothing was written to it (a busy catalog) and unknown otherwise, naming what was written; either one stops the batch and the photos after it are listed in remaining. Photos not reached within the time budget are listed in remaining; resend exactly those. ${DEVELOP_READ_BACK}`,
+      `Apply an exact Develop preset; provide preset_uuid or preset_name. Returns applied (the photos the read-back confirmed), resolved preset identity and ai_updated (the photos whose AI masks from the preset Lightroom computed); unknown photos are not_found. With AI masks, each photo's AI masks are computed right after the preset is applied to it, and a photo starts only while the time budget still covers its apply, an AI compute wait of up to ${AI_MASK_COMPUTE_WAIT_SECONDS} s and the read-back; the preset's own masks are the entries that were not on the photo before the apply (a reapplied preset replaces its mask with a new one, so it is judged too): a photo where anything is still computing ${AI_MASK_COMPUTE_WAIT_SECONDS} s after the compute, or whose preset AI masks Lightroom could not compute, keeps the preset, has nothing rolled back and is unknown with the reason: check its masks in Develop before writing to it. An existing AI mask whose result Lightroom's photo-wide recompute changed, or one already failed before the preset, is named in a warning and does not decide. Earlier versions refuse an AI preset before writing; non-AI presets apply normally. A photo whose apply stopped is failed when nothing was written to it (a busy catalog) and unknown otherwise, naming what was written; either one stops the batch and the photos after it are listed in remaining. Photos not reached within the time budget are listed in remaining; resend exactly those. ${DEVELOP_READ_BACK}`,
     rules: [presetSelectorRule],
     inputSchema: {
       type: "object",
@@ -1587,7 +1593,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerDevelop.matchPhotoStyle" },
     description:
-      `Apply the reference photo's global look (tone, color, curves, detail, noise, grain, vignette) after confirming a Develop snapshot per target. A target whose treatment (color or black and white) differs from the reference is failed and left unchanged: convert it with set_treatment first. Leaves out keys that describe the photo rather than a look (crop, perspective and Upright, white balance, lens corrections), keys another tool writes (ConvertToGrayscale) and local adjustments/AI masks. Reference cannot be a target, including path aliases. No pixel adaptation. Returns matched and results (photo_id, snapshot id/name, settings_changed); a target whose step stopped is failed when nothing was written for it (the snapshot refused, rolled back or the catalog busy) and unknown otherwise, naming what was written and any recovery snapshot it kept; unknown IDs are not_found. Restore with apply_develop_snapshot. Photos not reached within the time budget are listed in remaining; resend exactly those. ${DEVELOP_READ_BACK}`,
+      `Apply the reference photo's global look (tone, color, curves, detail, noise, grain, vignette) after confirming a Develop snapshot per target. A target whose treatment (color or black and white) differs from the reference is failed and left unchanged: convert it with set_treatment first. Leaves out keys that describe the photo rather than a look (crop, perspective and Upright, white balance, lens corrections), keys another tool writes (ConvertToGrayscale) and local adjustments/AI masks. Reference cannot be a target, including path aliases. No pixel adaptation. Returns matched and results (photo_id, snapshot id/name, settings_changed) for the targets the read-back confirmed; a target whose step stopped is failed when nothing was written for it (the snapshot refused, rolled back or the catalog busy) and unknown otherwise, naming what was written and any recovery snapshot it kept; unknown IDs are not_found. Restore with apply_develop_snapshot. Photos not reached within the time budget are listed in remaining; resend exactly those. ${DEVELOP_READ_BACK}`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1631,7 +1637,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     duration: "long",
     run: { server: serverTool(setDevelopSettingsBatch) },
     description:
-      `Set each of 1-50 photos its own Develop settings in one call, by the keys, ranges, rounding and rules of set_develop_settings, which apply to each photo against its own stored values. A photo whose settings break a rule is failed with the rule, a photo listed twice (also by id and by path) is failed for both entries, and nothing is written to either; the others are written. Returns results [{photo_id, settings as stored}] in request order. ${DEVELOP_READ_BACK} One read-back wait serves the whole batch. Photos not started before the time budget ends are remaining; resend exactly those.`,
+      `Set each of 1-50 photos its own Develop settings in one call, by the keys, ranges, rounding and rules of set_develop_settings, which apply to each photo against its own stored values. Each entry gets its own outcome: one whose settings break a rule against its photo's stored values is failed with the rule, a photo listed twice (also by id and by path) is failed for both entries, and nothing is written to either; an entry whose stored settings could not be read is failed, one not in the catalog is not_found, and one whose stored settings were not read within the time budget is remaining; the others are written. Returns results [{photo_id, settings as stored}] in request order. ${DEVELOP_READ_BACK} One read-back wait serves the whole batch; a written photo the read-back could not reach within the time budget is unknown. A photo starts only while the budget left covers its catalog wait, the read-back and the reply, about 20 s, so a batch that gets its turn with less left, for instance after waiting for other Develop calls, writes nothing and lists every photo in remaining. Photos not started before the time budget ends are remaining; resend exactly those.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,

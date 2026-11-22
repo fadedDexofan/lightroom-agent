@@ -11,9 +11,20 @@ export interface DevelopBatchArgs {
   photos: DevelopWriteArgs[];
 }
 
-interface StoredRead {
-  photos?: { settings?: Record<string, unknown> }[];
-}
+type StoredRow =
+  | { photo_id: string; settings: Record<string, unknown> }
+  | { photo_id: string; failed: string }
+  | { not_found: true }
+  | { remaining: true };
+
+type Judged =
+  | { photo_id: Input; settings: Record<string, unknown>; known?: string }
+  | { photo_id: Input; refused: string; known?: string }
+  | { photo_id: Input; unread: string; known: string }
+  | { photo_id: Input; notFound: true }
+  | { photo_id: Input; remaining: true };
+
+const NOT_FOUND_WHEN_READ = "not found when its stored settings were read";
 
 export async function beforeWrite(read: Promise<PluginReply>): Promise<PluginReply> {
   try {
@@ -24,13 +35,48 @@ export async function beforeWrite(read: Promise<PluginReply>): Promise<PluginRep
   }
 }
 
-async function storedValues(
-  photoId: Input, keys: string[], dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
-): Promise<{ values: Record<string, unknown> } | { reply: PluginReply }> {
-  if (!keys.length) return { values: {} };
-  const reply = await beforeWrite(dispatcher.call("get_develop_settings", { photo_ids: [photoId], keys }, budgetMs, options));
-  const settings = (reply.result?.data as StoredRead | undefined)?.photos?.[0]?.settings;
-  return settings ? { values: settings } : { reply };
+async function storedRows(
+  inputs: Input[], keys: string[], dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
+): Promise<{ rows: StoredRow[] } | { reply: PluginReply }> {
+  const reply = await beforeWrite(dispatcher.call("read_settings_by_input", { photo_ids: inputs, keys }, budgetMs, options));
+  if (reply.error !== undefined) return { reply };
+  const rows = (reply.result?.data as { rows?: StoredRow[] } | undefined)?.rows;
+  if (rows?.length !== inputs.length) {
+    return { reply: { error: "Lightroom did not return one row of stored settings per photo; nothing was written", effect: "none" } };
+  }
+  return { rows };
+}
+
+function judged(photoId: Input, settings: Record<string, unknown>, row: StoredRow): Judged {
+  if ("remaining" in row) return { photo_id: photoId, remaining: true };
+  if ("not_found" in row) return { photo_id: photoId, notFound: true };
+  if ("failed" in row) {
+    return { photo_id: photoId, unread: `its stored settings were not read: ${row.failed}; nothing was written`, known: row.photo_id };
+  }
+  const refused = refusalFor(settings, row.settings);
+  return refused ? { photo_id: photoId, refused, known: row.photo_id } : { photo_id: photoId, settings, known: row.photo_id };
+}
+
+function judgedWithoutRead(photoId: Input, settings: Record<string, unknown>): Judged {
+  const refused = refusalFor(settings, {});
+  return refused ? { photo_id: photoId, refused } : { photo_id: photoId, settings };
+}
+
+async function judgedAll(
+  items: { photo_id: Input; settings: Record<string, unknown> }[], dispatcher: Pick<Dispatcher, "call">, budgetMs: number,
+  options?: CallOptions,
+): Promise<{ judged: Judged[] } | { reply: PluginReply }> {
+  const unread = items.map(({ settings }) => unreadKeys(settings));
+  const reading = items.flatMap((item, index) => (unread[index].length ? [index] : []));
+  const stored = reading.length
+    ? await storedRows(reading.map((index) => items[index].photo_id), [...new Set(unread.flat())], dispatcher, budgetMs, options)
+    : { rows: [] };
+  if ("reply" in stored) return stored;
+  const rowOf = new Map(reading.map((index, at) => [index, stored.rows[at]]));
+  return { judged: items.map(({ photo_id, settings }, index) => {
+    const row = rowOf.get(index);
+    return row ? judged(photo_id, settings, row) : judgedWithoutRead(photo_id, settings);
+  }) };
 }
 
 export function roundingNote(rounded: Rounded[], photoId?: Input): string[] {
@@ -60,10 +106,13 @@ export async function writeDevelopSettings(
   options?: CallOptions,
 ): Promise<PluginReply> {
   const deadline = performance.now() + budgetMs;
-  const stored = await storedValues(photoId, unreadKeys(settings), dispatcher, budgetMs, options);
-  if ("reply" in stored) return stored.reply;
-  const refusal = refusalFor(settings, stored.values);
-  if (refusal) return { error: refusal, effect: "none" };
+  const read = await judgedAll([{ photo_id: photoId, settings }], dispatcher, budgetMs, options);
+  if ("reply" in read) return read.reply;
+  const [item] = read.judged;
+  if ("remaining" in item) return { result: { remaining: [photoId] } };
+  if ("notFound" in item) return { result: { not_found: [photoId] } };
+  if ("unread" in item) return { result: { failed: [{ photo_id: item.known, reason: item.unread }] } };
+  if ("refused" in item) return { error: item.refused, effect: "none" };
   return await dispatcher.call("write_develop_settings", { photo_id: photoId, settings }, deadline - performance.now(),
     options);
 }
@@ -76,21 +125,23 @@ export async function setDevelopSettings(
   return withWarnings(reply, roundingNote(rounded));
 }
 
-async function storedByInput(
-  inputs: Input[], keys: string[], dispatcher: Pick<Dispatcher, "call">, budgetMs: number, options?: CallOptions,
-): Promise<{ values: Map<Input, Record<string, unknown>> } | { reply: PluginReply }> {
-  const values = new Map<Input, Record<string, unknown>>();
-  if (!inputs.length || !keys.length) return { values };
-  const reply = await beforeWrite(dispatcher.call("get_develop_settings", { photo_ids: inputs, keys }, budgetMs, options));
-  const photos = (reply.result?.data as StoredRead | undefined)?.photos;
-  if (!photos) return { reply };
-  const missing = new Set((reply.result?.not_found ?? []).map(String));
-  let next = 0;
-  for (const input of inputs) {
-    if (missing.has(String(input))) continue;
-    values.set(input, photos[next++]?.settings ?? {});
-  }
-  return { values };
+function lostItem(item: Judged, reason: string) {
+  if ("known" in item && item.known !== undefined) return { photo_id: item.known, reason };
+  return typeof item.photo_id === "number" || /^\d+$/.test(item.photo_id)
+    ? { photo_id: String(item.photo_id), reason }
+    : { path: item.photo_id, reason };
+}
+
+function lostSplit(photos: Judged[], reason: string): PluginReply {
+  const failed = photos.flatMap((photo) => {
+    if ("refused" in photo) return [lostItem(photo, photo.refused)];
+    return "unread" in photo ? [lostItem(photo, photo.unread)] : [];
+  });
+  const unknown = photos.flatMap((photo) => ("settings" in photo
+    ? [lostItem(photo, `the write was sent and its reply was lost (${reason})`)] : []));
+  const notFound = photos.flatMap((photo) => ("notFound" in photo ? [photo.photo_id] : []));
+  const remaining = photos.flatMap((photo) => ("remaining" in photo ? [photo.photo_id] : []));
+  return { result: { failed, unknown, not_found: notFound, remaining } };
 }
 
 export async function setDevelopSettingsBatch(
@@ -98,28 +149,23 @@ export async function setDevelopSettingsBatch(
 ): Promise<PluginReply> {
   const deadline = performance.now() + budgetMs;
   const items = args.photos.map(({ photo_id, settings }) => ({ photo_id, ...roundToPrecision(settings) }));
-  const unread = items.map(({ settings }) => unreadKeys(settings));
-  const reading = items.filter((_, index) => unread[index].length > 0).map(({ photo_id }) => photo_id);
-  const stored = await storedByInput(reading, [...new Set(unread.flat())], dispatcher, budgetMs, options);
-  if ("reply" in stored) return stored.reply;
-  const photos = items.map(({ photo_id, settings }) => {
-    const refused = refusalFor(settings, stored.values.get(photo_id) ?? {});
-    return refused ? { photo_id, refused } : { photo_id, settings };
+  const read = await judgedAll(items, dispatcher, budgetMs, options);
+  if ("reply" in read) return read.reply;
+  const photos = read.judged.map((item) => {
+    if ("remaining" in item) return { photo_id: item.photo_id, remaining: true };
+    if ("notFound" in item) return { photo_id: item.photo_id, refused: NOT_FOUND_WHEN_READ };
+    if ("unread" in item) return { photo_id: item.photo_id, refused: item.unread };
+    if ("refused" in item) return { photo_id: item.photo_id, refused: item.refused };
+    return { photo_id: item.photo_id, settings: item.settings };
   });
   const warnings = items.flatMap(({ photo_id, rounded }) => roundingNote(rounded, photo_id));
   let reply: PluginReply;
   try {
     reply = await dispatcher.call("write_develop_settings_batch", { photos }, deadline - performance.now(), options);
   } catch (error) {
-    if (options?.signal?.aborted) throw error;
     const reason = error instanceof Error ? error.message : String(error);
     if (error instanceof PluginNotSentError) return { error: `${reason}; nothing was written`, effect: "none" };
-    return { result: {
-      failed: photos.flatMap((photo) => ("refused" in photo ? [{ photo_id: String(photo.photo_id), reason: photo.refused as string }] : [])),
-      unknown: photos.flatMap((photo) => ("refused" in photo ? [] : [{
-        photo_id: String(photo.photo_id), reason: `the write was sent and its reply was lost (${reason})`,
-      }])),
-    } };
+    return lostSplit(read.judged, reason);
   }
   return withWarnings(reply, warnings);
 }

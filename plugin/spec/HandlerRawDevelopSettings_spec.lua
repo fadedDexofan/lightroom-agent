@@ -155,3 +155,32 @@ describe("HandlerRawDevelopSettings.get", function()
         assert.are.same({ "7", "8" }, reply.remaining)
     end)
 end)
+
+describe("HandlerRawDevelopSettings.byInput", function()
+    it("answers one row per input in order: aliases share their photo's values, then not found", function()
+        local Handler = setup({ ["7"] = { Exposure2012 = 0.5, Contrast2012 = 10 } })
+
+        local reply = Handler.byInput({ photo_ids = { "7", "/7.cr2", "404" }, keys = { "Exposure2012" } },
+            helper.requestContext())
+
+        assert.are.same({ rows = {
+            { photo_id = "7", settings = { Exposure2012 = 0.5 } },
+            { photo_id = "7", settings = { Exposure2012 = 0.5 } },
+            { not_found = true },
+        } }, reply)
+    end)
+
+    it("fails a row whose read returns nothing and lists the photos past the budget as remaining", function()
+        local Handler, inside = setup({ ["1"] = false, ["2"] = { Exposure2012 = 2 }, ["3"] = { Exposure2012 = 3 } })
+        local context = helper.requestContext(nil, { stopping = function() return #inside >= 2 end })
+
+        local reply = Handler.byInput({ photo_ids = { "1", "2", "3", "/3.cr2" }, keys = { "Exposure2012" } }, context)
+
+        assert.are.same({ rows = {
+            { photo_id = "1", failed = "Lightroom returned no saved settings for photo 1" },
+            { photo_id = "2", settings = { Exposure2012 = 2 } },
+            { remaining = true },
+            { remaining = true },
+        } }, reply)
+    end)
+end)

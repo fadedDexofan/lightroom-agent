@@ -33,6 +33,14 @@ local function batchReserve(gates, computesAIMasks)
         + (computesAIMasks and Contract.AI_MASK_COMPUTE_WAIT_SECONDS or 0)
 end
 
+local function verifiedIds(checked)
+    local ids = {}
+    for _, result in ipairs(checked) do
+        if DevelopReadBack.confirmed(result) then ids[#ids + 1] = result.photo_id end
+    end
+    return ids
+end
+
 local function savedOf(catalog, photo)
     local settings
     catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
@@ -488,7 +496,6 @@ function DevelopHandler.applyDevelopPreset(args, context)
     local selectedPreset = findPreset(args)
 
     local catalog = LrApplication.activeCatalog()
-    local appliedCount = 0
 
     -- Resolve outside the write gate: the lookup scans the catalog and does
     -- not write, so holding the exclusive gate across it only serializes
@@ -529,7 +536,6 @@ function DevelopHandler.applyDevelopPreset(args, context)
                 end
             end
             if computed then
-                appliedCount = appliedCount + 1
                 written[#written + 1] = { photo = photo, settings = presetSettings, before = before }
             else
                 written[#written + 1] = { photo = photo, settings = presetSettings, before = before,
@@ -539,10 +545,12 @@ function DevelopHandler.applyDevelopPreset(args, context)
         end
     end
 
+    local checked = DevelopReadBack.check(context, catalog, written)
+    local appliedCount = #verifiedIds(checked)
     Log.info(string.format("Applied preset %s to %d photos (AI masks recomputed: %d)",
         selectedPreset.name, appliedCount, aiUpdated))
 
-    return DevelopReadBack.parts(DevelopReadBack.check(context, catalog, written), {
+    return DevelopReadBack.parts(checked, {
         applied = appliedCount,
         preset = selectedPreset.name,
         folder = selectedPreset.folder,
@@ -748,12 +756,18 @@ function DevelopHandler.matchPhotoStyle(args, context)
             end
         end
     end
-    return DevelopReadBack.parts(DevelopReadBack.check(context, catalog, written),
-        { reference_id = tostring(source.localIdentifier), matched = #results, results = results },
+    local checked = DevelopReadBack.check(context, catalog, written)
+    local verified = {}
+    for _, id in ipairs(verifiedIds(checked)) do verified[id] = true end
+    local matched = {}
+    for _, result in ipairs(results) do
+        if verified[result.photo_id] then matched[#matched + 1] = result end
+    end
+    return DevelopReadBack.parts(checked,
+        { reference_id = tostring(source.localIdentifier), matched = #matched, results = matched },
         { failed = failures, not_found = missing, remaining = remaining })
 end
 
-local SET_SETTINGS_REPLY_SECONDS = 2
 local READ_BACK_PER_PHOTO_SECONDS = 0.1
 
 local function writeSettings(context, catalog, photo, settings)
@@ -782,9 +796,13 @@ function DevelopHandler.setDevelopSettingsBatch(args, context)
         inputs = inputs,
         duplicates = "refuse",
         reserveSeconds = function(started)
-            return DevelopReadBack.NORMALISE_SECONDS + READ_BACK_PER_PHOTO_SECONDS * (started + 1) + SET_SETTINGS_REPLY_SECONDS
+            return batchReserve(1) + READ_BACK_PER_PHOTO_SECONDS * (started + 1)
         end,
-        refusal = function(entry) return items[entry.index].refused end,
+        held = function(entry)
+            local item = items[entry.index]
+            if item.remaining then return { remaining = true } end
+            if item.refused then return { reason = item.refused } end
+        end,
         each = function(photo, _, entry) return writeSettings(context, catalog, photo, items[entry.index].settings) end,
         finish = function(written)
             local checked = DevelopReadBack.check(context, catalog, written)

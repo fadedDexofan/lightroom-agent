@@ -1,3 +1,5 @@
+local LrTasks = import 'LrTasks'
+
 local DevelopSession = require 'DevelopSession'
 local PhotoLookup = require 'PhotoLookup'
 local Reply = require 'Reply'
@@ -5,7 +7,7 @@ local Reply = require 'Reply'
 local DevelopBatch = {}
 
 local function aliasesOf(resolved)
-    local inputsOf, refusedAs = {}, {}
+    local inputsOf, refusals = {}, {}
     for _, entry in ipairs(resolved) do
         if entry.photo then
             inputsOf[entry.photo] = inputsOf[entry.photo] or {}
@@ -14,9 +16,25 @@ local function aliasesOf(resolved)
         end
     end
     for photo, inputs in pairs(inputsOf) do
-        if #inputs > 1 then refusedAs[photo] = "listed twice, as " .. table.concat(inputs, " and ") end
+        if #inputs > 1 then
+            local listed = "listed twice, as " .. table.concat(inputs, " and ")
+            refusals[photo] = {}
+            for index, input in ipairs(inputs) do refusals[photo][index] = listed .. "; this is " .. input end
+        end
     end
-    return refusedAs
+    return refusals
+end
+
+local function captionsOf(catalog, entries)
+    local photos = {}
+    for index, entry in ipairs(entries) do photos[index] = entry.photo end
+    local read, formatted = LrTasks.pcall(function() return catalog:batchGetFormattedMetadata(photos, { "fileName" }) end)
+    local captions = {}
+    for _, photo in ipairs(photos) do
+        local name = read and formatted and formatted[photo] and formatted[photo].fileName
+        captions[photo] = name or tostring(photo.localIdentifier)
+    end
+    return captions
 end
 
 local function reserveFor(operation, started)
@@ -43,23 +61,26 @@ function DevelopBatch.run(context, catalog, operation)
         list[#list + 1] = { photo_id = photoId, reason = reason }
     end
 
-    local function refusalOf(entry)
-        return listedTwice[entry.photo] or (operation.refusal and operation.refusal(entry))
-    end
 
     local finished
     if #entries > 0 then
         DevelopSession.run(context, catalog, operation.restoreView, function(state)
-            local prepared, attempted = false, 0
+            local prepared, attempted, stopped = false, 0, false
+            local captions = captionsOf(catalog, entries)
             for _, entry in ipairs(entries) do
-                local refusal = refusalOf(entry)
-                if refusal then
-                    failed[#failed + 1] = { photo_id = tostring(entry.photo.localIdentifier), reason = refusal }
-                elseif #remaining > 0 or context:stopping(reserveFor(operation, attempted)) then
+                local photoId = tostring(entry.photo.localIdentifier)
+                local held = not listedTwice[entry.photo] and operation.held and operation.held(entry)
+                if listedTwice[entry.photo] then
+                    for _, reason in ipairs(listedTwice[entry.photo]) do failed[#failed + 1] = { photo_id = photoId, reason = reason } end
+                elseif held and held.remaining then
+                    remaining[#remaining + 1] = entry.id
+                elseif held then
+                    failed[#failed + 1] = { photo_id = photoId, reason = held.reason }
+                elseif stopped or context:stopping(reserveFor(operation, attempted)) then
+                    stopped = true
                     remaining[#remaining + 1] = entry.id
                 else
-                    context:report(attempted, #entries,
-                        entry.photo:getFormattedMetadata("fileName") or tostring(entry.photo.localIdentifier))
+                    context:report(attempted, #entries, captions[entry.photo])
                     if operation.prepare and not prepared then
                         operation.prepare(entry.photo, state)
                         prepared = true
