@@ -101,6 +101,14 @@ describe('reference style matching', function()
         assert.is_false(catalog:getQueriedInsideReadAccess())
     end)
 
+    it('counts as matched only the targets the read-back verified', function()
+        local context = helper.requestContext(nil, { stopping = function() return false end, timeLeft = function() return 1 end })
+        local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3' } }, context)
+        assert.equals(0, result.data.matched)
+        assert.same({}, result.data.results)
+        assert.same({ '2', '3' }, { result.unknown[1].photo_id, result.unknown[2].photo_id })
+    end)
+
     it('fails a target whose saved settings Lightroom does not return, writes nothing to it and continues', function()
         targets[2].getDevelopSettings = function() return nil end
         local result = handler.matchPhotoStyle({ reference_id = '1', target_ids = { '2', '3', '4' } })

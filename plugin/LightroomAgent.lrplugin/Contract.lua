@@ -53,6 +53,7 @@ return {
         read_develop_ranges = { "HandlerDevelopKeys", "ranges" },
         read_lens_profiles = { "HandlerLensProfile", "read" },
         read_photo_metadata = { "HandlerMetadata", "getPhotoMetadata" },
+        read_settings_by_input = { "HandlerRawDevelopSettings", "byInput" },
         remove_from_collection = { "HandlerCollections", "removeFromCollection" },
         remove_keyword_subtree = { "HandlerOrganization", "removeKeywordSubtree" },
         remove_photos_from_catalog = { "HandlerRemoveFromCatalog", "removePhotos" },
@@ -307,5 +308,5 @@ return {
     STYLE_SUMMARY_PHOTO_LIMIT = 200,
     HEARTBEAT_INTERVAL_SECONDS = 30,
     VERSION = "0.1.0-rc.4",
-    BUILD = "b7eb0f5f53f557bd",
+    BUILD = "783557981185428d",
 }

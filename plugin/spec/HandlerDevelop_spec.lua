@@ -623,6 +623,18 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.equal(preset, p2.getRawMetadata(p2, "__appliedPreset"))
     end)
 
+    it("counts as applied only the photos the read-back verified", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
+        local _, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { fakePreset("Vibrant") }) } })
+        local context = helper.requestContext(nil, { stopping = function() return false end, timeLeft = function() return 1 end })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Vibrant" }, context)
+
+        assert.are.equal(0, r.data.applied)
+        assert.are.same({ "1", "2" }, { r.unknown[1].photo_id, r.unknown[2].photo_id })
+    end)
+
     it("fails the photo the catalog stayed busy for, keeps the photos before it and lists the rest as remaining", function()
         local photos = {}
         for _, id in ipairs({ "1", "2", "3" }) do photos[#photos + 1] = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg" }) end
@@ -1367,6 +1379,30 @@ describe("HandlerDevelop.setDevelopSettingsBatch", function()
         assert.is_nil(one:getRawMetadata("__appliedSettings"))
         assert.are.same({ { photo_id = "1", reason = "Refused before writing: GlowStyle needs Glow above 0" } }, reply.failed)
         assert.are.same({ { photo_id = "2", settings = { Exposure2012 = 0.5 } } }, reply.data.results)
+    end)
+
+    it("starts a photo only while the time left covers its gate wait, the read-back and the reply", function()
+        local clock = { now = 0 }
+        local photos = {}
+        for id = 1, 3 do
+            local photo = helper.fakePhoto({ id = tostring(id), path = "/" .. id .. ".jpg" })
+            local apply = photo.applyDevelopSettings
+            photo.applyDevelopSettings = function(self, settings)
+                clock.now = clock.now + 13
+                return apply(self, settings)
+            end
+            photos[id] = photo
+        end
+        local _, Handler = setup({ photos = photos, date = { currentTime = function() return clock.now end } })
+
+        local reply = Handler.setDevelopSettingsBatch({ photos = {
+            { photo_id = "1", settings = { Exposure2012 = 0.1 } },
+            { photo_id = "2", settings = { Exposure2012 = 0.2 } },
+            { photo_id = "3", settings = { Exposure2012 = 0.3 } },
+        } }, helper.requestContext(45))
+
+        assert.are.same({ "1", "2" }, { reply.data.results[1].photo_id, reply.data.results[2].photo_id })
+        assert.are.same({ "3" }, reply.remaining)
     end)
 
     it("keeps the other photos' read-back when one photo's read raises, answering that one unknown", function()

@@ -86,4 +86,32 @@ function DevelopSettingsRead.get(args, context)
     })
 end
 
+function DevelopSettingsRead.byInput(args, context)
+    local catalog = LrApplication.activeCatalog()
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+    local rows, rowOf, stopped = {}, {}, false
+    catalog:withReadAccessDo(function()
+        for index, entry in ipairs(resolved) do
+            local photo = entry.photo
+            if not photo then
+                rows[index] = { not_found = true }
+            else
+                if rowOf[photo] == nil then
+                    stopped = stopped or context:stopping(REPLY_RESERVE_SECONDS)
+                    if stopped then
+                        rowOf[photo] = { remaining = true }
+                    else
+                        local photoId = tostring(photo.localIdentifier)
+                        local read, settings = LrTasks.pcall(DevelopReadBack.saved, photo)
+                        rowOf[photo] = read and { photo_id = photoId, settings = (DevelopSettingsRead.values(settings, args.keys)) }
+                            or { photo_id = photoId, failed = Reply.messageOf(settings) }
+                    end
+                end
+                rows[index] = rowOf[photo]
+            end
+        end
+    end)
+    return { rows = rows }
+end
+
 return DevelopSettingsRead
