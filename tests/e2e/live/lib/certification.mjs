@@ -74,6 +74,17 @@ export function uncertifiedFixtures(read, photoIds) {
   });
 }
 
+export async function clearMasks(toolData, photoIds) {
+  const cleared = [];
+  for (const photoId of photoIds) {
+    if ((await toolData("list_masks", { photo_ids: [photoId] })).count > 0) {
+      await toolData("delete_masks", { photo_ids: [photoId], all: true });
+      cleared.push(photoId);
+    }
+  }
+  return cleared;
+}
+
 export function fixturesNotProvenReset(answer, photoIds) {
   const reset = new Set(
     (answer.data?.results ?? []).filter((result) => result.status === "reset").map((result) => String(result.photo_id)),
@@ -162,8 +173,8 @@ export function renderPasses(rendered, thresholds = THRESHOLDS) {
 
 const entryOf = (rawAnswer, id) => entriesOf(rawAnswer).find((entry) => String(entry.CorrectionID) === String(id));
 
-const NOTHING_FOUND = /Lightroom found nothing/;
 const VOIDED_BY_AI_UPDATE = /Update AI Settings/;
+const LIGHTROOM_FOUND_NOTHING = /^Lightroom found no/;
 
 function refusalClass(answer) {
   if (answer.outcome === "failed") return "failed";
@@ -182,7 +193,7 @@ function onlyNothingFound(answer, allowed = []) {
     stopped.every(
       (entry) =>
         allowed.includes(String(entry.photo_id)) &&
-        NOTHING_FOUND.test(entry.reason ?? "") &&
+        LIGHTROOM_FOUND_NOTHING.test(entry.reason ?? "") &&
         (!entry.voided || VOIDED_BY_AI_UPDATE.test(entry.reason)),
     )
   );
@@ -209,6 +220,9 @@ function problemOf(
   if (expectRefusal && !answer.isError) return "expected a refusal, the tool succeeded";
   if (expectRefusal && refusalClass(answer) === null) {
     return `expected a refusal with nothing changed (outcome failed, or unknown naming Update AI Settings), got ${answer.outcome}: ${errorOf(answer)}`;
+  }
+  if (expectRefusal && !LIGHTROOM_FOUND_NOTHING.test(errorOf(answer) ?? "")) {
+    return `expected Lightroom to find nothing, but the call was refused for another reason: ${errorOf(answer)}`;
   }
   if (!expectRefusal && answer.isError && !onlyNothingFound(answer, nothingFoundAllowed))
     return `tool failed: ${errorOf(answer)}`;

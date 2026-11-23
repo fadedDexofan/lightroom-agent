@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   buildCertificationRecord,
   certificationResult,
+  clearMasks,
   evaluateStep,
   fixtureStateProblems,
   fixturesNotProvenReset,
@@ -349,6 +350,26 @@ test("an expected refusal passes only when the tool refused and left the photo's
     evaluateStep({ ...base, answer: refused, before: raw([]), after: raw([{}]) }).problem,
     /expected 0 mask\(s\) added, found 1/,
   );
+});
+
+test("only Lightroom finding nothing counts as the expected refusal, never a refusal before the call reached it", () => {
+  const base = { name: "people refused with cleanup", added: 0, expectRefusal: true, admission: admitted() };
+  for (const error of [
+    'Invalid arguments for create_mask: unknown property "photo_id": use photo_ids',
+    'Unknown tool "create_maks". Only listed tools can be called.',
+    'Tool "create_mask" is disabled. Enable "masks" in LIGHTROOM_AGENT_TOOLSETS and restart the server.',
+    "Lightroom Classic plugin is not connected.",
+    "The server refused the call: create_mask is unavailable in read-only mode",
+  ]) {
+    const step = evaluateStep({
+      ...base,
+      answer: answerOf({ outcome: "failed", error }),
+      before: raw([]),
+      after: raw([]),
+    });
+    assert.equal(step.passed, false);
+    assert.match(step.problem, /refused for another reason/);
+  }
 });
 
 test("masks read back with their keys in another order count as the same masks", () => {
@@ -722,4 +743,24 @@ test("the sky batch fails a darkening of the whole frame and an unchanged frame"
     false,
   );
   assert.equal(judgeSky(sceneLuminance), false);
+});
+
+test("clearMasks deletes the masks of each photo that holds some and names those photos", async () => {
+  const counts = { 1: 3, 2: 0, 3: 1 };
+  const calls = [];
+  const toolData = async (name, args) => {
+    calls.push([name, args]);
+    return name === "list_masks" ? { count: counts[args.photo_ids[0]] } : {};
+  };
+
+  const cleared = await clearMasks(toolData, ["1", "2", "3"]);
+
+  assert.deepEqual(cleared, ["1", "3"]);
+  assert.deepEqual(
+    calls.filter(([name]) => name === "delete_masks"),
+    [
+      ["delete_masks", { photo_ids: ["1"], all: true }],
+      ["delete_masks", { photo_ids: ["3"], all: true }],
+    ],
+  );
 });
