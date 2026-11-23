@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   certificationResult,
+  clearMasks,
   evaluateStep,
   FIXTURE_STATE_KEYS,
   fixturesNotProvenReset,
@@ -128,6 +129,8 @@ console.log(`certifying ${status.running.build} on ${catalogPath}`);
 
 const depthPhoto = fixtureIdOrNull(marker, "depth_heic");
 const certified = depthPhoto === null ? Object.values(ids) : [...Object.values(ids), String(depthPhoto)];
+const leftOver = await clearMasks(toolData, certified);
+if (leftOver.length > 0) console.log(`deleted the masks left on these fixtures: ${leftOver.join(", ")}`);
 const resetAnswer = await session.tool(
   "reset_develop_adjustments",
   { photo_ids: certified, confirm: true },
@@ -180,8 +183,7 @@ async function cleanCopy(master, role) {
       .copies[0].copy_photo_id,
   );
   copies.push(copy);
-  if ((await toolData("list_masks", { photo_ids: [copy] })).count > 0)
-    await toolData("delete_masks", { photo_ids: [copy], all: true });
+  await clearMasks(toolData, [copy]);
   return copy;
 }
 
@@ -616,6 +618,11 @@ fs.writeFileSync(
 );
 fs.rmSync(partialFile, { force: true });
 if (copies.length > 0) await session.tool("remove_photos_from_catalog", { photo_ids: copies, confirm: true });
+try {
+  await clearMasks(toolData, certified);
+} catch (error) {
+  console.error(`the masks this run made on the fixtures were not deleted: ${error.message}`);
+}
 await session.stop();
 
 const { steps, notExercised } = judgeRun(evidence);
