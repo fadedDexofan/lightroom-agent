@@ -27,6 +27,7 @@ const DEVELOP_WRITES = new Set([
   'deleteAllEmptyMasks',
   'quickDevelopSetTreatment',
   'createVirtualCopies',
+  'pasteSettings',
 ]);
 const SESSION = 'DevelopSession.run';
 const CONTROLLER_WRITE = 'CatalogWrite.develop';

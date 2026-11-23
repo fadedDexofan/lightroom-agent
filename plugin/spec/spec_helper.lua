@@ -284,6 +284,7 @@ end
 -- Build a fake photo with the given metadata table.
 -- meta keys correspond to keys passed to getRawMetadata / getFormattedMetadata / localIdentifier.
 function M.fakePhoto(meta)
+    if meta.fileFormat == nil then meta.fileFormat = "JPG" end
     if meta.uuid == nil and not meta.__dangling then
         meta.uuid = "uuid-" .. tostring(meta.localIdentifier or meta.id or "photo-id")
     end
@@ -317,6 +318,25 @@ function M.fakePhoto(meta)
                 end
             end
         end,
+        copySettings = function(_, kind, groups)
+            if meta.copyFails then return false end
+            M.clipboard = { from = copiedValue(meta.developSettings or {}), kind = kind, groups = groups }
+            return true
+        end,
+        pasteSettings = function()
+            local clipboard = M.clipboard
+            if clipboard == nil then error("nothing to paste", 0) end
+            meta.developSettings = meta.developSettings or {}
+            for key, value in pairs(meta.pasteAlso or {}) do
+                meta.developSettings[key] = value
+            end
+            if meta.pasteRefuses then return false end
+            for _, key in ipairs({ "CameraProfile", "Look" }) do
+                meta.developSettings[key] = copiedValue(clipboard.from[key])
+            end
+            meta.__pastedFrom = clipboard
+            return true
+        end,
         applyDevelopSettings = function(_, settings, historyName, flattenAutoNow)
             meta.developSettings = meta.developSettings or {}
             for key, value in pairs(settings) do
@@ -324,6 +344,9 @@ function M.fakePhoto(meta)
             end
             for key, value in pairs(meta.applyAlso or {}) do
                 meta.developSettings[key] = value
+            end
+            for _, key in ipairs(meta.applyClears or {}) do
+                meta.developSettings[key] = nil
             end
             meta.__appliedSettings = settings
             meta.__appliedHistoryName = historyName
@@ -343,6 +366,9 @@ function M.fakePhoto(meta)
                 return
             end
             if meta.aiUpdate ~= "ok" and meta.aiUpdate ~= "error" then return end
+            for key, value in pairs(meta.aiAlso or {}) do
+                meta.developSettings[key] = copiedValue(value)
+            end
             for _, correction in ipairs((meta.developSettings or {}).MaskGroupBasedCorrections or {}) do
                 for _, component in ipairs(correction.CorrectionMasks or {}) do
                     if component.What == "Mask/Image" and component.MaskDigest == nil then

@@ -151,13 +151,15 @@ local function setup(opts)
     package.loaded.GuardedMaskWrite = not opts.realGuard
             and (opts.guardedMaskWrite or {
                 apply = function(context, _, photo, spec)
+                    local settings = Store.clone(photo:getDevelopSettings() or {})
                     local previous = Store.clone(storedMasks(photo))
                     context.ledger:record(spec.description)
                     photo:applyDevelopSettings({
                         MaskGroupBasedCorrections = Store.clone(spec.build(Store.clone(previous))),
                     })
-                    return { previous = previous }
+                    return { previous = previous, settings = settings }
                 end,
+                precheck = function() end,
                 restore = function(context, _, photo, previous, mark)
                     photo:applyDevelopSettings({ MaskGroupBasedCorrections = Store.clone(previous) })
                     context.ledger:undone(mark)
@@ -1386,6 +1388,436 @@ describe("HandlerDevelop.setProfile", function()
     end)
 end)
 
+describe("HandlerDevelop.copyDevelopSettings profile unit", function()
+    local COLOR = { Name = "Adobe Color", UUID = "B952C231111CD8E0ECCF14B86BAA7077", Amount = 1 }
+    local LANDSCAPE = { Name = "Adobe Landscape", UUID = "6F9C877E84273F4E8271E6B91BEB36A1", Amount = 1 }
+
+    local function photo(id, settings, meta)
+        local fields = { id = id, path = "/" .. id .. ".cr2", fileFormat = "RAW", cameraModel = "Canon EOS 6D" }
+        for key, value in pairs(meta or {}) do
+            fields[key] = value
+        end
+        fields.developSettings = settings
+        return helper.fakePhoto(fields)
+    end
+
+    local function landscapeSource(extra, meta)
+        local settings = { CameraProfile = "Adobe Standard", Look = deepCopy(LANDSCAPE), Exposure2012 = 1 }
+        for key, value in pairs(extra or {}) do
+            settings[key] = value
+        end
+        return photo("10", settings, meta)
+    end
+
+    local function colorTarget(id, meta, extra)
+        local settings = { CameraProfile = "Adobe Standard", Look = deepCopy(COLOR), Exposure2012 = 0 }
+        for key, value in pairs(extra or {}) do
+            settings[key] = value
+        end
+        return photo(id, settings, meta)
+    end
+
+    local function copy(Handler, settings, ids, dryRun, context)
+        return Handler.copyDevelopSettings(
+            { source_photo_id = "10", photo_ids = ids or { "11" }, settings = settings, dry_run = dryRun },
+            context or helper.requestContext()
+        )
+    end
+
+    it("moves only the profile when the unit is named alone, through Lightroom's own paste", function()
+        local source, target = landscapeSource(), colorTarget("11")
+        local _, Handler = setup({ photos = { source, target } })
+        local context = helper.requestContext()
+
+        local r = copy(Handler, { "profile" }, nil, nil, context)
+
+        assert.are.equal(1, r.data.copied)
+        assert.are.equal("Adobe Landscape", target:getDevelopSettings().Look.Name)
+        assert.are.equal(0, target:getDevelopSettings().Exposure2012)
+        assert.is_nil(target:getRawMetadata("__appliedSettings"))
+        assert.are.same({ look = true }, target:getRawMetadata("__pastedFrom").groups)
+        assert.matches("clipboard now holds the profile of photo 10", context.warnings[1])
+    end)
+
+    it("reports a profile-only target already on the source's profile unchanged, pasting nothing", function()
+        local source, target = landscapeSource(), colorTarget("11", nil, { Look = deepCopy(LANDSCAPE) })
+        local _, Handler = setup({ photos = { source, target } })
+        local context = helper.requestContext()
+
+        local r = copy(Handler, { "profile" }, nil, nil, context)
+
+        assert.are.same({ copied = 0, unchanged = { "11" } }, r.data)
+        assert.is_nil(target:getRawMetadata("__pastedFrom"))
+        assert.are.same({}, context.warnings)
+    end)
+
+    it("leaves the profile family out of a full copy's settings and moves it through the paste", function()
+        local source, target = landscapeSource(), colorTarget("11")
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler)
+
+        assert.are.equal(1, r.data.copied)
+        local applied = target:getRawMetadata("__appliedSettings")
+        assert.are.equal(1, applied.Exposure2012)
+        assert.is_nil(applied.Look)
+        assert.is_nil(applied.CameraProfile)
+        assert.are.equal("Adobe Landscape", target:getDevelopSettings().Look.Name)
+    end)
+
+    it("fails a profile-only copy it leaves, with the reason, pasting nothing", function()
+        local cases = {
+            { colorTarget("11", { fileFormat = "JPG" }), "raw" },
+            { colorTarget("11", { fileFormat = "DNG" }), "DNG" },
+            { colorTarget("11", { cameraModel = "NIKON Z 6" }), "camera" },
+            { colorTarget("11", { cameraModel = "" }), "camera model" },
+            { colorTarget("11", { fileFormat = "" }), "file kind" },
+            { colorTarget("11", nil, { ConvertToGrayscale = true }), "treatment" },
+            { photo("11", { Look = { Name = "Adaptive Color", isAdobeAdaptive = true, Amount = 1 } }), "Adaptive" },
+        }
+        for _, case in ipairs(cases) do
+            local source, target = landscapeSource(), case[1]
+            local _, Handler = setup({ photos = { source, target } })
+
+            local r = copy(Handler, { "profile" })
+
+            assert.is_nil(target:getRawMetadata("__pastedFrom"))
+            assert.is_nil(r.data)
+            assert.are.equal("11", r.failed[1].photo_id)
+            assert.matches(case[2], r.failed[1].reason)
+        end
+    end)
+
+    it("leaves a profile made for another camera model", function()
+        local source = landscapeSource({
+            Look = { Name = "Fuji Velvia", UUID = "V", Amount = 1, CameraModelRestriction = "X-T4" },
+        })
+        local target = colorTarget("11")
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler, { "profile" })
+
+        assert.matches("X%-T4", r.failed[1].reason)
+        assert.is_nil(target:getRawMetadata("__pastedFrom"))
+    end)
+
+    it("confirms the other keys of a target it leaves the profile on, listing why, as a partial copy", function()
+        local source, target = landscapeSource(), colorTarget("11", { cameraModel = "NIKON Z 6" })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler, { "profile", "Exposure2012" })
+
+        assert.are.equal(1, r.data.copied)
+        assert.are.equal(1, target:getDevelopSettings().Exposure2012)
+        assert.is_nil(r.failed)
+        assert.are.equal("11", r.data.profiles_left[1].photo_id)
+        assert.matches("camera", r.data.profiles_left[1].reason)
+        assert.matches("profile was left on photo 11", r.problem)
+    end)
+
+    it("keeps a full copy done when it leaves the profile, warning and listing why", function()
+        local source, target = landscapeSource(), colorTarget("11", { fileFormat = "JPG" })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler)
+
+        assert.is_nil(r.failed)
+        assert.is_nil(r.problem)
+        assert.are.equal(1, r.data.copied)
+        assert.are.equal("11", r.data.profiles_left[1].photo_id)
+        assert.is_nil(target:getRawMetadata("__pastedFrom"))
+    end)
+
+    it("does not paste a profile the target already has", function()
+        local source, target = landscapeSource(), colorTarget("11", nil, { Look = deepCopy(LANDSCAPE) })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler)
+
+        assert.are.equal(1, r.data.copied)
+        assert.is_nil(target:getRawMetadata("__pastedFrom"))
+    end)
+
+    it("fails a target, writing nothing, when Lightroom does not copy the source's profile", function()
+        local source, target = landscapeSource(nil, { copyFails = true }), colorTarget("11")
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler)
+
+        assert.matches("did not copy", r.failed[1].reason)
+        assert.is_nil(target:getRawMetadata("__pastedFrom"))
+        assert.is_nil(target:getRawMetadata("__appliedSettings"))
+    end)
+
+    it("fails a profile-only target Lightroom did not paste onto, once a read shows it unchanged", function()
+        for _, meta in ipairs({
+            { pasteRefuses = true },
+            { pasteRefuses = true, pasteAlso = { MaskGroupBasedCorrections = {} } },
+            { pasteRefuses = true, pasteAlso = { Version = "19.0.1" } },
+        }) do
+            local source, target = landscapeSource(), colorTarget("11", meta, { Version = "15.0" })
+            local _, Handler = setup({ photos = { source, target } })
+
+            local r = copy(Handler, { "profile" })
+
+            assert.is_nil(r.unknown)
+            assert.matches("did not paste", r.failed[1].reason)
+            assert.are.equal("Adobe Color", target:getDevelopSettings().Look.Name)
+        end
+    end)
+
+    it("refuses a target's masks before pasting its profile", function()
+        local source = landscapeSource({ MaskGroupBasedCorrections = { { CorrectionID = "M", CorrectionMasks = {} } } })
+        local target = colorTarget("11")
+        local _, Handler = setup({
+            photos = { source, target },
+            guardedMaskWrite = {
+                precheck = function() error("mask 1 has no id yet", 0) end,
+                readEntries = function() return {} end,
+                deepClone = deepCopy,
+            },
+        })
+
+        local r = copy(Handler)
+
+        assert.matches("mask 1 has no id yet", r.failed[1].reason)
+        assert.is_nil(target:getRawMetadata("__pastedFrom"))
+        assert.are.equal("Adobe Color", target:getDevelopSettings().Look.Name)
+    end)
+
+    it(
+        "answers a target unknown, writing nothing more to it, when the paste changed a setting outside the profile",
+        function()
+            local source, target = landscapeSource(), colorTarget("11", { pasteAlso = { Saturation = 20 } })
+            local _, Handler = setup({ photos = { source, target } })
+
+            local r = copy(Handler)
+
+            assert.are.equal("11", r.unknown[1].photo_id)
+            assert.matches("Saturation", r.unknown[1].reason)
+            assert.matches("pasteSettings", r.unknown[1].reason)
+            assert.is_nil(target:getRawMetadata("__appliedSettings"))
+        end
+    )
+
+    it("answers a target unknown when its treatment changed by the end of the copy", function()
+        local source, target = landscapeSource(), colorTarget("11", { applyAlso = { ConvertToGrayscale = true } })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler)
+
+        assert.are.equal("11", r.unknown[1].photo_id)
+        assert.matches("treatment", r.unknown[1].reason)
+    end)
+
+    it("answers a target unknown when a setting the copy did not ask for changed by the end", function()
+        for _, case in ipairs({
+            {
+                nil,
+                colorTarget("11", { applyAlso = { Saturation = 20 } }),
+                "the copy did not write changed: Saturation",
+            },
+            {
+                { "profile", "Exposure2012" },
+                colorTarget("11", { applyAlso = { Look = deepCopy(COLOR) } }, { Look = deepCopy(LANDSCAPE) }),
+                "Adobe Color",
+            },
+        }) do
+            local source, target = landscapeSource(), case[2]
+            local _, Handler = setup({ photos = { source, target } })
+
+            local r = copy(Handler, case[1])
+
+            assert.are.equal("11", r.unknown[1].photo_id)
+            assert.matches(case[3], r.unknown[1].reason)
+        end
+    end)
+
+    it("confirms a paste and a copy whose writes bumped Lightroom's writer stamp Version", function()
+        for _, case in ipairs({
+            { { "profile" }, colorTarget("11", { pasteAlso = { Version = "19.0.1" } }, { Version = "15.0" }) },
+            {
+                { "profile", "Exposure2012" },
+                colorTarget("11", { applyAlso = { Version = "19.0.1" } }, { Version = "15.0" }),
+            },
+        }) do
+            local source, target = landscapeSource(), case[2]
+            local _, Handler = setup({ photos = { source, target } })
+
+            local r = copy(Handler, case[1])
+
+            assert.is_nil(r.unknown)
+            assert.are.equal(1, r.data.copied)
+        end
+    end)
+
+    it("refuses a named copy of settings the source does not have, writing nothing", function()
+        local source, target = landscapeSource(), colorTarget("11", nil, { GrayMixerRed = 30 })
+        local _, Handler = setup({ photos = { source, target } })
+
+        assert.matches("source has no GrayMixerRed", helper.failedOf(function() copy(Handler, { "GrayMixerRed" }) end))
+        assert.are.equal(30, target:getDevelopSettings().GrayMixerRed)
+        assert.is_nil(target:getRawMetadata("__pastedFrom"))
+    end)
+
+    it("copies the profile but answers partial when a named setting is not on the source", function()
+        local source = landscapeSource()
+        local target = colorTarget("11", nil, { Look = deepCopy(LANDSCAPE), GrayMixerRed = 30 })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler, { "profile", "GrayMixerRed" })
+
+        assert.are.same({ "11" }, r.data.unchanged)
+        assert.matches("source has no GrayMixerRed", r.problem)
+        assert.are.equal(30, target:getDevelopSettings().GrayMixerRed)
+    end)
+
+    it("names the settings Update AI Settings refreshed on a target, apart from the copy's own", function()
+        local source = landscapeSource({ MaskGroupBasedCorrections = AI_MASK_SETTINGS.MaskGroupBasedCorrections })
+        local target = colorTarget("11", {
+            aiUpdate = "ok",
+            aiAlso = { FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "fresh" } } } },
+        }, { FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "stale" } } } })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler)
+
+        assert.are.equal("11", r.unknown[1].photo_id)
+        assert.matches(
+            "Update AI Settings also changed FilterList %(was a table, now a table%) on the photo, which is not rolled back",
+            r.unknown[1].reason
+        )
+        assert.is_falsy(r.unknown[1].reason:find("did not write", 1, true))
+    end)
+
+    it("expects the keys Lightroom derives from a copied key and flags any other", function()
+        local CURVES = { "ToneCurvePV2012", "ToneCurvePV2012Red", "ToneCurvePV2012Green", "ToneCurvePV2012Blue" }
+        for _, case in ipairs({
+            {
+                { "WhiteBalance", "Temperature", "Tint" },
+                { fileFormat = "JPG", applyAlso = { IncrementalTemperature = 23, IncrementalTint = 7 } },
+                nil,
+            },
+            { CURVES, { applyAlso = { ToneCurveName2012 = "Custom" } }, nil },
+            { CURVES, { fileFormat = "JPG", applyAlso = { ToneCurveName2012 = "Custom" } }, nil },
+            {
+                { "Exposure2012" },
+                { fileFormat = "JPG", applyAlso = { IncrementalTemperature = 23 } },
+                "IncrementalTemperature",
+            },
+            { { "Exposure2012" }, { applyAlso = { ToneCurveName2012 = "Custom" } }, "ToneCurveName2012" },
+        }) do
+            local source = landscapeSource({
+                WhiteBalance = "Custom",
+                Temperature = 6800,
+                Tint = 15,
+                ToneCurvePV2012 = { 0, 0, 64, 48, 128, 128, 192, 208, 255, 255 },
+                ToneCurvePV2012Red = { 0, 0, 128, 140, 255, 255 },
+                ToneCurvePV2012Green = { 0, 0, 255, 255 },
+                ToneCurvePV2012Blue = { 0, 0, 128, 118, 255, 255 },
+                ToneCurveName2012 = "Medium Contrast",
+            })
+            local target = colorTarget("11", case[2], {
+                WhiteBalance = "As Shot",
+                IncrementalTemperature = 0,
+                IncrementalTint = 0,
+                ToneCurveName2012 = "Linear",
+            })
+            local _, Handler = setup({ photos = { source, target } })
+
+            local r = copy(Handler, case[1])
+
+            if case[3] then
+                assert.matches(case[3], r.unknown[1].reason)
+            else
+                assert.is_nil(r.unknown)
+                assert.are.equal(1, r.data.copied)
+            end
+        end
+    end)
+
+    it("takes an absent table setting and an empty one as equal, and shows what changed otherwise", function()
+        local MASK = { { CorrectionID = "M1", CorrectionMasks = {} } }
+        local OTHER = { { CorrectionID = "M2", CorrectionMasks = {} } }
+        for _, case in ipairs({
+            { {}, { applyAlso = { MaskGroupBasedCorrections = {} } }, nil },
+            { { MaskGroupBasedCorrections = {} }, { applyClears = { "MaskGroupBasedCorrections" } }, nil },
+            {
+                { MaskGroupBasedCorrections = MASK },
+                { applyAlso = { MaskGroupBasedCorrections = OTHER } },
+                "MaskGroupBasedCorrections %(was a list of 1, now a list of 1%)",
+            },
+            { { Saturation = 0 }, { applyAlso = { Saturation = 20 } }, "Saturation %(was 0, now 20%)" },
+            { {}, { applyAlso = { GrainSeed = 7 } }, "GrainSeed %(was absent, now 7%)" },
+            {
+                {},
+                { applyAlso = { CameraModelNote = string.rep("x", 40) } },
+                "CameraModelNote %(was absent, now " .. string.rep("x", 40) .. "%)",
+            },
+            {
+                {},
+                { applyAlso = { CameraModelNote = string.rep("x", 41) } },
+                "CameraModelNote %(was absent, now a string%)",
+            },
+        }) do
+            local source = landscapeSource({ WhiteBalance = "Custom", Temperature = 6800, Tint = 15 })
+            local meta = { fileFormat = "JPG" }
+            for key, value in pairs(case[2]) do
+                meta[key] = value
+            end
+            local target = colorTarget("11", meta, case[1])
+            local _, Handler = setup({ photos = { source, target } })
+
+            local r = copy(Handler, { "WhiteBalance", "Temperature", "Tint" })
+
+            if case[3] then
+                assert.matches(case[3], r.unknown[1].reason)
+            else
+                assert.is_nil(r.unknown)
+                assert.are.equal(1, r.data.copied)
+            end
+        end
+    end)
+
+    it("does not name an absent setting that Update AI Settings leaves as an empty table", function()
+        local source = landscapeSource({ MaskGroupBasedCorrections = AI_MASK_SETTINGS.MaskGroupBasedCorrections })
+        local target = colorTarget("11", { aiUpdate = "ok", aiAlso = { FilterList = {} } })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = copy(Handler)
+
+        assert.is_nil(r.unknown)
+        assert.are.same({ "11" }, r.data.computed)
+    end)
+
+    it("names only a target's own writes when its final read fails", function()
+        local source = landscapeSource()
+        local kept = colorTarget("11", { applyAlso = { Saturation = 20 } }, { Look = deepCopy(LANDSCAPE) })
+        local pasted = colorTarget("12")
+        local _, Handler = setup({ photos = { source, kept, pasted } })
+
+        local r = copy(Handler, { "profile", "Exposure2012" }, { "11", "12" })
+
+        assert.are.equal("11", r.unknown[1].photo_id)
+        assert.matches("Copy Develop Settings", r.unknown[1].reason)
+        assert.is_falsy(r.unknown[1].reason:find("pasteSettings", 1, true))
+        assert.are.equal("Adobe Landscape", pasted:getDevelopSettings().Look.Name)
+    end)
+
+    it("previews the profile change on the targets it would paste onto, and lists those it would leave", function()
+        local source = landscapeSource()
+        local kept, left = colorTarget("11"), colorTarget("12", { cameraModel = "NIKON Z 6" })
+        local _, Handler = setup({ photos = { source, kept, left } })
+
+        local r = copy(Handler, { "profile" }, { "11", "12" }, true)
+
+        assert.are.equal(1, r.changed_targets)
+        assert.are.same({ key = "profile", before = "Adobe Color", after = "Adobe Landscape" }, r.details[1].changes[1])
+        assert.are.equal("12", r.profiles_left[1].photo_id)
+        assert.is_nil(kept:getRawMetadata("__pastedFrom"))
+    end)
+end)
+
 describe("HandlerDevelop numeric photo ids", function()
     it("accepts the numeric ids the catalog hands out", function()
         local source = helper.fakePhoto({
@@ -1470,6 +1902,7 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
         local source = helper.fakePhoto({
             id = "10",
             path = "/s.jpg",
+            fileFormat = "JPG",
             developSettings = {
                 Exposure2012 = 1,
                 FilterList = {
@@ -1481,8 +1914,12 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
             },
         })
         local own = { Filters = { { Name = "Enhance", CompressedSettings = "target" } } }
-        local target =
-            helper.fakePhoto({ id = "11", path = "/t.jpg", developSettings = { Exposure2012 = 0, FilterList = own } })
+        local target = helper.fakePhoto({
+            id = "11",
+            path = "/t.jpg",
+            fileFormat = "JPG",
+            developSettings = { Exposure2012 = 0, FilterList = own },
+        })
         local Handler = select(2, setup({ photos = { source, target } }))
 
         local previewContext = helper.requestContext()
@@ -1510,12 +1947,13 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
         local source = helper.fakePhoto({
             id = "10",
             path = "/s.jpg",
+            fileFormat = "JPG",
             developSettings = {
                 Exposure2012 = 1,
                 FilterList = { Filters = {} },
             },
         })
-        local target = helper.fakePhoto({ id = "11", path = "/t.jpg" })
+        local target = helper.fakePhoto({ id = "11", path = "/t.jpg", fileFormat = "JPG" })
         local Handler = select(2, setup({ photos = { source, target } }))
         local context = helper.requestContext()
 

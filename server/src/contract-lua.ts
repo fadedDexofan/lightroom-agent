@@ -25,6 +25,7 @@ import {
   PEOPLE_MASK_PARTS,
   PHOTO_FLAGS,
   PROFILE_PRESET_GROUP,
+  PROFILE_UNIT,
   STORED_MASK_DECIMAL_PLACES,
 } from "./lightroom-tables.js";
 
@@ -71,6 +72,7 @@ function contractTable(): { readonly [key: string]: LuaValue } {
       ...(transfersStyle(key) ? { style: true } : {}),
       ...(key.kind === "number" ? { precision: key.precision } : {}),
       ...(key.kind === "curve" ? { extended: key.extended } : {}),
+      ...(key.derives ? { derives: [...key.derives] } : {}),
     })),
     LOCAL_KEYS: LOCAL_KEYS.map(({ range: _range, ...key }): LuaValue => key),
     MASK_TYPES,
@@ -89,6 +91,7 @@ function contractTable(): { readonly [key: string]: LuaValue } {
       }),
     ),
     PROFILE_PRESET_GROUP,
+    PROFILE_UNIT,
     PREVIEW_REPLY_RESERVE_SECONDS: PREVIEW_REPLY_RESERVE_MS / 1000,
     DETAIL_RENDER_FOLDER,
     RENDITION_JPEG_QUALITY,

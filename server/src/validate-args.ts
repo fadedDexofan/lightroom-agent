@@ -1,4 +1,5 @@
 import { Ajv, type ErrorObject, type ValidateFunction } from "ajv";
+import { PROFILE_UNIT } from "./lightroom-tables.js";
 import { PHOTO_ID_PATTERN, TOOL_CONTRACTS, type ToolArgs, type ToolContract } from "./tool-contracts.js";
 
 const ajv = new Ajv({ strict: false, allErrors: true, verbose: true });
@@ -79,6 +80,9 @@ function describe(tool: string, args: ToolArgs, error: ErrorObject): string {
     what = `must be ${options.join(", or ")}`;
   } else if (error.keyword === "enum" && params.allowedValues) {
     what = `must be one of ${params.allowedValues.map((value) => JSON.stringify(value)).join(", ")}`;
+    if (params.allowedValues.includes(PROFILE_UNIT) && PROFILE_KEYS.has(String(error.data))) {
+      what += `; use "${PROFILE_UNIT}" to copy the profile`;
+    }
   } else if (Array.isArray(params.type)) {
     what = `must be ${params.type.join(" or ")}`;
   } else if (error.keyword === "maxItems" && field === "photo_ids" && PLURAL_SIBLING[tool]?.takes(args)) {

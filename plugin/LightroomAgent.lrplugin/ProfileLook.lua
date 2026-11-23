@@ -82,9 +82,24 @@ function ProfileLook.withAmount(look, amount)
     return written
 end
 
-local function outsideProblem(before, after)
-    local changed = SettingsChanges.between(before, after, ProfileLook.inFamily)
-    if #changed > 0 then return "settings outside the profile changed: " .. SettingsChanges.listed(changed) end
+local function outsideProblem(before, after, written, label)
+    local changed = SettingsChanges.between(
+        before,
+        after,
+        function(key) return ProfileLook.inFamily(key) or (written ~= nil and written[key] ~= nil) end
+    )
+    if #changed > 0 then
+        return (label or "settings outside the profile changed") .. ": " .. SettingsChanges.listed(changed)
+    end
+end
+
+local function present(...)
+    local found = {}
+    for index = 1, select("#", ...) do
+        local problem = select(index, ...)
+        if problem ~= nil then found[#found + 1] = problem end
+    end
+    return found
 end
 
 local function settle(problems)
@@ -131,6 +146,43 @@ function ProfileLook.requireAmount(before, after, amount)
     settle(problems)
 end
 
+local function blank(value)
+    if value == nil or value == "" then return nil end
+    return value
+end
+
+function ProfileLook.leftReason(source, target)
+    local sourceKind, targetKind = blank(source.kind), blank(target.kind)
+    if sourceKind == nil or targetKind == nil then return "the file kind of one of the photos is unknown" end
+    if sourceKind == "DNG" or targetKind == "DNG" then
+        return "a DNG's profile is not copied: whether it holds raw data is not established"
+    end
+    local sourceRaw, targetRaw = sourceKind == "RAW", targetKind == "RAW"
+    if sourceRaw ~= targetRaw then return "a profile moves only between two raw or two non-raw photos" end
+    local sourceModel, targetModel = blank(source.model), blank(target.model)
+    if sourceRaw then
+        if sourceModel == nil or targetModel == nil then return "the camera model of one of the photos is unknown" end
+        if sourceModel ~= targetModel then
+            return "another camera body ("
+                .. sourceModel
+                .. ", "
+                .. targetModel
+                .. "): a raw profile is copied only within one camera model"
+        end
+    end
+    if ProfileLook.isAdaptive(source.settings.Look) or ProfileLook.isAdaptive(target.settings.Look) then
+        return "an Adaptive profile is neither copied nor replaced"
+    end
+    if (source.settings.ConvertToGrayscale == true) ~= (target.settings.ConvertToGrayscale == true) then
+        return "the treatments differ (colour and black and white): convert the target with set_treatment first"
+    end
+    local restriction = type(source.settings.Look) == "table" and blank(source.settings.Look.CameraModelRestriction)
+    if restriction and restriction ~= targetModel then
+        return "the profile is made for " .. tostring(restriction) .. " only"
+    end
+    return nil
+end
+
 function ProfileLook.identity(settings)
     local look = type(settings.Look) == "table" and settings.Look or {}
     return { CameraProfile = settings.CameraProfile, Name = look.Name, UUID = look.UUID, Amount = look.Amount }
@@ -143,6 +195,33 @@ end
 
 function ProfileLook.sameProfile(left, right)
     return JsonValue.equal(JsonValue.of(ProfileLook.identity(left)), JsonValue.of(ProfileLook.identity(right)))
+end
+
+local function profileProblem(after, expected)
+    if ProfileLook.sameProfile(after, expected) then return nil end
+    return "the photo shows the profile "
+        .. tostring(ProfileLook.nameOf(after))
+        .. " (amount "
+        .. tostring((type(after.Look) == "table" and after.Look or {}).Amount)
+        .. "), not "
+        .. tostring(ProfileLook.nameOf(expected))
+end
+
+local function treatmentProblem(before, after)
+    if (before.ConvertToGrayscale == true) ~= (after.ConvertToGrayscale == true) then return "the treatment changed" end
+end
+
+function ProfileLook.requirePasted(before, after, source)
+    settle(present(profileProblem(after, source), treatmentProblem(before, after), outsideProblem(before, after)))
+end
+
+function ProfileLook.finalProblem(before, after, expected, written)
+    local problems = present(
+        profileProblem(after, expected),
+        treatmentProblem(before, after),
+        outsideProblem(before, after, written, "settings the copy did not write changed")
+    )
+    if #problems > 0 then return table.concat(problems, "; ") end
 end
 
 function ProfileLook.answer(photo, settings)

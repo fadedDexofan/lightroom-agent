@@ -183,7 +183,8 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
                 FilterList = { Filters = { { CompressedSettings = "new" } } },
             },
             message = "Lightroom found nothing for the subject mask on photo 1 (Subject 1); the new masks were removed,"
-                .. " but Update AI Settings also changed DepthMapInfo, FilterList on the photo; written before this"
+                .. " but Update AI Settings also changed DepthMapInfo (was a table, now a table), FilterList (was a"
+                .. " table, now a table) on the photo, which is not rolled back; written before this"
                 .. " stopped: updateAISettings, Update AI Settings",
         },
     }) do
