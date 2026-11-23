@@ -42,7 +42,7 @@ Every tool answers `{outcome, data, error, failed, unknown, not_found, remaining
 - **A preview's size is not the detail it holds.** Previews come from Lightroom's preview cache, which can answer with an enlargement of a smaller cached preview, a cropped photo most of all, without saying so (the preview tools' descriptions say the same), and every whole-frame preview is a downscale. A preview can hide a slight smear or defocus and can make a sharp frame look soft; streaks or doubled contours across the subject are strong evidence of motion, but check a neighbouring frame or a detail crop when unsure.
 - **On sharpness, reject from a preview only a gross smear:** motion streaks, doubled edges, a subject blurred where the same preview holds sharper areas. A frame that only looks uniformly soft is uncertain, not rejected.
 - **Everything finer comes from `get_photo_detail`:** whether a frame is critically sharp, which of two near-identical frames is sharper, and any keep that rests on sharpness. Each detail render leaves one Export history step and the exported mark on the photo (a request refused before rendering leaves neither), so ask for all regions of a photo in one call.
-- **Look again after every change** on a fresh preview.
+- **Look again after every change** on a fresh preview. The photo open in Develop gets no preview: render it with `render_photo` once before editing and once after, not after every step, since each render leaves one Export history step.
 
 ## The workflow
 

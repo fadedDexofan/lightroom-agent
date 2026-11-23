@@ -37,7 +37,7 @@ function rendered(image: string, photoId: number | string = 914): PluginResponse
 const OPEN_IN_DEVELOP_REASON = (id: number | string) =>
   `This tool takes no thumbnail of photo ${id} while it is the photo open in Develop: Lightroom's thumbnail there can be stale or an enlarged low-resolution copy`;
 const WAY_OUT =
-  ' Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode).';
+  ' Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode). For the photo open in Develop, take one look before editing and one after, not one per step.';
 function blockedInDevelop(id: number | string): PluginResponse {
   return {
     id: 'preview',

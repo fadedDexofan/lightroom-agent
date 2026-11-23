@@ -358,7 +358,7 @@ describe('createMcpServer', () => {
         'Cancel stops before rendering',
         'a timeout while the dialog is open is unknown',
         'not re-encoded',
-        'once per edit',
+        'one look before editing and one after',
         'lapses 300 s',
       ],
       set_mask_adjustments: [
