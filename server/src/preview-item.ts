@@ -21,7 +21,8 @@ export interface PreviewRequest {
 
 const WAY_OUT =
   " Switch Lightroom to Library and ask again; to see the photo now, call render_photo, which returns its image" +
-  " by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode).";
+  " by an export and leaves one Export history step and the exported mark on the photo (not available in read-only mode)." +
+  " For the photo open in Develop, take one look before editing and one after, not one per step.";
 
 export function jpegOf(preview: RenderedPreview): Buffer {
   if (preview.image?.mime_type !== "image/jpeg" || typeof preview.image.data !== "string") {
