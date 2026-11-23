@@ -1026,6 +1026,24 @@ fs.copyFileSync = (from, to, mode) => { copy(from, to, mode); if (/\\.installing
   );
 
   it(
+    'exits non-zero when install-plugin installs the plug-in but not every profile preset',
+    async () => {
+      const env = await startPlugin(answering);
+      const home = newState();
+      const settings = path.join(modulesDir(home), '..', '..', 'CameraRaw', 'Settings');
+      fs.mkdirSync(path.dirname(settings), { recursive: true });
+      fs.writeFileSync(settings, 'a file where the folder should be');
+
+      const result = await run(['install-plugin'], env, undefined, { dist: checkout(), home });
+
+      expect(result.code).toBe(1);
+      expect(result.stderr).toMatch(/could not write the profile presets: /);
+      expect(fs.existsSync(path.join(modulesDir(home), 'LightroomAgent.lrplugin', 'Info.lua'))).toBe(true);
+    },
+    CLI_TEST_MS,
+  );
+
+  it(
     'validates arguments through the common backend without dispatching the operation',
     async () => {
       const called: string[] = [];

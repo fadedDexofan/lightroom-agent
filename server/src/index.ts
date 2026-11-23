@@ -31,7 +31,7 @@ import {
   lockHolderUnresponsive,
   type InstanceLock,
 } from "./instance-lock.js";
-import { admitLeader, describeInstall, installPlugin } from "./install-plugin.js";
+import { admitLeader, describeInstall, installPlugin, presetsIncomplete } from "./install-plugin.js";
 
 const PING_TIMEOUT_MS = 10_000;
 const RESPONSE_CONNECT_SETTLE_MS = 200;
@@ -326,7 +326,12 @@ function runInstallPlugin(pairing: Pairing): void {
   try {
     const result = installPlugin(pairing);
     console.error(describeInstall(result));
-    if (result.status === "conflict" || result.status === "foreign" || result.status === "invalid")
+    if (
+      result.status === "conflict" ||
+      result.status === "foreign" ||
+      result.status === "invalid" ||
+      presetsIncomplete(result)
+    )
       process.exitCode = 1;
   } catch (err) {
     console.error(`Install failed: ${(err as Error).message}`);

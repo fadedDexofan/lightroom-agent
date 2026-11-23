@@ -2,13 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { compareVersions, treeDigest, type BuildIdentity } from "./build-identity.js";
+import { ADOBE_RAW_PROFILES, PROFILE_PRESET_GROUP } from "./lightroom-tables.js";
 import { PairingLost, PLUGIN_FOLDER, validateBundle, type Paired } from "./plugin-pairing.js";
 
 const CONFLICTING_PLUGIN_FOLDER = "LightroomMCP.lrplugin";
 
+type Presets = { presets?: readonly string[]; foreignPresets?: readonly string[]; presetsError?: string };
+
 export type InstallResult =
-  | { status: "installed" | "current" | "repaired"; destination: string }
-  | { status: "replaced"; destination: string; from: BuildIdentity; to: BuildIdentity }
+  | ({ status: "installed" | "current" | "repaired"; destination: string } & Presets)
+  | ({ status: "replaced"; destination: string; from: BuildIdentity; to: BuildIdentity } & Presets)
   | { status: "foreign"; destination: string; toolkitId: string | null }
   | { status: "conflict"; conflicting: string }
   | { status: "invalid"; source: string };
@@ -43,6 +46,128 @@ export function lightroomPluginsDir(): string {
     return path.join(appData, "Adobe", "Lightroom", "Plugins");
   }
   return path.join(os.homedir(), ".local", "share", "Adobe", "Lightroom", "Plugins");
+}
+
+export function profilePresetsDir(): string {
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Application Support", "Adobe", "CameraRaw", "Settings");
+  }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+    return path.join(appData, "Adobe", "CameraRaw", "Settings");
+  }
+  return path.join(os.homedir(), ".local", "share", "Adobe", "CameraRaw", "Settings");
+}
+
+function xml(text: string): string {
+  return text.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+}
+
+function alt(tag: string, text: string): string {
+  const item = text ? `<rdf:li xml:lang="x-default">${xml(text)}</rdf:li>` : `<rdf:li xml:lang="x-default"/>`;
+  return `   <crs:${tag}>\n    <rdf:Alt>\n     ${item}\n    </rdf:Alt>\n   </crs:${tag}>\n`;
+}
+
+function profilePreset(profile: (typeof ADOBE_RAW_PROFILES)[number]): string {
+  return (
+    `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.6-c140 79.160451, 2017/05/06-01:08:21        ">\n` +
+    ` <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n` +
+    `  <rdf:Description rdf:about=""\n` +
+    `    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"\n` +
+    `   crs:PresetType="Normal"\n` +
+    `   crs:Cluster=""\n` +
+    `   crs:UUID="${profile.preset_uuid}"\n` +
+    `   crs:SupportsAmount="False"\n` +
+    `   crs:SupportsColor="True"\n` +
+    `   crs:SupportsMonochrome="True"\n` +
+    `   crs:SupportsHighDynamicRange="True"\n` +
+    `   crs:SupportsNormalDynamicRange="True"\n` +
+    `   crs:SupportsSceneReferred="True"\n` +
+    `   crs:SupportsOutputReferred="True"\n` +
+    `   crs:CameraModelRestriction=""\n` +
+    `   crs:Copyright=""\n` +
+    `   crs:ContactInfo=""\n` +
+    `   crs:Version="12.3"\n` +
+    `   crs:CameraProfile="${xml(profile.camera_profile)}"\n` +
+    `   crs:HasSettings="True">\n` +
+    alt("Name", profile.preset_name) +
+    alt("ShortName", "") +
+    alt("SortName", profile.preset_name) +
+    alt("Group", PROFILE_PRESET_GROUP) +
+    alt("Description", "") +
+    `   <crs:Look>\n` +
+    `    <rdf:Description\n` +
+    `     crs:Name="${xml(profile.name)}"\n` +
+    `     crs:Amount="1.000000"\n` +
+    `     crs:UUID="${profile.look_uuid}"\n` +
+    `     crs:SupportsAmount="false"\n` +
+    `     crs:SupportsMonochrome="false"\n` +
+    `     crs:SupportsOutputReferred="false"\n` +
+    `     crs:Copyright="${xml(profile.copyright)}"\n` +
+    `     crs:Stubbed="true">\n` +
+    `    <crs:Group>\n     <rdf:Alt>\n      <rdf:li xml:lang="x-default">Profiles</rdf:li>\n     </rdf:Alt>\n    </crs:Group>\n` +
+    `    </rdf:Description>\n` +
+    `   </crs:Look>\n` +
+    `  </rdf:Description>\n` +
+    ` </rdf:RDF>\n` +
+    `</x:xmpmeta>\n`
+  );
+}
+
+type PresetPlan = { file: string; text: string; state: "current" | "write" | "foreign" };
+
+function planPreset(file: string, text: string, marker: string): PresetPlan {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(file);
+  } catch {
+    return { file, text, state: "write" };
+  }
+  if (!stat.isFile()) return { file, text, state: "foreign" };
+  const existing = fs.readFileSync(file, "utf8");
+  if (existing === text) return { file, text, state: "current" };
+  return { file, text, state: existing.includes(marker) ? "write" : "foreign" };
+}
+
+function installProfilePresets(): Presets {
+  const dir = profilePresetsDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const plans = ADOBE_RAW_PROFILES.map((profile) =>
+    planPreset(
+      path.join(dir, `${profile.preset_name}.xmp`),
+      profilePreset(profile),
+      `crs:UUID="${profile.preset_uuid}"`,
+    ),
+  );
+  const written: string[] = [];
+  let presetsError: string | undefined;
+  for (const plan of plans.filter((plan) => plan.state === "write")) {
+    const staged = `${plan.file}.installing-${process.pid}-${Date.now()}`;
+    try {
+      fs.writeFileSync(staged, plan.text, { flag: "wx" });
+      fs.renameSync(staged, plan.file);
+      written.push(plan.file);
+    } catch (err) {
+      fs.rmSync(staged, { force: true });
+      presetsError = `${path.basename(plan.file)}: ${(err as Error).message}`;
+      break;
+    }
+  }
+  const foreign = plans.filter((plan) => plan.state === "foreign").map((plan) => plan.file);
+  return {
+    ...(written.length > 0 ? { presets: written } : {}),
+    ...(foreign.length > 0 ? { foreignPresets: foreign } : {}),
+    ...(presetsError ? { presetsError } : {}),
+  };
+}
+
+function withPresets<T extends InstallResult>(result: T): T {
+  if (!["installed", "current", "repaired", "replaced"].includes(result.status)) return result;
+  try {
+    return { ...result, ...installProfilePresets() };
+  } catch (err) {
+    return { ...result, presetsError: (err as Error).message };
+  }
 }
 
 function installedBundle(folder: string): string | null {
@@ -82,7 +207,33 @@ function describeChange(from: BuildIdentity, to: BuildIdentity): string {
   return `version ${to.version ?? "unknown"}, build ${from.build ?? "unknown"} → ${to.build ?? "unknown"}`;
 }
 
+function describePresets(result: InstallResult): string {
+  if (!("status" in result) || !["installed", "current", "repaired", "replaced"].includes(result.status)) return "";
+  const { presets, foreignPresets, presetsError } = result as Presets;
+  const parts = [
+    ...(presets?.length
+      ? [
+          `wrote the profile presets ${presets.map((file) => path.basename(file, ".xmp")).join(", ")}, which Lightroom registers when it starts`,
+        ]
+      : []),
+    ...(foreignPresets ?? []).map(
+      (file) => `left ${file}, which lightroom-agent did not write, so set_profile cannot use that profile`,
+    ),
+    ...(presetsError ? [`could not write the profile presets: ${presetsError}`] : []),
+  ];
+  return parts.map((part) => `; ${part}`).join("");
+}
+
+export function presetsIncomplete(result: InstallResult): boolean {
+  const { presetsError, foreignPresets } = result as Presets;
+  return presetsError !== undefined || (foreignPresets?.length ?? 0) > 0;
+}
+
 export function describeInstall(result: InstallResult): string {
+  return describePlugin(result) + describePresets(result);
+}
+
+function describePlugin(result: InstallResult): string {
   switch (result.status) {
     case "installed":
       return `installed ${result.destination}; restart Lightroom to load it`;
@@ -181,7 +332,7 @@ function performInstall(pairing: Paired, plan: InstallPlan): InstallResult {
 }
 
 export function installPlugin(pairing: Paired): InstallResult {
-  return performInstall(pairing, planInstall(pairing, true));
+  return withPresets(performInstall(pairing, planInstall(pairing, true)));
 }
 
 function sameFiles(installed: string, staged: string): boolean {
@@ -218,8 +369,9 @@ export function admitLeader(pairing: Paired, install: boolean, log: (msg: string
   }
   if (!install) return;
   try {
-    const result = performInstall(pairing, plan);
-    if (result.status !== "current") log(`[install-plugin] ${describeInstall(result)}`);
+    const result = withPresets(performInstall(pairing, plan));
+    if (result.status !== "current" || describePresets(result) !== "")
+      log(`[install-plugin] ${describeInstall(result)}`);
   } catch (err) {
     log(`[install-plugin] failed: ${(err as Error).message}`);
   }
