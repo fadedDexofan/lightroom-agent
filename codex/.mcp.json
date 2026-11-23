@@ -5,7 +5,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "lightroom-agent@0.1.0"
+        "lightroom-agent@0.2.0"
       ],
       "env": {
         "LIGHTROOM_AGENT_TOOLSETS": "all"
