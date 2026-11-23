@@ -4,6 +4,12 @@ Terms used by lightroom-agent's API, its documentation and the live kit that tes
 
 ## Language
 
+### Profile Look
+
+The `Look` develop setting: Lightroom's stored form of a profile (name, id, amount, parameters, and the tables its parameters reference), beside `CameraProfile` and its digest. Lightroom builds it; the tools set it only through Lightroom (`set_profile`) or rewrite its amount.
+
+- Avoid: profile settings, look (the skill's photographic look)
+
 ### Guarded write
 
 A write of the photo's mask array through Lightroom's undocumented mask setting, made only through the one module that writes the whole array in one gate, reads it back and restores it on a mismatch. A guarded write that constructs a mask entry or component also needs admission and is checked against the pinned format; one that only changes values or deletes constructs nothing and needs neither. A full copy that copies or removes masks counts as constructing.

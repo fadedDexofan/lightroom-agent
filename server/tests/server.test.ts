@@ -69,6 +69,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   list_develop_snapshots: 'read-only',
   create_develop_snapshot: 'destructive',
   create_virtual_copies: 'additive',
+  set_profile: 'destructive',
   set_treatment: 'destructive',
   apply_develop_snapshot: 'destructive',
   delete_develop_snapshot: 'destructive',

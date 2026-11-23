@@ -90,7 +90,7 @@ describe('photo id inputs', () => {
       const ids = (contract.inputSchema.properties as Record<string, { maxItems?: number }> | undefined)?.photo_ids;
       return ids?.maxItems === 1;
     }).map((contract) => contract.name);
-    expect(single.length).toBe(32);
+    expect(single.length).toBe(33);
     for (const name of single) {
       const contract = TOOL_CONTRACTS.find((candidate) => candidate.name === name)!;
       const ids = (contract.inputSchema.properties as Record<string, { minItems?: number }>).photo_ids;
@@ -144,6 +144,26 @@ describe('old photo names', () => {
       'photos.0 unknown property "photo_ids": use photo_id',
     ],
   ])('%s names the role id it takes for %j', (name, args, hint) => {
+    expect(validateToolArgs(name, args)).toContain(hint);
+  });
+
+  it.each([
+    [
+      'set_develop_settings',
+      { photo_ids: [1], settings: { CameraProfile: 'Adobe Standard' } },
+      'settings unknown property "CameraProfile": use set_profile',
+    ],
+    [
+      'set_develop_settings',
+      { photo_ids: [1], settings: { Look: {} } },
+      'settings unknown property "Look": use set_profile',
+    ],
+    [
+      'set_develop_settings_batch',
+      { photos: [{ photo_id: 1, settings: { ProfileAmount: 50 } }] },
+      'photos.0.settings unknown property "ProfileAmount": use set_profile',
+    ],
+  ])('%s points a profile key under settings to set_profile', (name, args, hint) => {
     expect(validateToolArgs(name, args)).toContain(hint);
   });
 

@@ -21,7 +21,7 @@ To change the ports, set both variables and enter the same values in the plug-in
 | Toolset | Contents |
 | --- | --- |
 | `core` | Catalog search, metadata (with GPS, location and private AI scores), keywords, collections, ratings, flags and labels, previews, renders and detail crops, import, export, undo and removal from the catalog. Always on. |
-| `develop` | Develop settings, crop, presets, style match, snapshots, virtual copies, treatment, process version, Lens Blur, Denoise, Auto, reset, and editing or deleting existing spot removals. |
+| `develop` | Develop settings, crop, presets, style match, snapshots, virtual copies, treatment, profile, process version, Lens Blur, Denoise, Auto, reset, and editing or deleting existing spot removals. |
 | `masks` | Every mask tool: listing, geometry, AI masks, sliders, curves, Point Color, deletion. |
 | `all` | All of the above. |
 

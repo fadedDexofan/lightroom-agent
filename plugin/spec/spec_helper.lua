@@ -305,7 +305,7 @@ function M.fakePhoto(meta)
             meta.__appliedPreset = preset
             meta.__appliedPresetPlugin = plugin
             meta.developSettings = meta.developSettings or {}
-            for key, value in pairs(preset:getSetting()) do
+            for key, value in pairs(preset.stores or preset:getSetting()) do
                 if key == "MaskGroupBasedCorrections" then
                     local masks = copiedValue(meta.developSettings.MaskGroupBasedCorrections) or {}
                     for _, entry in ipairs(value) do
@@ -320,6 +320,9 @@ function M.fakePhoto(meta)
         applyDevelopSettings = function(_, settings, historyName, flattenAutoNow)
             meta.developSettings = meta.developSettings or {}
             for key, value in pairs(settings) do
+                meta.developSettings[key] = value
+            end
+            for key, value in pairs(meta.applyAlso or {}) do
                 meta.developSettings[key] = value
             end
             meta.__appliedSettings = settings

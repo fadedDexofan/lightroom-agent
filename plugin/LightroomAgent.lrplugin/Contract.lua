@@ -73,6 +73,7 @@ return {
         set_mask_curves = { "HandlerMaskCurves", "setMaskCurves" },
         set_metadata = { "HandlerMetadata", "setMetadata" },
         set_process_version = { "HandlerDevelop", "setProcessVersion" },
+        set_profile = { "HandlerDevelop", "setProfile" },
         set_rating_and_flag = { "HandlerOrganization", "setRatingAndFlag" },
         set_treatment = { "HandlerTreatment", "set" },
         summarize_develop_settings = { "HandlerStyleSummary", "summarize" },
@@ -307,6 +308,11 @@ return {
         { name = "purple", labelColor = 5 },
         { name = "none", labelColor = "none" },
     },
+    ADOBE_RAW_PROFILES = {
+        { name = "Adobe Color", look_uuid = "B952C231111CD8E0ECCF14B86BAA7077", preset_name = "lightroom-agent Adobe Color", preset_uuid = "6C1F3E0A9B2D4E7F8A5C0B1D2E3F4A51", camera_profile = "Adobe Standard" },
+        { name = "Adobe Landscape", look_uuid = "6F9C877E84273F4E8271E6B91BEB36A1", preset_name = "lightroom-agent Adobe Landscape", preset_uuid = "6C1F3E0A9B2D4E7F8A5C0B1D2E3F4A52", camera_profile = "Adobe Standard" },
+    },
+    PROFILE_PRESET_GROUP = "lightroom-agent profiles",
     PREVIEW_REPLY_RESERVE_SECONDS = 10,
     DETAIL_RENDER_FOLDER = "lightroom-agent-detail",
     RENDITION_JPEG_QUALITY = 80,
@@ -321,5 +327,5 @@ return {
     STYLE_SUMMARY_PHOTO_LIMIT = 200,
     HEARTBEAT_INTERVAL_SECONDS = 30,
     VERSION = "0.1.0",
-    BUILD = "e598772cc73dc3e3",
+    BUILD = "d732cea6da287260",
 }
