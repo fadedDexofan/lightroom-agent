@@ -205,9 +205,9 @@ codex mcp add lightroom --env LIGHTROOM_AGENT_TOOLSETS=all -- node "$PWD/server/
 <details>
 <summary>用 <code>install-plugin</code> 安裝增效模組與解除安裝</summary>
 
-`node server/dist/index.js install-plugin`（或 `npx -y lightroom-agent@<version> install-plugin`）會檢查 Lightroom 的 Modules 或 Plugins 資料夾。若其中已有這個增效模組，就把伺服器的增效模組安裝到原來的位置；若兩處都沒有，就安裝到 Modules 資料夾。如果已安裝的 Lua 檔案與這個組建的檔案不同，無論已安裝的版本較舊或較新，安裝指令都會覆寫原有的增效模組。若這次安裝會降版，指令會在結果中說明。檔案相同時會保留原檔。如果同一組連接埠上仍有 lightroom-agent 伺服器負責這個增效模組，安裝指令會拒絕安裝，因此請先結束用戶端；若使用自訂連接埠，請參閱 [docs/reference.md](docs/reference.md#configuration)。如果已安裝 `LightroomMCP.lrplugin`，安裝指令也會拒絕安裝，因為兩個增效模組使用相同的連接埠。請先結束 Lightroom，再刪除該增效模組的資料夾。
+`node server/dist/index.js install-plugin`（或 `npx -y lightroom-agent@<version> install-plugin`）會檢查 Lightroom 的 Modules 或 Plugins 資料夾。若其中已有這個增效模組，就把伺服器的增效模組安裝到原來的位置；若兩處都沒有，就安裝到 Modules 資料夾。如果已安裝的 Lua 檔案與這個組建的檔案不同，無論已安裝的版本較舊或較新，安裝指令都會覆寫原有的增效模組。若這次安裝會降版，指令會在結果中說明。檔案相同時會保留原檔。如果同一組連接埠上仍有 lightroom-agent 伺服器負責這個增效模組，安裝指令會拒絕安裝，因此請先結束用戶端；若使用自訂連接埠，請參閱 [docs/reference.md](docs/reference.md#configuration)。如果已安裝 `LightroomMCP.lrplugin`，安裝指令也會拒絕安裝，因為兩個增效模組使用相同的連接埠。請先結束 Lightroom，再刪除該增效模組的資料夾。安裝指令也會把兩個只含描述檔的 Develop 預設集 `lightroom-agent Adobe Color.xmp` 和 `lightroom-agent Adobe Landscape.xmp` 寫入 Camera Raw 的設定資料夾（macOS 為 `~/Library/Application Support/Adobe/CameraRaw/Settings`，Windows 為 `%APPDATA%\Adobe\CameraRaw\Settings`），放在「lightroom-agent profiles」群組中；Lightroom 啟動時會登錄它們，`set_profile` 會套用它們。Camera Raw 也看得到它們。每次安裝，以及每次取得 Lightroom 連線的伺服器啟動時，都會重寫自己寫入、但已變更或遺失的檔案；同名但並非由 lightroom-agent 寫入的檔案則保持不動（此時 `set_profile` 會拒絕套用該描述檔）。
 
-解除安裝時，先移除代理程式中的外掛或伺服器設定項目，再刪除已安裝的 `LightroomAgent.lrplugin` 資料夾（增效模組管理員會顯示它的位置）以及 `~/.config/lightroom-agent`。
+解除安裝時，先移除代理程式中的外掛或伺服器設定項目，再刪除已安裝的 `LightroomAgent.lrplugin` 資料夾（增效模組管理員會顯示它的位置）、Camera Raw 設定資料夾中的兩個 `lightroom-agent` 預設集，以及 `~/.config/lightroom-agent`。
 
 </details>
 

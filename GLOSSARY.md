@@ -10,6 +10,12 @@ The `Look` develop setting: Lightroom's stored form of a profile (name, id, amou
 
 - Avoid: profile settings, look (the skill's photographic look)
 
+### Profile preset
+
+A Develop preset that holds only a profile reference (`CameraProfile` and a stubbed Look naming the profile's id), with no Baseline. `install-plugin` writes one per offered Adobe Raw profile into Camera Raw's settings folder, in the group "lightroom-agent profiles"; `set_profile` applies it, so Lightroom builds the profile Look for the photo's own camera.
+
+- Avoid: profile stub, profile-only file
+
 ### Guarded write
 
 A write of the photo's mask array through Lightroom's undocumented mask setting, made only through the one module that writes the whole array in one gate, reads it back and restores it on a mismatch. A guarded write that constructs a mask entry or component also needs admission and is checked against the pinned format; one that only changes values or deletes constructs nothing and needs neither. A full copy that copies or removes masks counts as constructing.

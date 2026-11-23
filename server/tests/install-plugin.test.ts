@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,12 +9,17 @@ import {
   installPlugin,
   lightroomModulesDir,
   lightroomPluginsDir,
+  profilePresetsDir,
 } from '../src/install-plugin.js';
+import { ADOBE_RAW_PROFILES, PROFILE_PRESET_GROUP } from '../src/lightroom-tables.js';
 import { expectedIdentity, renderContractLua } from '../src/contract-lua.js';
 import { PairingLost, type Paired } from '../src/plugin-pairing.js';
 import { VERSION } from '../src/version.js';
 
 const realPlatform = process.platform;
+const WROTE_PRESETS = expect.arrayContaining([expect.stringContaining('lightroom-agent Adobe Color.xmp')]);
+const PRESETS_LINE =
+  '; wrote the profile presets lightroom-agent Adobe Color, lightroom-agent Adobe Landscape, which Lightroom registers when it starts';
 const realAppData = process.env.APPDATA;
 
 function setPlatform(p: NodeJS.Platform): void {
@@ -139,9 +145,71 @@ describe('installPlugin', () => {
   it("copies the plugin into Lightroom's Modules folder on first install", () => {
     const result = installPlugin(bundled(tmp));
 
-    expect(result).toEqual({ status: 'installed', destination: installed });
+    expect(result).toEqual({ status: 'installed', destination: installed, presets: expect.any(Array) });
     expect(fs.existsSync(path.join(installed, 'Info.lua'))).toBe(true);
     expect(fs.existsSync(path.join(installed, 'Handler.lua'))).toBe(true);
+  });
+
+  it('writes the profile-only presets S2 proved, byte for byte, and rewrites only its own changed file', () => {
+    const presets = ADOBE_RAW_PROFILES.map((profile) => path.join(profilePresetsDir(), `${profile.preset_name}.xmp`));
+
+    expect(installPlugin(bundled(tmp))).toMatchObject({ presets });
+    const digests = presets.map((file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex'));
+    expect(digests).toEqual([
+      'f170c10a868afd18ef74191ddf4b65546b959db418715a21f2e3f0bc766f9ece',
+      '175cc48dc8f981848cfca54d0641dd6852210fa512421b358920ab07d3559147',
+    ]);
+    expect(fs.readFileSync(presets[0], 'utf8')).toContain(
+      `<rdf:li xml:lang="x-default">${PROFILE_PRESET_GROUP}</rdf:li>`,
+    );
+
+    expect(installPlugin(bundled(tmp))).not.toHaveProperty('presets');
+    const ours = fs.readFileSync(presets[1], 'utf8');
+    fs.writeFileSync(presets[1], ours.replace('lightroom-agent profiles', 'renamed group'));
+    expect(installPlugin(bundled(tmp))).toMatchObject({ presets: [presets[1]] });
+    expect(fs.readFileSync(presets[1], 'utf8')).toBe(ours);
+  });
+
+  it('leaves a preset of that name that is not its own, and reports it, writing the other', () => {
+    const presets = ADOBE_RAW_PROFILES.map((profile) => path.join(profilePresetsDir(), `${profile.preset_name}.xmp`));
+    fs.mkdirSync(profilePresetsDir(), { recursive: true });
+    fs.writeFileSync(presets[0], 'a preset someone else made');
+
+    const result = installPlugin(bundled(tmp));
+
+    expect(result).toMatchObject({ presets: [presets[1]], foreignPresets: [presets[0]] });
+    expect(fs.readFileSync(presets[0], 'utf8')).toBe('a preset someone else made');
+    expect(describeInstall(result)).toContain(`left ${presets[0]}, which lightroom-agent did not write`);
+  });
+
+  it('reports a preset folder it cannot write beside the installed plug-in, writing no preset', () => {
+    fs.mkdirSync(path.dirname(profilePresetsDir()), { recursive: true });
+    fs.writeFileSync(profilePresetsDir(), 'a file where the folder should be');
+
+    const result = installPlugin(bundled(tmp));
+
+    expect(result).toMatchObject({ status: 'installed', presetsError: expect.any(String) });
+    expect(result).not.toHaveProperty('presets');
+    expect(describeInstall(result)).toMatch(
+      /^installed .*; restart Lightroom to load it; could not write the profile presets: /,
+    );
+  });
+
+  it('reports the presets it completed when a later one fails, leaving no staged file', () => {
+    const presets = ADOBE_RAW_PROFILES.map((profile) => path.join(profilePresetsDir(), `${profile.preset_name}.xmp`));
+    const rename = fs.renameSync;
+    const failing = jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (to === presets[1]) throw new Error('disk full');
+      rename(from, to);
+    });
+
+    const result = installPlugin(bundled(tmp));
+    failing.mockRestore();
+
+    expect(result).toMatchObject({ status: 'installed', presets: [presets[0]] });
+    expect((result as { presetsError?: string }).presetsError).toContain('disk full');
+    expect(fs.readdirSync(profilePresetsDir())).toEqual([path.basename(presets[0])]);
+    expect(describeInstall(result)).toContain(`wrote the profile presets ${ADOBE_RAW_PROFILES[0].preset_name}`);
   });
 
   it('copies nested directories recursively', () => {
@@ -185,7 +253,13 @@ describe('installPlugin', () => {
 
     const result = installPlugin(pairing);
 
-    expect(result).toEqual({ status: 'replaced', destination: installed, from, to: pairing.plugin });
+    expect(result).toEqual({
+      status: 'replaced',
+      destination: installed,
+      from,
+      to: pairing.plugin,
+      presets: WROTE_PRESETS,
+    });
     expect(fs.existsSync(path.join(installed, 'Stale.lua'))).toBe(false);
     expect(fs.readFileSync(path.join(installed, 'Contract.lua'), 'utf8')).toBe(
       fs.readFileSync(path.join(pairing.source, 'Contract.lua'), 'utf8'),
@@ -220,6 +294,7 @@ describe('installPlugin', () => {
       destination: installed,
       from: { version: '0.0.1', build: 'b1' },
       to: { version: VERSION, build: expect.stringMatching(/^[0-9a-f]{16}$/) },
+      presets: WROTE_PRESETS,
     });
   });
 
@@ -263,6 +338,7 @@ describe('installPlugin', () => {
       destination: installed,
       from: { version: '0.9.0', build: 'b1' },
       to: pairing.plugin,
+      presets: WROTE_PRESETS,
     });
   });
 
@@ -322,6 +398,7 @@ describe('installPlugin', () => {
       destination: inPlugins,
       from: { version: '0.9.0', build: 'b1' },
       to: pairing.plugin,
+      presets: WROTE_PRESETS,
     });
     expect(fs.existsSync(installed)).toBe(false);
   });
@@ -467,14 +544,16 @@ describe('admitLeader', () => {
     const log = jest.fn();
     admitLeader(bundled(tmp), true, log);
     expect(log).toHaveBeenCalledWith(
-      `[install-plugin] replaced ${destination()} (version 0.1.0-rc.0 → ${VERSION}); restart Lightroom to load it`,
+      `[install-plugin] replaced ${destination()} (version 0.1.0-rc.0 → ${VERSION}); restart Lightroom to load it${PRESETS_LINE}`,
     );
   });
 
   it('installs the bundled plugin and logs progress', () => {
     const log = jest.fn();
     admitLeader(bundled(tmp), true, log);
-    expect(log).toHaveBeenCalledWith(`[install-plugin] installed ${destination()}; restart Lightroom to load it`);
+    expect(log).toHaveBeenCalledWith(
+      `[install-plugin] installed ${destination()}; restart Lightroom to load it${PRESETS_LINE}`,
+    );
     expect(fs.existsSync(path.join(destination(), 'Info.lua'))).toBe(true);
   });
 
@@ -525,7 +604,7 @@ describe('admitLeader', () => {
     admitLeader(bundled(tmp), true, log);
 
     expect(log).toHaveBeenCalledWith(
-      `[install-plugin] replaced ${destination()} (version 0.1.0-rc.0 → ${VERSION}); restart Lightroom to load it`,
+      `[install-plugin] replaced ${destination()} (version 0.1.0-rc.0 → ${VERSION}); restart Lightroom to load it${PRESETS_LINE}`,
     );
     expect(fs.readFileSync(path.join(destination(), 'Contract.lua'), 'utf8')).toContain(`VERSION = "${VERSION}"`);
   });
@@ -538,7 +617,7 @@ describe('admitLeader', () => {
     admitLeader(pairing, true, log);
 
     expect(log).toHaveBeenCalledWith(
-      `[install-plugin] repaired the installed plug-in's files in ${destination()}; restart Lightroom to load them`,
+      `[install-plugin] repaired the installed plug-in's files in ${destination()}; restart Lightroom to load them${PRESETS_LINE}`,
     );
   });
 
