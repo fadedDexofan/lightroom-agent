@@ -48,7 +48,7 @@ end
 
 local function withPhoto(context, args, body)
     local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
     local result = DevelopSession.withPhoto(context, catalog, photo, body)
     result.photo_id = tostring(photo.localIdentifier)
     return result

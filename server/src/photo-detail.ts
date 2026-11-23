@@ -5,10 +5,10 @@ import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { beforeWrite } from "./develop-write.js";
 import { cutPixels, decodeJpeg, pixelBox, type NormalizedRegion } from "./rendered-image.js";
 import { reasonOf } from "./preview-item.js";
-import type { Input, PluginReply } from "./tool-result.js";
+import type { OnePhoto, PluginReply } from "./tool-result.js";
 
 export interface DetailArgs {
-  photo_id: Input;
+  photo_ids: OnePhoto;
   regions: NormalizedRegion[];
   max_edge?: number;
 }
@@ -46,7 +46,7 @@ export async function getPhotoDetail(
 ): Promise<PluginReply> {
   const deadline = performance.now() + budgetMs;
   const limit = args.max_edge ?? DEFAULT_DETAIL_EDGE;
-  const crop = await beforeWrite(dispatcher.call("get_crop", { photo_id: args.photo_id }, budgetMs, options));
+  const crop = await beforeWrite(dispatcher.call("get_crop", { photo_ids: args.photo_ids }, budgetMs, options));
   const frame = (crop.result?.data as { size?: { width: number; height: number } } | undefined)?.size;
   if (crop.error !== undefined || !frame) return crop;
   const predicted = overLimit(args.regions, frame.width, frame.height, limit);
@@ -58,7 +58,7 @@ export async function getPhotoDetail(
   }
   const reply = await dispatcher.call(
     "render_source",
-    { photo_id: args.photo_id, tool: "get_photo_detail" },
+    { photo_id: args.photo_ids[0], tool: "get_photo_detail" },
     deadline - performance.now(),
     options,
   );

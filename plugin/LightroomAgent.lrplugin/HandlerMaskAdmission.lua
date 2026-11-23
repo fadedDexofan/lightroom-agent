@@ -21,7 +21,7 @@ local function photoAdmission(catalog, photoId, status)
 end
 
 function HandlerMaskAdmission.get(args)
-    local photoId = args.photo_id
+    local photoId = args.photo_ids and args.photo_ids[1]
     local catalog = LrApplication.activeCatalog()
     local status = MaskWriteAdmission.status(catalog)
     local result = {

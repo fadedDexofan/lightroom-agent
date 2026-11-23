@@ -47,12 +47,12 @@ try {
       })
     ).copies[0].copy_photo_id,
   );
-  const mask = String((await data("create_gradient_mask", { photo_id: copy, ...WHOLE_FRAME })).mask_id);
+  const mask = String((await data("create_gradient_mask", { photo_ids: [copy], ...WHOLE_FRAME })).mask_id);
 
   let added;
   const shown = await measureChange(session, copy, async () => {
     added = await session.tool("edit_mask_point_colors", {
-      photo_id: copy,
+      photo_ids: [copy],
       mask_id: mask,
       action: "add",
       swatch: SOURCE,
@@ -82,7 +82,7 @@ try {
   );
 
   const nearby = await session.tool("edit_mask_point_colors", {
-    photo_id: copy,
+    photo_ids: [copy],
     mask_id: mask,
     action: "add",
     swatch: NEARBY,
@@ -102,7 +102,7 @@ try {
 
   const before = await stored(copy, mask);
   const unordered = await session.tool("edit_mask_point_colors", {
-    photo_id: copy,
+    photo_ids: [copy],
     mask_id: mask,
     action: "update",
     index: 1,
@@ -117,7 +117,7 @@ try {
   );
 
   const equal = await session.tool("edit_mask_point_colors", {
-    photo_id: copy,
+    photo_ids: [copy],
     mask_id: mask,
     action: "update",
     index: 1,

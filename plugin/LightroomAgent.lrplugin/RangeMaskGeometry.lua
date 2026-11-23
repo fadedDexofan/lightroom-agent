@@ -42,7 +42,7 @@ local function parseColor(value)
 end
 
 local function parseCopy(value)
-    local photoId = value.photo_id
+    local photoId = value.source_photo_id
     if type(photoId) == "number" then photoId = tostring(photoId) end
     return { maskId = value.mask_id, toolId = value.tool_id, photoId = photoId }
 end

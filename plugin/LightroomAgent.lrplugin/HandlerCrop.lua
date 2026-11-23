@@ -37,9 +37,9 @@ local function described(photo, read, crop)
     }
 end
 
-local function opened(args, context)
+local function opened(photoId, context)
     local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, photoId)
     local read = ImageFrame.read(catalog, photo)
     local warning = ImageFrame.of(read).warning
     if warning then context:warn(warning) end
@@ -47,12 +47,12 @@ local function opened(args, context)
 end
 
 function Handler.read(args, context)
-    local photo, read = opened(args, context)
+    local photo, read = opened(args.photo_ids[1], context)
     return described(photo, read, ImageFrame.currentCrop(read))
 end
 
 function Handler.plan(args, context)
-    local photo, read = opened(args, context)
+    local photo, read = opened(args.photo_id, context)
     local crop = cropFor(read, args)
     local plan = described(photo, read, crop)
     plan.settings = ImageFrame.cropSettingsFor(read, crop)

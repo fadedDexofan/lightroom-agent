@@ -74,7 +74,7 @@ async function detail(photoId, regions, maxEdge) {
   try {
     const answer = await session.toolOrThrow(
       "get_photo_detail",
-      { photo_id: photoId, regions, ...(maxEdge ? { max_edge: maxEdge } : {}) },
+      { photo_ids: [photoId], regions, ...(maxEdge ? { max_edge: maxEdge } : {}) },
       { timeoutMs: 300_000 },
     );
     return { ...answer.data, images: answer.images, ms: answer.ms, peakTemporaryBytes: peak };
@@ -103,7 +103,7 @@ const removePlanted = () =>
 
 const sameSize = (render, width, height) =>
   Math.abs(render.width - width) <= 1 && Math.abs(render.height - height) <= 1;
-const planned = async (photoId) => (await data("get_crop", { photo_id: photoId })).size;
+const planned = async (photoId) => (await data("get_crop", { photo_ids: [photoId] })).size;
 const sizes = (render, frame) => ({
   render: `${render.width}x${render.height}`,
   get_crop: `${frame.width}x${frame.height}`,
@@ -120,7 +120,7 @@ try {
   const tracesBefore = traces();
   const refused = await session.tool(
     "get_photo_detail",
-    { photo_id: ids.board, regions: [WHOLE], max_edge: HINT_EDGE },
+    { photo_ids: [ids.board], regions: [WHOLE], max_edge: HINT_EDGE },
     { timeoutMs: 300_000 },
   );
   const tracesRefused = await pollCatalog(traces, (now) => !isDeepStrictEqual(now, tracesBefore));
@@ -177,7 +177,7 @@ try {
     suggested &&
     (await session.tool(
       "get_photo_detail",
-      { photo_id: ids.board, regions: [suggested], max_edge: HINT_EDGE },
+      { photo_ids: [ids.board], regions: [suggested], max_edge: HINT_EDGE },
       { timeoutMs: 300_000 },
     ));
   const fittedBox = fitted?.data?.regions?.[0]?.box;
@@ -198,7 +198,7 @@ try {
   report.check("the orient_6 render is the size get_crop plans with", turnedSizes.equal, turnedSizes);
 
   const midState = await state();
-  await data("set_crop", { photo_id: ids.wide, rectangle: CROP });
+  await data("set_crop", { photo_ids: [ids.wide], rectangle: CROP });
   const cropped = await detail(ids.wide, [CENTRE]);
   report.check(
     "a cropped fixture renders at its cropped displayed size",
@@ -207,17 +207,17 @@ try {
   );
   const croppedSizes = sizes(cropped.render, await planned(ids.wide));
   report.check("the cropped render is the size get_crop plans with", croppedSizes.equal, croppedSizes);
-  await data("set_crop", { photo_id: ids.wide, rectangle: CROP, angle: ANGLE });
+  await data("set_crop", { photo_ids: [ids.wide], rectangle: CROP, angle: ANGLE });
   const angled = await detail(ids.wide, [CENTRE]);
   const angledSizes = sizes(angled.render, await planned(ids.wide));
   report.check(`render against get_crop with a crop at ${ANGLE} degrees is recorded`, true, angledSizes);
-  await data("set_crop", { photo_id: ids.wide, rectangle: { left: 0, top: 0, right: 1, bottom: 1 } });
+  await data("set_crop", { photo_ids: [ids.wide], rectangle: { left: 0, top: 0, right: 1, bottom: 1 } });
   const upright = String(
     (await data("create_virtual_copies", { photo_ids: [ids.raw], copy_name: "LRAGENT live detail upright" })).copies[0]
       .copy_photo_id,
   );
   copies.push(upright);
-  await data("set_develop_settings", { photo_id: upright, settings: UPRIGHT });
+  await data("set_develop_settings", { photo_ids: [upright], settings: UPRIGHT });
   const transformed = await detail(upright, [CENTRE]);
   const uprightSizes = sizes(transformed.render, await planned(upright));
   report.check("render against get_crop with Upright and a vertical transform is recorded", true, {

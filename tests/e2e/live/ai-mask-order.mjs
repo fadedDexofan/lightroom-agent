@@ -37,9 +37,11 @@ async function freshCopy(name) {
 }
 
 async function settleAndMask(photoId) {
-  await data("set_develop_settings", { photo_id: photoId, settings: TONE_AND_GEOMETRY });
-  await data("set_crop", { photo_id: photoId, rectangle: CROP });
-  return String((await data("create_mask", { photo_id: photoId, type: "sky", adjustments: MASK_ADJUSTMENT })).mask_id);
+  await data("set_develop_settings", { photo_ids: [photoId], settings: TONE_AND_GEOMETRY });
+  await data("set_crop", { photo_ids: [photoId], rectangle: CROP });
+  return String(
+    (await data("create_mask", { photo_ids: [photoId], type: "sky", adjustments: MASK_ADJUSTMENT })).mask_id,
+  );
 }
 
 const stored = async (photoId) =>
@@ -59,19 +61,19 @@ function differences(a, b, at = "") {
 
 async function maskEffect(photoId, maskId) {
   const on = await fetchStablePixels(session, photoId, { size: SIZE, tries: RAW_PREVIEW_TRIES });
-  await data("set_mask_adjustments", { photo_id: photoId, mask_id: maskId, adjustments: { local_Exposure: 0 } });
+  await data("set_mask_adjustments", { photo_ids: [photoId], mask_id: maskId, adjustments: { local_Exposure: 0 } });
   const off = await fetchStablePixels(session, photoId, { size: SIZE, tries: RAW_PREVIEW_TRIES });
-  await data("set_mask_adjustments", { photo_id: photoId, mask_id: maskId, adjustments: MASK_ADJUSTMENT });
+  await data("set_mask_adjustments", { photo_ids: [photoId], mask_id: maskId, adjustments: MASK_ADJUSTMENT });
   return { on, effect: { w: on.w, h: on.h, L: on.L.map((value, i) => off.L[i] - value) } };
 }
 
 const onlyMask = (settings) => (settings.MaskGroupBasedCorrections ?? []).at(-1) ?? null;
 
-const maskCount = async (photoId) => (await data("list_masks", { photo_id: photoId })).count;
+const maskCount = async (photoId) => (await data("list_masks", { photo_ids: [photoId] })).count;
 
 async function masklessCopy(name) {
   const copy = await freshCopy(name);
-  if ((await maskCount(copy)) > 0) await data("delete_masks", { photo_id: copy, all: true });
+  if ((await maskCount(copy)) > 0) await data("delete_masks", { photo_ids: [copy], all: true });
   return copy;
 }
 
@@ -85,7 +87,11 @@ async function storedMaskKey(photoId) {
 
 async function dryRunFromMaskless(source, masked, plain) {
   const historyBefore = [masked, plain].map((id) => developHistory(catalogPath, id).length);
-  const reply = await data("copy_develop_settings", { source_id: source, target_ids: [masked, plain], dry_run: true });
+  const reply = await data("copy_develop_settings", {
+    source_photo_id: source,
+    photo_ids: [masked, plain],
+    dry_run: true,
+  });
   const lengths = () => [masked, plain].map((id) => developHistory(catalogPath, id).length);
   const historyAfter = await pollCatalog(lengths, (after) =>
     after.some((length, index) => length !== historyBefore[index]),
@@ -105,7 +111,7 @@ async function copyFromMaskless(source, target) {
   const historyBefore = developHistory(catalogPath, target);
   const reply = await session.tool(
     "copy_develop_settings",
-    { source_id: source, target_ids: [target] },
+    { source_photo_id: source, photo_ids: [target] },
     { timeoutMs: 300_000 },
   );
   const historyAfter = await pollCatalog(
@@ -116,7 +122,7 @@ async function copyFromMaskless(source, target) {
     outcome: reply.outcome,
     error: reply.envelope.error ?? null,
     data: reply.data,
-    list_masks: await data("list_masks", { photo_id: target }),
+    list_masks: await data("list_masks", { photo_ids: [target] }),
     stored: await storedMaskKey(target),
     history_added: historyAfter.slice(historyBefore.length),
   };
@@ -126,7 +132,7 @@ try {
   const source = await freshCopy("LRAGENT live AI order source");
   await settleAndMask(source);
   const copied = await freshCopy("LRAGENT live AI order copied");
-  const copy = await data("copy_develop_settings", { source_id: source, target_ids: [copied] });
+  const copy = await data("copy_develop_settings", { source_photo_id: source, photo_ids: [copied] });
   const direct = await freshCopy("LRAGENT live AI order direct");
   const directMask = await settleAndMask(direct);
   const noise = await freshCopy("LRAGENT live AI order direct again");
@@ -179,11 +185,11 @@ try {
   );
 
   const bare = await masklessCopy("LRAGENT live maskless source");
-  await data("set_develop_settings", { photo_id: bare, settings: { Exposure2012: 0.5 } });
+  await data("set_develop_settings", { photo_ids: [bare], settings: { Exposure2012: 0.5 } });
   const masked = await masklessCopy("LRAGENT live maskless target with masks");
-  await data("create_mask", { photo_id: masked, type: "sky" });
+  await data("create_mask", { photo_ids: [masked], type: "sky" });
   await data("create_gradient_mask", {
-    photo_id: masked,
+    photo_ids: [masked],
     shape: "linear",
     start: { x: 0.5, y: 0.9 },
     end: { x: 0.5, y: 0.7 },

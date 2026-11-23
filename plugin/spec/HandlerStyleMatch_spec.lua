@@ -92,7 +92,7 @@ describe("reference style matching", function()
         package.loaded.Contract = patched
         package.loaded.HandlerDevelop = nil
         local ok, err = pcall(
-            function() require("HandlerDevelop").matchPhotoStyle({ reference_id = "1", target_ids = { "2" } }) end
+            function() require("HandlerDevelop").matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } }) end
         )
         package.loaded.Contract = contract
         assert.is_true(ok, tostring(err))
@@ -108,13 +108,13 @@ describe("reference style matching", function()
     it("transfers a calibration key and leaves a perspective offset, by the generated style flags", function()
         reference:getDevelopSettings().RedHue = 20
         reference:getDevelopSettings().PerspectiveX = 10
-        handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2" } })
+        handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } })
         assert.equals(20, applied["2"].RedHue)
         assert.is_nil(applied["2"].PerspectiveX)
     end)
 
     it("matches a target named twice once, with one snapshot and one result", function()
-        local reply = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2", "2", 2 } })
+        local reply = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "2", 2 } })
         assert.same({ "snapshot:2", "apply:2" }, events)
         assert.are.equal(1, reply.data.matched)
         assert.are.equal(1, #reply.data.results)
@@ -164,13 +164,13 @@ describe("reference style matching", function()
             255,
         }
         reference:getDevelopSettings().ExtendedToneCurvePV2012 = long
-        handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2" } })
+        handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } })
         assert.same(long, applied["2"].ToneCurvePV2012)
         assert.same(long, applied["2"].ExtendedToneCurvePV2012)
     end)
 
     it("snapshots before applying global style and counts changed values", function()
-        local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2", "3" } })
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } })
         assert.same({ "snapshot:2", "apply:2", "snapshot:3", "apply:3" }, events)
         assert.same({
             Exposure2012 = 0.5,
@@ -190,7 +190,7 @@ describe("reference style matching", function()
     it("counts as matched only the targets the read-back verified", function()
         local context =
             helper.requestContext(nil, { stopping = function() return false end, timeLeft = function() return 1 end })
-        local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2", "3" } }, context)
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } }, context)
         assert.equals(0, result.data.matched)
         assert.same({}, result.data.results)
         assert.same({ "2", "3" }, { result.unknown[1].photo_id, result.unknown[2].photo_id })
@@ -198,7 +198,7 @@ describe("reference style matching", function()
 
     it("fails a target whose saved settings Lightroom does not return, writes nothing to it and continues", function()
         targets[2].getDevelopSettings = function() return nil end
-        local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2", "3", "4" } })
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3", "4" } })
         assert.is_nil(applied["3"])
         assert.truthy(applied["2"] and applied["4"])
         assert.equals(2, result.data.matched)
@@ -207,7 +207,7 @@ describe("reference style matching", function()
 
     it("fails a target whose snapshot step raised inside its gate, writes nothing to it and continues", function()
         targets[2].createDevelopSnapshot = function() error("snapshot interrupted") end
-        local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2", "3", "4", "999" } })
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3", "4", "999" } })
         assert.same({ "snapshot:2", "apply:2", "snapshot:4", "apply:4" }, events)
         assert.is_nil(applied["3"])
         assert.same({ "999" }, result.not_found)
@@ -218,7 +218,7 @@ describe("reference style matching", function()
 
     it("answers unknown, without writing, when the snapshot it created cannot be read back", function()
         targets[1].getDevelopSnapshots = function() return {} end
-        local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2" } })
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } })
         assert.equals(0, result.data.matched)
         assert.is_nil(applied["2"])
         assert.is_nil(result.failed)
@@ -228,7 +228,7 @@ describe("reference style matching", function()
 
     it("fails a target whose snapshot Lightroom refused, and writes nothing to it", function()
         targets[1].createDevelopSnapshot = function() return false end
-        local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2" } })
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } })
         assert.is_nil(applied["2"])
         assert.is_nil(result.unknown)
         assert.equals("2", result.failed[1].photo_id)
@@ -238,8 +238,10 @@ describe("reference style matching", function()
     it("rejects reference aliases anywhere in the targets before snapshotting", function()
         for _, id in ipairs({ "1", "/reference.raw" }) do
             assert.are.equal(
-                "Reference photo must not appear in target_ids",
-                helper.failedOf(function() handler.matchPhotoStyle({ reference_id = 1, target_ids = { "2", id } }) end)
+                "Reference photo must not appear in photo_ids",
+                helper.failedOf(
+                    function() handler.matchPhotoStyle({ reference_photo_id = 1, photo_ids = { "2", id } }) end
+                )
             )
         end
         assert.same({}, events)
@@ -250,7 +252,7 @@ describe("reference style matching", function()
             photo:getDevelopSettings().Exposure2012 = settings.Exposure2012
             error("write interrupted")
         end
-        local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2" } })
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } })
         assert.is_nil(result.failed)
         assert.equals("2", result.unknown[1].photo_id)
         assert.matches("write interrupted", result.unknown[1].reason)
@@ -259,7 +261,7 @@ describe("reference style matching", function()
     it("never transfers a key another tool writes", function()
         reference:getDevelopSettings().ConvertToGrayscale = false
         targets[1]:getDevelopSettings().ConvertToGrayscale = false
-        handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2" } })
+        handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } })
         assert.is_nil(applied["2"].ConvertToGrayscale)
     end)
 
@@ -268,7 +270,7 @@ describe("reference style matching", function()
         reference:getDevelopSettings().GrayMixerRed = -20
         targets[1]:getDevelopSettings().ConvertToGrayscale = false
         targets[2]:getDevelopSettings().ConvertToGrayscale = true
-        local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2", "3" } })
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } })
         assert.is_nil(applied["2"])
         assert.equals("2", result.failed[1].photo_id)
         assert.matches(
@@ -304,7 +306,7 @@ describe("reference style matching", function()
     }) do
         it("answers unknown naming the recovery snapshot it kept when " .. case.what .. ", and continues", function()
             local problem = case.arrange()
-            local result = handler.matchPhotoStyle({ reference_id = "1", target_ids = { "2", "3" } })
+            local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } })
             assert.is_nil(result.failed)
             assert.equals("2", result.unknown[1].photo_id)
             assert.matches(
@@ -360,7 +362,7 @@ describe("reference style matching within the budget", function()
         })
 
         local result =
-            require("HandlerDevelop").matchPhotoStyle({ reference_id = "1", target_ids = { "2", "3" } }, context)
+            require("HandlerDevelop").matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } }, context)
 
         assert.equals(1, result.data.matched)
         assert.same({ "3" }, result.remaining)

@@ -20,29 +20,29 @@ const KINDS = [
   {
     kind: "Subject",
     fixture: "arw_12bit",
-    make: (id) => data("create_mask", { photo_id: id, type: "subject", adjustments: exposure }),
+    make: (id) => data("create_mask", { photo_ids: [id], type: "subject", adjustments: exposure }),
   },
   {
     kind: "Sky",
     fixture: "arw_12bit",
-    make: (id) => data("create_mask", { photo_id: id, type: "sky", adjustments: exposure }),
+    make: (id) => data("create_mask", { photo_ids: [id], type: "sky", adjustments: exposure }),
   },
   {
     kind: "People part",
     fixture: "people_photo",
-    make: (id) => data("create_mask", { photo_id: id, type: "people", parts: ["face_skin"] }),
+    make: (id) => data("create_mask", { photo_ids: [id], type: "people", parts: ["face_skin"] }),
   },
   {
     kind: "Landscape",
     fixture: "arw_14bit",
-    make: (id) => data("create_mask", { photo_id: id, type: "landscape", categories: ["sky", "vegetation"] }),
+    make: (id) => data("create_mask", { photo_ids: [id], type: "landscape", categories: ["sky", "vegetation"] }),
   },
   {
     kind: "gradient",
     fixture: "wide_plain",
     make: (id) =>
       data("create_gradient_mask", {
-        photo_id: id,
+        photo_ids: [id],
         shape: "linear",
         start: { x: 0.5, y: 0.1 },
         end: { x: 0.5, y: 0.4 },
@@ -54,7 +54,7 @@ const KINDS = [
     fixture: "wide_plain",
     make: (id) =>
       data("create_gradient_mask", {
-        photo_id: id,
+        photo_ids: [id],
         shape: "radial",
         center: { x: 0.3, y: 0.4 },
         width: 0.3,
@@ -69,7 +69,7 @@ const KINDS = [
     fixture: "wide_plain",
     make: (id) =>
       data("create_brush_mask", {
-        photo_id: id,
+        photo_ids: [id],
         strokes: [
           {
             points: [
@@ -86,14 +86,14 @@ const KINDS = [
     kind: "colour range",
     fixture: "chart80",
     make: (id) =>
-      data("create_range_mask", { photo_id: id, type: "color", color: COLOR_SAMPLE, adjustments: exposure }),
+      data("create_range_mask", { photo_ids: [id], type: "color", color: COLOR_SAMPLE, adjustments: exposure }),
   },
   {
     kind: "luminance range",
     fixture: "ramp256",
     make: (id) =>
       data("create_range_mask", {
-        photo_id: id,
+        photo_ids: [id],
         type: "luminance",
         luminance: { min: 0.6, max: 1 },
         adjustments: exposure,
@@ -103,21 +103,21 @@ const KINDS = [
     kind: "depth range",
     fixture: "depth_heic",
     make: (id) =>
-      data("create_range_mask", { photo_id: id, type: "depth", depth: { min: 0, max: 0.3 }, adjustments: exposure }),
+      data("create_range_mask", { photo_ids: [id], type: "depth", depth: { min: 0, max: 0.3 }, adjustments: exposure }),
   },
   {
     kind: "combined mask",
     fixture: "arw_12bit",
     make: async (id) => {
       const gradient = await data("create_gradient_mask", {
-        photo_id: id,
+        photo_ids: [id],
         shape: "linear",
         start: { x: 0.5, y: 0.1 },
         end: { x: 0.5, y: 0.4 },
         adjustments: exposure,
       });
       return data("combine_mask", {
-        photo_id: id,
+        photo_ids: [id],
         mask_id: String(gradient.mask_id),
         operation: "add",
         type: "subject",
@@ -129,13 +129,13 @@ const KINDS = [
     fixture: "wide_plain",
     make: async (id) => {
       const gradient = await data("create_gradient_mask", {
-        photo_id: id,
+        photo_ids: [id],
         shape: "linear",
         start: { x: 0.5, y: 0.1 },
         end: { x: 0.5, y: 0.4 },
         adjustments: exposure,
       });
-      return data("invert_mask", { photo_id: id, mask_id: String(gradient.mask_id), mode: "copy" });
+      return data("invert_mask", { photo_ids: [id], mask_id: String(gradient.mask_id), mode: "copy" });
     },
   },
 ];
@@ -160,7 +160,7 @@ try {
       copies.push(copy);
       const made = await make(copy);
       const before = await entries(copy);
-      const created = await answer("create_gradient_mask", { photo_id: copy, ...LINEAR });
+      const created = await answer("create_gradient_mask", { photo_ids: [copy], ...LINEAR });
       const after = await entries(copy);
       const changed = before
         .filter(

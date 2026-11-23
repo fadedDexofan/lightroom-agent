@@ -63,7 +63,7 @@ export async function pollCatalog(read, until, { withinMs = CATALOG_FLUSH_MS, po
 export async function readFlushedSettings(session, photoId, flushPhotoId, until, { pauseMs = 500 } = {}) {
   const catalogPath = requireThrowawayCatalog();
   const read = () => storedSettingsRow(catalogPath, photoId);
-  await session.toolOrThrow("list_spots", { photo_id: flushPhotoId });
+  await session.toolOrThrow("list_spots", { photo_ids: [flushPhotoId] });
   let row = await pollCatalog(read, (candidate) => candidate !== null && until(candidate), { pollMs: pauseMs });
   for (let reads = 0; reads < STABLE_READS; reads++) {
     await sleep(pauseMs);

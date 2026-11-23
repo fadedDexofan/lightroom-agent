@@ -36,7 +36,7 @@ end
 function MaskCreateHandler.createMask(args, context)
     if args.type == "people" or args.type == "landscape" then return HandlerAiMasks.createMask(args, context) end
     local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
     local photoId = tostring(photo.localIdentifier)
 
     local created = MaskCreateHandler.createAIMask(context, catalog, photo, args.type, args.adjustments or {})

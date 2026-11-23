@@ -125,7 +125,7 @@ describe("HandlerMaskCreate.createMask people", function()
     it("writes one all-people mask per part and returns the ids", function()
         local Handler, store, calls = setup()
 
-        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair", "face_skin" } })
+        local result = Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair", "face_skin" } })
 
         local written = store.writes[1]
         assert.are.equal(2, #written)
@@ -155,7 +155,7 @@ describe("HandlerMaskCreate.createMask people", function()
             end,
         })
 
-        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
+        local result = Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } })
 
         assert.are.equal(store.writes[1][1].CorrectionID, result.mask_id)
         assert.are.equal(1, #store.writes)
@@ -164,7 +164,8 @@ describe("HandlerMaskCreate.createMask people", function()
     it("writes entire_person as an all-people part and keeps the masks already on the photo", function()
         local Handler, store = setup({ entries = { existingGradient() } })
 
-        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "face_skin", "entire_person" } })
+        local result =
+            Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "face_skin", "entire_person" } })
 
         local written = store.writes[1]
         assert.are.equal(3, #written)
@@ -181,7 +182,9 @@ describe("HandlerMaskCreate.createMask people", function()
         local context = helper.requestContext(nil, { title = "create_mask" })
 
         local refusal = helper.failedOf(
-            function() Handler.createMask({ type = "people", photo_id = "1", parts = { "face_skin", "hair" } }, context) end
+            function()
+                Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "face_skin", "hair" } }, context)
+            end
         )
 
         assert.matches("found no hair on any person in photo 1", refusal, 1, true)
@@ -195,7 +198,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler, store = setup({ entries = { existingSky() }, absentCategories = { [5] = true } })
 
         local refusal = helper.failedOf(
-            function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end
+            function() Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }) end
         )
 
         assert.matches("found no hair on any person in photo 1; the new masks were removed", refusal, 1, true)
@@ -219,7 +222,7 @@ describe("HandlerMaskCreate.createMask people", function()
             local Handler, store = setup({ entries = { existingSky() }, existingBecomes = case.becomes })
             local context = helper.requestContext(nil, { title = "create_mask" })
 
-            local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
+            local result = Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }, context)
 
             assert.are.equal(store.writes[1][2].CorrectionID, result.mask_id)
             assert.are.same(case.warnings, context.warnings)
@@ -233,7 +236,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler, store = setup({ entries = { failed } })
         local context = helper.requestContext(nil, { title = "create_mask" })
 
-        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
+        local result = Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }, context)
 
         assert.are.equal(store.writes[1][2].CorrectionID, result.mask_id)
         assert.are.same(
@@ -246,7 +249,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler = setup({ entries = { existingGradient() } })
         local context = helper.requestContext(nil, { title = "create_mask" })
 
-        Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
+        Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }, context)
 
         assert.are.same({}, context.warnings)
     end)
@@ -257,7 +260,7 @@ describe("HandlerMaskCreate.createMask people", function()
         assert.are.equal(
             "99",
             helper.notFoundOf(
-                function() Handler.createMask({ type = "people", photo_id = "99", parts = { "hair" } }) end
+                function() Handler.createMask({ type = "people", photo_ids = { "99" }, parts = { "hair" } }) end
             )
         )
         assert.are.equal(0, store.attempts)
@@ -269,7 +272,7 @@ describe("HandlerMaskCreate.createMask people", function()
             local Handler, store, calls = setup({ updateFails = true })
 
             local message = helper.unknownOf(
-                function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end
+                function() Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }) end
             )
 
             assert.matches("Lightroom could not compute the people masks: AI update failed", message, 1, true)
@@ -291,7 +294,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler, store = setup({ raisesAfterCompute = true })
         local context = helper.requestContext(nil, { title = "create_mask" })
 
-        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context)
+        local result = Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }, context)
 
         assert.are.equal(1, #result.masks)
         assert.are.equal(1, #store.entries)
@@ -318,7 +321,7 @@ describe("HandlerMaskCreate.createMask people", function()
                 local context = helper.requestContext(nil, { title = "create_mask" })
 
                 local refusal = helper.failedOf(
-                    function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context) end
+                    function() Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }, context) end
                 )
 
                 assert.matches("stayed busy with another write", refusal, 1, true)
@@ -335,7 +338,7 @@ describe("HandlerMaskCreate.createMask people", function()
             setup({ absentCategories = { [5] = true }, rejectWrite = function(attempt) return attempt >= 2 end })
 
         local class, message = helper.outcomeOf(
-            function(context) Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }, context) end
+            function(context) Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }, context) end
         )
 
         assert.are.equal("unknown", class)
@@ -348,7 +351,7 @@ describe("HandlerMaskCreate.createMask people", function()
             local Handler, store, calls = setup({ computesAfter = seconds })
 
             local result = Handler.createMask(
-                { type = "people", photo_id = "1", parts = { "hair" } },
+                { type = "people", photo_ids = { "1" }, parts = { "hair" } },
                 helper.requestContext(nil, { title = "create_mask" })
             )
 
@@ -362,7 +365,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler, _, calls = setup({ computesAfter = 1000 })
 
         local message = helper.unknownOf(
-            function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end
+            function() Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }) end
         )
 
         assert.matches("within 30 s", message, 1, true)
@@ -373,7 +376,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler, store, calls = setup({ neverCompute = true })
 
         local message = helper.unknownOf(
-            function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end
+            function() Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }) end
         )
 
         assert.matches(
@@ -398,7 +401,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler, store = setup({ entries = { pending }, pendingIds = { C1 = true } })
 
         local message = helper.unknownOf(
-            function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end
+            function() Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } }) end
         )
 
         assert.matches(
@@ -417,7 +420,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler, store = setup({ absentCategories = { [5] = true }, pendingCategories = { [6] = true } })
 
         local message = helper.unknownOf(
-            function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair", "lips" } }) end
+            function() Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair", "lips" } }) end
         )
 
         assert.matches("has not finished computing", message, 1, true)
@@ -428,7 +431,7 @@ describe("HandlerMaskCreate.createMask people", function()
     it("waits for a compute Lightroom finishes after its first read and answers done", function()
         local Handler, store = setup({ computesOnSecondRead = true })
 
-        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
+        local result = Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } })
 
         assert.are.equal(1, #result.masks)
         assert.are.equal(1, #store.writes)
@@ -439,7 +442,7 @@ describe("HandlerMaskCreate.createMask people", function()
         local Handler, store = setup({ dropLastEntry = true })
 
         local message = helper.failedOf(
-            function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair", "lips" } }) end
+            function() Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair", "lips" } }) end
         )
 
         assert.matches("Lightroom kept 1 of the 2 requested masks", message, 1, true)
@@ -449,7 +452,7 @@ describe("HandlerMaskCreate.createMask people", function()
     it("does the catalog reads and writes only inside their gates", function()
         local Handler, store = setup()
 
-        Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
+        Handler.createMask({ type = "people", photo_ids = { "1" }, parts = { "hair" } })
 
         assert.are.equal(0, store.readsOutsideGate)
         assert.are.equal(0, store.writesOutsideGate)
@@ -460,8 +463,11 @@ describe("HandlerMaskCreate.createMask landscape", function()
     it("writes one landscape mask per category and returns the ids", function()
         local Handler, store, calls = setup()
 
-        local result =
-            Handler.createMask({ type = "landscape", photo_id = "1", categories = { "sky", "water", "vegetation" } })
+        local result = Handler.createMask({
+            type = "landscape",
+            photo_ids = { "1" },
+            categories = { "sky", "water", "vegetation" },
+        })
 
         local written = store.writes[1]
         assert.are.equal(3, #written)
@@ -486,7 +492,7 @@ describe("HandlerMaskCreate.createMask landscape", function()
         local Handler, store = setup({ entries = { existingGradient() }, absentCategories = { [50007] = true } })
 
         local refusal = helper.failedOf(
-            function() Handler.createMask({ type = "landscape", photo_id = "1", categories = { "sky", "water" } }) end
+            function() Handler.createMask({ type = "landscape", photo_ids = { "1" }, categories = { "sky", "water" } }) end
         )
 
         assert.matches("found no water in photo 1; the new masks were removed", refusal, 1, true)
@@ -503,7 +509,7 @@ describe("HandlerMaskCreate.createMask AI selectors", function()
                     refuse = "Lightroom Classic 16.0 (16.0 [ 202611041403-7ac14c66 ]) is not certified for writing mask geometry (certified: none).",
                 },
             })
-            local args = { photo_id = "1", type = typeName }
+            local args = { photo_ids = { "1" }, type = typeName }
             if typeName == "people" then
                 args.parts = { "hair" }
             else

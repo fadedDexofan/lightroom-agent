@@ -117,8 +117,8 @@ async function roundTrip(label, photoId) {
 async function virtualCopy(photoId, name) {
   const copy = (await data("create_virtual_copies", { photo_ids: [photoId], copy_name: name })).copies[0].copy_photo_id;
   copies.push(copy);
-  if ((await data("list_masks", { photo_id: copy })).count > 0)
-    await data("delete_masks", { photo_id: copy, all: true });
+  if ((await data("list_masks", { photo_ids: [copy] })).count > 0)
+    await data("delete_masks", { photo_ids: [copy], all: true });
   return copy;
 }
 
@@ -134,7 +134,7 @@ try {
     await roundTrip("png chart80", id("chart80"));
 
     const refused = await session.tool("set_develop_settings", {
-      photo_id: id("chart80"),
+      photo_ids: [id("chart80")],
       settings: { ConvertToGrayscale: true },
     });
     report.check(
@@ -146,7 +146,7 @@ try {
     const source = await virtualCopy(id("arw_12bit"), "LRAGENT live B&W source");
     await data("set_treatment", { photo_ids: [source], treatment: "black_and_white" });
     const copyTarget = await virtualCopy(id("arw_14bit"), "LRAGENT live B&W copy target");
-    await data("copy_develop_settings", { source_id: source, target_ids: [copyTarget] });
+    await data("copy_develop_settings", { source_photo_id: source, photo_ids: [copyTarget] });
     const copied = await look(copyTarget);
     findings.copy = {
       chroma: copied.chroma,
@@ -163,7 +163,7 @@ try {
     if (withPreset) {
       const presetTarget = await virtualCopy(id("arw_14bit"), "LRAGENT live B&W preset target");
       const preset = await session.tool("create_develop_preset", {
-        photo_id: source,
+        photo_ids: [source],
         preset_name: `LRAGENT live B&W transfer ${Date.now()}`,
         settings: ["ConvertToGrayscale"],
       });

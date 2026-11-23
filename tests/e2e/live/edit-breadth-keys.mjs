@@ -51,7 +51,7 @@ try {
   for (const refusal of REFUSALS) {
     const keys = Object.keys(refusal.settings);
     const before = await stored(keys);
-    const answer = await session.tool("set_develop_settings", { photo_id: copyId, settings: refusal.settings });
+    const answer = await session.tool("set_develop_settings", { photo_ids: [copyId], settings: refusal.settings });
     const after = await stored(keys);
     report.check(
       `refused before the write: ${refusal.label}`,
@@ -63,7 +63,7 @@ try {
   for (const write of WRITES) {
     let reply;
     const pixels = await measureChange(session, copyId, async () => {
-      reply = await data("set_develop_settings", { photo_id: copyId, settings: write.settings });
+      reply = await data("set_develop_settings", { photo_ids: [copyId], settings: write.settings });
     });
     const keys = Object.keys(write.settings);
     const readBack = await stored(keys);
@@ -83,7 +83,7 @@ try {
   let mixer;
   const pixels = await measureChange(session, copyId, async () => {
     mixer = await data("set_develop_settings", {
-      photo_id: copyId,
+      photo_ids: [copyId],
       settings: { GrayMixerRed: 60, GrayMixerBlue: -60 },
     });
   });

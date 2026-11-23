@@ -28,7 +28,7 @@ local function close(a, b) return finite(a) and finite(b) and math.abs(a - b) <=
 
 local function target(args)
     local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
     local settings
     catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
     local legacy = { [5.0] = "Version 1", [5.7] = "Version 2" }

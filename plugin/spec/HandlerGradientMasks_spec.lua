@@ -11,7 +11,7 @@ local function point(x, y) return { x = x, y = y } end
 local function setup(opts) return Store.guardedHandler("HandlerGradientMasks", { "GradientGeometry" }, opts) end
 
 local function linearRequest(overrides)
-    local args = { photo_id = "1", shape = "linear", start = point(0.5, 0.2), ["end"] = point(0.5, 0.6) }
+    local args = { photo_ids = { "1" }, shape = "linear", start = point(0.5, 0.2), ["end"] = point(0.5, 0.6) }
     for key, value in pairs(overrides or {}) do
         args[key] = value
     end
@@ -20,7 +20,7 @@ end
 
 local function radialRequest(overrides)
     local args = {
-        photo_id = "1",
+        photo_ids = { "1" },
         shape = "radial",
         center = point(0.5, 0.5),
         width = 0.4,
@@ -145,7 +145,7 @@ describe("HandlerGradientMasks.createGradientMask", function()
         local created = Handler.createGradientMask(linearRequest())
         local added = Handler.createGradientMask(linearRequest({ mask_id = created.mask_id, mode = "subtract" }))
         local updated =
-            Handler.updateGradientMask({ photo_id = "1", tool_id = created.tool_id, ["end"] = point(0.5, 0.7) })
+            Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = created.tool_id, ["end"] = point(0.5, 0.7) })
 
         assert.are.equal(created.mask_id, added.mask_id)
         assert.are.equal(created.tool_id, updated.tool_id)
@@ -176,8 +176,8 @@ describe("HandlerGradientMasks.createGradientMask", function()
     it("accepts a numeric photo id and a file path and answers with the photo's own id", function()
         local Handler = setup({ photos = { { id = "7" } } })
 
-        assert.are.equal("7", Handler.createGradientMask(linearRequest({ photo_id = 7 })).photo_id)
-        assert.are.equal("7", Handler.createGradientMask(linearRequest({ photo_id = "/7.jpg" })).photo_id)
+        assert.are.equal("7", Handler.createGradientMask(linearRequest({ photo_ids = { 7 } })).photo_id)
+        assert.are.equal("7", Handler.createGradientMask(linearRequest({ photo_ids = { "/7.jpg" } })).photo_id)
     end)
 
     it("rejects a degenerate linear gradient before reading or writing", function()
@@ -197,7 +197,7 @@ describe("HandlerGradientMasks.createGradientMask", function()
 
         assert.are.equal(
             "404",
-            helper.notFoundOf(function() Handler.createGradientMask(linearRequest({ photo_id = "404" })) end)
+            helper.notFoundOf(function() Handler.createGradientMask(linearRequest({ photo_ids = { "404" } })) end)
         )
     end)
 
@@ -273,7 +273,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         })
 
         local message = helper.failedOf(
-            function() Handler.updateGradientMask({ photo_id = "1", tool_id = "C9T9", ["end"] = point(0.9, 0.9) }) end
+            function() Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = "C9T9", ["end"] = point(0.9, 0.9) }) end
         )
 
         assert.is_truthy(message:find("not certified", 1, true))
@@ -284,7 +284,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
         local result = Handler.updateGradientMask({
-            photo_id = "1",
+            photo_ids = { "1" },
             tool_id = "C1T1",
             ["end"] = point(0.9, 0.9),
         })
@@ -306,7 +306,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
         local result = Handler.updateGradientMask({
-            photo_id = "1",
+            photo_ids = { "1" },
             tool_id = "C1T2",
             center = point(0.4, 0.5),
             width = 0.2,
@@ -331,7 +331,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
     it("does not write the derived Flipped flag", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
-        Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T2", feather = 5 })
+        Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = "C1T2", feather = 5 })
 
         assert.is_nil(stores["1"].writes[1][1].CorrectionMasks[2].Flipped)
     end)
@@ -339,7 +339,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
     it("changes only one field when only one is given", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
-        local result = Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T2", rotation = 45 })
+        local result = Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = "C1T2", rotation = 45 })
 
         assert.are.equal(45, result.geometry.rotation)
         assert.are.equal(50, result.geometry.feather)
@@ -384,7 +384,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
         local degenerate = helper.failedOf(
-            function() Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T1", ["end"] = point(0.5, 0.2) }) end
+            function() Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = "C1T1", ["end"] = point(0.5, 0.2) }) end
         )
 
         assert.is_truthy(degenerate:find("same point", 1, true))
@@ -401,10 +401,10 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
 
         local unknown = helper.failedOf(
-            function() Handler.updateGradientMask({ photo_id = "1", tool_id = "NOPE", feather = 5 }) end
+            function() Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = "NOPE", feather = 5 }) end
         )
         local brush = helper.failedOf(
-            function() Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T3", start = point(0, 0) }) end
+            function() Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = "C1T3", start = point(0, 0) }) end
         )
 
         assert.is_truthy(unknown:find("Gradient tool not found on this photo: NOPE", 1, true))
@@ -416,7 +416,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingGradients() } } })
 
         local message = helper.failedOf(
-            function() Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T1", feather = 5 }) end
+            function() Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = "C1T1", feather = 5 }) end
         )
 
         assert.is_truthy(message:find("feather only applies to radial gradients", 1, true))
@@ -438,7 +438,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         })
 
         local message = helper.failedOf(
-            function() Handler.updateGradientMask({ photo_id = "1", tool_id = "C1T1", ["end"] = point(0.9, 0.9) }) end
+            function() Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = "C1T1", ["end"] = point(0.9, 0.9) }) end
         )
 
         assert.is_truthy(message:find("previous masks were restored", 1, true))
@@ -502,7 +502,7 @@ describe("HandlerGradientMasks in the stored frame of a rotated photo", function
             local created = Handler.createGradientMask(displayedVertical())
 
             local result = Handler.updateGradientMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 tool_id = created.tool_id,
                 ["end"] = point(0.2, 0.8),
             })
@@ -563,7 +563,7 @@ describe("HandlerGradientMasks in the stored frame of a rotated photo", function
             }))
 
             local result = Handler.updateGradientMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 tool_id = created.tool_id,
                 rotation = 45,
                 feather = 20,
@@ -661,7 +661,7 @@ describe("HandlerGradientMasks in the stored frame of a rotated photo", function
                 }))
 
                 local result = Handler.updateGradientMask({
-                    photo_id = "1",
+                    photo_ids = { "1" },
                     tool_id = created.tool_id,
                     rotation = rotation,
                 })
@@ -695,7 +695,7 @@ describe("HandlerGradientMasks in the stored frame of a rotated photo", function
         local Handler = setup({ photos = { { id = "1", orientation = "CB", entries = entries } } })
 
         local result = Handler.updateGradientMask({
-            photo_id = "1",
+            photo_ids = { "1" },
             tool_id = "C1T1",
             ["end"] = point(0.2, 0.9),
         })

@@ -69,7 +69,7 @@ describe('render_photo', () => {
     async (size, edge) => {
       const path = renderedFile(jpegOf(48, 32));
       const { handler, calls } = handlerFor(async () => source(path));
-      await handler('render_photo', { photo_id: '/p/a.arw', ...(size === undefined ? {} : { size }) });
+      await handler('render_photo', { photo_ids: ['/p/a.arw'], ...(size === undefined ? {} : { size }) });
       expect(calls).toEqual([['render_source', { photo_id: '/p/a.arw', long_edge: edge, tool: 'render_photo' }]]);
     },
   );
@@ -79,7 +79,7 @@ describe('render_photo', () => {
     const path = renderedFile(file);
     const { handler } = handlerFor(async () => source(path));
 
-    const response = await handler('render_photo', { photo_id: '/p/a.arw', size: 'review' });
+    const response = await handler('render_photo', { photo_ids: ['/p/a.arw'], size: 'review' });
 
     const envelope = envelopeOf(response);
     expect(envelope).toEqual({
@@ -145,7 +145,7 @@ describe('render_photo', () => {
     ],
   ])('answers %s as the plug-in classed it', async (_what, reply, outcome, expected) => {
     const { handler } = handlerFor(async () => reply);
-    const envelope = envelopeOf(await handler('render_photo', { photo_id: 914 }));
+    const envelope = envelopeOf(await handler('render_photo', { photo_ids: [914] }));
     expect(envelope.outcome).toBe(outcome);
     expect(envelope).toMatchObject(expected);
   });
@@ -153,7 +153,7 @@ describe('render_photo', () => {
   it('answers a rendition it cannot decode as unknown, naming what the render left, and removes the folder', async () => {
     const path = renderedFile(Buffer.from('broken'));
     const { handler } = handlerFor(async () => source(path));
-    const envelope = envelopeOf(await handler('render_photo', { photo_id: 914 }));
+    const envelope = envelopeOf(await handler('render_photo', { photo_ids: [914] }));
     expect(envelope.outcome).toBe('unknown');
     expect(String(envelope.error).endsWith(LEFT)).toBe(true);
     expect(existsSync(dirname(path))).toBe(false);
@@ -164,7 +164,7 @@ describe('render_photo', () => {
     expect(file.length).toBeGreaterThan(3.5 * 1024 * 1024);
     const path = renderedFile(file);
     const { handler } = handlerFor(async () => source(path));
-    const response = await handler('render_photo', { photo_id: 914, size: 2048 });
+    const response = await handler('render_photo', { photo_ids: [914], size: 2048 });
     const envelope = envelopeOf(response);
     expect(envelope.outcome).toBe('unknown');
     expect(envelope.error).toBe(
@@ -180,7 +180,7 @@ describe('render_photo', () => {
       controller.abort();
       return source(path);
     });
-    const response = await handler('render_photo', { photo_id: 914 }, { signal: controller.signal });
+    const response = await handler('render_photo', { photo_ids: [914] }, { signal: controller.signal });
     expect(envelopeOf(response).outcome).toBe('done');
     expect(response.content[1]?.type).toBe('image');
   });
@@ -204,7 +204,7 @@ describe('render_photo', () => {
     ],
   ])('answers a call %s as %s', async (_what, outcome, raise, error) => {
     const { handler } = handlerFor(async () => raise());
-    expect(envelopeOf(await handler('render_photo', { photo_id: 914 }))).toEqual({ outcome, error });
+    expect(envelopeOf(await handler('render_photo', { photo_ids: [914] }))).toEqual({ outcome, error });
   });
 
   posixOnly('warns, naming the folder, when the render folder cannot be removed, and still answers done', async () => {
@@ -213,7 +213,7 @@ describe('render_photo', () => {
     chmodSync(base, 0o555);
     try {
       const { handler } = handlerFor(async () => source(path));
-      const envelope = envelopeOf(await handler('render_photo', { photo_id: 914 }));
+      const envelope = envelopeOf(await handler('render_photo', { photo_ids: [914] }));
       expect(envelope.outcome).toBe('done');
       expect(envelope.warnings).toEqual([
         expect.stringContaining(`Could not remove the render folder ${dirname(path)}`),

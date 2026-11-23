@@ -47,7 +47,7 @@ const CASES = [
   {
     label: "arw_14bit with Lens Blur active",
     fixture: "arw_14bit",
-    prepare: (photoId) => data("set_lens_blur", { photo_id: photoId, amount: 50 }),
+    prepare: (photoId) => data("set_lens_blur", { photo_ids: [photoId], amount: 50 }),
   },
 ];
 
@@ -67,7 +67,7 @@ try {
       const before = await settled(copy);
       const created = await session.tool(
         "create_mask",
-        { photo_id: copy, type: "subject" },
+        { photo_ids: [copy], type: "subject" },
         { timeoutMs: AI_TIMEOUT_MS },
       );
       const after = await whole(copy);

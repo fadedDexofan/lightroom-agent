@@ -225,7 +225,7 @@ describe("RangeMaskGeometry", function()
                 invert = true,
                 mask_id = "C2",
                 mode = "subtract",
-                copy_sample_from = { mask_id = "C1", tool_id = "C1T1", photo_id = 77 },
+                copy_sample_from = { mask_id = "C1", tool_id = "C1T1", source_photo_id = 77 },
             }))
 
             assert.are.equal("77", request.copy.photoId)

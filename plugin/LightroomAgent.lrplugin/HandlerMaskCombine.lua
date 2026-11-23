@@ -23,7 +23,7 @@ function MaskCombineHandler.combineMask(args, context)
     local maskId = tostring(args.mask_id)
     local operation, typeName = args.operation, args.type
     local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
     local photoId = tostring(photo.localIdentifier)
 
     local verb = VERB_OF_OPERATION[operation]

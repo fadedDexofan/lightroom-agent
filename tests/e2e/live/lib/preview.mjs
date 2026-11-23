@@ -49,7 +49,7 @@ export function decodeJpegBase64(base64) {
 }
 
 export async function fetchPixels(session, photoId, size = 864) {
-  const answer = await session.tool("get_photo_preview", { photo_id: photoId, size });
+  const answer = await session.tool("get_photo_preview", { photo_ids: [photoId], size });
   if (answer.isError || !answer.image) throw new Error(`get_photo_preview: ${answer.text}`);
   return { ...decodeJpegBase64(answer.image.data), jpeg: answer.image.data };
 }

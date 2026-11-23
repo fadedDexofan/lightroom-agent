@@ -221,7 +221,7 @@ local function listed(entries, opts)
             },
         },
     })
-    return Handler.listMasks({ photo_id = "1" }, opts.context)
+    return Handler.listMasks({ photo_ids = { "1" } }, opts.context)
 end
 
 describe("HandlerMasks.listMasks", function()
@@ -394,7 +394,7 @@ describe("HandlerMasks.listMasks", function()
             },
         })
 
-        local sample = Handler.listMasks({ photo_id = "1" }).masks[1].tools[1].range.samples[1]
+        local sample = Handler.listMasks({ photo_ids = { "1" } }).masks[1].tools[1].range.samples[1]
 
         assert.is_true(math.abs(sample.x) < 1e-6)
         assert.is_true(math.abs(sample.y) < 1e-6)
@@ -482,7 +482,7 @@ describe("HandlerMasks.listMasks", function()
             },
         })
 
-        Handler.listMasks({ photo_id = "1" }, context)
+        Handler.listMasks({ photo_ids = { "1" } }, context)
 
         assert.are.equal(1, #context.warnings)
         assert.truthy(context.warnings[1]:find("PerspectiveVertical 20", 1, true), context.warnings[1])
@@ -492,7 +492,7 @@ describe("HandlerMasks.listMasks", function()
         for _, settings in ipairs({ {}, { MaskGroupBasedCorrections = {} } }) do
             local Handler = setup({ photos = { { id = "1", developSettings = settings } } })
 
-            assert.are.same({ photo_id = "1", count = 0, masks = {} }, Handler.listMasks({ photo_id = "1" }))
+            assert.are.same({ photo_id = "1", count = 0, masks = {} }, Handler.listMasks({ photo_ids = { "1" } }))
         end
     end)
 
@@ -501,14 +501,14 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "7", developSettings = { MaskGroupBasedCorrections = { correction("m", {}) } } } },
         })
 
-        assert.are.equal("7", Handler.listMasks({ photo_id = 7 }).photo_id)
-        assert.are.equal(1, Handler.listMasks({ photo_id = "/7.jpg" }).count)
+        assert.are.equal("7", Handler.listMasks({ photo_ids = { 7 } }).photo_id)
+        assert.are.equal(1, Handler.listMasks({ photo_ids = { "/7.jpg" } }).count)
     end)
 
     it("names the photo id when the photo is unknown", function()
         local Handler = setup({ photos = { { id = "1" } } })
 
-        assert.are.equal("404", helper.notFoundOf(function() Handler.listMasks({ photo_id = "404" }) end))
+        assert.are.equal("404", helper.notFoundOf(function() Handler.listMasks({ photo_ids = { "404" } }) end))
     end)
 
     it("reads the saved settings without Develop, a selection change or a write", function()
@@ -516,7 +516,7 @@ describe("HandlerMasks.listMasks", function()
             photos = { { id = "1", developSettings = { MaskGroupBasedCorrections = SUBJECT_AND_BACKGROUND } } },
         })
 
-        assert.are.equal(2, Handler.listMasks({ photo_id = "1" }).count)
+        assert.are.equal(2, Handler.listMasks({ photo_ids = { "1" } }).count)
         assert.are.equal(0, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)

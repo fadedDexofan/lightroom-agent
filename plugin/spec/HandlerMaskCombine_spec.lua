@@ -120,7 +120,7 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
                 local context = helper.requestContext(nil, { title = "combine_mask" })
 
                 local r = Handler.combineMask(
-                    { photo_id = "1", mask_id = "mask-a", operation = case.operation, type = case.type },
+                    { photo_ids = { "1" }, mask_id = "mask-a", operation = case.operation, type = case.type },
                     context
                 )
 
@@ -149,7 +149,7 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
         local context = helper.requestContext(nil, { title = "combine_mask" })
 
         local r = Handler.combineMask(
-            { photo_id = "1", mask_id = "mask-b", operation = "subtract", type = "subject" },
+            { photo_ids = { "1" }, mask_id = "mask-b", operation = "subtract", type = "subject" },
             context
         )
 
@@ -163,7 +163,7 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
         local before = Store.clone(store.entries)
 
         local err = helper.failedOf(
-            function() Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "sky" }) end
+            function() Handler.combineMask({ photo_ids = { "1" }, mask_id = "mask-a", operation = "add", type = "sky" }) end
         )
 
         assert.truthy(err:find("Lightroom found nothing for the sky to add to mask mask-a on photo 1", 1, true), err)
@@ -174,7 +174,9 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
         local Handler, store = setup({ neverCompute = true })
 
         local message = helper.unknownOf(
-            function() Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "subject" }) end
+            function()
+                Handler.combineMask({ photo_ids = { "1" }, mask_id = "mask-a", operation = "add", type = "subject" })
+            end
         )
 
         assert.truthy(message:find("has not finished computing the AI masks of photo 1", 1, true), message)
@@ -186,7 +188,9 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
         local Handler, store = setup()
 
         local err = helper.failedOf(
-            function() Handler.combineMask({ photo_id = "1", mask_id = "nope", operation = "add", type = "subject" }) end
+            function()
+                Handler.combineMask({ photo_ids = { "1" }, mask_id = "nope", operation = "add", type = "subject" })
+            end
         )
 
         assert.truthy(err:find("Mask nope is not in the saved settings of photo 1", 1, true), err)
@@ -197,7 +201,9 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
         local Handler, store = setup({ maskWrites = { refuse = "Mask geometry writes are not certified." } })
 
         local err = helper.failedOf(
-            function() Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "subject" }) end
+            function()
+                Handler.combineMask({ photo_ids = { "1" }, mask_id = "mask-a", operation = "add", type = "subject" })
+            end
         )
 
         assert.truthy(err:find("not certified", 1, true), err)
@@ -210,7 +216,12 @@ describe("HandlerMaskCombine.combineMask in the saved settings", function()
             "404",
             helper.notFoundOf(
                 function()
-                    Handler.combineMask({ photo_id = "404", mask_id = "mask-a", operation = "add", type = "subject" })
+                    Handler.combineMask({
+                        photo_ids = { "404" },
+                        mask_id = "mask-a",
+                        operation = "add",
+                        type = "subject",
+                    })
                 end
             )
         )
@@ -239,7 +250,7 @@ describe("HandlerMaskCombine.combineMask judging the target mask", function()
         local Handler = setup({ becomes = { B1 = { MaskDigest = "RECOMPUTED" } } })
         local context = helper.requestContext(nil, { title = "combine_mask" })
 
-        Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "sky" }, context)
+        Handler.combineMask({ photo_ids = { "1" }, mask_id = "mask-a", operation = "add", type = "sky" }, context)
 
         assert.are.same(
             { "Photo 1: Lightroom's photo-wide AI recompute changed mask mask-b; check it" },
@@ -253,7 +264,7 @@ describe("HandlerMaskCombine.combineMask judging the target mask", function()
         local Handler = setup({ entries = entries, becomes = { B2 = { MaskDigest = "RECOMPUTED" } } })
         local context = helper.requestContext(nil, { title = "combine_mask" })
 
-        Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "sky" }, context)
+        Handler.combineMask({ photo_ids = { "1" }, mask_id = "mask-a", operation = "add", type = "sky" }, context)
 
         assert.are.same(
             { "Photo 1: Lightroom's photo-wide AI recompute changed mask mask-b; check it" },
@@ -266,7 +277,7 @@ describe("HandlerMaskCombine.combineMask judging the target mask", function()
         local before = Store.clone(store.entries)
 
         local message = helper.failedOf(
-            function() Handler.combineMask({ photo_id = "1", mask_id = "mask-a", operation = "add", type = "sky" }) end
+            function() Handler.combineMask({ photo_ids = { "1" }, mask_id = "mask-a", operation = "add", type = "sky" }) end
         )
 
         assert.are.equal("Lightroom kept 0 of the 1 requested masks on photo 1; the new masks were removed", message)

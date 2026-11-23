@@ -1,11 +1,11 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { DEVELOP_KEYS, LOCAL_KEYS, type DevelopKey, type LocalKey } from "./develop-keys.js";
-import type { Input, PluginReply } from "./tool-result.js";
+import type { OnePhoto, PluginReply } from "./tool-result.js";
 
 type Range = readonly [number, number];
 
 export interface DescribeArgs {
-  photo_id: Input;
+  photo_ids: OnePhoto;
   mask_id?: string;
 }
 
@@ -52,8 +52,8 @@ export async function describeDevelopKeys(
   const keys = DEVELOP_KEYS.filter((key) => key.kind === "number").map((key) => key.name);
   const request =
     args.mask_id === undefined
-      ? { photo_id: args.photo_id, keys }
-      : { photo_id: args.photo_id, keys, mask_id: args.mask_id, local_keys: LOCAL_KEYS.map((key) => key.name) };
+      ? { photo_id: args.photo_ids[0], keys }
+      : { photo_id: args.photo_ids[0], keys, mask_id: args.mask_id, local_keys: LOCAL_KEYS.map((key) => key.name) };
   const reply = await dispatcher.call("read_develop_ranges", request, budgetMs, options);
   if (reply.error !== undefined || reply.result?.data === undefined) return reply;
   const live = reply.result?.data as LiveRanges;

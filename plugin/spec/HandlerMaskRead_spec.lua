@@ -57,7 +57,7 @@ describe("HandlerMaskRead.getMask", function()
     it("decodes every kind from the stored fields of the mask without opening Develop", function()
         local Handler, ctx = setup()
 
-        local r = Handler.getMask({ photo_id = 1, mask_id = "mask-a" })
+        local r = Handler.getMask({ photo_ids = { 1 }, mask_id = "mask-a" })
 
         assert.are.equal("1", r.photo_id)
         assert.are.equal("mask-a", r.mask_id)
@@ -95,7 +95,7 @@ describe("HandlerMaskRead.getMask", function()
     }) do
         it("returns only " .. case.kind .. " when only it is requested", function()
             local Handler = setup()
-            local r = Handler.getMask({ photo_id = "/1.jpg", mask_id = "mask-a", kinds = { case.kind } })
+            local r = Handler.getMask({ photo_ids = { "/1.jpg" }, mask_id = "mask-a", kinds = { case.kind } })
             for _, field in ipairs({ "adjustments", "curves", "swatches" }) do
                 assert.are.equal(field == case.field, r[field] ~= nil)
             end
@@ -104,7 +104,7 @@ describe("HandlerMaskRead.getMask", function()
 
     it("reads a channel the mask does not store as linear and a mask without swatches as an empty list", function()
         local Handler = setup()
-        local r = Handler.getMask({ photo_id = "1", mask_id = "mask-b", kinds = { "curves", "point_colors" } })
+        local r = Handler.getMask({ photo_ids = { "1" }, mask_id = "mask-b", kinds = { "curves", "point_colors" } })
         assert.are.same({ 0, 0, 255, 255 }, r.curves.red)
         assert.are.same({ 0, 20, 128, 140, 255, 255 }, r.curves.main)
         assert.are.same({}, r.swatches)
@@ -119,11 +119,11 @@ describe("HandlerMaskRead.getMask", function()
             }),
         })
         local err = helper.failedOf(
-            function() Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "point_colors" } }) end
+            function() Handler.getMask({ photo_ids = { "1" }, mask_id = "mask-a", kinds = { "point_colors" } }) end
         )
         assert.truthy(err:find("Lightroom stored an unreadable Point Color swatch at index 1", 1, true), err)
 
-        local r = Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "adjustments", "curves" } })
+        local r = Handler.getMask({ photo_ids = { "1" }, mask_id = "mask-a", kinds = { "adjustments", "curves" } })
 
         assert.are.equal(0.5, r.adjustments.local_Exposure)
         assert.are.same({ 0, 0, 255, 255 }, r.curves.main)
@@ -133,13 +133,13 @@ describe("HandlerMaskRead.getMask", function()
         local Handler = setup()
         assert.are.equal(
             "404",
-            helper.notFoundOf(function() Handler.getMask({ photo_id = "404", mask_id = "mask-a" }) end)
+            helper.notFoundOf(function() Handler.getMask({ photo_ids = { "404" }, mask_id = "mask-a" }) end)
         )
     end)
 
     it("refuses a mask that is not in the saved settings, naming the saved ones", function()
         local Handler = setup()
-        local err = helper.failedOf(function() Handler.getMask({ photo_id = "1", mask_id = "missing" }) end)
+        local err = helper.failedOf(function() Handler.getMask({ photo_ids = { "1" }, mask_id = "missing" }) end)
         assert.truthy(
             err:find("Mask missing is not in the saved settings of photo 1 (saved masks: mask-a, mask-b)", 1, true),
             err
@@ -158,7 +158,7 @@ describe("a local slider added to the table", function()
                 ),
             })
 
-            local r = Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "adjustments" } })
+            local r = Handler.getMask({ photo_ids = { "1" }, mask_id = "mask-a", kinds = { "adjustments" } })
 
             assert.are.equal(7, r.adjustments.local_Fixture)
         end)

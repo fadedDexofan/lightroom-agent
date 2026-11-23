@@ -134,7 +134,7 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
         local Handler, store, modules = savedSetup()
         local kept = Store.clone(store.entries[2])
 
-        local r = Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-a", "mask-c" } })
+        local r = Handler.deleteMasks({ photo_ids = { "1" }, mask_ids = { "mask-a", "mask-c" } })
 
         assert.are.same({ "mask-a", "mask-c" }, r.deleted_mask_ids)
         assert.are.same({ "A1", "A2", "C1" }, r.deleted_tool_ids)
@@ -149,7 +149,7 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
         local expected = Store.clone(store.entries[1])
         table.remove(expected.CorrectionMasks, 1)
 
-        local r = Handler.deleteMasks({ photo_id = "1", tool_ids = { "A1" } })
+        local r = Handler.deleteMasks({ photo_ids = { "1" }, tool_ids = { "A1" } })
 
         assert.are.same({}, r.deleted_mask_ids)
         assert.are.same({ "A1" }, r.deleted_tool_ids)
@@ -160,7 +160,7 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
     it("removes the mask with its last component instead of keeping an empty one", function()
         local Handler, store = savedSetup()
 
-        local r = Handler.deleteMasks({ photo_id = "1", tool_ids = { "B1", "A2" } })
+        local r = Handler.deleteMasks({ photo_ids = { "1" }, tool_ids = { "B1", "A2" } })
 
         assert.are.same({ "mask-b" }, r.deleted_mask_ids)
         assert.are.same({ "A2", "B1" }, r.deleted_tool_ids)
@@ -170,7 +170,7 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
     it("removes every mask with all=true and leaves no mask list", function()
         local Handler, store = savedSetup()
 
-        local r = Handler.deleteMasks({ photo_id = "1", all = true })
+        local r = Handler.deleteMasks({ photo_ids = { "1" }, all = true })
 
         assert.are.same({ "mask-a", "mask-b", "mask-c" }, r.deleted_mask_ids)
         assert.are.equal(0, r.remaining_mask_count)
@@ -180,7 +180,7 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
     it("writes nothing for all=true on a photo without masks", function()
         local Handler, store = savedSetup({ entries = {} })
 
-        local r = Handler.deleteMasks({ photo_id = "1", all = true })
+        local r = Handler.deleteMasks({ photo_ids = { "1" }, all = true })
 
         assert.are.same({}, r.deleted_mask_ids)
         assert.are.equal(0, r.remaining_mask_count)
@@ -190,7 +190,7 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
     it("removes a duplicated mask id once", function()
         local Handler, store = savedSetup()
 
-        local r = Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b", "mask-b" } })
+        local r = Handler.deleteMasks({ photo_ids = { "1" }, mask_ids = { "mask-b", "mask-b" } })
 
         assert.are.same({ "mask-b" }, r.deleted_mask_ids)
         assert.are.same({ "mask-a", "mask-c" }, entryIds(store))
@@ -210,7 +210,7 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
     }) do
         it("deletes nothing and names every unknown " .. case.kind .. " id", function()
             local Handler, store = savedSetup()
-            local args = { photo_id = "1" }
+            local args = { photo_ids = { "1" } }
             for key, value in pairs(case.args) do
                 args[key] = value
             end
@@ -240,7 +240,9 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
             })
             local before = Store.clone(store.entries)
 
-            local err = helper.failedOf(function() Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-b" } }) end)
+            local err = helper.failedOf(
+                function() Handler.deleteMasks({ photo_ids = { "1" }, mask_ids = { "mask-b" } }) end
+            )
 
             assert.truthy(err:find("previous masks were restored", 1, true), err)
             assert.are.same(before, store.entries)
@@ -250,7 +252,7 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
     it("refuses with nothing written when the catalog stays busy", function()
         local Handler, store = savedSetup({ writeAccessAborts = function() return true end })
 
-        local ok = pcall(Handler.deleteMasks, { photo_id = "1", mask_ids = { "mask-b" } })
+        local ok = pcall(Handler.deleteMasks, { photo_ids = { "1" }, mask_ids = { "mask-b" } })
 
         assert.is_false(ok)
         assert.are.equal(0, store.attempts)
@@ -258,7 +260,10 @@ describe("HandlerMaskDelete.deleteMasks in the saved settings, with constructing
 
     it("answers not_found for an unknown photo", function()
         local Handler = savedSetup()
-        assert.are.equal("404", helper.notFoundOf(function() Handler.deleteMasks({ photo_id = "404", all = true }) end))
+        assert.are.equal(
+            "404",
+            helper.notFoundOf(function() Handler.deleteMasks({ photo_ids = { "404" }, all = true }) end)
+        )
     end)
 end)
 
@@ -267,7 +272,9 @@ describe("HandlerMaskDelete.deleteMasks beside a mask Lightroom has not named ye
         local Handler, store = savedSetup()
         store.entries[2].CorrectionID, store.entries[2].CorrectionSyncID = nil, nil
 
-        local refusal = helper.failedOf(function() Handler.deleteMasks({ photo_id = "1", mask_ids = { "mask-a" } }) end)
+        local refusal = helper.failedOf(
+            function() Handler.deleteMasks({ photo_ids = { "1" }, mask_ids = { "mask-a" } }) end
+        )
 
         assert.matches('mask 2 ("B") has no id yet', refusal, 1, true)
         assert.are.equal(0, store.attempts)
@@ -281,7 +288,7 @@ describe("HandlerMaskDelete.deleteMasks beside a mask Lightroom has not named ye
             component.MaskID, component.MaskSyncID = nil, nil
         end
 
-        local refusal = helper.failedOf(function() Handler.deleteMasks({ photo_id = "1", all = true }) end)
+        local refusal = helper.failedOf(function() Handler.deleteMasks({ photo_ids = { "1" }, all = true }) end)
 
         assert.matches('mask 1 ("A") has no id yet', refusal, 1, true)
         assert.are.equal(0, store.attempts)

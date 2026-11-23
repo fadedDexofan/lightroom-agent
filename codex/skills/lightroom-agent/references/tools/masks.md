@@ -28,7 +28,7 @@ These value edits construct nothing, so they need no certification.
 Writes that construct mask data in Lightroom's undocumented format are guarded: `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask`, `create_mask_batch`, `combine_mask`, and a full `copy_develop_settings` when the source has masks to copy or the target has masks to remove.
 
 - They run on the throwaway catalog of the project's live test kit. On any other catalog they need a certification run on that machine that passed for the running Lightroom version and build and the photo's process version.
-- `get_mask_write_admission` (with `photo_id`) reports admitted or not and why, without writing.
+- `get_mask_write_admission` (with `photo_ids`, one photo) reports admitted or not and why, without writing.
 - A refusal names the reason. After a Lightroom update the guarded writes refuse until certification is rerun: report that to the person instead of working around it. A refusal that a mask has no id yet clears when Lightroom names it a few seconds later: retry that call, or in a batch that item.
 - They check what they construct against the certified format, leave every other mask as Lightroom stored it, read the whole mask list back and roll back on a mismatch.
 

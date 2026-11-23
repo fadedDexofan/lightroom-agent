@@ -180,8 +180,8 @@ async function cleanCopy(master, role) {
       .copies[0].copy_photo_id,
   );
   copies.push(copy);
-  if ((await toolData("list_masks", { photo_id: copy })).count > 0)
-    await toolData("delete_masks", { photo_id: copy, all: true });
+  if ((await toolData("list_masks", { photo_ids: [copy] })).count > 0)
+    await toolData("delete_masks", { photo_ids: [copy], all: true });
   return copy;
 }
 
@@ -230,7 +230,7 @@ async function check({
     entry.answer = { isError: answer.isError, outcome: answer.outcome, text: answer.text, envelope: answer.envelope };
     entry.data = answer.data;
     entry.after = await readRaw(photoId);
-    entry.admission = await toolData("get_mask_write_admission", { photo_id: photoId });
+    entry.admission = await toolData("get_mask_write_admission", { photo_ids: [photoId] });
   } catch (error) {
     entry.failure = `the step threw: ${error.message}`;
   }
@@ -258,7 +258,7 @@ const radial = await check({
   photoId: ids.wide,
   added: 1,
   call: tool("create_gradient_mask", {
-    photo_id: ids.wide,
+    photo_ids: [ids.wide],
     shape: "radial",
     ...radialGeometry,
     adjustments: { local_Exposure: 2 },
@@ -278,14 +278,14 @@ await check({
   name: "radial update",
   photoId: ids.wide,
   added: 0,
-  call: tool("update_gradient_mask", { photo_id: ids.wide, tool_id: radial?.tool_id ?? "missing", rotation: -30 }),
+  call: tool("update_gradient_mask", { photo_ids: [ids.wide], tool_id: radial?.tool_id ?? "missing", rotation: -30 }),
 });
 const linear = await check({
   name: "linear create",
   photoId: ids.wide,
   added: 1,
   call: tool("create_gradient_mask", {
-    photo_id: ids.wide,
+    photo_ids: [ids.wide],
     shape: "linear",
     start: { x: 0.2, y: 0.3 },
     end: { x: 0.6, y: 0.3 },
@@ -305,7 +305,7 @@ await check({
   photoId: ids.wide,
   added: 0,
   call: tool("update_gradient_mask", {
-    photo_id: ids.wide,
+    photo_ids: [ids.wide],
     tool_id: linear?.tool_id ?? "missing",
     end: { x: 0.7, y: 0.4 },
   }),
@@ -315,7 +315,7 @@ const brush = await check({
   photoId: ids.wide,
   added: 1,
   call: tool("create_brush_mask", {
-    photo_id: ids.wide,
+    photo_ids: [ids.wide],
     strokes: [
       {
         points: [
@@ -341,7 +341,7 @@ await check({
   photoId: ids.wide,
   added: 0,
   call: tool("add_brush_strokes", {
-    photo_id: ids.wide,
+    photo_ids: [ids.wide],
     tool_id: brush?.tool_id ?? "missing",
     strokes: [{ points: [{ x: 0.3, y: 0.85 }], radius: 0.04, erase: true }],
   }),
@@ -351,7 +351,7 @@ await check({
   photoId: ids.ramp,
   added: 1,
   call: tool("create_range_mask", {
-    photo_id: ids.ramp,
+    photo_ids: [ids.ramp],
     type: "luminance",
     luminance: { min: 0.6, max: 1 },
     adjustments: { local_Exposure: -1 },
@@ -371,7 +371,7 @@ await check({
   photoId: ids.chart,
   added: 1,
   call: tool("create_range_mask", {
-    photo_id: ids.chart,
+    photo_ids: [ids.chart],
     type: "color",
     color: { sample: { x: 0.048726, y: 0.060942, l: 0.570123, a: 0.961792, b: 0.817275 }, amount: 0.494949 },
     adjustments: { local_Exposure: -1 },
@@ -392,7 +392,7 @@ if (depthPhoto !== null) {
     photoId: String(depthPhoto),
     added: 1,
     call: tool("create_range_mask", {
-      photo_id: String(depthPhoto),
+      photo_ids: [String(depthPhoto)],
       type: "depth",
       depth: { min: 0, max: 0.3 },
       adjustments: { local_Exposure: -1 },
@@ -412,7 +412,7 @@ await check({
   name: "copy settings with masks",
   photoId: ids.orient1,
   added: 3,
-  call: tool("copy_develop_settings", { source_id: ids.wide, target_ids: [ids.orient1] }),
+  call: tool("copy_develop_settings", { source_photo_id: ids.wide, photo_ids: [ids.orient1] }),
 });
 
 const skyKept = await cleanCopy(ids.arw14, "sky kept");
@@ -422,7 +422,7 @@ await check({
   added: 1,
   prepare: async () => {
     await toolData("create_gradient_mask", {
-      photo_id: skyKept,
+      photo_ids: [skyKept],
       shape: "linear",
       start: { x: 0.5, y: 0.6 },
       end: { x: 0.5, y: 0.5 },
@@ -436,7 +436,7 @@ await check({
       async () => {
         sky = await toolData(
           "create_mask",
-          { photo_id: skyKept, type: "sky", adjustments: AI_AMOUNT },
+          { photo_ids: [skyKept], type: "sky", adjustments: AI_AMOUNT },
           { timeoutMs: AI_TIMEOUT_MS },
         );
       },
@@ -446,7 +446,7 @@ await check({
   },
   unchangedEntry: (sky) => sky.mask_id,
   call: tool("create_gradient_mask", {
-    photo_id: skyKept,
+    photo_ids: [skyKept],
     shape: "linear",
     start: { x: 0.5, y: 0.9 },
     end: { x: 0.5, y: 0.7 },
@@ -467,7 +467,7 @@ await check({
   added: 2,
   call: tool(
     "create_mask",
-    { photo_id: landscape, type: "landscape", categories: ["sky", "vegetation"] },
+    { photo_ids: [landscape], type: "landscape", categories: ["sky", "vegetation"] },
     { timeoutMs: AI_TIMEOUT_MS },
   ),
 });
@@ -477,7 +477,11 @@ await check({
   photoId: noPerson,
   added: 0,
   expectRefusal: true,
-  call: tool("create_mask", { photo_id: noPerson, type: "people", parts: ["face_skin"] }, { timeoutMs: AI_TIMEOUT_MS }),
+  call: tool(
+    "create_mask",
+    { photo_ids: [noPerson], type: "people", parts: ["face_skin"] },
+    { timeoutMs: AI_TIMEOUT_MS },
+  ),
 });
 const batchJudged = await cleanCopy(ids.arw12, "sky batch");
 const batchOther = await cleanCopy(ids.arw14, "sky batch");
@@ -503,7 +507,7 @@ await check({
   added: 1,
   call: tool(
     "create_mask",
-    { photo_id: subjectCopy, type: "subject", adjustments: AI_AMOUNT },
+    { photo_ids: [subjectCopy], type: "subject", adjustments: AI_AMOUNT },
     { timeoutMs: AI_TIMEOUT_MS },
   ),
   render: (before, after) => {
@@ -542,11 +546,12 @@ for (const { operation, target, darkens } of combineSteps) {
     photoId: combined,
     added: 1,
     call: async () => {
-      const maskId = (await toolData("create_gradient_mask", { photo_id: combined, ...target, adjustments: AI_AMOUNT }))
-        .mask_id;
+      const maskId = (
+        await toolData("create_gradient_mask", { photo_ids: [combined], ...target, adjustments: AI_AMOUNT })
+      ).mask_id;
       return session.tool(
         "combine_mask",
-        { photo_id: combined, mask_id: String(maskId), operation, type: "subject" },
+        { photo_ids: [combined], mask_id: String(maskId), operation, type: "subject" },
         { timeoutMs: AI_TIMEOUT_MS },
       );
     },
@@ -560,7 +565,7 @@ await check({
   added: 1,
   call: tool(
     "create_mask",
-    { photo_id: background, type: "background", adjustments: AI_AMOUNT },
+    { photo_ids: [background], type: "background", adjustments: AI_AMOUNT },
     { timeoutMs: AI_TIMEOUT_MS },
   ),
   render: darkensWithin(outsideSubject),
@@ -571,21 +576,21 @@ await check({
   photoId: nothing,
   added: 0,
   expectRefusal: true,
-  call: tool("create_mask", { photo_id: nothing, type: "subject" }, { timeoutMs: AI_TIMEOUT_MS }),
+  call: tool("create_mask", { photo_ids: [nothing], type: "subject" }, { timeoutMs: AI_TIMEOUT_MS }),
 });
 
 let ranges;
 try {
   const localRangesMask = (
     await toolData("create_gradient_mask", {
-      photo_id: ids.pano,
+      photo_ids: [ids.pano],
       shape: "linear",
       start: { x: 0.5, y: 0.9 },
       end: { x: 0.5, y: 0.7 },
     })
   ).mask_id;
-  const global = await toolData("describe_develop_keys", { photo_id: ids.arw12 });
-  const local = await toolData("describe_develop_keys", { photo_id: ids.pano, mask_id: localRangesMask });
+  const global = await toolData("describe_develop_keys", { photo_ids: [ids.arw12] });
+  const local = await toolData("describe_develop_keys", { photo_ids: [ids.pano], mask_id: localRangesMask });
   ranges = compareRanges([...global.keys, ...local.local]);
 } catch (error) {
   ranges = { error: error.message, compared: [], stale_ranges: [], not_compared: [] };

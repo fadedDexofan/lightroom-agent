@@ -513,7 +513,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         local _, Handler, state = setup({ photos = { photo } })
 
         local r = Handler.createDevelopPreset({
-            photo_id = "7",
+            photo_ids = { "7" },
             preset_name = "John Warm v2",
             settings = { "Contrast2012", "ToneCurvePV2012", "RedHue" },
         })
@@ -540,7 +540,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         local catalog, Handler = setup({ photos = { photo } })
 
         Handler.createDevelopPreset({
-            photo_id = "/raw/source.nef",
+            photo_ids = { "/raw/source.nef" },
             preset_name = "Contrast v1",
             settings = { "Contrast2012" },
         })
@@ -559,7 +559,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         local _, Handler, state = setup({ photos = { photo } })
 
         Handler.createDevelopPreset({
-            photo_id = "7",
+            photo_ids = { "7" },
             preset_name = "Clipped v1",
             settings = { "ToneCurvePV2012" },
         })
@@ -581,7 +581,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         })
         local _, Handler, state = setup({ photos = { photo } })
 
-        Handler.createDevelopPreset({ photo_id = "7", preset_name = "Long v1", settings = { "ToneCurvePV2012" } })
+        Handler.createDevelopPreset({ photo_ids = { "7" }, preset_name = "Long v1", settings = { "ToneCurvePV2012" } })
 
         assert.are.same(
             { ToneCurvePV2012 = LONG_CURVE, ExtendedToneCurvePV2012 = LONG_CURVE },
@@ -603,7 +603,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
             helper.failedOf(
                 function()
                     Handler.createDevelopPreset({
-                        photo_id = "7",
+                        photo_ids = { "7" },
                         preset_name = "Existing",
                         settings = { "Exposure2012" },
                     })
@@ -615,7 +615,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
             helper.failedOf(
                 function()
                     Handler.createDevelopPreset({
-                        photo_id = "7",
+                        photo_ids = { "7" },
                         preset_name = "New",
                         settings = { "Contrast2012" },
                     })
@@ -1137,7 +1137,7 @@ describe("HandlerDevelop numeric photo ids", function()
         })
         assert.is_nil(set.problem)
 
-        local copied = Handler.copyDevelopSettings({ source_id = 10, target_ids = { 11 } })
+        local copied = Handler.copyDevelopSettings({ source_photo_id = 10, photo_ids = { 11 } })
         assert.are.equal(1, copied.data.copied)
     end)
 
@@ -1150,7 +1150,7 @@ describe("HandlerDevelop numeric photo ids", function()
         local target = helper.fakePhoto({ id = 11, path = "/t.jpg" })
         local _, Handler = setup({ photos = { source, target } })
 
-        local r = Handler.copyDevelopSettings({ source_id = 10, target_ids = { 11, "ghost" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = 10, photo_ids = { 11, "ghost" } })
 
         assert.are.equal(1, r.data.copied)
         assert.are.same({ "ghost" }, r.not_found)
@@ -1186,7 +1186,7 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
             })
         )
         local err = helper.failedOf(
-            function() Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }) end
+            function() Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } }) end
         )
         assert.are.equal(
             "The source's masks cannot be copied: Mask writes are not certified for this Lightroom build."
@@ -1197,7 +1197,7 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
 
     it("does not preview or copy the source's orientation", function()
         local Handler = select(2, setup({ photos = photos() }))
-        local preview = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, dry_run = true })
+        local preview = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" }, dry_run = true })
         assert.is_nil(preview.setting_totals.orientation)
     end)
 
@@ -1221,10 +1221,12 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
         local Handler = select(2, setup({ photos = { source, target } }))
 
         local previewContext = helper.requestContext()
-        local preview =
-            Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, dry_run = true }, previewContext)
+        local preview = Handler.copyDevelopSettings(
+            { source_photo_id = "10", photo_ids = { "11" }, dry_run = true },
+            previewContext
+        )
         local context = helper.requestContext()
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }, context)
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } }, context)
 
         assert.is_nil(preview.setting_totals.FilterList)
         assert.are.equal(1, r.data.copied)
@@ -1252,7 +1254,7 @@ describe("HandlerDevelop.copyDevelopSettings guards", function()
         local Handler = select(2, setup({ photos = { source, target } }))
         local context = helper.requestContext()
 
-        Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }, context)
+        Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } }, context)
 
         assert.are.same({}, context.warnings)
     end)
@@ -1265,7 +1267,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local second = helper.fakePhoto({ id = "12" })
         local _, Handler = setup({ photos = { source, first, second } })
 
-        Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+        Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } })
 
         for _, photo in ipairs({ first, second }) do
             assert.are.equal("Copy Develop Settings", photo:getRawMetadata("__appliedHistoryName"))
@@ -1283,7 +1285,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
         local catalog, Handler = setup({ photos = { source, t1 } })
 
-        Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.is_false(catalog.getQueriedInsideWriteAccess())
     end)
@@ -1297,7 +1299,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
         local catalog, Handler = setup({ photos = { source, t1 } })
 
-        Handler.copyDevelopSettings({ source_id = "/s.jpg", target_ids = { "11" } })
+        Handler.copyDevelopSettings({ source_photo_id = "/s.jpg", photo_ids = { "11" } })
 
         assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
@@ -1312,7 +1314,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
             unread.getDevelopSettings = function() return nil end
             local _, Handler = setup({ photos = { source, first, unread, last } })
 
-            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12", "13" } })
+            local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12", "13" } })
 
             assert.are.equal(2, r.data.copied)
             assert.is_nil(unread:getRawMetadata("__appliedSettings"))
@@ -1333,7 +1335,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg" })
         local _, Handler = setup({ photos = { source, t1, t2 } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } })
 
         assert.is_nil(r.problem)
         assert.are.equal(2, r.data.copied)
@@ -1358,8 +1360,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local _, Handler = setup({ photos = { source, target } })
 
         Handler.copyDevelopSettings({
-            source_id = "20",
-            target_ids = { "21" },
+            source_photo_id = "20",
+            photo_ids = { "21" },
             settings = { "Exposure2012", "Saturation" },
         })
 
@@ -1385,7 +1387,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
             local target = helper.fakePhoto({ id = "21", path = "/t.jpg" })
             local _, Handler = setup({ photos = { source, target } })
 
-            Handler.copyDevelopSettings({ source_id = "20", target_ids = { "21" }, settings = case.settings })
+            Handler.copyDevelopSettings({ source_photo_id = "20", photo_ids = { "21" }, settings = case.settings })
 
             local applied = target.getRawMetadata(target, "__appliedSettings")
             assert.are.same(LONG_CURVE, applied.ToneCurvePV2012)
@@ -1408,8 +1410,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local _, Handler = setup({ photos = { source, target } })
 
         Handler.copyDevelopSettings({
-            source_id = "22",
-            target_ids = { "23" },
+            source_photo_id = "22",
+            photo_ids = { "23" },
             settings = { "HueAdjustmentOrange", "SaturationAdjustmentOrange", "LuminanceAdjustmentOrange" },
         })
 
@@ -1426,7 +1428,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local _, Handler = setup({ photos = { source, t1 } })
 
         local r =
-            Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "404", "/t1.jpg", "11", "404" } })
+            Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "404", "/t1.jpg", "11", "404" } })
 
         assert.are.equal(1, r.data.copied)
         assert.are.same({ "11" }, r.data.computed)
@@ -1440,7 +1442,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "ok" })
         local catalog, Handler = setup({ photos = { source, t1, t2 } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } })
 
         assert.are.equal(2, r.data.copied)
         assert.are.same({ "11", "12" }, r.data.computed)
@@ -1465,7 +1467,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         })
         local _, Handler = setup({ photos = { source, t1, t2 } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } })
 
         assert.are.same({ "11" }, r.data.computed)
         assert.is_nil(r.failed)
@@ -1492,7 +1494,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
             })
             local _, Handler = setup({ photos = { source, t1, t2 } })
 
-            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+            local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } })
 
             assert.are.equal(1, r.data.copied)
             assert.are.equal("12", r.failed[1].photo_id)
@@ -1532,7 +1534,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
             local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
             local _, Handler = setup({ photos = { source, t1 } })
 
-            Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+            Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
             local applied = t1:getDevelopSettings()
             assert.are.equal(1.0, applied.Exposure2012)
@@ -1553,7 +1555,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
             local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "fail" })
             local _, Handler = setup({ photos = { source, t1, t2 } })
 
-            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+            local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } })
 
             assert.are.same({ "11" }, r.data.computed)
             assert.is_nil(r.failed)
@@ -1598,7 +1600,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         }
         local _, Handler = setup({ photos = { source, target } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.are.equal("11", r.failed[1].photo_id)
         assert.truthy(r.failed[1].reason:find("the new masks were removed", 1, true), r.failed[1].reason)
@@ -1626,7 +1628,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
             local target = helper.fakePhoto({ id = "11", path = "/t.jpg", aiUpdate = "mixed" })
             local _, Handler = setup({ photos = { source, target } })
 
-            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+            local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
             assert.is_nil(r.failed)
             assert.are.equal("11", r.unknown[1].photo_id)
@@ -1646,7 +1648,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
         local catalog, Handler = setup({ photos = { source, t1 } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.is_nil(r.data.computed)
         assert.is_nil(t1.getRawMetadata(t1, "__aiUpdateCalls"))
@@ -1659,8 +1661,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         local _, Handler = setup({ photos = { source, t1 } })
 
         local r = Handler.copyDevelopSettings({
-            source_id = "10",
-            target_ids = { "11" },
+            source_photo_id = "10",
+            photo_ids = { "11" },
             settings = { "Exposure2012" },
         })
 
@@ -1673,7 +1675,7 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.are.equal(
             "missing",
             helper.notFoundOf(
-                function() Handler.copyDevelopSettings({ source_id = "missing", target_ids = { "t" } }) end
+                function() Handler.copyDevelopSettings({ source_photo_id = "missing", photo_ids = { "t" } }) end
             )
         )
     end)
@@ -2873,8 +2875,8 @@ describe("HandlerDevelop batch dry runs", function()
         catalog.withWriteAccessDo = function() error("dry run wrote") end
         target.applyDevelopSettings = function() error("dry run applied") end
         local r = Handler.copyDevelopSettings({
-            source_id = "1001",
-            target_ids = { "1002", "1003", "missing" },
+            source_photo_id = "1001",
+            photo_ids = { "1002", "1003", "missing" },
             settings = { "Exposure2012" },
             dry_run = true,
         })
@@ -2972,7 +2974,7 @@ describe("HandlerDevelop batch dry runs", function()
         local source = helper.fakePhoto({ id = "1001", developSettings = { Exposure2012 = 0.5 } })
         local target = helper.fakePhoto({ id = "1002" })
         local _, Handler = setup({ photos = { source, target } })
-        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "1001", photo_ids = { "1002" }, dry_run = true })
         assert.are.equal(1, r.setting_totals.Exposure2012)
         assert.is_false(r.details[1].changes[1].before_present)
         assert.is_nil(r.preview_scope)
@@ -2987,7 +2989,7 @@ describe("HandlerDevelop batch dry runs", function()
             helper.fakePhoto({ id = "1002", developSettings = { ProcessVersion = "11.0", Exposure2012 = 0.5 } })
         local _, Handler = setup({ photos = { source, target } })
 
-        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "1001", photo_ids = { "1002" }, dry_run = true })
 
         assert.are.same({ ProcessVersion = 1 }, r.setting_totals)
         assert.are.same(
@@ -3002,7 +3004,7 @@ describe("HandlerDevelop batch dry runs", function()
         local catalog, Handler = setup({ photos = { source, target } })
         catalog.withWriteAccessDo = function() error("dry run wrote") end
         target.updateAISettings = function() error("dry run recomputed") end
-        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "1001", photo_ids = { "1002" }, dry_run = true })
         assert.are.equal(1, r.setting_totals.MaskGroupBasedCorrections)
     end)
 
@@ -3018,7 +3020,7 @@ describe("HandlerDevelop batch dry runs", function()
             local target = helper.fakePhoto({ id = "1002", developSettings = case.target })
             local _, Handler = setup({ photos = { source, target } })
 
-            local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
+            local r = Handler.copyDevelopSettings({ source_photo_id = "1001", photo_ids = { "1002" }, dry_run = true })
 
             local change = r.details[1].changes[1]
             if case.before then
@@ -3055,7 +3057,7 @@ describe("HandlerDevelop batch dry runs", function()
         for i = 1, 200 do
             ids[i] = "/missing/" .. string.rep("a", 200) .. tostring(i) .. ".jpg"
         end
-        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = ids, dry_run = true })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "1001", photo_ids = ids, dry_run = true })
         assert.is_true(#require("JSON"):encode(r) <= 20000)
         assert.are.equal(200, r.missing_count)
         assert.are.equal(200, #r.missing_indices)
@@ -3078,7 +3080,7 @@ describe("HandlerDevelop batch dry runs", function()
             photos[#photos + 1] = helper.fakePhoto({ id = ids[i], developSettings = { Exposure2012 = 0 } })
         end
         local _, Handler = setup({ photos = photos })
-        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = ids, dry_run = true })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "1001", photo_ids = ids, dry_run = true })
         assert.is_true(#require("JSON"):encode(r) <= 20000)
         assert.are.equal(5, #r.details)
         assert.is_true(r.detail_truncated)
@@ -3183,7 +3185,7 @@ describe("develop writes read back after Lightroom normalises them", function()
         local jpeg = storingPhoto("11", { Exposure2012 = 0 }, JPEG_DROPS)
         local _, Handler = setup({ photos = { raw, jpeg }, tasks = sleeps() })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.are.equal(1, r.data.copied)
         assert.is_nil(r.unknown)
@@ -3198,8 +3200,8 @@ describe("develop writes read back after Lightroom normalises them", function()
         local _, Handler = setup({ photos = { source, kept, broken }, tasks = sleeps() })
 
         local r = Handler.copyDevelopSettings({
-            source_id = "10",
-            target_ids = { "11", "12" },
+            source_photo_id = "10",
+            photo_ids = { "11", "12" },
             settings = { "Exposure2012" },
         })
 
@@ -3220,8 +3222,8 @@ describe("develop writes read back after Lightroom normalises them", function()
         local _, Handler = setup({ photos = { source, broken }, tasks = sleeps() })
 
         local r = Handler.copyDevelopSettings({
-            source_id = "10",
-            target_ids = { "12" },
+            source_photo_id = "10",
+            photo_ids = { "12" },
             settings = { "Exposure2012", "Contrast2012" },
         })
 
@@ -3285,7 +3287,7 @@ describe("copy replies carry data only for the copies their read-back confirmed"
         ["all refused"] = function()
             return wire(
                 { source(), storingPhoto("11", { Exposure2012 = 0 }) },
-                { source_id = "10", target_ids = { "11" }, settings = named },
+                { source_photo_id = "10", photo_ids = { "11" }, settings = named },
                 { aborts = function(name) return name == "Copy Develop Settings" end }
             )
         end,
@@ -3294,13 +3296,13 @@ describe("copy replies carry data only for the copies their read-back confirmed"
                 source(),
                 storingPhoto("11", { Exposure2012 = 0 }),
                 storingPhoto("12", { Exposure2012 = 0 }, { throws = "cannot write this photo" }),
-            }, { source_id = "10", target_ids = { "11", "12" }, settings = named })
+            }, { source_photo_id = "10", photo_ids = { "11", "12" }, settings = named })
         end,
         ["unknown read-back"] = function()
             return wire({
                 source(),
                 storingPhoto("11", { Exposure2012 = 0, Contrast2012 = 0 }, { drops = { Contrast2012 = true } }),
-            }, { source_id = "10", target_ids = { "11" }, settings = named })
+            }, { source_photo_id = "10", photo_ids = { "11" }, settings = named })
         end,
         ["unknown and adjusted on one target"] = function()
             return wire({
@@ -3310,22 +3312,25 @@ describe("copy replies carry data only for the copies their read-back confirmed"
                     { Exposure2012 = 0, Contrast2012 = 0 },
                     { drops = { Contrast2012 = true }, Exposure2012 = 0.95 }
                 ),
-            }, { source_id = "10", target_ids = { "11" }, settings = named })
+            }, { source_photo_id = "10", photo_ids = { "11" }, settings = named })
         end,
         ["all not found"] = function()
-            return wire({ source() }, { source_id = "10", target_ids = { "404", "/missing.jpg" }, settings = named })
+            return wire(
+                { source() },
+                { source_photo_id = "10", photo_ids = { "404", "/missing.jpg" }, settings = named }
+            )
         end,
         ["budget exhausted"] = function()
             return wire(
                 { source(), storingPhoto("11", { Exposure2012 = 0 }) },
-                { source_id = "10", target_ids = { "11" }, settings = named },
+                { source_photo_id = "10", photo_ids = { "11" }, settings = named },
                 { stopAfter = 0 }
             )
         end,
         ["confirmed and remaining"] = function()
             return wire(
                 { source(), storingPhoto("11", { Exposure2012 = 0 }), storingPhoto("12", { Exposure2012 = 0 }) },
-                { source_id = "10", target_ids = { "11", "12" }, settings = named },
+                { source_photo_id = "10", photo_ids = { "11", "12" }, settings = named },
                 { stopAfter = 1 }
             )
         end,
@@ -3353,7 +3358,7 @@ describe("copy replies carry data only for the copies their read-back confirmed"
             ids[#ids + 1] = tostring(index)
         end
 
-        local reply = wire(photos, { source_id = "10", target_ids = ids, settings = named })
+        local reply = wire(photos, { source_photo_id = "10", photo_ids = ids, settings = named })
 
         assert.is_nil(reply.result.data)
         assert.truthy(
@@ -3392,8 +3397,11 @@ describe("a copy target the catalog stayed busy for before anything was written"
             })
             local label = settings and "named copy" or "full copy"
 
-            local r =
-                Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, settings = settings or nil })
+            local r = Handler.copyDevelopSettings({
+                source_photo_id = "10",
+                photo_ids = { "11" },
+                settings = settings or nil,
+            })
 
             assert.are.same(
                 { { photo_id = "11", reason = helper.catalogBusy("Copy Develop Settings") } },
@@ -3426,7 +3434,7 @@ describe("develop settings batches stop within their budget", function()
         local _, Handler = setup({ photos = photos })
 
         local r = Handler.copyDevelopSettings(
-            { source_id = "10", target_ids = { "11", "12" }, settings = { "Exposure2012" } },
+            { source_photo_id = "10", photo_ids = { "11", "12" }, settings = { "Exposure2012" } },
             stoppingAfter(1)
         )
 
@@ -3440,7 +3448,7 @@ describe("develop settings batches stop within their budget", function()
             local function copy(names)
                 return function(Handler, context)
                     return Handler.copyDevelopSettings(
-                        { source_id = "10", target_ids = { "11" }, settings = names },
+                        { source_photo_id = "10", photo_ids = { "11" }, settings = names },
                         context
                     )
                 end
@@ -3451,7 +3459,7 @@ describe("develop settings batches stop within their budget", function()
                 end
             end
             local function match(Handler, context)
-                return Handler.matchPhotoStyle({ reference_id = "10", target_ids = { "11" } }, context)
+                return Handler.matchPhotoStyle({ reference_photo_id = "10", photo_ids = { "11" } }, context)
             end
             local cases = {
                 { name = "named copy", reserve = 20, source = { Exposure2012 = 1 }, run = copy({ "Exposure2012" }) },
@@ -3499,16 +3507,16 @@ describe("develop settings batches stop within their budget", function()
     it("reads a target's settings once before writing it, and not at all when it is remaining", function()
         local runs = {
             match = function(Handler, context)
-                return Handler.matchPhotoStyle({ reference_id = "10", target_ids = { "11", "12" } }, context)
+                return Handler.matchPhotoStyle({ reference_photo_id = "10", photo_ids = { "11", "12" } }, context)
             end,
             ["named copy"] = function(Handler, context)
                 return Handler.copyDevelopSettings(
-                    { source_id = "10", target_ids = { "11", "12" }, settings = { "Exposure2012" } },
+                    { source_photo_id = "10", photo_ids = { "11", "12" }, settings = { "Exposure2012" } },
                     context
                 )
             end,
             ["full copy"] = function(Handler, context)
-                return Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } }, context)
+                return Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } }, context)
             end,
         }
         package.loaded.HandlerSnapshots = { create = function() return { snapshot = { name = "s" } } end }
@@ -3607,7 +3615,7 @@ describe("a full copy writes masks only through the guarded mask write", functio
             },
         })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } })
 
         assert.are.same({ "11", "12" }, guarded)
         assert.is_nil(accepted:getRawMetadata("__appliedSettings").MaskGroupBasedCorrections)
@@ -3648,7 +3656,7 @@ describe("a full copy writes masks only through the guarded mask write", functio
             },
         })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.is_nil(r.failed)
         assert.are.equal("11", r.unknown[1].photo_id)
@@ -3691,7 +3699,7 @@ describe("a full copy writes masks only through the guarded mask write", functio
                     },
                 })
 
-                local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+                local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
                 assert.are.same(masks, stored.MaskGroupBasedCorrections, case.name)
                 assert.are.equal(0, stored.Exposure2012, case.name)
@@ -3816,7 +3824,7 @@ describe("a full copy replaces the target's masks and admits them under the proc
                 target("11", { Exposure2012 = 0, ProcessVersion = "15.4", MaskGroupBasedCorrections = oldMasks() }, log)
             local _, Handler = setup({ photos = { source, masked }, guardedMaskWrite = recordingGuard(log) })
 
-            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+            local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
             assert.are.same({}, masked:getDevelopSettings().MaskGroupBasedCorrections)
             assert.are.equal(1, masked:getDevelopSettings().Exposure2012)
@@ -3835,7 +3843,7 @@ describe("a full copy replaces the target's masks and admits them under the proc
         local plain = target("11", { Exposure2012 = 0, ProcessVersion = "15.4" }, log)
         local _, Handler = setup({ photos = { source, plain }, guardedMaskWrite = recordingGuard(log) })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.are.equal(1, r.data.copied)
         assert.is_nil(r.data.masks_removed)
@@ -3861,7 +3869,7 @@ describe("a full copy replaces the target's masks and admits them under the proc
             maskWriteAdmission = recordingAdmission(log),
         })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.are.equal(1, r.data.copied)
         assert.are.same({
@@ -3895,7 +3903,7 @@ describe("a full copy replaces the target's masks and admits them under the proc
                 maskWriteAdmission = recordingAdmission(log),
             })
 
-            local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+            local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
             assert.are.equal("11", r.failed[1].photo_id)
             assert.truthy(r.failed[1].reason:find("has no id yet", 1, true), r.failed[1].reason)
@@ -3923,7 +3931,7 @@ describe("a full copy replaces the target's masks and admits them under the proc
             maskWriteAdmission = recordingAdmission(log, "The photo's process version (15.4) was not exercised"),
         })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.are.equal("11", r.failed[1].photo_id)
         assert.are.same({ "admit 15.4", "admit 15.4" }, log)
@@ -3948,7 +3956,7 @@ describe("a full copy replaces the target's masks and admits them under the proc
             guardedMaskWrite = recordingGuard(log, { refuseApply = "Lightroom did not keep the mask data" }),
         })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.is_nil(r.failed)
         assert.are.equal("11", r.unknown[1].photo_id)
@@ -3982,7 +3990,7 @@ describe("a full copy replaces the target's masks and admits them under the proc
             tasks = { sleep = function() end, pcall = pcall },
         })
 
-        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+        local r = Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } })
 
         assert.is_nil(r.failed)
         assert.are.equal("11", r.unknown[1].photo_id)
@@ -4026,7 +4034,7 @@ describe("a full copy refuses, before its first write to a target, what the guar
             store.entries[1].CorrectionID, store.entries[1].CorrectionSyncID = nil, nil
         end
         local _, Handler = setup({ photos = { source, target }, realGuard = true, maskWriteAdmission = opts.admission })
-        return Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } }), store, target
+        return Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11" } }), store, target
     end
 
     local function onlyFailure(r)

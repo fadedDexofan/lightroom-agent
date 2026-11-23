@@ -10,10 +10,10 @@ import {
   type RenderedPreview,
 } from "./preview-item.js";
 import { cutPixels, decodeJpeg, encodeWithin, pixelBox, scaleToEdge, type NormalizedRegion } from "./rendered-image.js";
-import type { Input, PluginReply } from "./tool-result.js";
+import type { Input, OnePhoto, PluginReply } from "./tool-result.js";
 
 export interface PreviewArgs {
-  photo_id: Input;
+  photo_ids: OnePhoto;
   size?: PreviewSize;
   region?: NormalizedRegion;
 }
@@ -104,7 +104,7 @@ export async function renderPreview(
   const requested = region ? regionSourceEdge(edge, region) : edge;
   const item = await previewItem(
     dispatcher,
-    { action: "render_preview", input: args.photo_id, size: requested },
+    { action: "render_preview", input: args.photo_ids[0], size: requested },
     budgetMs,
     options,
   );
