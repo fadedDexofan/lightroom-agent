@@ -76,6 +76,8 @@ export const COLOR_LABEL_NAMES = COLOR_LABELS.map((label) => label.name);
 
 export const PROFILE_PRESET_GROUP = "lightroom-agent profiles";
 
+export const PROFILE_UNIT = "profile";
+
 const ADOBE_RAW_PROFILE_LOOKS = [
   {
     name: "Adobe Color",

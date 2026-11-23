@@ -10,6 +10,12 @@ The `Look` develop setting: Lightroom's stored form of a profile (name, id, amou
 
 - Avoid: profile settings, look (the skill's photographic look)
 
+### Profile unit
+
+The profile family (camera profile, its digest, the profile Look and its tables, treatment and Lightroom's treatment memory) moved or left as one by `copy_develop_settings`, named `"profile"` in its settings and part of a full copy. Lightroom moves it with its own copy and paste of the profile; a target it is left on is named in `profiles_left` with the reason.
+
+- Avoid: profile keys, look settings
+
 ### Profile preset
 
 A Develop preset that holds only a profile reference (`CameraProfile` and a stubbed Look naming the profile's id), with no Baseline. `install-plugin` writes one per offered Adobe Raw profile into Camera Raw's settings folder, in the group "lightroom-agent profiles"; `set_profile` applies it, so Lightroom builds the profile Look for the photo's own camera.

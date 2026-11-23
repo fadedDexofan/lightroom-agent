@@ -101,6 +101,44 @@ describe('photo id inputs', () => {
   });
 });
 
+describe('copy_develop_settings profile unit', () => {
+  it('takes "profile" beside the develop keys in settings', () => {
+    expect(
+      validateToolArgs('copy_develop_settings', { source_photo_id: 1, photo_ids: [2], settings: ['profile'] }),
+    ).toBeNull();
+    expect(
+      validateToolArgs('copy_develop_settings', {
+        source_photo_id: 1,
+        photo_ids: [2],
+        settings: ['profile', 'Exposure2012'],
+      }),
+    ).toBeNull();
+    expect(
+      validateToolArgs('copy_develop_settings', { source_photo_id: 1, photo_ids: [2], settings: ['Look'] }),
+    ).toContain('settings.0 must be one of');
+    expect(
+      validateToolArgs('copy_develop_settings', { source_photo_id: 1, photo_ids: [2], settings: ['CameraProfile'] }),
+    ).toContain('use "profile" to copy the profile');
+  });
+});
+
+describe('set_profile', () => {
+  it('takes a proven Adobe Raw profile name or a whole amount, not both', () => {
+    expect(validateToolArgs('set_profile', { photo_ids: [1], profile: 'Adobe Color' })).toBeNull();
+    expect(validateToolArgs('set_profile', { photo_ids: [1], profile: 'Adobe Landscape' })).toBeNull();
+    expect(validateToolArgs('set_profile', { photo_ids: [1], amount: 50 })).toBeNull();
+    expect(validateToolArgs('set_profile', { photo_ids: [1], profile: 'Adobe Color', amount: 50 })).toContain(
+      'give profile or amount, not both',
+    );
+    expect(validateToolArgs('set_profile', { photo_ids: [1] })).toContain('give profile or amount, not both');
+    expect(validateToolArgs('set_profile', { photo_ids: [1], profile: 'Adobe Vivid' })).toContain(
+      'profile must be one of',
+    );
+    expect(validateToolArgs('set_profile', { photo_ids: [1], amount: 50.5 })).toContain('amount must be integer');
+    expect(validateToolArgs('set_profile', { photo_ids: [1], amount: 201 })).toContain('amount must be <= 200');
+  });
+});
+
 describe('old photo names', () => {
   it.each([
     ['get_crop', { photo_id: 7 }, 'unknown property "photo_id": use photo_ids'],

@@ -5,8 +5,8 @@ local Contract = require "Contract"
 local CatalogWrite = require "CatalogWrite"
 local DevelopReadBack = require "DevelopReadBack"
 local GuardedMaskWrite = require "GuardedMaskWrite"
-local JsonValue = require "JsonValue"
 local Reply = require "Reply"
+local SettingsChanges = require "SettingsChanges"
 
 local AIMaskCompute = {}
 
@@ -63,27 +63,16 @@ end
 
 local MAX_NAMED_KEYS = 10
 
-local function keysOutsideMasksChangedSince(catalog, photo, settings)
+function AIMaskCompute.changesSince(catalog, photo, settings)
     local now
     catalog:withReadAccessDo(function() now = DevelopReadBack.saved(photo) end)
-    local seen, keys = {}, {}
-    for _, path in ipairs(JsonValue.differences(settings or {}, now)) do
-        local key = path:match("^[^.]+")
-        if key ~= "MaskGroupBasedCorrections" and not seen[key] then
-            seen[key] = true
-            keys[#keys + 1] = key
-        end
-    end
-    return keys
+    return SettingsChanges.between(settings, now, function(key) return key == "MaskGroupBasedCorrections" end)
 end
 
-local function namedKeys(keys)
-    local named = {}
-    for index = 1, math.min(#keys, MAX_NAMED_KEYS) do
-        named[index] = keys[index]
-    end
-    if #keys > MAX_NAMED_KEYS then named[#named + 1] = string.format("%d more", #keys - MAX_NAMED_KEYS) end
-    return table.concat(named, ", ")
+function AIMaskCompute.changedMoreText(changes)
+    return "Update AI Settings also changed "
+        .. SettingsChanges.listed(changes, MAX_NAMED_KEYS)
+        .. " on the photo, which is not rolled back"
 end
 
 local function restoreAndRefuse(context, catalog, photo, write, reason)
@@ -91,15 +80,9 @@ local function restoreAndRefuse(context, catalog, photo, write, reason)
         error(reason .. "; the new masks could not be confirmed removed, check the photo's masks in Develop", 0)
     end
     if #context.ledger:since(write.to) > 0 then
-        local changed = keysOutsideMasksChangedSince(catalog, photo, write.settings)
+        local changed = AIMaskCompute.changesSince(catalog, photo, write.settings)
         if #changed > 0 then
-            error(
-                reason
-                    .. "; the new masks were removed, but Update AI Settings also changed "
-                    .. namedKeys(changed)
-                    .. " on the photo",
-                0
-            )
+            error(reason .. "; the new masks were removed, but " .. AIMaskCompute.changedMoreText(changed), 0)
         end
         context.ledger:undone(write.to)
     end
@@ -269,7 +252,7 @@ function AIMaskCompute.run(context, catalog, photo, spec)
     end
     if #failedOwn > 0 then fail(failureText(spec, own, failedOwn, photoId)) end
     warnAboutExisting(context, photoId, existing, after)
-    return { own = own, components = components, previous = previous }
+    return { own = own, components = components, previous = previous, settings = write and write.settings }
 end
 
 return AIMaskCompute

@@ -67,6 +67,8 @@ local LISTED_EDITS = {
     },
 }
 
+function DevelopReadBack.derivedFrom(key) return (KEYS[key] or {}).derives or {} end
+
 function DevelopReadBack.changedEdits(before, after)
     local changed = {}
     for _, key in ipairs(Contract.DEVELOP_KEYS) do
@@ -117,6 +119,7 @@ function DevelopReadBack.check(context, catalog, written)
             if reached then
                 read, stored = LrTasks.pcall(DevelopReadBack.saved, entry.photo)
             end
+            local mismatch = read and entry.error == nil and entry.compare ~= nil and entry.compare(stored) or nil
             local result = {
                 photo_id = tostring(entry.photo.localIdentifier),
                 stored = {},
@@ -141,6 +144,10 @@ function DevelopReadBack.check(context, catalog, written)
                 then
                     result.written = { "settings Lightroom now shows changed" }
                 end
+            elseif mismatch ~= nil then
+                result.error = mismatch
+                result.written = context.ledger:since(entry.from, entry.to)
+                if #result.written == 0 then result.written = { "the settings written before this read" } end
             else
                 for _, key in ipairs(sortedKeys(entry.settings)) do
                     local requested, value = entry.settings[key], DevelopCurves.read(stored, key)
@@ -213,7 +220,8 @@ function DevelopReadBack.parts(checked, data, lists)
             )
         end
         if #adjusted > shown then named[#named + 1] = string.format("%d more in adjusted", #adjusted - shown) end
-        parts.problem = "Lightroom stored other values than written: " .. table.concat(named, ", ")
+        local stored = "Lightroom stored other values than written: " .. table.concat(named, ", ")
+        parts.problem = parts.problem and parts.problem .. "; " .. stored or stored
     end
     return Reply.parts(parts)
 end

@@ -3,7 +3,7 @@ import { POINT_CURVE_MAX_PAIRS, TONE_CURVE_CHANNELS } from "./lightroom-tables.j
 
 type Bounds = readonly [number, number];
 
-export type DevelopKey = { name: string; note?: string; writtenBy?: string } & (
+export type DevelopKey = { name: string; note?: string; writtenBy?: string; derives?: readonly string[] } & (
   | { kind: "number"; range: Bounds | "photo"; precision: number; photo?: true }
   | { kind: "enum"; values: readonly (string | number)[]; labels?: readonly string[]; photo?: true }
   | { kind: "boolean"; photo?: true }
@@ -30,6 +30,8 @@ const geometry = (name: string, range: Bounds, precision = 1): DevelopKey => ({
 const HUE: Bounds = [0, 360];
 const B_AND_W_DEFRINGE = "While the photo is black and white, Defringe reads back but renders nothing";
 const COLORS = ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"];
+const INCREMENTAL_WHITE_BALANCE = ["IncrementalTemperature", "IncrementalTint"];
+const CURVE_NAME = ["ToneCurveName2012"];
 
 export const DEVELOP_KEYS: readonly DevelopKey[] = [
   {
@@ -37,6 +39,7 @@ export const DEVELOP_KEYS: readonly DevelopKey[] = [
     kind: "enum",
     photo: true,
     values: ["As Shot", "Auto", "Daylight", "Cloudy", "Shade", "Tungsten", "Fluorescent", "Flash", "Custom"],
+    derives: INCREMENTAL_WHITE_BALANCE,
   },
   {
     name: "Temperature",
@@ -45,8 +48,17 @@ export const DEVELOP_KEYS: readonly DevelopKey[] = [
     precision: 1,
     photo: true,
     note: "Range depends on the photo: kelvin 1500 to 50000 on a raw, -150 to 100 on a rendered file (Lightroom 16.0)",
+    derives: INCREMENTAL_WHITE_BALANCE,
   },
-  { name: "Tint", kind: "number", range: "photo", precision: 1, photo: true, note: "Range depends on the photo" },
+  {
+    name: "Tint",
+    kind: "number",
+    range: "photo",
+    precision: 1,
+    photo: true,
+    note: "Range depends on the photo",
+    derives: INCREMENTAL_WHITE_BALANCE,
+  },
   slider("Exposure2012", [-5, 5], 0.01),
   ...[
     "Contrast2012",
@@ -65,7 +77,12 @@ export const DEVELOP_KEYS: readonly DevelopKey[] = [
   slider("ParametricShadowSplit", [10, 70]),
   slider("ParametricMidtoneSplit", [20, 80]),
   slider("ParametricHighlightSplit", [30, 90]),
-  ...TONE_CURVE_CHANNELS.map(({ stored, extended }): DevelopKey => ({ name: stored, kind: "curve", extended })),
+  ...TONE_CURVE_CHANNELS.map(({ stored, extended }): DevelopKey => ({
+    name: stored,
+    kind: "curve",
+    extended,
+    derives: CURVE_NAME,
+  })),
   { name: "ToneCurveName2012", kind: "text" },
   slider("CurveRefineSaturation", AMOUNT),
   { name: "ConvertToGrayscale", kind: "boolean", writtenBy: "set_treatment" },
@@ -384,6 +401,16 @@ export function keysRefusedFor(tool: string, names: Iterable<string>): DevelopKe
     const key = KEY_BY_NAME.get(name);
     return key && !mayWrite(tool, key) ? [key] : [];
   });
+}
+
+export function derivedKeysText(): string {
+  const groups = new Map<string, string[]>();
+  for (const key of DEVELOP_KEYS) {
+    if (!key.derives) continue;
+    const derived = key.derives.join(" and ");
+    groups.set(derived, [...(groups.get(derived) ?? []), key.name]);
+  }
+  return [...groups].map(([derived, from]) => `${derived} from ${from.join(", ")}`).join("; ");
 }
 
 export function writtenElsewhereText(keys: readonly DevelopKey[]): string {
