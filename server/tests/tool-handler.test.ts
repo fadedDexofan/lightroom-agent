@@ -30,7 +30,7 @@ describe('createCallToolHandler', () => {
     ['cull', 864],
     ['review', 1728],
   ] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
-    const args = { photo_id: 914, size };
+    const args = { photo_ids: [914], size };
     let captured: unknown;
     await makeHandler({
       call: async (_action, params) => {
@@ -49,7 +49,7 @@ describe('createCallToolHandler', () => {
     [1024, 1024],
     [2048, 2048],
   ])('get_photo_preview sends size %s as edge %s', async (size, edge) => {
-    const args = size === undefined ? { photo_id: 914 } : { photo_id: 914, size };
+    const args = size === undefined ? { photo_ids: [914] } : { photo_ids: [914], size };
     let captured: unknown;
     await makeHandler({
       call: async (_action, params) => {
@@ -251,8 +251,8 @@ describe('time budget', () => {
   });
 
   it.each([
-    ['set_develop_settings', 'read_settings_by_input', { photo_id: 914, settings: { GlowStyle: 2 } }],
-    ['set_crop', 'plan_crop', { photo_id: 914, aspect: { width: 1, height: 1 } }],
+    ['set_develop_settings', 'read_settings_by_input', { photo_ids: [914], settings: { GlowStyle: 2 } }],
+    ['set_crop', 'plan_crop', { photo_ids: [914], aspect: { width: 1, height: 1 } }],
   ])('hands the write of %s the budget left after its pre-read', async (tool, preRead, args) => {
     jest.useFakeTimers();
     try {
@@ -306,10 +306,11 @@ describe('Develop call queue', () => {
     return { pending, handler, settle };
   }
   const done = (id: string): PluginResponse => ({ id, result: { data: {} } });
-  const develop = (id: number) => ['set_develop_settings', { photo_id: id, settings: { Exposure2012: 0.1 } }] as const;
+  const develop = (id: number) =>
+    ['set_develop_settings', { photo_ids: [id], settings: { Exposure2012: 0.1 } }] as const;
   const queuedKinds = [
     ['a server-run call', develop(2)],
-    ['a plug-in call', ['list_spots', { photo_id: 2 }]],
+    ['a plug-in call', ['list_spots', { photo_ids: [2] }]],
   ] as const;
 
   it('holds the Develop turn after a timed-out call until the plug-in has finished it', async () => {
@@ -345,7 +346,7 @@ describe('Develop call queue', () => {
   it('sends the next Develop call only after the previous one answered, in arrival order', async () => {
     const { pending, handler, settle } = gatedDispatcher();
     const first = handler(...develop(1));
-    const second = handler('list_spots', { photo_id: 2 });
+    const second = handler('list_spots', { photo_ids: [2] });
     const third = handler(...develop(3));
     await settle();
     expect(pending.map((entry) => entry.action)).toEqual(['write_develop_settings']);
@@ -397,7 +398,7 @@ describe('Develop call queue', () => {
   it.each([
     ['list_collections', {}, 'list_collections'],
     ['set_rating_and_flag', { photo_ids: [2], rating: 3 }, 'set_rating_and_flag'],
-    ['get_photo_preview', { photo_id: 2 }, 'render_preview'],
+    ['get_photo_preview', { photo_ids: [2] }, 'render_preview'],
   ] as const)(
     'runs %s, which touches no develop state, alongside a queued Develop call',
     async (name, args, action) => {
@@ -426,7 +427,7 @@ describe('Develop call queue', () => {
   it("queues get_photo_detail's crop read behind a running Develop call and renders outside the queue", async () => {
     const { pending, handler, settle } = gatedDispatcher();
     const reset = handler('reset_develop_adjustments', { photo_ids: [1], confirm: true });
-    void handler('get_photo_detail', { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] });
+    void handler('get_photo_detail', { photo_ids: [1], regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] });
     await settle();
     expect(pending.map((entry) => entry.action)).toEqual(['reset_develop_adjustments']);
     pending[0].resolve(done('1'));
@@ -450,7 +451,7 @@ describe('Develop call queue', () => {
     const settle = async () => {
       for (let i = 0; i < 20; i++) await Promise.resolve();
     };
-    const detail = { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] };
+    const detail = { photo_ids: [1], regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] };
     void handler('get_photo_detail', detail);
     void handler('get_photo_detail', detail);
     for (let i = 0; i < 2; i++) {
@@ -469,8 +470,8 @@ describe('Develop call queue', () => {
   });
 
   it.each([
-    ['set_crop', 'plan_crop', { photo_id: 1, aspect: { width: 1, height: 1 } }],
-    ['get_photo_detail', 'get_crop', { photo_id: 1, regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] }],
+    ['set_crop', 'plan_crop', { photo_ids: [1], aspect: { width: 1, height: 1 } }],
+    ['get_photo_detail', 'get_crop', { photo_ids: [1], regions: [{ x: 0, y: 0, width: 0.1, height: 0.1 }] }],
   ] as const)(
     'keeps the Develop turn of %s after its %s timed out until the plug-in has finished it',
     async (name, action, args) => {
@@ -594,7 +595,7 @@ describe('Develop call queue', () => {
     const controller = new AbortController();
     const waiting = handler(
       'set_develop_settings',
-      { photo_id: 2, settings: { Exposure2012: 0.2 } },
+      { photo_ids: [2], settings: { Exposure2012: 0.2 } },
       { signal: controller.signal },
     );
     await settle();
@@ -668,7 +669,7 @@ describe('set_develop_settings precision', () => {
         return { id: '1', result: { data: { photo_id: '914' } } };
       },
     })('set_develop_settings', {
-      photo_id: 914,
+      photo_ids: [914],
       settings: { Exposure2012: 0.333333, Contrast2012: 10.4, SharpenRadius: 1.25, Texture: 6 },
     });
     expect(calls).toEqual([
@@ -697,7 +698,7 @@ describe('set_develop_settings precision', () => {
         return { id: '1', result: { data: { photo_id: '914' } } };
       },
     })('set_develop_settings', {
-      photo_id: 914,
+      photo_ids: [914],
       settings: { Exposure2012: -1.25, WhiteBalance: 'Auto', CropAngle: 1.25 },
     });
     expect(calls).toEqual([
@@ -746,7 +747,7 @@ describe('set_develop_settings rules on stored values', () => {
     });
     return {
       calls,
-      write: (settings: Record<string, unknown>) => handler('set_develop_settings', { photo_id: 914, settings }),
+      write: (settings: Record<string, unknown>) => handler('set_develop_settings', { photo_ids: [914], settings }),
     };
   }
 
@@ -757,7 +758,7 @@ describe('set_develop_settings rules on stored values', () => {
         calls.push(action);
         return storedRead({}, action, params) ?? { id: '1', result: { data: {} } };
       },
-    })('set_develop_settings', { photo_id: 404, settings: { GlowStyle: 2 } });
+    })('set_develop_settings', { photo_ids: [404], settings: { GlowStyle: 2 } });
     expect(envelopeOf(result)).toMatchObject({ not_found: [404] });
     expect(calls).toHaveLength(1);
   });
@@ -784,7 +785,7 @@ describe('set_develop_settings rules on stored values', () => {
         calls.push(action);
         return storedRead({ 914: stored }, action, params) ?? { id: '1', result: { data: {} } };
       },
-    })('set_develop_settings', { photo_id: '/914.arw', settings: { GlowStyle: 2 } });
+    })('set_develop_settings', { photo_ids: ['/914.arw'], settings: { GlowStyle: 2 } });
     expect(envelopeOf(result)).toMatchObject(parts);
     expect(calls).toEqual(['read_settings_by_input']);
   });
@@ -895,8 +896,8 @@ describe('a read before the write that does not come back', () => {
     const crop = lost('plan_crop', failure);
 
     for (const result of [
-      await develop('set_develop_settings', { photo_id: 914, settings: { GlowStyle: 2 } }),
-      await crop('set_crop', { photo_id: 914, aspect: { width: 1, height: 1 } }),
+      await develop('set_develop_settings', { photo_ids: [914], settings: { GlowStyle: 2 } }),
+      await crop('set_crop', { photo_ids: [914], aspect: { width: 1, height: 1 } }),
     ]) {
       expect(envelopeOf(result)).toMatchObject({
         outcome: 'failed',
@@ -1137,7 +1138,7 @@ describe('develop keys added from the installed parameter table', () => {
 
   it.each(BOUNDS)('accepts %s from %d to %d and refuses a value just outside', (key, low, high) => {
     const write = (value: number) =>
-      validateToolArgs('set_develop_settings', { photo_id: 914, settings: { [key]: value } });
+      validateToolArgs('set_develop_settings', { photo_ids: [914], settings: { [key]: value } });
     expect(write(low)).toBeNull();
     expect(write(high)).toBeNull();
     expect(write(low - 1)).toContain(key);
@@ -1158,7 +1159,7 @@ describe('develop keys added from the installed parameter table', () => {
 
   it('refuses GlowDirectionalSoftness, which rendered nothing under GlowStyle 1 or 3 on Lightroom 16.0.1', () => {
     expect(
-      validateToolArgs('set_develop_settings', { photo_id: 914, settings: { GlowDirectionalSoftness: 80 } }),
+      validateToolArgs('set_develop_settings', { photo_ids: [914], settings: { GlowDirectionalSoftness: 80 } }),
     ).toContain('GlowDirectionalSoftness');
   });
 });
@@ -1182,7 +1183,7 @@ describe('set_develop_settings and keys another tool writes', () => {
         calls.push(action);
         return { id: '1', result: { data: {} } };
       },
-    })('set_develop_settings', { photo_id: 914, settings: { ConvertToGrayscale: true, Exposure2012: 1 } });
+    })('set_develop_settings', { photo_ids: [914], settings: { ConvertToGrayscale: true, Exposure2012: 1 } });
     expect(envelopeOf(result)).toEqual({
       outcome: 'failed',
       error: expect.stringContaining('ConvertToGrayscale is written by set_treatment'),
@@ -1194,12 +1195,12 @@ describe('set_develop_settings and keys another tool writes', () => {
     expect(validateToolArgs('get_develop_settings', { photo_ids: [914], keys: ['ConvertToGrayscale'] })).toBeNull();
     expect(
       validateToolArgs('copy_develop_settings', {
-        source_id: 914,
-        target_ids: [915],
+        source_photo_id: 914,
+        photo_ids: [915],
         settings: ['ConvertToGrayscale', 'Exposure2012'],
       }),
     ).toContain('ConvertToGrayscale is written by set_treatment');
-    expect(validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915] })).toBeNull();
+    expect(validateToolArgs('copy_develop_settings', { source_photo_id: 914, photo_ids: [915] })).toBeNull();
   });
 });
 
@@ -1229,7 +1230,7 @@ describe('set_crop', () => {
         return { id: '1', result: opts.write?.(settings) ?? { data: { photo_id: '914', settings } } };
       },
     });
-    return { calls, crop: (args: Record<string, unknown>) => handler('set_crop', { photo_id: 914, ...args }) };
+    return { calls, crop: (args: Record<string, unknown>) => handler('set_crop', { photo_ids: [914], ...args }) };
   }
 
   it('answers failed with not_found and writes nothing for a photo the catalog does not have', async () => {
@@ -1241,7 +1242,7 @@ describe('set_crop', () => {
       },
     });
 
-    expect(envelopeOf(await handler('set_crop', { photo_id: 914, aspect: { width: 1, height: 1 } }))).toEqual({
+    expect(envelopeOf(await handler('set_crop', { photo_ids: [914], aspect: { width: 1, height: 1 } }))).toEqual({
       outcome: 'failed',
       error: '1 not found',
       not_found: [914],
@@ -1346,9 +1347,9 @@ describe('set_crop', () => {
 
     await crop({ aspect: { width: 4, height: 5 }, relative_to: 'crop' });
 
-    expect(calls[0][1]).toMatchObject({ relative_to: 'crop', aspect: { width: 4, height: 5 } });
+    expect(calls[0][1]).toEqual({ photo_id: 914, relative_to: 'crop', aspect: { width: 4, height: 5 }, angle: 0 });
     expect(
-      validateToolArgs('set_crop', { photo_id: 1, aspect: { width: 4, height: 5 }, relative_to: 'frame' }),
+      validateToolArgs('set_crop', { photo_ids: [1], aspect: { width: 4, height: 5 }, relative_to: 'frame' }),
     ).toContain('relative_to');
   });
 
@@ -1374,7 +1375,7 @@ describe('set_crop', () => {
         calls.push(action);
         return { id: '1', result: { data: read } };
       },
-    })('get_crop', { photo_id: 914 });
+    })('get_crop', { photo_ids: [914] });
 
     expect(calls).toEqual(['get_crop']);
     expect(envelopeOf(result)).toEqual({ outcome: 'done', data: read });
@@ -1390,7 +1391,7 @@ describe('describe_develop_keys', () => {
   it('answers failed with not_found for a photo the catalog does not have', async () => {
     const handler = makeHandler({ call: async () => ({ id: '1', result: { not_found: [914] } }) });
 
-    expect(envelopeOf(await handler('describe_develop_keys', { photo_id: 914 }))).toEqual({
+    expect(envelopeOf(await handler('describe_develop_keys', { photo_ids: [914] }))).toEqual({
       outcome: 'failed',
       error: '1 not found',
       not_found: [914],
@@ -1418,7 +1419,7 @@ describe('describe_develop_keys', () => {
     });
     return {
       calls,
-      describe: (args: Record<string, unknown>) => handler('describe_develop_keys', { photo_id: 914, ...args }),
+      describe: (args: Record<string, unknown>) => handler('describe_develop_keys', { photo_ids: [914], ...args }),
     };
   }
 
@@ -1514,7 +1515,8 @@ describe('a call bound to the connection admitted on its arrival', () => {
   const flush = async () => {
     for (let i = 0; i < 20; i++) await Promise.resolve();
   };
-  const develop = (id: number) => ['set_develop_settings', { photo_id: id, settings: { Exposure2012: 0.1 } }] as const;
+  const develop = (id: number) =>
+    ['set_develop_settings', { photo_ids: [id], settings: { Exposure2012: 0.1 } }] as const;
 
   function connection() {
     const frames: Frame[] = [];
@@ -1614,7 +1616,7 @@ describe('a call bound to the connection admitted on its arrival', () => {
   it('fails set_crop with nothing written when the connection changes after its plan', async () => {
     const c = connection();
     await c.connect();
-    const crop = c.handler('set_crop', { photo_id: 914, aspect: { width: 2, height: 1 } });
+    const crop = c.handler('set_crop', { photo_ids: [914], aspect: { width: 2, height: 1 } });
     await flush();
     const plan = c.frames.find((frame) => frame.action === 'plan_crop')!;
 

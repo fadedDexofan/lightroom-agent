@@ -9,7 +9,7 @@ local Handler = {}
 
 local function resolve(args)
     local catalog = LrApplication.activeCatalog()
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
     return catalog, photo, tostring(photo.localIdentifier)
 end
 

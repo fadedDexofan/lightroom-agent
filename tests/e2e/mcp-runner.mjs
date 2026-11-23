@@ -313,7 +313,7 @@ async function main() {
       let lastError = "";
       for (const key of candidateKeys) {
         const r = await c.callTool("create_develop_preset", {
-          photo_id: ctx.firstPhoto.photo_id,
+          photo_ids: [ctx.firstPhoto.photo_id],
           preset_name: checkpointName,
           settings: [key],
         });
@@ -579,7 +579,7 @@ async function main() {
     if (ctx.firstPhoto) {
       await run("set_develop_settings Exposure2012=0.5 then 0.0", async () => {
         const r1 = await c.callTool("set_develop_settings", {
-          photo_id: ctx.firstPhoto.photo_id,
+          photo_ids: [ctx.firstPhoto.photo_id],
           settings: { Exposure2012: 0.5 },
         });
         checkTrue("first not error", !r1.isError, r1.text);
@@ -590,7 +590,7 @@ async function main() {
         const exposure = meta.parsed.photos[0].settings.Exposure2012;
         checkTrue("exposure ~0.5", Math.abs((exposure ?? 0) - 0.5) < 1e-6, `got ${exposure}`);
         const r2 = await c.callTool("set_develop_settings", {
-          photo_id: ctx.firstPhoto.photo_id,
+          photo_ids: [ctx.firstPhoto.photo_id],
           settings: { Exposure2012: 0.0 },
         });
         checkTrue("restore not error", !r2.isError, r2.text);
@@ -619,12 +619,12 @@ async function main() {
 
       await run("copy_develop_settings (whitelist Contrast2012)", async () => {
         await c.callTool("set_develop_settings", {
-          photo_id: src.photo_id,
+          photo_ids: [src.photo_id],
           settings: { Contrast2012: 42 },
         });
         const cp = await c.callTool("copy_develop_settings", {
-          source_id: src.photo_id,
-          target_ids: [dst.photo_id],
+          source_photo_id: src.photo_id,
+          photo_ids: [dst.photo_id],
           settings: ["Contrast2012"],
         });
         checkTrue("not error", !cp.isError, cp.text);
@@ -633,11 +633,11 @@ async function main() {
         checkEq("dst contrast", dstMeta.parsed.photos[0].settings.Contrast2012, 42);
         // restore source
         await c.callTool("set_develop_settings", {
-          photo_id: src.photo_id,
+          photo_ids: [src.photo_id],
           settings: { Contrast2012: 0 },
         });
         await c.callTool("set_develop_settings", {
-          photo_id: dst.photo_id,
+          photo_ids: [dst.photo_id],
           settings: { Contrast2012: 0 },
         });
       });

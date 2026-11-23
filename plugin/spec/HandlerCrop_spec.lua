@@ -65,7 +65,7 @@ describe("HandlerCrop", function()
     it("reads the current crop as the frame in the photo as displayed before any crop, with its pixel size", function()
         local Handler = setup({ CropLeft = 0.15, CropTop = 0.1, CropRight = 0.92, CropBottom = 0.9, CropAngle = 8 })
 
-        local crop = Handler.read({ photo_id = "7" }, helper.requestContext())
+        local crop = Handler.read({ photo_ids = { "7" } }, helper.requestContext())
 
         assert.are.equal("7", crop.photo_id)
         assert.are.same({ width = 1255, height = 631 }, crop.size)

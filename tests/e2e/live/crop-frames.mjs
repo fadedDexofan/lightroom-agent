@@ -34,7 +34,7 @@ async function redDisc(photoId) {
 
 async function radialLands(label, photoId, crop) {
   touched.add(photoId);
-  await data("set_crop", { photo_id: photoId, ...crop });
+  await data("set_crop", { photo_ids: [photoId], ...crop });
   const target = await redDisc(photoId);
   let created;
   const pixels = await measureChange(
@@ -42,7 +42,7 @@ async function radialLands(label, photoId, crop) {
     photoId,
     async () => {
       created = await answer("create_gradient_mask", {
-        photo_id: photoId,
+        photo_ids: [photoId],
         shape: "radial",
         center: { x: target.x, y: target.y },
         ...RADIAL,
@@ -67,7 +67,7 @@ async function radialLands(label, photoId, crop) {
       },
     },
   );
-  await data("delete_masks", { photo_id: photoId, all: true });
+  await data("delete_masks", { photo_ids: [photoId], all: true });
   return target;
 }
 
@@ -77,7 +77,7 @@ async function linearIsLevel(label, photoId, target) {
     photoId,
     async () => {
       await answer("create_gradient_mask", {
-        photo_id: photoId,
+        photo_ids: [photoId],
         shape: "linear",
         start: { x: target.x - 0.05, y: target.y },
         end: { x: target.x + 0.05, y: target.y },
@@ -98,7 +98,7 @@ async function linearIsLevel(label, photoId, target) {
     deltas.start > deltas.end + 0.05 && Math.abs(deltas.above - deltas.below) < LEVEL_DIFFERENCE,
     deltas,
   );
-  await data("delete_masks", { photo_id: photoId, all: true });
+  await data("delete_masks", { photo_ids: [photoId], all: true });
 }
 
 try {
@@ -109,9 +109,9 @@ try {
   });
   await linearIsLevel("markers_1 cropped at 8°", straight, target);
 
-  await data("set_develop_settings", { photo_id: straight, settings: { PerspectiveUpright: 4 } });
+  await data("set_develop_settings", { photo_ids: [straight], settings: { PerspectiveUpright: 4 } });
   const warped = await answer("create_gradient_mask", {
-    photo_id: straight,
+    photo_ids: [straight],
     shape: "radial",
     center: { x: target.x, y: target.y },
     ...RADIAL,
@@ -120,8 +120,8 @@ try {
   report.check("markers_1 with Upright 4: the write carries a warning", (warped.envelope.warnings ?? []).length > 0, {
     warnings: warped.envelope.warnings ?? [],
   });
-  await data("delete_masks", { photo_id: straight, all: true });
-  await data("set_develop_settings", { photo_id: straight, settings: { PerspectiveUpright: 0 } });
+  await data("delete_masks", { photo_ids: [straight], all: true });
+  await data("set_develop_settings", { photo_ids: [straight], settings: { PerspectiveUpright: 0 } });
 
   for (const orientation of [6, 8]) {
     await radialLands(`markers_${orientation} cropped off-centre at 8°`, id(`markers_${orientation}`), {
@@ -134,7 +134,7 @@ try {
     const photoId = id(`orient_${orientation}`);
     touched.add(photoId);
     const crop = await data("set_crop", {
-      photo_id: photoId,
+      photo_ids: [photoId],
       aspect: { width: 4, height: 5 },
       center: { x: 0.5, y: 0.5 },
     });
@@ -182,10 +182,10 @@ try {
     inner.top >= outer.top - 1e-4 &&
     inner.bottom <= outer.bottom + 1e-4;
 
-  await data("set_crop", { photo_id: nested, rectangle: base });
-  const current = await data("get_crop", { photo_id: nested });
+  await data("set_crop", { photo_ids: [nested], rectangle: base });
+  const current = await data("get_crop", { photo_ids: [nested] });
   const fit = await data("set_crop", {
-    photo_id: nested,
+    photo_ids: [nested],
     relative_to: "crop",
     aspect: { width: 1, height: 1 },
     center: { x: 0.95, y: 0.5 },
@@ -197,16 +197,16 @@ try {
     { current: current.rectangle, result: fit.rectangle, angle: fit.angle, turned_box: turnedBox(fit) },
   );
 
-  await data("set_crop", { photo_id: nested, rectangle: base });
+  await data("set_crop", { photo_ids: [nested], rectangle: base });
   const whole = await session.tool("set_crop", {
-    photo_id: nested,
+    photo_ids: [nested],
     relative_to: "crop",
     rectangle: { left: 0, top: 0, right: 1, bottom: 1 },
     angle: ANGLE,
   });
-  await data("set_crop", { photo_id: nested, rectangle: base });
+  await data("set_crop", { photo_ids: [nested], rectangle: base });
   const steep = await session.tool("set_crop", {
-    photo_id: nested,
+    photo_ids: [nested],
     relative_to: "crop",
     rectangle: { left: 0, top: 0, right: 1, bottom: 1 },
     angle: 40,
@@ -222,8 +222,8 @@ try {
   report.finish();
 } finally {
   for (const photoId of touched) {
-    await session.tool("delete_masks", { photo_id: photoId, all: true });
-    await session.tool("set_crop", { photo_id: photoId, rectangle: FULL_FRAME });
+    await session.tool("delete_masks", { photo_ids: [photoId], all: true });
+    await session.tool("set_crop", { photo_ids: [photoId], rectangle: FULL_FRAME });
   }
   await session.stop();
 }

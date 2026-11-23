@@ -32,9 +32,9 @@ const rotatedId = requireFixtureId(marker, "orient_6");
 const wideId = requireFixtureId(marker, "wide_plain");
 
 async function addExposureMask(photoId, create) {
-  const created = await session.toolOrThrow("create_gradient_mask", { photo_id: photoId, ...create });
+  const created = await session.toolOrThrow("create_gradient_mask", { photo_ids: [photoId], ...create });
   await session.toolOrThrow("set_mask_adjustments", {
-    photo_id: photoId,
+    photo_ids: [photoId],
     mask_id: created.data.mask_id,
     adjustments: { local_Exposure: EXPOSURE_STOPS },
   });
@@ -42,8 +42,8 @@ async function addExposureMask(photoId, create) {
 }
 
 try {
-  await session.toolOrThrow("delete_masks", { photo_id: rotatedId, all: true });
-  await session.toolOrThrow("delete_masks", { photo_id: wideId, all: true });
+  await session.toolOrThrow("delete_masks", { photo_ids: [rotatedId], all: true });
+  await session.toolOrThrow("delete_masks", { photo_ids: [wideId], all: true });
 
   const shown = {};
   for (const orientation of ORIENTATIONS) {
@@ -56,7 +56,7 @@ try {
     shown,
   );
 
-  const listed = await session.toolOrThrow("list_masks", { photo_id: rotatedId });
+  const listed = await session.toolOrThrow("list_masks", { photo_ids: [rotatedId] });
   check("list_masks answers on the rotated photo", Array.isArray(listed.data.masks), {
     masks: listed.data.masks?.length,
   });
@@ -95,8 +95,8 @@ try {
   const groups = summarizeMaskGroups(storedMaskGroups(stored.text));
   check("stored develop row holds the gradient mask", groups.length === 1 && groups[0].components.length === 1, groups);
 } finally {
-  await session.tool("delete_masks", { photo_id: rotatedId, all: true });
-  await session.tool("delete_masks", { photo_id: wideId, all: true });
+  await session.tool("delete_masks", { photo_ids: [rotatedId], all: true });
+  await session.tool("delete_masks", { photo_ids: [wideId], all: true });
   await session.stop();
 }
 

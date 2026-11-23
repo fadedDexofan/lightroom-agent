@@ -23,7 +23,7 @@ try {
   const before = await groups();
   const emptyIds = idsOf(before.filter((group) => (group.CorrectionMasks ?? []).length === 0));
   const plain = await data("create_gradient_mask", {
-    photo_id: photoId,
+    photo_ids: [photoId],
     shape: "linear",
     start: { x: 0.1, y: 0.5 },
     end: { x: 0.2, y: 0.5 },

@@ -49,17 +49,20 @@ try {
     };
   await data("reset_develop_adjustments", { photo_ids: copies, confirm: true });
   for (const photoId of copies) {
-    if ((await entries(photoId)).length > 0) await data("delete_masks", { photo_id: photoId, all: true });
+    if ((await entries(photoId)).length > 0) await data("delete_masks", { photo_ids: [photoId], all: true });
   }
 
-  const sourceSky = String((await data("create_mask", { photo_id: source, type: "sky", adjustments: SKY })).mask_id);
+  const sourceSky = String((await data("create_mask", { photo_ids: [source], type: "sky", adjustments: SKY })).mask_id);
   const sourceComponent = imageOf((await entries(source)).find((entry) => String(entry.CorrectionID) === sourceSky));
 
   const before = {};
   for (const fixture of TARGETS) before[fixture] = await entries(targets[fixture].copy);
   const copied = await session.tool(
     "copy_develop_settings",
-    { source_id: source, target_ids: TARGETS.flatMap((fixture) => [targets[fixture].copy, targets[fixture].native]) },
+    {
+      source_photo_id: source,
+      photo_ids: TARGETS.flatMap((fixture) => [targets[fixture].copy, targets[fixture].native]),
+    },
     { timeoutMs: AI_TIMEOUT_MS },
   );
   const computedIds = (copied.data?.computed ?? []).map(String);
@@ -70,10 +73,10 @@ try {
 
   for (const fixture of TARGETS) {
     const { copy: target, native } = targets[fixture];
-    if ((await entries(native)).length > 0) await data("delete_masks", { photo_id: native, all: true });
+    if ((await entries(native)).length > 0) await data("delete_masks", { photo_ids: [native], all: true });
     const made = await session.tool(
       "create_mask",
-      { photo_id: native, type: "sky", adjustments: SKY },
+      { photo_ids: [native], type: "sky", adjustments: SKY },
       { timeoutMs: AI_TIMEOUT_MS },
     );
     const nothingFound = made.outcome === "failed" && /Lightroom found nothing/.test(made.envelope.error ?? "");
@@ -118,7 +121,7 @@ try {
     const off = sky
       ? await measureChange(session, target, () =>
           data("set_mask_adjustments", {
-            photo_id: target,
+            photo_ids: [target],
             mask_id: String(sky.CorrectionID),
             adjustments: { local_Exposure: 0 },
           }),

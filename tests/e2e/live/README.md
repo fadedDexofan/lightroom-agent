@@ -139,7 +139,7 @@ A check takes a few lines:
 const { session, marker } = await openLiveSession();
 const photoId = requireFixtureId(marker, "orient_6");
 const { before, after } = await measureChange(session, photoId, () => session.toolOrThrow("create_gradient_mask", {
-  photo_id: String(photoId), shape: "linear", start: { x: 0.5, y: 0.1 }, end: { x: 0.5, y: 0.5 }, adjustments: { local_Exposure: 1 },
+  photo_ids: [String(photoId)], shape: "linear", start: { x: 0.5, y: 0.1 }, end: { x: 0.5, y: 0.5 }, adjustments: { local_Exposure: 1 },
 }));
 const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0.7, y1: 0.08 }]);
 ```

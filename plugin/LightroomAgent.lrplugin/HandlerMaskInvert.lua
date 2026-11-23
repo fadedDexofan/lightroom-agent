@@ -172,7 +172,7 @@ function MaskInvertHandler.invertMask(args, context)
 
     local catalog = LrApplication.activeCatalog()
 
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
 
     local photoId = tostring(photo.localIdentifier)
 

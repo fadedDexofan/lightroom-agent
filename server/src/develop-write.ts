@@ -1,14 +1,14 @@
 import { PluginNotSentError, type CallOptions, type Dispatcher } from "./dispatcher.js";
 import { roundToPrecision, rulesTouchedBy, type Rounded } from "./develop-keys.js";
-import type { Input, PluginReply } from "./tool-result.js";
+import type { Input, OnePhoto, PluginReply } from "./tool-result.js";
 
 export interface DevelopWriteArgs {
-  photo_id: Input;
+  photo_ids: OnePhoto;
   settings: Record<string, unknown>;
 }
 
 export interface DevelopBatchArgs {
-  photos: DevelopWriteArgs[];
+  photos: { photo_id: Input; settings: Record<string, unknown> }[];
 }
 
 type StoredRow =
@@ -162,7 +162,7 @@ export async function setDevelopSettings(
   options?: CallOptions,
 ): Promise<PluginReply> {
   const { settings, rounded } = roundToPrecision(args.settings);
-  const reply = await writeDevelopSettings(args.photo_id, settings, dispatcher, budgetMs, options);
+  const reply = await writeDevelopSettings(args.photo_ids[0], settings, dispatcher, budgetMs, options);
   return withWarnings(reply, roundingNote(rounded));
 }
 

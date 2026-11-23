@@ -49,7 +49,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
         local otherMask = Store.clone(store.entries[2])
 
         local r = Handler.setMaskCurves({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             curves = { main = { 0, 0, 64, 48, 192, 210, 255, 255 }, blue = { 0, 10, 255, 240 } },
         })
@@ -74,7 +74,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
     it("removes a channel's field when it is set back to linear, which reads as linear", function()
         local Handler, store = setup()
 
-        local r = Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-b", curves = { main = LINE } })
+        local r = Handler.setMaskCurves({ photo_ids = { "1" }, mask_id = "mask-b", curves = { main = LINE } })
 
         assert.is_nil(store.entries[2].MainCurve)
         assert.are.same(LINE, r.curves.main)
@@ -85,7 +85,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
         local Handler, store = setup()
 
         local r = Handler.setMaskCurves({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             curves = { main = LINE, blue = { 0, 0, 100, 140, 255, 255 } },
         })
@@ -99,7 +99,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
         local Handler, store = setup()
 
         local refusal = helper.failedOf(
-            function() Handler.setMaskCurves({ photo_id = "1", mask_id = "nope", curves = { main = LINE } }) end
+            function() Handler.setMaskCurves({ photo_ids = { "1" }, mask_id = "nope", curves = { main = LINE } }) end
         )
 
         assert.matches(
@@ -117,7 +117,7 @@ describe("HandlerMaskCurves.setMaskCurves", function()
         assert.are.equal(
             "99",
             helper.notFoundOf(
-                function() Handler.setMaskCurves({ photo_id = "99", mask_id = "mask-a", curves = { main = LINE } }) end
+                function() Handler.setMaskCurves({ photo_ids = { "99" }, mask_id = "mask-a", curves = { main = LINE } }) end
             )
         )
     end)
@@ -129,7 +129,10 @@ describe("HandlerMaskCurves.setMaskCurves on a hidden mask", function()
         store.entries[2].CorrectionActive = false
         local context = helper.requestContext()
 
-        Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-b", curves = { red = { 0, 10, 255, 245 } } }, context)
+        Handler.setMaskCurves(
+            { photo_ids = { "1" }, mask_id = "mask-b", curves = { red = { 0, 10, 255, 245 } } },
+            context
+        )
 
         assert.are.same({
             "mask mask-b was hidden (CorrectionActive false); this write showed it again, as Lightroom's own"

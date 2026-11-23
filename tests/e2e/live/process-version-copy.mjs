@@ -16,8 +16,8 @@ async function masklessCopy(name) {
     (await data("create_virtual_copies", { photo_ids: [base], copy_name: name })).copies[0].copy_photo_id,
   );
   copies.push(copy);
-  if ((await data("list_masks", { photo_id: copy })).count > 0)
-    await data("delete_masks", { photo_id: copy, all: true });
+  if ((await data("list_masks", { photo_ids: [copy] })).count > 0)
+    await data("delete_masks", { photo_ids: [copy], all: true });
   return copy;
 }
 
@@ -30,7 +30,7 @@ try {
   const downgrade = (await data("set_process_version", { photo_ids: [target], version: OLDER_VERSION, confirm: true }))
     .results[0];
   const source = await masklessCopy("LRAGENT live process version source");
-  const sky = await data("create_mask", { photo_id: source, type: "sky", adjustments: { local_Exposure: -1 } });
+  const sky = await data("create_mask", { photo_ids: [source], type: "sky", adjustments: { local_Exposure: -1 } });
   const before = { source: await processVersion(source), target: await processVersion(target) };
   report.check(
     `the target was set to ${OLDER_VERSION} and differs from the source's process version before the copy`,
@@ -41,7 +41,7 @@ try {
   const historyBefore = developHistory(catalogPath, target);
   const reply = await session.tool(
     "copy_develop_settings",
-    { source_id: source, target_ids: [target] },
+    { source_photo_id: source, photo_ids: [target] },
     { timeoutMs: 300_000 },
   );
   const historyAfter = await pollCatalog(
@@ -49,7 +49,7 @@ try {
     () => false,
   );
   const after = await processVersion(target);
-  const masks = await data("list_masks", { photo_id: target });
+  const masks = await data("list_masks", { photo_ids: [target] });
   report.check(
     "the full copy is done, the target takes the source's process version and lists the copied sky mask",
     reply.outcome === "done" &&
@@ -63,7 +63,7 @@ try {
     "the admission under the resulting version, the target's history steps and the source's mask are recorded",
     true,
     {
-      admission: await data("get_mask_write_admission", { photo_id: target }),
+      admission: await data("get_mask_write_admission", { photo_ids: [target] }),
       history_added: historyAfter.slice(historyBefore.length),
       source_mask: sky,
     },

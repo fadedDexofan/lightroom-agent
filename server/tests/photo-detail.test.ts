@@ -94,7 +94,7 @@ describe('get_photo_detail', () => {
     const { handler, calls } = handlerFor({ id: 'r', result: { data: { photo_id: '7', path, ...EXPORT_SOURCE } } });
 
     const response = await handler('get_photo_detail', {
-      photo_id: 7,
+      photo_ids: [7],
       regions: [
         { x: 0, y: 0, width: 0.5, height: 0.5 },
         { x: 0.5, y: 0.5, width: 0.5, height: 0.5 },
@@ -104,7 +104,7 @@ describe('get_photo_detail', () => {
     const envelope = envelopeOf(response);
     expect(envelope.outcome).toBe('done');
     expect(calls.map(({ action, params }) => [action, params])).toEqual([
-      ['get_crop', { photo_id: 7 }],
+      ['get_crop', { photo_ids: [7] }],
       ['render_source', { photo_id: 7, tool: 'get_photo_detail' }],
     ]);
     const data = envelope.data as {
@@ -145,7 +145,7 @@ describe('get_photo_detail', () => {
     writeFileSync(path, render(64, 48));
     writeFileSync(join(other, 'b.jpg'), 'x');
     const { handler } = handlerFor({ id: 'r', result: { data: { photo_id: '7', path, ...EXPORT_SOURCE } } });
-    await handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] });
+    await handler('get_photo_detail', { photo_ids: [7], regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] });
     expect(existsSync(own)).toBe(false);
     expect(existsSync(join(other, 'b.jpg'))).toBe(true);
   });
@@ -157,7 +157,7 @@ describe('get_photo_detail', () => {
     try {
       const { handler } = handlerFor({ id: 'r', result: { data: { photo_id: '7', path, ...EXPORT_SOURCE } } });
       const envelope = envelopeOf(
-        await handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] }),
+        await handler('get_photo_detail', { photo_ids: [7], regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] }),
       );
       expect(envelope.outcome).toBe('done');
       expect(envelope.warnings).toEqual([
@@ -172,7 +172,7 @@ describe('get_photo_detail', () => {
     const path = join(tempRoot(), 'a.jpg');
     writeFileSync(path, render(64, 48));
     const { handler } = handlerFor({ id: 'r', result: { data: { photo_id: '7', path, ...EXPORT_SOURCE } } });
-    await handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] });
+    await handler('get_photo_detail', { photo_ids: [7], regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] });
     expect(existsSync(path)).toBe(true);
   });
 
@@ -180,7 +180,7 @@ describe('get_photo_detail', () => {
     const { handler, calls } = handlerFor({ id: 'r', result: {} }, cropOf(300, 200));
 
     const response = await handler('get_photo_detail', {
-      photo_id: 7,
+      photo_ids: [7],
       max_edge: 128,
       regions: [
         { x: 0, y: 0, width: 0.2, height: 0.2 },
@@ -220,7 +220,7 @@ describe('get_photo_detail', () => {
       const handler = createCallToolHandler({ admitted: () => 0, dispatcher: { call } });
 
       const response = await handler('get_photo_detail', {
-        photo_id: 7,
+        photo_ids: [7],
         regions: [{ x: 0, y: 0, width: 1, height: 1 }],
       });
 
@@ -232,14 +232,14 @@ describe('get_photo_detail', () => {
   it('suggests a region size that fits max_edge wherever the region starts', async () => {
     const { handler, calls } = handlerFor({ id: 'r', result: {} }, cropOf(6000, 4000));
     const refused = envelopeOf(
-      await handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] }),
+      await handler('get_photo_detail', { photo_ids: [7], regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }] }),
     );
     const suggested = /up to width ([\d.]+) and height ([\d.]+)/.exec(String(refused.error));
     expect(suggested).not.toBeNull();
     calls.length = 0;
 
     await handler('get_photo_detail', {
-      photo_id: 7,
+      photo_ids: [7],
       regions: [{ x: 0.0168, y: 0.0251, width: Number(suggested?.[1]), height: Number(suggested?.[2]) }],
     });
 
@@ -258,7 +258,7 @@ describe('get_photo_detail', () => {
         return cropOf(64, 48);
       };
       await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })('get_photo_detail', {
-        photo_id: 7,
+        photo_ids: [7],
         regions: [{ x: 0, y: 0, width: 0.5, height: 0.5 }],
       });
       expect(timeouts).toEqual([
@@ -278,7 +278,7 @@ describe('get_photo_detail', () => {
     );
 
     const response = await handler('get_photo_detail', {
-      photo_id: 7,
+      photo_ids: [7],
       max_edge: 128,
       regions: [
         { x: 0, y: 0, width: 0.2, height: 0.2 },
@@ -299,7 +299,10 @@ describe('get_photo_detail', () => {
     const path = renderedFile(Buffer.from('broken'));
     const { handler } = handlerFor({ id: 'r', result: { data: { photo_id: '7', path, ...EXPORT_SOURCE } } });
 
-    const response = await handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 1, height: 1 }] });
+    const response = await handler('get_photo_detail', {
+      photo_ids: [7],
+      regions: [{ x: 0, y: 0, width: 1, height: 1 }],
+    });
 
     const envelope = envelopeOf(response);
     expect(envelope.outcome).toBe('unknown');
@@ -313,14 +316,14 @@ describe('get_photo_detail', () => {
     ];
     const rendered = handlerFor({ id: 'r', result: { unknown } });
     const renderEnvelope = envelopeOf(
-      await rendered.handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 1, height: 1 }] }),
+      await rendered.handler('get_photo_detail', { photo_ids: [7], regions: [{ x: 0, y: 0, width: 1, height: 1 }] }),
     );
     expect(renderEnvelope.outcome).toBe('unknown');
     expect(renderEnvelope.unknown).toEqual(unknown);
 
     const missing = handlerFor({ id: 'r', result: {} }, { id: 'c', result: { not_found: [404] } });
     const missingEnvelope = envelopeOf(
-      await missing.handler('get_photo_detail', { photo_id: 7, regions: [{ x: 0, y: 0, width: 1, height: 1 }] }),
+      await missing.handler('get_photo_detail', { photo_ids: [7], regions: [{ x: 0, y: 0, width: 1, height: 1 }] }),
     );
     expect(missingEnvelope.outcome).toBe('failed');
     expect(missingEnvelope.not_found).toEqual([404]);
@@ -338,7 +341,7 @@ describe('get_photo_detail', () => {
     const { handler, calls } = handlerFor({ id: 'r', result: {} });
     const region = { x: 0, y: 0, width: 0.1, height: 0.1 };
     for (const regions of [[region, region, region, region, region], [{ x: 0.5, y: 0, width: 0.6, height: 0.1 }]]) {
-      expect(envelopeOf(await handler('get_photo_detail', { photo_id: 7, regions })).outcome).toBe('failed');
+      expect(envelopeOf(await handler('get_photo_detail', { photo_ids: [7], regions })).outcome).toBe('failed');
     }
     expect(calls).toHaveLength(0);
   });

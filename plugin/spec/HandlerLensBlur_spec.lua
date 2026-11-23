@@ -122,7 +122,7 @@ describe("HandlerLensBlur", function()
     it("refuses a photo whose saved settings Lightroom does not return before opening Develop", function()
         local ctx = setup({ nilRead = true })
         assert.has_error(
-            function() ctx.Handler.set({ photo_id = "1", amount = 50 }, helper.requestContext()) end,
+            function() ctx.Handler.set({ photo_ids = { "1" }, amount = 50 }, helper.requestContext()) end,
             "Lightroom returned no saved settings for photo 1"
         )
         assert.are.equal(0, ctx.writes())
@@ -132,7 +132,7 @@ describe("HandlerLensBlur", function()
     it("enables an inactive photo before saving Amount50 and restores the view", function()
         local ctx = setup()
 
-        local result = ctx.Handler.set({ photo_id = "/1.dng", amount = 50 })
+        local result = ctx.Handler.set({ photo_ids = { "/1.dng" }, amount = 50 })
 
         assert.are.equal("1", result.photo_id)
         assert.is_nil(result.success)
@@ -146,7 +146,7 @@ describe("HandlerLensBlur", function()
     it("waits for asynchronous activation before committing and saving Amount50", function()
         local ctx = setup({ activationDelay = 12 })
 
-        local result = ctx.Handler.set({ photo_id = "1", amount = 50 })
+        local result = ctx.Handler.set({ photo_ids = { "1" }, amount = 50 })
 
         assert.is_true(result.active)
         assert.are.equal(50, result.amount)
@@ -159,7 +159,7 @@ describe("HandlerLensBlur", function()
         local ctx = setup({ activationDelay = 30 })
 
         local class, err = helper.outcomeOf(
-            function(context) ctx.Handler.set({ photo_id = "1", amount = 50 }, context) end
+            function(context) ctx.Handler.set({ photo_ids = { "1" }, amount = 50 }, context) end
         )
 
         assert.are.equal("unknown", class)
@@ -173,7 +173,7 @@ describe("HandlerLensBlur", function()
     it("reads an uninitialized photo as off without writing", function()
         local ctx = setup({ values = {} })
 
-        local result = ctx.Handler.get({ photo_id = "/1.dng" })
+        local result = ctx.Handler.get({ photo_ids = { "/1.dng" } })
 
         assert.are.equal("1", result.photo_id)
         assert.is_false(result.active)
@@ -186,7 +186,7 @@ describe("HandlerLensBlur", function()
         local ctx = setup()
 
         local result = ctx.Handler.set({
-            photo_id = "1",
+            photo_ids = { "1" },
             amount = 50,
             cat_eye = 20,
             highlights_boost = 30,
@@ -205,7 +205,7 @@ describe("HandlerLensBlur", function()
         local ctx = setup()
         assert.truthy(os.setlocale("ru_RU.UTF-8", "numeric"))
 
-        local ok, result = pcall(ctx.Handler.set, { photo_id = "1", focal_range = { near = 12.5, far = 30.25 } })
+        local ok, result = pcall(ctx.Handler.set, { photo_ids = { "1" }, focal_range = { near = 12.5, far = 30.25 } })
         os.setlocale("C", "numeric")
 
         assert.is_true(ok, tostring(result))
@@ -215,7 +215,7 @@ describe("HandlerLensBlur", function()
     it("can save adjustments and leave Lens Blur disabled", function()
         local ctx = setup()
 
-        local result = ctx.Handler.set({ photo_id = "1", active = false, amount = 50 })
+        local result = ctx.Handler.set({ photo_ids = { "1" }, active = false, amount = 50 })
 
         assert.is_false(result.active)
         assert.is_false(ctx.saved().Active)
@@ -225,7 +225,7 @@ describe("HandlerLensBlur", function()
     it("writes a value the schema admits without asking Lightroom for a range", function()
         local ctx = setup({ amountMax = 40 })
 
-        ctx.Handler.set({ photo_id = "1", amount = 50 })
+        ctx.Handler.set({ photo_ids = { "1" }, amount = 50 })
 
         assert.are.equal(50, ctx.saved().BlurAmount)
     end)
@@ -247,7 +247,9 @@ describe("HandlerLensBlur", function()
                     local ctx = setup({ storedProcess = storedProcess, normalizeDevelop = true })
                     local before = ctx.settings()
 
-                    local err = helper.failedOf(function() ctx.Handler[operation]({ photo_id = "1", amount = 50 }) end)
+                    local err = helper.failedOf(
+                        function() ctx.Handler[operation]({ photo_ids = { "1" }, amount = 50 }) end
+                    )
 
                     assert.matches("Process Version 3 or later", err, 1, true)
                     assert.are.same(before, ctx.settings())
@@ -263,7 +265,7 @@ describe("HandlerLensBlur", function()
         local ctx = setup({ ignoreSave = true })
 
         local class, err = helper.outcomeOf(
-            function(context) ctx.Handler.set({ photo_id = "1", amount = 50 }, context) end
+            function(context) ctx.Handler.set({ photo_ids = { "1" }, amount = 50 }, context) end
         )
 
         assert.are.equal("unknown", class)
@@ -277,7 +279,7 @@ describe("HandlerLensBlur", function()
         local ctx = setup({ ignoreAmountSave = true })
 
         local class, err = helper.outcomeOf(
-            function(context) ctx.Handler.set({ photo_id = "1", amount = 50, cat_eye = 20 }, context) end
+            function(context) ctx.Handler.set({ photo_ids = { "1" }, amount = 50, cat_eye = 20 }, context) end
         )
 
         assert.are.equal("unknown", class)
@@ -291,7 +293,7 @@ describe("HandlerLensBlur", function()
     it("leaves an uninitialized disabled photo unchanged when disabling it", function()
         local ctx = setup({ values = {} })
 
-        local result = ctx.Handler.set({ photo_id = "1", active = false })
+        local result = ctx.Handler.set({ photo_ids = { "1" }, active = false })
 
         assert.is_false(result.active)
         assert.are.equal(0, ctx.writes())
@@ -299,7 +301,10 @@ describe("HandlerLensBlur", function()
 
     it("answers an unknown photo as not found without writing", function()
         local ctx = setup()
-        assert.are.equal("999", helper.notFoundOf(function() ctx.Handler.set({ photo_id = "999", amount = 50 }) end))
+        assert.are.equal(
+            "999",
+            helper.notFoundOf(function() ctx.Handler.set({ photo_ids = { "999" }, amount = 50 }) end)
+        )
         assert.are.equal(0, ctx.writes())
     end)
 end)

@@ -303,7 +303,7 @@ function DevelopHandler.createDevelopPreset(args, context)
     local catalog = LrApplication.activeCatalog()
     local sourceSettings
     -- Resolved OUTSIDE the read gate: the lookup runs catalog queries.
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
     sourceSettings = savedOf(catalog, photo)
 
     local presetSettings = {}
@@ -327,7 +327,7 @@ function DevelopHandler.createDevelopPreset(args, context)
     local result = presetSummary(entry)
     result.visible_in_develop = false
     result.message = "Created plugin-managed Develop preset checkpoint"
-    Log.info(string.format("Created plugin preset %s from photo %s", args.preset_name, args.photo_id))
+    Log.info(string.format("Created plugin preset %s from photo %s", args.preset_name, args.photo_ids[1]))
     return result
 end
 
@@ -621,7 +621,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
     local sourceSettings
 
     -- Resolved OUTSIDE the read gate: the lookup runs catalog queries.
-    local source = PhotoLookup.requireOne(catalog, args.source_id)
+    local source = PhotoLookup.requireOne(catalog, args.source_photo_id)
     sourceSettings = savedOf(catalog, source)
 
     local toApply = {}
@@ -665,7 +665,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
     if not args.settings then
         masks = type(toApply.MaskGroupBasedCorrections) == "table" and toApply.MaskGroupBasedCorrections or {}
     end
-    local entries, missingIds, resolved = PhotoLookup.resolveDistinct(catalog, args.target_ids)
+    local entries, missingIds, resolved = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
     if args.dry_run then return previewDevelopSettings(catalog, resolved, toApply, false, masks) end
     local written = {}
     if masks then
@@ -760,7 +760,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
             end
         end
     end
-    Log.info(string.format("Copied develop settings from %s to %d photos", args.source_id, copied))
+    Log.info(string.format("Copied develop settings from %s to %d photos", args.source_photo_id, copied))
 
     return DevelopReadBack.parts(checked, copied > 0 and {
         copied = copied,
@@ -773,11 +773,11 @@ local styleMatchSerial = 0
 
 function DevelopHandler.matchPhotoStyle(args, context)
     local catalog = LrApplication.activeCatalog()
-    local source = PhotoLookup.requireOne(catalog, args.reference_id)
-    local targets, missing = PhotoLookup.resolveDistinct(catalog, args.target_ids)
+    local source = PhotoLookup.requireOne(catalog, args.reference_photo_id)
+    local targets, missing = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
     for _, entry in ipairs(targets) do
         if entry.photo.localIdentifier == source.localIdentifier then
-            Reply.refuse("Reference photo must not appear in target_ids")
+            Reply.refuse("Reference photo must not appear in photo_ids")
         end
     end
 
@@ -819,7 +819,7 @@ function DevelopHandler.matchPhotoStyle(args, context)
                 local snapshot
                 local from = context.ledger:mark()
                 local ok, reason = LrTasks.pcall(function()
-                    snapshot = HandlerSnapshots.create({ photo_id = photoId, name = name }, context).snapshot
+                    snapshot = HandlerSnapshots.create({ photo_ids = { photoId }, name = name }, context).snapshot
                     CatalogWrite.developSettings(
                         context,
                         catalog,

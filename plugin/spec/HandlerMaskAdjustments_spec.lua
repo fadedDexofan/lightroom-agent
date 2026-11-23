@@ -57,7 +57,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         local otherMask = Store.clone(store.entries[2])
 
         local r = Handler.setMaskAdjustments({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             adjustments = { local_Exposure = 1.25, local_Shadows = -15 },
         })
@@ -81,7 +81,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         local Handler, store = setup()
 
         local r = Handler.setMaskAdjustments({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             adjustments = { local_Contrast = 10, local_Whites = 0 },
         })
@@ -96,7 +96,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         for _, photoId in ipairs({ 1, "/1.jpg" }) do
             local Handler = setup()
             local r = Handler.setMaskAdjustments({
-                photo_id = photoId,
+                photo_ids = { photoId },
                 mask_id = "mask-b",
                 adjustments = { local_Contrast = 5 },
             })
@@ -109,7 +109,11 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
 
         local refusal = helper.failedOf(
             function()
-                Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-z", adjustments = { local_Contrast = 5 } })
+                Handler.setMaskAdjustments({
+                    photo_ids = { "1" },
+                    mask_id = "mask-z",
+                    adjustments = { local_Contrast = 5 },
+                })
             end
         )
 
@@ -127,7 +131,11 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
 
         local missing = helper.notFoundOf(
             function()
-                Handler.setMaskAdjustments({ photo_id = "99", mask_id = "mask-a", adjustments = { local_Contrast = 5 } })
+                Handler.setMaskAdjustments({
+                    photo_ids = { "99" },
+                    mask_id = "mask-a",
+                    adjustments = { local_Contrast = 5 },
+                })
             end
         )
 
@@ -138,7 +146,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         local Handler, store = setup()
 
         local r = Handler.setMaskAdjustments({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             adjustments = { local_colorgradeMidtoneHue = 61.83, local_glow = 25 },
         })
@@ -166,7 +174,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments on a hidden mask", function(
             local context = helper.requestContext()
 
             Handler.setMaskAdjustments(
-                { photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 1 } },
+                { photo_ids = { "1" }, mask_id = "mask-a", adjustments = { local_Exposure = 1 } },
                 context
             )
 
@@ -181,7 +189,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments on a hidden mask", function(
         local context = helper.requestContext()
 
         Handler.setMaskAdjustments(
-            { photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 0.5 } },
+            { photo_ids = { "1" }, mask_id = "mask-a", adjustments = { local_Exposure = 0.5 } },
             context
         )
 
@@ -211,8 +219,11 @@ describe("a local slider added to the table", function()
         helper.withFixtureSlider(function()
             local Handler, store = setup()
 
-            local r =
-                Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Fixture = 5 } })
+            local r = Handler.setMaskAdjustments({
+                photo_ids = { "1" },
+                mask_id = "mask-a",
+                adjustments = { local_Fixture = 5 },
+            })
 
             assert.are.equal(5, r.adjustments.local_Fixture)
             assert.are.equal(0.05, store.entries[1].LocalFixture)

@@ -27,9 +27,9 @@ try {
       Contrast2012: settings.Contrast2012,
     });
   }
-  await tool("set_develop_settings", { photo_id: source_id, settings: { Exposure2012: 0.5, Contrast2012: 10 } });
+  await tool("set_develop_settings", { photo_ids: [source_id], settings: { Exposure2012: 0.5, Contrast2012: 10 } });
   for (const photo_id of target_ids) {
-    await tool("set_develop_settings", { photo_id, settings: targetStart });
+    await tool("set_develop_settings", { photo_ids: [photo_id], settings: targetStart });
   }
   const before = new Map();
   for (const id of target_ids) {
@@ -40,7 +40,7 @@ try {
     );
     before.set(id, { ...flushed, history: developHistory(catalogPath, id) });
   }
-  const args = { source_id, target_ids, settings: keys };
+  const args = { source_photo_id: source_id, photo_ids: target_ids, settings: keys };
   const preview = await tool("copy_develop_settings", { ...args, dry_run: true });
   assert.equal(preview.dry_run, true);
   assert.equal(preview.detail_truncated, false);
@@ -73,7 +73,8 @@ try {
   failure = error;
 } finally {
   try {
-    for (const [photo_id, settings] of originals) await tool("set_develop_settings", { photo_id, settings });
+    for (const [photo_id, settings] of originals)
+      await tool("set_develop_settings", { photo_ids: [photo_id], settings });
     for (const photo_id of target_ids) {
       const restored = (await read(photo_id, holds(originals.get(photo_id)))).settings;
       for (const key of keys) assert.deepEqual(restored[key], originals.get(photo_id)[key]);

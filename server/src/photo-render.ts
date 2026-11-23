@@ -2,10 +2,10 @@ import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { withRenderedFile } from "./photo-detail.js";
 import { MAX_IMAGE_BYTES, PREVIEW_SIZES, previewEdge, type PreviewSize } from "./preview-sizes.js";
 import { decodeJpeg } from "./rendered-image.js";
-import type { Input, PluginReply } from "./tool-result.js";
+import type { OnePhoto, PluginReply } from "./tool-result.js";
 
 export interface RenderPhotoArgs {
-  photo_id: Input;
+  photo_ids: OnePhoto;
   size?: PreviewSize;
 }
 
@@ -20,7 +20,7 @@ export async function renderPhoto(
 ): Promise<PluginReply> {
   const reply = await dispatcher.call(
     "render_source",
-    { photo_id: args.photo_id, long_edge: previewEdge(args.size ?? DEFAULT_SIZE), tool: "render_photo" },
+    { photo_id: args.photo_ids[0], long_edge: previewEdge(args.size ?? DEFAULT_SIZE), tool: "render_photo" },
     budgetMs,
     options,
   );

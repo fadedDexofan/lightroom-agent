@@ -41,14 +41,14 @@ try {
       })
     ).copies[0].copy_photo_id,
   );
-  const survivor = String((await data("create_gradient_mask", { photo_id: copy, ...linear(0.0) })).mask_id);
-  const byMask = String((await data("create_gradient_mask", { photo_id: copy, ...linear(0.25) })).mask_id);
-  const twoTools = String((await data("create_gradient_mask", { photo_id: copy, ...linear(0.5) })).mask_id);
-  await data("create_gradient_mask", { photo_id: copy, mask_id: twoTools, mode: "add", ...radial });
-  const oneTool = String((await data("create_gradient_mask", { photo_id: copy, ...linear(0.7) })).mask_id);
+  const survivor = String((await data("create_gradient_mask", { photo_ids: [copy], ...linear(0.0) })).mask_id);
+  const byMask = String((await data("create_gradient_mask", { photo_ids: [copy], ...linear(0.25) })).mask_id);
+  const twoTools = String((await data("create_gradient_mask", { photo_ids: [copy], ...linear(0.5) })).mask_id);
+  await data("create_gradient_mask", { photo_ids: [copy], mask_id: twoTools, mode: "add", ...radial });
+  const oneTool = String((await data("create_gradient_mask", { photo_ids: [copy], ...linear(0.7) })).mask_id);
 
   const start = await entries(copy);
-  const deletedMask = await data("delete_masks", { photo_id: copy, mask_ids: [byMask] });
+  const deletedMask = await data("delete_masks", { photo_ids: [copy], mask_ids: [byMask] });
   const afterMask = await entries(copy);
   report.check(
     "by mask id: the named mask is gone and every other mask is byte-identical",
@@ -64,7 +64,7 @@ try {
 
   const twoToolEntry = afterMask.find((entry) => String(entry.CorrectionID) === twoTools);
   const [firstTool, secondTool] = componentIds(twoToolEntry);
-  const deletedTool = await data("delete_masks", { photo_id: copy, tool_ids: [secondTool] });
+  const deletedTool = await data("delete_masks", { photo_ids: [copy], tool_ids: [secondTool] });
   const afterTool = await entries(copy);
   const trimmed = afterTool.find((entry) => String(entry.CorrectionID) === twoTools);
   report.check(
@@ -75,7 +75,7 @@ try {
   );
 
   const lastTool = componentIds(afterTool.find((entry) => String(entry.CorrectionID) === oneTool))[0];
-  const deletedLast = await data("delete_masks", { photo_id: copy, tool_ids: [lastTool] });
+  const deletedLast = await data("delete_masks", { photo_ids: [copy], tool_ids: [lastTool] });
   const afterLast = await entries(copy);
   report.check(
     "by the last tool id of a mask: the mask is removed, and every other mask is byte-identical",

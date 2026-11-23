@@ -35,7 +35,7 @@ try {
   const started = Date.now();
   const created = await session.tool(
     "create_mask",
-    { photo_id: copy, type: "people", parts: PARTS },
+    { photo_ids: [copy], type: "people", parts: PARTS },
     { timeoutMs: AI_TIMEOUT_MS },
   );
   const masks = created.data?.masks ?? [];
@@ -66,7 +66,7 @@ try {
       ),
     { states },
   );
-  const listed = (await data("list_masks", { photo_id: copy })).masks ?? [];
+  const listed = (await data("list_masks", { photo_ids: [copy] })).masks ?? [];
   report.check(
     "list_masks lists every new mask",
     ids.every((id) => listed.some((mask) => String(mask.id) === id)),
@@ -75,7 +75,11 @@ try {
 
   const maskOf = (part) => ids[PARTS.indexOf(part)] ?? "missing";
   const face = await measureChange(session, copy, () =>
-    data("set_mask_adjustments", { photo_id: copy, mask_id: maskOf("face_skin"), adjustments: { local_Exposure: 1 } }),
+    data("set_mask_adjustments", {
+      photo_ids: [copy],
+      mask_id: maskOf("face_skin"),
+      adjustments: { local_Exposure: 1 },
+    }),
   );
   const faceDeltas = regionDeltas(face.before, face.after, [FOREHEAD, BACKGROUND]);
   report.check(
@@ -85,7 +89,7 @@ try {
   );
   const person = await measureChange(session, copy, () =>
     data("set_mask_adjustments", {
-      photo_id: copy,
+      photo_ids: [copy],
       mask_id: maskOf("entire_person"),
       adjustments: { local_Exposure: -1 },
     }),

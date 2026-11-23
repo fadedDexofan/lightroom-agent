@@ -56,7 +56,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
         local otherMask = Store.clone(store.entries[2])
 
         local r = Handler.editMaskPointColors({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             action = "add",
             swatch = { SrcHue = 4, SrcSat = 0.5, SrcLum = 0.5 },
@@ -82,7 +82,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
             local Handler, store = savedSetup()
 
             Handler.editMaskPointColors({
-                photo_id = "1",
+                photo_ids = { "1" },
                 mask_id = "mask-b",
                 action = "add",
                 swatch = { SrcHue = 3.021347, SrcSat = 0.537218, SrcLum = 0.512694, LumScale = -0.8 },
@@ -99,7 +99,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
         local Handler, store = savedSetup()
 
         Handler.editMaskPointColors({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-b",
             action = "add",
             swatch = {
@@ -164,7 +164,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
             local err = helper.failedOf(
                 function()
                     Handler.editMaskPointColors({
-                        photo_id = "1",
+                        photo_ids = { "1" },
                         mask_id = "mask-a",
                         action = "add",
                         swatch = case.swatch,
@@ -185,7 +185,7 @@ describe("HandlerMaskPointColors.editMaskPointColors add beside a held source co
         store.entries[1].LocalColorVariance = { "0.000000", "0.000000" }
 
         Handler.editMaskPointColors({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             action = "add",
             swatch = { SrcHue = 3, SrcSat = 0.6, SrcLum = 0.5 },
@@ -201,7 +201,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
         local otherMask = Store.clone(store.entries[2])
 
         local r = Handler.editMaskPointColors({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             action = "update",
             index = 1,
@@ -232,7 +232,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
         local Handler, store = savedSetup()
 
         local r = Handler.editMaskPointColors({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             action = "update",
             index = 2,
@@ -247,7 +247,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
         local Handler, store = savedSetup()
 
         local r = Handler.editMaskPointColors({
-            photo_id = "1",
+            photo_ids = { "1" },
             mask_id = "mask-a",
             action = "update",
             index = 2,
@@ -264,7 +264,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
         local err = helper.failedOf(
             function()
                 Handler.editMaskPointColors({
-                    photo_id = "1",
+                    photo_ids = { "1" },
                     mask_id = "mask-b",
                     action = "update",
                     index = 1,
@@ -283,7 +283,7 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
         local Handler, store, modules = savedSetup()
         local otherMask = Store.clone(store.entries[2])
 
-        local r = Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "delete", index = 1 })
+        local r = Handler.editMaskPointColors({ photo_ids = { "1" }, mask_id = "mask-a", action = "delete", index = 1 })
 
         assert.is_true(r.changed)
         assert.are.equal(1, r.index)
@@ -309,7 +309,7 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
                 store.entries[1].LocalColorVariance[index] = "0.000000"
             end
 
-            local args = { photo_id = "1", mask_id = "mask-a" }
+            local args = { photo_ids = { "1" }, mask_id = "mask-a" }
             for key, value in pairs(case.args) do
                 args[key] = value
             end
@@ -343,7 +343,7 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
             store.entries[1].LocalPointColors = { "1.0, 0.5", SECOND_SWATCH }
             local context = helper.requestContext(nil, { title = "edit_mask_point_colors" })
 
-            local args = { photo_id = "1", mask_id = "mask-a" }
+            local args = { photo_ids = { "1" }, mask_id = "mask-a" }
             for key, value in pairs(case.args) do
                 args[key] = value
             end
@@ -371,7 +371,9 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
         local Handler, store = savedSetup()
 
         local err = helper.failedOf(
-            function() Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-a", action = "delete", index = 3 }) end
+            function()
+                Handler.editMaskPointColors({ photo_ids = { "1" }, mask_id = "mask-a", action = "delete", index = 3 })
+            end
         )
 
         assert.truthy(err:find("No swatch at index 3 on mask mask-a (the mask has 2)", 1, true), err)
@@ -381,7 +383,7 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
     it("clears a mask without swatches as a no-op with no write", function()
         local Handler, store = savedSetup()
 
-        local r = Handler.editMaskPointColors({ photo_id = "1", mask_id = "mask-b", action = "clear" })
+        local r = Handler.editMaskPointColors({ photo_ids = { "1" }, mask_id = "mask-b", action = "clear" })
 
         assert.is_false(r.changed)
         assert.are.same({}, r.swatches)
@@ -392,7 +394,7 @@ describe("HandlerMaskPointColors.editMaskPointColors delete and clear", function
         local Handler, store = savedSetup()
 
         local err = helper.failedOf(
-            function() Handler.editMaskPointColors({ photo_id = "1", mask_id = "nope", action = "clear" }) end
+            function() Handler.editMaskPointColors({ photo_ids = { "1" }, mask_id = "nope", action = "clear" }) end
         )
 
         assert.truthy(err:find("Mask nope is not in the saved settings of photo 1", 1, true), err)
@@ -407,7 +409,7 @@ describe("HandlerMaskPointColors.editMaskPointColors update on a hidden mask", f
         local context = helper.requestContext()
 
         Handler.editMaskPointColors(
-            { photo_id = "1", mask_id = "mask-a", action = "update", index = 1, swatch = { HueShift = 0.4 } },
+            { photo_ids = { "1" }, mask_id = "mask-a", action = "update", index = 1, swatch = { HueShift = 0.4 } },
             context
         )
 

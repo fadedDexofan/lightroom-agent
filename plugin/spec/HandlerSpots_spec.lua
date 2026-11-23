@@ -97,7 +97,7 @@ end
 describe("Remove spots", function()
     it("lists complete SDK fields with reusable one-based indices and restores the view", function()
         local handler, calls, spots, state = setup()
-        local result = handler.list({ photo_id = "/2.jpg" })
+        local result = handler.list({ photo_ids = { "/2.jpg" } })
         assert.are.equal("2", result.photo_id)
         assert.is_nil(result.success)
         assert.are.equal(2, result.count)
@@ -111,7 +111,7 @@ describe("Remove spots", function()
             spots = { { SpotType = "heal", Opacity = 1, Masks = { { MaskID = "a" }, nil, { MaskID = "c" } } } },
         })
 
-        local result = handler.list({ photo_id = "2" })
+        local result = handler.list({ photo_ids = { "2" } })
 
         assert.are.equal("table", result.spots[1].params.Masks["$lua"])
         assert.are.same({ 3, { MaskID = "c" } }, result.spots[1].params.Masks.entries[2])
@@ -119,13 +119,13 @@ describe("Remove spots", function()
 
     it("lists a photo without spots as an empty array", function()
         local handler = setup({ empty = true })
-        assert.are.same({}, handler.list({ photo_id = "1" }).spots)
+        assert.are.same({}, handler.list({ photo_ids = { "1" } }).spots)
     end)
 
     it("updates only uppercase Opacity using the full selected table", function()
         local handler, calls, spots, state = setup()
         local second = clone(spots()[2])
-        local result = handler.update({ photo_id = "/2.jpg", index = 1, params = { Opacity = 0.4 } })
+        local result = handler.update({ photo_ids = { "/2.jpg" }, index = 1, params = { Opacity = 0.4 } })
         assert.are.equal("2", result.photo_id)
         assert.are.equal(0.4, result.params.Opacity)
         assert.are.equal(1, result.params.opacity)
@@ -136,14 +136,14 @@ describe("Remove spots", function()
 
     it("does not write when the opacity already matches", function()
         local handler, calls = setup()
-        assert.is_false(handler.update({ photo_id = "1", index = 1, params = { Opacity = 1 } }).changed)
+        assert.is_false(handler.update({ photo_ids = { "1" }, index = 1, params = { Opacity = 1 } }).changed)
         assert.are.equal(0, calls.writes)
     end)
 
     it("deletes only the selected spot and returns shifted indices", function()
         local handler, calls, spots = setup()
         local expected = clone(spots()[2])
-        local result = handler.delete({ photo_id = "/2.jpg", index = 1 })
+        local result = handler.delete({ photo_ids = { "/2.jpg" }, index = 1 })
         assert.are.equal("2", result.photo_id)
         assert.are.same({ expected }, spots())
         assert.are.same({ { index = 1, params = expected } }, result.spots)
@@ -154,7 +154,7 @@ describe("Remove spots", function()
         local handler, calls = setup()
         assert.truthy(
             helper
-                .failedOf(function() handler.update({ photo_id = "2", index = 3, params = { Opacity = 0.4 } }) end)
+                .failedOf(function() handler.update({ photo_ids = { "2" }, index = 3, params = { Opacity = 0.4 } }) end)
                 :find("valid range: 1..2", 1, true)
         )
         assert.are.equal(0, calls.writes)
@@ -165,7 +165,7 @@ describe("Remove spots", function()
         local original = clone(spots())
         assert.truthy(
             helper
-                .failedOf(function() handler.delete({ photo_id = "2", index = 1 }) end)
+                .failedOf(function() handler.delete({ photo_ids = { "2" }, index = 1 }) end)
                 :find("valid range: 1..2", 1, true)
         )
         assert.are.same(original, spots())
@@ -175,14 +175,14 @@ describe("Remove spots", function()
 
     it("restores Remove when it was already open", function()
         local handler, _, _, state = setup({ tool = "dust" })
-        handler.update({ photo_id = "1", index = 1, params = { Opacity = 0.3 } })
+        handler.update({ photo_ids = { "1" }, index = 1, params = { Opacity = 0.3 } })
         assert.are.equal("dust", state().tool)
     end)
 
     it("restores Masking, not its local Point Color subtool, without a warning", function()
         local handler, calls, spots, state = setup({ tool = "masking", pointColorSubtool = true })
         local context = helper.requestContext(nil, { title = "update_spot" })
-        handler.update({ photo_id = "1", index = 1, params = { Opacity = 0.3 } }, context)
+        handler.update({ photo_ids = { "1" }, index = 1, params = { Opacity = 0.3 } }, context)
         assert.are.equal(0.3, spots()[1].Opacity)
         assert.are.same({ "masking" }, calls.tools)
         assert.are.equal("masking", state().tool)
@@ -192,7 +192,7 @@ describe("Remove spots", function()
     it("answers an Opacity Lightroom did not keep, with an unconfirmed rollback, as unknown", function()
         local handler = setup({ keepsOpacity = 0.5, ignoreAfterFirst = true })
         local class, message = helper.outcomeOf(
-            function(context) handler.update({ photo_id = "2", index = 1, params = { Opacity = 0.3 } }, context) end
+            function(context) handler.update({ photo_ids = { "2" }, index = 1, params = { Opacity = 0.3 } }, context) end
         )
         assert.are.equal("unknown", class)
         assert.truthy(message:find("did not keep Opacity", 1, true))
@@ -209,7 +209,9 @@ describe("Remove spots", function()
             function()
                 local handler, calls = setup({ [case.fake] = true })
                 local class, message = helper.outcomeOf(
-                    function(context) handler.update({ photo_id = "2", index = 1, params = { Opacity = 0.3 } }, context) end
+                    function(context)
+                        handler.update({ photo_ids = { "2" }, index = 1, params = { Opacity = 0.3 } }, context)
+                    end
                 )
                 assert.are.equal("unknown", class)
                 assert.truthy(message:find(case.names, 1, true), message)
@@ -226,7 +228,9 @@ describe("Remove spots", function()
         function()
             local handler, _, _, state = setup({ ignore = true })
             local class, message = helper.outcomeOf(
-                function(context) handler.update({ photo_id = "2", index = 1, params = { Opacity = 0.3 } }, context) end
+                function(context)
+                    handler.update({ photo_ids = { "2" }, index = 1, params = { Opacity = 0.3 } }, context)
+                end
             )
             assert.are.equal("unknown", class)
             assert.truthy(message:find("did not keep Opacity", 1, true))
@@ -239,7 +243,7 @@ describe("Remove spots", function()
     it("keeps a finished delete when the tool cannot be restored", function()
         local handler, calls, spots = setup({ ignoreRestore = true })
         local context = helper.requestContext(nil, { title = "delete_spot" })
-        local result = handler.delete({ photo_id = "1", index = 1 }, context)
+        local result = handler.delete({ photo_ids = { "1" }, index = 1 }, context)
         assert.is_nil(result.success)
         assert.is_nil(result.warning)
         assert.truthy(context.warnings[1]:find("Could not restore", 1, true))
@@ -249,14 +253,14 @@ describe("Remove spots", function()
 
     it("answers an unknown photo as not found before opening Develop", function()
         local handler, calls = setup()
-        assert.are.equal("999", helper.notFoundOf(function() handler.list({ photo_id = "999" }) end))
+        assert.are.equal("999", helper.notFoundOf(function() handler.list({ photo_ids = { "999" } }) end))
         assert.are.equal(0, calls.opens)
     end)
 
     it("answers unknown when writing the spot raises on every call, rollback included", function()
         local handler, calls = setup({ throw = true })
         local class, message = helper.outcomeOf(
-            function(context) handler.update({ photo_id = "1", index = 1, params = { Opacity = 0.4 } }, context) end
+            function(context) handler.update({ photo_ids = { "1" }, index = 1, params = { Opacity = 0.4 } }, context) end
         )
         assert.are.equal("unknown", class)
         assert.truthy(message:find("SDK failure; rollback not confirmed", 1, true), message)
@@ -270,7 +274,9 @@ describe("Remove spots", function()
             local handler, calls, spots = setup({ throwAfterWrite = true, ignore = true })
             local before = clone(spots())
             local class, message = helper.outcomeOf(
-                function(context) handler.update({ photo_id = "1", index = 1, params = { Opacity = 0.4 } }, context) end
+                function(context)
+                    handler.update({ photo_ids = { "1" }, index = 1, params = { Opacity = 0.4 } }, context)
+                end
             )
             assert.are.equal("unknown", class)
             assert.truthy(message:find("SDK failure; original parameters restored", 1, true), message)
@@ -283,7 +289,7 @@ describe("Remove spots", function()
     it("answers unknown when writing the spot raises after Lightroom changed another spot", function()
         local handler, _, spots = setup({ throwAfterWrite = true, ignore = true, changeOther = true })
         local class, message = helper.outcomeOf(
-            function(context) handler.update({ photo_id = "1", index = 1, params = { Opacity = 0.4 } }, context) end
+            function(context) handler.update({ photo_ids = { "1" }, index = 1, params = { Opacity = 0.4 } }, context) end
         )
         assert.are.equal("unknown", class)
         assert.truthy(message:find("SDK failure", 1, true), message)

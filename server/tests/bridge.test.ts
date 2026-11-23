@@ -287,8 +287,8 @@ describe('broker', () => {
     const { p } = await serve((name, args) => handler(name, args));
     const client = await connect(p);
 
-    const own = handler('set_develop_settings', { photo_id: 1, settings: { Exposure2012: 0.1 } });
-    const forwarded = client.callTool('list_spots', { photo_id: 2 });
+    const own = handler('set_develop_settings', { photo_ids: [1], settings: { Exposure2012: 0.1 } });
+    const forwarded = client.callTool('list_spots', { photo_ids: [2] });
     await waitFor(() => pending.length > 0);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(pending.map((entry) => entry.action)).toEqual(['write_develop_settings']);

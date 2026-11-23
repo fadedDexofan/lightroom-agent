@@ -19,22 +19,22 @@ try {
     copy_name: "LRAGENT Lens Blur live test",
   });
   copyId = copies.copies[0].copy_photo_id;
-  await tool("set_lens_blur", { photo_id: copyId, active: false });
-  const off = await tool("get_lens_blur", { photo_id: copyId });
+  await tool("set_lens_blur", { photo_ids: [copyId], active: false });
+  const off = await tool("get_lens_blur", { photo_ids: [copyId] });
   assert.equal(off.active, false);
   const pixels = await measureChange(session, copyId, async () => {
-    const enabled = await tool("set_lens_blur", { photo_id: copyId, amount: 50 });
+    const enabled = await tool("set_lens_blur", { photo_ids: [copyId], amount: 50 });
     assert.equal(enabled.active, true);
     assert.equal(enabled.amount, 50);
   });
   const sampledMax = sampledMaxLuminanceDifference(pixels.before, pixels.after);
   assert.ok(sampledMax > 0.01, `Lens Blur preview did not change: sampled maximum luminance difference ${sampledMax}`);
-  await tool("get_lens_blur", { photo_id: requireFixtureId(marker, "wide_plain") });
-  const saved = await tool("get_lens_blur", { photo_id: copyId });
+  await tool("get_lens_blur", { photo_ids: [requireFixtureId(marker, "wide_plain")] });
+  const saved = await tool("get_lens_blur", { photo_ids: [copyId] });
   assert.equal(saved.active, true);
   assert.equal(saved.amount, 50);
   const adjusted = await tool("set_lens_blur", {
-    photo_id: copyId,
+    photo_ids: [copyId],
     cat_eye: 20,
     highlights_boost: 30,
     focal_range: { near: 10, far: 30 },

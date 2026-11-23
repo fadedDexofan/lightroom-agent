@@ -96,7 +96,7 @@ describe("HandlerMaskAdmission.get", function()
                 state.entries[1].CorrectionID, state.entries[1].CorrectionSyncID = nil, nil
             end
 
-            local result = Handler.get({ photo_id = "7" })
+            local result = Handler.get({ photo_ids = { "7" } })
 
             assert.is_true(result.admitted)
             assert.are.same({
@@ -112,7 +112,7 @@ describe("HandlerMaskAdmission.get", function()
     it("does not admit a photo whose process version the certification did not exercise", function()
         local Handler = setup({ files = { [CERTIFICATION_FILE] = CERTIFIED }, processVersion = "11.0" })
 
-        local photo = Handler.get({ photo_id = "7" }).photo
+        local photo = Handler.get({ photo_ids = { "7" } }).photo
 
         assert.is_false(photo.admitted)
         assert.is_truthy(photo.reason:find("process version (11.0)", 1, true))
@@ -121,6 +121,6 @@ describe("HandlerMaskAdmission.get", function()
     it("answers an unknown photo as not found", function()
         local Handler = setup()
 
-        assert.are.equal("99", helper.notFoundOf(function() Handler.get({ photo_id = "99" }) end))
+        assert.are.equal("99", helper.notFoundOf(function() Handler.get({ photo_ids = { "99" } }) end))
     end)
 end)

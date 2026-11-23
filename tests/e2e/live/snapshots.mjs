@@ -10,42 +10,47 @@ const created = new Set();
 const tool = async (name, args) => (await session.toolOrThrow(name, args)).data;
 const exposureOf = async () => (await session.developSettings(photo_id, ["Exposure2012"])).settings.Exposure2012;
 const initial = await exposureOf();
-const before = await tool("list_develop_snapshots", { photo_id });
+const before = await tool("list_develop_snapshots", { photo_ids: [photo_id] });
 const metadata = await session.photoMetadata(photo_id);
 let failure;
 try {
-  await tool("set_develop_settings", { photo_id, settings: { Exposure2012: 1 } });
-  const first = (await tool("create_develop_snapshot", { photo_id, name: `${prefix}-a` })).snapshot;
+  await tool("set_develop_settings", { photo_ids: [photo_id], settings: { Exposure2012: 1 } });
+  const first = (await tool("create_develop_snapshot", { photo_ids: [photo_id], name: `${prefix}-a` })).snapshot;
   created.add(first.id);
   assert.equal(typeof first.id, "string");
-  const second = (await tool("create_develop_snapshot", { photo_id, name: `${prefix}-b` })).snapshot;
+  const second = (await tool("create_develop_snapshot", { photo_ids: [photo_id], name: `${prefix}-b` })).snapshot;
   created.add(second.id);
-  await tool("set_develop_settings", { photo_id, settings: { Exposure2012: -1 } });
-  assert.equal((await session.tool("create_develop_snapshot", { photo_id, name: first.name })).isError, true);
-  await tool("apply_develop_snapshot", { photo_id, snapshot_id: first.id });
+  await tool("set_develop_settings", { photo_ids: [photo_id], settings: { Exposure2012: -1 } });
+  assert.equal(
+    (await session.tool("create_develop_snapshot", { photo_ids: [photo_id], name: first.name })).isError,
+    true,
+  );
+  await tool("apply_develop_snapshot", { photo_ids: [photo_id], snapshot_id: first.id });
   assert.equal(await exposureOf(), 1);
   const restored = await session.photoMetadata(photo_id);
   for (const key of ["rating", "flag", "keywords", "title", "caption"]) {
     assert.deepEqual(restored[key], metadata[key], `snapshot changed ${key}`);
   }
-  await tool("set_develop_settings", { photo_id, settings: { Exposure2012: -1 } });
-  const replacement = (await tool("create_develop_snapshot", { photo_id, name: second.name, replace: true })).snapshot;
+  await tool("set_develop_settings", { photo_ids: [photo_id], settings: { Exposure2012: -1 } });
+  const replacement = (
+    await tool("create_develop_snapshot", { photo_ids: [photo_id], name: second.name, replace: true })
+  ).snapshot;
   created.delete(second.id);
   created.add(replacement.id);
   assert.equal(replacement.name, second.name);
-  await tool("apply_develop_snapshot", { photo_id, snapshot_id: replacement.id });
+  await tool("apply_develop_snapshot", { photo_ids: [photo_id], snapshot_id: replacement.id });
   assert.equal(await exposureOf(), -1);
   for (const action of ["apply", "delete"]) {
     for (const args of [
-      { photo_id, snapshot_id: "missing-snapshot" },
-      { photo_id: otherId, snapshot_id: first.id },
-      { photo_id: "999999999", snapshot_id: first.id },
+      { photo_ids: [photo_id], snapshot_id: "missing-snapshot" },
+      { photo_ids: [otherId], snapshot_id: first.id },
+      { photo_ids: ["999999999"], snapshot_id: first.id },
     ])
       assert.equal((await session.tool(`${action}_develop_snapshot`, args)).isError, true);
   }
-  await tool("delete_develop_snapshot", { photo_id, snapshot_id: first.id });
+  await tool("delete_develop_snapshot", { photo_ids: [photo_id], snapshot_id: first.id });
   created.delete(first.id);
-  const listed = (await tool("list_develop_snapshots", { photo_id })).snapshots;
+  const listed = (await tool("list_develop_snapshots", { photo_ids: [photo_id] })).snapshots;
   assert.equal(
     listed.some((snapshot) => snapshot.id === first.id),
     false,
@@ -59,9 +64,9 @@ try {
   failure = error;
 } finally {
   try {
-    for (const snapshot_id of created) await tool("delete_develop_snapshot", { photo_id, snapshot_id });
-    await tool("set_develop_settings", { photo_id, settings: { Exposure2012: initial } });
-    assert.deepEqual((await tool("list_develop_snapshots", { photo_id })).snapshots, before.snapshots);
+    for (const snapshot_id of created) await tool("delete_develop_snapshot", { photo_ids: [photo_id], snapshot_id });
+    await tool("set_develop_settings", { photo_ids: [photo_id], settings: { Exposure2012: initial } });
+    assert.deepEqual((await tool("list_develop_snapshots", { photo_ids: [photo_id] })).snapshots, before.snapshots);
   } catch (cleanupError) {
     failure = failure ? new AggregateError([failure, cleanupError], "Snapshot test and cleanup failed") : cleanupError;
   } finally {

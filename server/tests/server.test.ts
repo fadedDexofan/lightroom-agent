@@ -720,7 +720,7 @@ describe('createMcpServer', () => {
       }),
     });
 
-    const result = await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_id: 914 } });
+    const result = await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_ids: [914] } });
 
     expect(result.isError).toBeUndefined();
     expect(result.content).toEqual([

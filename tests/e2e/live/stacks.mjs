@@ -48,7 +48,7 @@ try {
   );
 
   for (const card of hidden) {
-    const preview = await session.toolOrThrow("get_photo_preview", { photo_id: card.id, size: 512 });
+    const preview = await session.toolOrThrow("get_photo_preview", { photo_ids: [card.id], size: 512 });
     const pixels = decodeJpegBase64(preview.image.data);
     const aspect = pixels.w / pixels.h;
     const colour = colorCentroid(pixels, card.color);
@@ -66,7 +66,7 @@ try {
       },
     );
     const detail = await data("get_photo_detail", {
-      photo_id: card.id,
+      photo_ids: [card.id],
       regions: [{ x: 0.4, y: 0.4, width: 0.2, height: 0.2 }],
     });
     report.check(

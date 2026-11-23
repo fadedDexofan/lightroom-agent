@@ -114,7 +114,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
                 local other = Store.clone(store.entries[1])
                 local context = helper.requestContext(nil, { title = "create_mask" })
 
-                local r = Handler.createMask({ photo_id = "1", type = typeName }, context)
+                local r = Handler.createMask({ photo_ids = { "1" }, type = typeName }, context)
 
                 local entry = Store.clone(store.writes[1][2])
                 local seed = Store.clone(SEEDS[typeName])
@@ -139,7 +139,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
         local Handler, store = setup()
 
         local r = Handler.createMask({
-            photo_id = "1",
+            photo_ids = { "1" },
             type = "sky",
             adjustments = { local_Exposure = 0.5, local_colorgradeMidtoneHue = 62.4, local_Texture = 23.66666666 },
         })
@@ -158,7 +158,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
         local Handler, store = setup({ nothingFound = true })
         local before = Store.clone(store.entries)
 
-        local err = helper.failedOf(function() Handler.createMask({ photo_id = "1", type = "subject" }) end)
+        local err = helper.failedOf(function() Handler.createMask({ photo_ids = { "1" }, type = "subject" }) end)
 
         assert.are.equal(
             "Lightroom found nothing for the subject mask on photo 1 (Subject 1); the new masks were removed",
@@ -202,7 +202,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
             local before = Store.clone(store.entries)
 
             local class, message = helper.outcomeOf(
-                function(context) Handler.createMask({ photo_id = "1", type = "subject" }, context) end
+                function(context) Handler.createMask({ photo_ids = { "1" }, type = "subject" }, context) end
             )
 
             assert.are.equal(case.class, class, message)
@@ -215,7 +215,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
         local Handler, store = setup({ keepsTwo = true })
         local before = Store.clone(store.entries)
 
-        local err = helper.failedOf(function() Handler.createMask({ photo_id = "1", type = "sky" }) end)
+        local err = helper.failedOf(function() Handler.createMask({ photo_ids = { "1" }, type = "sky" }) end)
 
         assert.are.equal("Lightroom kept 2 of the 1 requested masks on photo 1; the new masks were removed", err)
         assert.are.same(before, store.entries)
@@ -227,7 +227,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
             local Handler, store = setup({ nothingFound = true, errorReason = 3 })
             local before = Store.clone(store.entries)
 
-            local err = helper.failedOf(function() Handler.createMask({ photo_id = "1", type = "subject" }) end)
+            local err = helper.failedOf(function() Handler.createMask({ photo_ids = { "1" }, type = "subject" }) end)
 
             assert.are.equal(
                 "Lightroom could not compute the subject mask on photo 1 (Subject 1: ErrorReason 3, another failure); the new"
@@ -241,7 +241,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
     it("answers unknown and writes nothing more while Lightroom is still computing at the limit", function()
         local Handler, store = setup({ neverCompute = true })
 
-        local message = helper.unknownOf(function() Handler.createMask({ photo_id = "1", type = "sky" }) end)
+        local message = helper.unknownOf(function() Handler.createMask({ photo_ids = { "1" }, type = "sky" }) end)
 
         assert.truthy(message:find("has not finished computing the AI masks of photo 1", 1, true), message)
         assert.are.equal(1, #store.writes)
@@ -251,7 +251,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
     it("is a certified operation", function()
         local Handler, store = setup({ maskWrites = { refuse = "Mask geometry writes are not certified." } })
 
-        local err = helper.failedOf(function() Handler.createMask({ photo_id = "1", type = "subject" }) end)
+        local err = helper.failedOf(function() Handler.createMask({ photo_ids = { "1" }, type = "subject" }) end)
 
         assert.truthy(err:find("not certified", 1, true), err)
         assert.are.equal(0, store.attempts)
@@ -260,7 +260,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
     it("accepts a file path and answers with the photo's own id", function()
         local Handler = setup()
 
-        local r = Handler.createMask({ photo_id = "/1.jpg", type = "sky" })
+        local r = Handler.createMask({ photo_ids = { "/1.jpg" }, type = "sky" })
 
         assert.are.equal("1", r.photo_id)
     end)
@@ -269,7 +269,7 @@ describe("HandlerMaskCreate.createMask Subject, Sky and Background in the saved 
         local Handler = setup()
         assert.are.equal(
             "404",
-            helper.notFoundOf(function() Handler.createMask({ photo_id = "404", type = "sky" }) end)
+            helper.notFoundOf(function() Handler.createMask({ photo_ids = { "404" }, type = "sky" }) end)
         )
     end)
 end)
@@ -284,7 +284,7 @@ describe("HandlerMaskCreate.createMask replying with the stored adjustments", fu
         })
 
         local r = Handler.createMask(
-            { photo_id = "1", type = "sky", adjustments = { local_Exposure = 0, local_Contrast = 20 } },
+            { photo_ids = { "1" }, type = "sky", adjustments = { local_Exposure = 0, local_Contrast = 20 } },
             helper.requestContext(nil, { title = "create_mask" })
         )
 

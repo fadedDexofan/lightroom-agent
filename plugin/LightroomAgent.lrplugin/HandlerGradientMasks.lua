@@ -52,7 +52,7 @@ function GradientMaskHandler.createGradientMask(args, context)
 
     local catalog = LrApplication.activeCatalog()
 
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
 
     local photoId = tostring(photo.localIdentifier)
     local placement = placementFor(catalog, photo)
@@ -109,7 +109,7 @@ function GradientMaskHandler.updateGradientMask(args, context)
 
     local catalog = LrApplication.activeCatalog()
 
-    local photo = PhotoLookup.requireOne(catalog, args.photo_id)
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
 
     local photoId = tostring(photo.localIdentifier)
     local placement = placementFor(catalog, photo)

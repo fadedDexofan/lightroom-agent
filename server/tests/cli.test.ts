@@ -424,9 +424,10 @@ describe('CLI process', () => {
         expect(params).toEqual({ photo_ids: ['914'], size: 864 });
         return { photo_id: 914, image: { data: image, mime_type: 'image/jpeg' } };
       });
-      const result = await run(['call', 'get_photo_preview', '{"photo_id":"914"}'], env);
-      expect(result.code).toBe(0);
-      expect(JSON.parse(result.stdout)).toEqual({
+      const { code, stdout, stderr, testHome } = await run(['call', 'get_photo_preview', '{"photo_ids":["914"]}'], env);
+      const seen = { code, stderr };
+      expect(seen).toEqual({ ...seen, code: 0 });
+      expect(JSON.parse(stdout)).toEqual({
         content: [
           {
             type: 'text',
@@ -446,7 +447,7 @@ describe('CLI process', () => {
         ],
       });
       expect(called).toContain('render_preview');
-      const configDir = path.join(result.testHome, '.config', 'lightroom-agent');
+      const configDir = path.join(testHome, '.config', 'lightroom-agent');
       expect(fs.readdirSync(configDir)).toEqual([]);
       expect(
         fs.existsSync(
@@ -534,7 +535,7 @@ describe('CLI process', () => {
 
   it.each([
     ['read-only', 'set_rating_and_flag', '{"photo_ids":["914"],"rating":5}', { LIGHTROOM_AGENT_READ_ONLY: 'true' }],
-    ['toolset', 'set_develop_settings', '{"photo_id":"914","settings":{"Exposure2012":1}}', {}],
+    ['toolset', 'set_develop_settings', '{"photo_ids":["914"],"settings":{"Exposure2012":1}}', {}],
   ])(
     'refuses %s writes before starting the bridge',
     async (_label, name, args, settings) => {

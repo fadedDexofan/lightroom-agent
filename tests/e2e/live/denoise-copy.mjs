@@ -47,8 +47,8 @@ async function copyOf(name) {
     (await data("create_virtual_copies", { photo_ids: [base], copy_name: name })).copies[0].copy_photo_id,
   );
   copies.push(copy);
-  if ((await data("list_masks", { photo_id: copy })).count > 0)
-    await data("delete_masks", { photo_id: copy, all: true });
+  if ((await data("list_masks", { photo_ids: [copy] })).count > 0)
+    await data("delete_masks", { photo_ids: [copy], all: true });
   return copy;
 }
 
@@ -59,7 +59,7 @@ try {
   const plain = await copyOf("LRAGENT live Denoise plain target");
   const sourceDenoise = await denoised(source, SOURCE_AMOUNT);
   const targetDenoise = await denoised(target, TARGET_AMOUNT);
-  await data("set_develop_settings", { photo_id: source, settings: { Exposure2012: SOURCE_EXPOSURE } });
+  await data("set_develop_settings", { photo_ids: [source], settings: { Exposure2012: SOURCE_EXPOSURE } });
   const before = { target: await settingsOf(target), plain: await settingsOf(plain) };
   report.check(
     `the source (Denoise ${SOURCE_AMOUNT}) and the target (Denoise ${TARGET_AMOUNT}) each hold a settled Enhance filter, and the plain target none`,
@@ -73,7 +73,7 @@ try {
 
   const reply = await session.tool(
     "copy_develop_settings",
-    { source_id: source, target_ids: [target, plain] },
+    { source_photo_id: source, photo_ids: [target, plain] },
     { timeoutMs: 300_000 },
   );
   const after = { target: await settingsOf(target), plain: await settingsOf(plain) };

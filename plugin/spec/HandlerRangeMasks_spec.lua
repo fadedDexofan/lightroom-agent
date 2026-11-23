@@ -8,7 +8,7 @@ local function setup(opts) return Store.guardedHandler("HandlerRangeMasks", { "I
 
 local function luminanceRequest(overrides)
     local args = {
-        photo_id = "1",
+        photo_ids = { "1" },
         type = "luminance",
         luminance = { min = 0.3, max = 0.6, falloff = 0.1 },
     }
@@ -20,7 +20,7 @@ end
 
 local function colorRequest(overrides)
     local args = {
-        photo_id = "1",
+        photo_ids = { "1" },
         type = "color",
         color = { sample = { x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, amount = 0.4 },
     }
@@ -31,7 +31,7 @@ local function colorRequest(overrides)
 end
 
 local function depthRequest(overrides)
-    local args = { photo_id = "1", type = "depth", depth = { min = 0, max = 0.1, falloff = 0.25 } }
+    local args = { photo_ids = { "1" }, type = "depth", depth = { min = 0, max = 0.1, falloff = 0.25 } }
     for key, value in pairs(overrides or {}) do
         args[key] = value
     end
@@ -327,7 +327,8 @@ describe("HandlerRangeMasks.createRangeMask", function()
         end
 
         local function copyRequest(overrides)
-            local args = { photo_id = "1", type = "color", copy_sample_from = { mask_id = "C1", tool_id = "C1T1" } }
+            local args =
+                { photo_ids = { "1" }, type = "color", copy_sample_from = { mask_id = "C1", tool_id = "C1T1" } }
             for key, value in pairs(overrides or {}) do
                 args[key] = value
             end
@@ -396,7 +397,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
             })
 
             local result = Handler.createRangeMask(copyRequest({
-                copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
+                copy_sample_from = { source_photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
             }))
 
             local range = written(stores, "1")[1].CorrectionMasks[1].CorrectionRangeMask
@@ -411,7 +412,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
             local Handler = setup({ photos = { { id = "1" }, { id = "2", entries = sourceEntries() } } })
 
             local result = Handler.createRangeMask(copyRequest({
-                copy_sample_from = { photo_id = "/2.jpg", mask_id = "C1", tool_id = "C1T1" },
+                copy_sample_from = { source_photo_id = "/2.jpg", mask_id = "C1", tool_id = "C1T1" },
             }))
 
             assert.are.equal("2", result.copied_from.photo_id)
@@ -428,7 +429,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
             Handler.createRangeMask(
                 copyRequest({
-                    copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
+                    copy_sample_from = { source_photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
                 }),
                 context
             )
@@ -455,7 +456,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
                 local result = Handler.createRangeMask(
                     copyRequest({
-                        copy_sample_from = { photo_id = "/1.jpg", mask_id = "C1", tool_id = "C1T1" },
+                        copy_sample_from = { source_photo_id = "/1.jpg", mask_id = "C1", tool_id = "C1T1" },
                     }),
                     context
                 )
@@ -475,7 +476,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
             })
 
             local result = Handler.createRangeMask(copyRequest({
-                copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
+                copy_sample_from = { source_photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
             }))
 
             local range = written(stores, "1")[1].CorrectionMasks[1].CorrectionRangeMask
@@ -524,7 +525,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
             local unknownPhoto = helper.notFoundOf(
                 function()
                     Handler.createRangeMask(
-                        copyRequest({ copy_sample_from = { photo_id = "9", mask_id = "C1", tool_id = "C1T1" } })
+                        copyRequest({ copy_sample_from = { source_photo_id = "9", mask_id = "C1", tool_id = "C1T1" } })
                     )
                 end
             )
@@ -539,9 +540,10 @@ describe("HandlerRangeMasks.createRangeMask", function()
             local Handler, stores, _, catalog =
                 setup({ photos = { { id = "1", entries = sourceEntries() }, { id = "2" } } })
 
-            Handler.createRangeMask(
-                copyRequest({ photo_id = "2", copy_sample_from = { photo_id = "1", mask_id = "C1", tool_id = "C1T1" } })
-            )
+            Handler.createRangeMask(copyRequest({
+                photo_ids = { "2" },
+                copy_sample_from = { source_photo_id = "1", mask_id = "C1", tool_id = "C1T1" },
+            }))
 
             assert.is_false(catalog.getQueriedInsideReadAccess())
             assert.are.equal(0, stores["1"].readsOutsideGate)
@@ -583,7 +585,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
         assert.are.equal(
             "404",
-            helper.notFoundOf(function() Handler.createRangeMask(luminanceRequest({ photo_id = "404" })) end)
+            helper.notFoundOf(function() Handler.createRangeMask(luminanceRequest({ photo_ids = { "404" } })) end)
         )
     end)
 

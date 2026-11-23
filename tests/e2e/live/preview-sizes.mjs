@@ -15,7 +15,10 @@ try {
       ["review", 1728],
       [1000, 1000],
     ]) {
-      const answer = await session.toolOrThrow("get_photo_preview", { photo_id: requireFixtureId(marker, key), size });
+      const answer = await session.toolOrThrow("get_photo_preview", {
+        photo_ids: [requireFixtureId(marker, key)],
+        size,
+      });
       const pixels = decodeJpegBase64(answer.image.data);
       const longest = Math.max(pixels.w, pixels.h);
       const expected = Math.min(edge, LONG_EDGE[key]);

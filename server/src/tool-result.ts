@@ -1,4 +1,6 @@
 export type Input = string | number;
+
+export type OnePhoto = readonly [Input];
 export type ItemFailure = { photo_id: string; reason: string } | { path: string; reason: string };
 
 export interface ReplyParts {

@@ -30,7 +30,7 @@ try {
   if (changedRatings.length) await tool("set_rating_and_flag", { photo_ids: changedRatings, rating: 4 });
   await tool("set_rating_and_flag", { photo_ids: [photoId], rating: 5 });
   exposureChanged = true;
-  await tool("set_develop_settings", { photo_id: photoId, settings: { Exposure2012: 0.5 } });
+  await tool("set_develop_settings", { photo_ids: [photoId], settings: { Exposure2012: 0.5 } });
   const summary = await tool("summarize_develop_settings", { min_rating: 5 });
   assert.equal(summary.scanned, 1);
   assert.equal(summary.matched, 1);
@@ -55,7 +55,7 @@ try {
 } finally {
   try {
     if (exposureChanged) {
-      await tool("set_develop_settings", { photo_id: photoId, settings: { Exposure2012: initial.Exposure2012 } });
+      await tool("set_develop_settings", { photo_ids: [photoId], settings: { Exposure2012: initial.Exposure2012 } });
     }
   } finally {
     try {

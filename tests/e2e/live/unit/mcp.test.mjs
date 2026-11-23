@@ -47,7 +47,7 @@ test("client cancel sends the request id and ignores a late result", async () =>
 test("a tool answer keeps every image block in order beside the envelope", async () => {
   const session = new McpSession();
   session.send = () => {};
-  const pending = session.tool("get_photo_detail", { photo_id: "1", regions: [] });
+  const pending = session.tool("get_photo_detail", { photo_ids: ["1"], regions: [] });
   const content = [
     { type: "text", text: '{"outcome":"done","data":{"regions":[{"image_index":1},{"image_index":2}]}}' },
     { type: "image", data: "AAA", mimeType: "image/jpeg" },

@@ -144,9 +144,11 @@ describe('develop setting schema', () => {
     const names = DEVELOP_KEYS.map((key) => key.name);
     const copyable = DEVELOP_KEYS.filter((key) => key.writtenBy === undefined).map((key) => key.name);
     expect(
-      validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: copyable }),
+      validateToolArgs('copy_develop_settings', { source_photo_id: 914, photo_ids: [915], settings: copyable }),
     ).toBeNull();
-    expect(validateToolArgs('create_develop_preset', { photo_id: 914, preset_name: 'p', settings: names })).toBeNull();
+    expect(
+      validateToolArgs('create_develop_preset', { photo_ids: [914], preset_name: 'p', settings: names }),
+    ).toBeNull();
   });
 
   it.each([
@@ -230,7 +232,7 @@ describe('develop setting schema', () => {
 
   it('rejects malformed develop settings and point curve payloads before dispatch', () => {
     const check = (curve: unknown[]) =>
-      validateToolArgs('set_develop_settings', { photo_id: '1', settings: { ToneCurvePV2012: curve } }) === null;
+      validateToolArgs('set_develop_settings', { photo_ids: ['1'], settings: { ToneCurvePV2012: curve } }) === null;
 
     expect(check([0, 0, 64, 48, 192, 210, 255, 255])).toBe(true);
     expect(check([0, 0, 255, 255])).toBe(true);
@@ -239,26 +241,28 @@ describe('develop setting schema', () => {
     expect(check([0, 0, 128, 300, 255, 255])).toBe(false);
     expect(check([0, 0, 128, -1, 255, 255])).toBe(false);
     expect(check([0, 0])).toBe(false);
-    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: 1 } })).toContain(
+    expect(validateToolArgs('set_develop_settings', { photo_ids: [914], settings: { ToneCurvePV2012: 1 } })).toContain(
       'ToneCurvePV2012',
     );
     expect(
-      validateToolArgs('set_develop_settings', { photo_id: 914, settings: { Exposure2012: [0, 0, 255, 255] } }),
+      validateToolArgs('set_develop_settings', { photo_ids: [914], settings: { Exposure2012: [0, 0, 255, 255] } }),
     ).toContain('Exposure2012');
-    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: { NotAKey: 1 } })).toContain('NotAKey');
-    expect(validateToolArgs('set_develop_settings', { photo_id: 914, settings: {} })).toContain('settings');
+    expect(validateToolArgs('set_develop_settings', { photo_ids: [914], settings: { NotAKey: 1 } })).toContain(
+      'NotAKey',
+    );
+    expect(validateToolArgs('set_develop_settings', { photo_ids: [914], settings: {} })).toContain('settings');
     expect(
-      validateToolArgs('copy_develop_settings', { source_id: 914, target_ids: [915], settings: ['NotAKey'] }),
+      validateToolArgs('copy_develop_settings', { source_photo_id: 914, photo_ids: [915], settings: ['NotAKey'] }),
     ).toContain('settings');
     expect(
-      validateToolArgs('create_develop_preset', { photo_id: 914, preset_name: 'test', settings: ['NotAKey'] }),
+      validateToolArgs('create_develop_preset', { photo_ids: [914], preset_name: 'test', settings: ['NotAKey'] }),
     ).toContain('settings');
   });
 
   it('requires explicit allowlisted keys when creating a preset checkpoint', () => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === 'create_develop_preset');
     const properties = tool?.inputSchema.properties as Record<string, { items?: { enum?: readonly string[] } }>;
-    const args = { photo_id: 914, preset_name: 'checkpoint' };
+    const args = { photo_ids: [914], preset_name: 'checkpoint' };
 
     expect(properties.settings.items?.enum).toEqual(DEVELOP_KEYS.map((key) => key.name));
     expect(validateToolArgs('create_develop_preset', { ...args, settings: ['Exposure2012'] })).toBeNull();
@@ -273,11 +277,11 @@ describe('develop setting schema', () => {
 
 describe('local adjustment schema', () => {
   const creations: [string, Record<string, unknown>][] = [
-    ['create_mask', { photo_id: 1, type: 'sky' }],
+    ['create_mask', { photo_ids: [1], type: 'sky' }],
     ['create_mask_batch', { photo_ids: [1], type: 'sky' }],
-    ['create_gradient_mask', { photo_id: 1, shape: 'linear', start: { x: 0.5, y: 0 }, end: { x: 0.5, y: 0.5 } }],
-    ['create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 0.5, y: 0.5 }] }] }],
-    ['create_range_mask', { photo_id: 1, type: 'luminance', luminance: { min: 0.2, max: 0.6 } }],
+    ['create_gradient_mask', { photo_ids: [1], shape: 'linear', start: { x: 0.5, y: 0 }, end: { x: 0.5, y: 0.5 } }],
+    ['create_brush_mask', { photo_ids: [1], strokes: [{ points: [{ x: 0.5, y: 0.5 }] }] }],
+    ['create_range_mask', { photo_ids: [1], type: 'luminance', luminance: { min: 0.2, max: 0.6 } }],
   ];
 
   it('offers every local slider with its range to set_mask_adjustments and every creation tool', () => {
@@ -407,10 +411,10 @@ describe('Remove spot contracts', () => {
   it('accepts only the proven uppercase Opacity field', () => {
     const schema = TOOL_CONTRACTS.find((tool) => tool.name === 'update_spot')!.inputSchema;
     const validate = new Ajv().compile(schema);
-    expect(validate({ photo_id: '1', index: 1, params: { Opacity: 0.6 } })).toBe(true);
-    expect(validate({ photo_id: '1', index: 1, params: { opacity: 0.6 } })).toBe(false);
-    expect(validate({ photo_id: '1', index: 1, params: { Opacity: 2 } })).toBe(false);
-    expect(validate({ photo_id: '1', index: 1.5, params: { Opacity: 0.6 } })).toBe(false);
+    expect(validate({ photo_ids: ['1'], index: 1, params: { Opacity: 0.6 } })).toBe(true);
+    expect(validate({ photo_ids: ['1'], index: 1, params: { opacity: 0.6 } })).toBe(false);
+    expect(validate({ photo_ids: ['1'], index: 1, params: { Opacity: 2 } })).toBe(false);
+    expect(validate({ photo_ids: ['1'], index: 1.5, params: { Opacity: 0.6 } })).toBe(false);
   });
 });
 

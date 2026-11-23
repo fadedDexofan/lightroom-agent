@@ -63,7 +63,7 @@ describe('get_photo_preview', () => {
   it('returns a preview no larger than requested unchanged, byte for byte', async () => {
     const source = halves(32, 16);
     const { handler, call } = makeHandler(rendered(source));
-    const result = await handler('get_photo_preview', { photo_id: 914, size: 1024 });
+    const result = await handler('get_photo_preview', { photo_ids: [914], size: 1024 });
     expect(call).toHaveBeenCalledWith('render_preview', { photo_ids: [914], size: 1024 }, 30_000, undefined);
     const { encoded } = returnedImage(result);
     expect(encoded.toString('base64')).toBe(source);
@@ -79,7 +79,7 @@ describe('get_photo_preview', () => {
 
   it('scales a preview larger than the requested edge down to that edge', async () => {
     const { handler } = makeHandler(rendered(halves(128, 64)));
-    const result = await handler('get_photo_preview', { photo_id: 914, size: 64 });
+    const result = await handler('get_photo_preview', { photo_ids: [914], size: 64 });
     const { encoded, decoded } = returnedImage(result);
     expect([decoded.width, decoded.height]).toEqual([64, 32]);
     expect(dataOf(result)).toEqual({
@@ -99,7 +99,7 @@ describe('get_photo_preview', () => {
     const source = noise(2400, 1600);
     expect(Buffer.from(source, 'base64').length).toBeGreaterThan(MAX_BYTES);
     const { handler } = makeHandler(rendered(source));
-    const result = await handler('get_photo_preview', { photo_id: 914, size: 2048 });
+    const result = await handler('get_photo_preview', { photo_ids: [914], size: 2048 });
     const { encoded, decoded } = returnedImage(result);
     expect([decoded.width, decoded.height]).toEqual([2000, 1333]);
     expect(encoded.length).toBeLessThanOrEqual(MAX_BYTES);
@@ -108,8 +108,8 @@ describe('get_photo_preview', () => {
 
   it('asks Lightroom for the cull edge of 864 by default and rounds a fractional size down', async () => {
     const { handler, call } = makeHandler();
-    await handler('get_photo_preview', { photo_id: 914 });
-    await handler('get_photo_preview', { photo_id: 914, size: 512.5 });
+    await handler('get_photo_preview', { photo_ids: [914] });
+    await handler('get_photo_preview', { photo_ids: [914], size: 512.5 });
     expect(call.mock.calls.map(([, params]) => params)).toEqual([
       { photo_ids: [914], size: 864 },
       { photo_ids: [914], size: 512 },
@@ -118,7 +118,7 @@ describe('get_photo_preview', () => {
 
   it('answers the photo open in Develop as failed with the way out, sending nothing more', async () => {
     const { handler, call } = makeHandler(blockedInDevelop(914));
-    const envelope = envelopeOf(await handler('get_photo_preview', { photo_id: 914 }));
+    const envelope = envelopeOf(await handler('get_photo_preview', { photo_ids: [914] }));
     expect(envelope.outcome).toBe('failed');
     expect(envelope.failed).toEqual([{ photo_id: '914', reason: `${OPEN_IN_DEVELOP_REASON(914)}.${WAY_OUT}` }]);
     expect(call).toHaveBeenCalledTimes(1);
@@ -129,7 +129,7 @@ describe('get_photo_preview', () => {
       id: 'preview',
       result: { failed: [{ photo_id: '914', reason: 'Preview failed: file is offline' }] },
     });
-    const result = await handler('get_photo_preview', { photo_id: 914 });
+    const result = await handler('get_photo_preview', { photo_ids: [914] });
     expect(envelopeOf(result)).toMatchObject({
       outcome: 'failed',
       failed: [{ photo_id: '914', reason: 'Preview failed: file is offline' }],
@@ -141,7 +141,7 @@ describe('get_photo_preview region', () => {
   it('returns only the requested pixels and reports encoded dimensions and bytes', async () => {
     const { handler, call } = makeHandler();
     const result = await handler('get_photo_preview', {
-      photo_id: 914,
+      photo_ids: [914],
       region: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
     });
 
@@ -167,7 +167,7 @@ describe('get_photo_preview region', () => {
   it('crops a source over 2000 pixels after scaling it to a 2000 pixel edge', async () => {
     const { handler } = makeHandler(rendered(halves(2400, 1600)));
     const result = await handler('get_photo_preview', {
-      photo_id: 914,
+      photo_ids: [914],
       region: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
     });
     const { decoded } = returnedImage(result);
@@ -182,7 +182,7 @@ describe('get_photo_preview region', () => {
   ])('requests a larger source for a small region (size=$size)', async ({ size, expected }) => {
     const { handler, call } = makeHandler();
     await handler('get_photo_preview', {
-      photo_id: '/photo.raw',
+      photo_ids: ['/photo.raw'],
       ...(size === undefined ? {} : { size }),
       region: { x: 0, y: 0, width: 0.1, height: 0.1 },
     });
@@ -200,7 +200,7 @@ describe('get_photo_preview region', () => {
   ])('normalizes named size $size before applying region source scaling', async ({ size, expected }) => {
     const { handler, call } = makeHandler();
     const result = await handler('get_photo_preview', {
-      photo_id: 914,
+      photo_ids: [914],
       size,
       region: { x: 0, y: 0, width: 0.5, height: 0.5 },
     });
@@ -211,7 +211,7 @@ describe('get_photo_preview region', () => {
   it('rounds a subpixel region outward to at least one pixel', async () => {
     const { handler } = makeHandler();
     const result = await handler('get_photo_preview', {
-      photo_id: 914,
+      photo_ids: [914],
       region: { x: 0.999, y: 0.999, width: 0.001, height: 0.001 },
     });
     expect(result.isError).toBeUndefined();
@@ -221,7 +221,7 @@ describe('get_photo_preview region', () => {
   it('returns a valid pixel when a positive region is smaller than floating-point spacing', async () => {
     const { handler } = makeHandler();
     const result = await handler('get_photo_preview', {
-      photo_id: 914,
+      photo_ids: [914],
       region: { x: 0.5, y: 0.5, width: 1e-20, height: 1e-20 },
     });
     expect(result.isError).toBeUndefined();
@@ -244,7 +244,7 @@ describe('get_photo_preview region', () => {
     { x: 0, y: 0, width: 0.1, height: 1, extra: true },
   ])('rejects malformed or out-of-frame region %j before rendering', async (region) => {
     const { handler, call } = makeHandler();
-    const result = await handler('get_photo_preview', { photo_id: 914, region });
+    const result = await handler('get_photo_preview', { photo_ids: [914], region });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/region|extra/);
     expect(call).not.toHaveBeenCalled();
@@ -253,7 +253,7 @@ describe('get_photo_preview region', () => {
   it('passes an unknown photo through as not_found instead of cropping nothing', async () => {
     const { handler } = makeHandler({ id: 'preview', result: { not_found: [914] } });
     const result = await handler('get_photo_preview', {
-      photo_id: 914,
+      photo_ids: [914],
       region: { x: 0, y: 0, width: 0.1, height: 0.1 },
     });
     expect(envelopeOf(result)).toEqual({ outcome: 'failed', error: '1 not found', not_found: [914] });
@@ -266,7 +266,7 @@ describe('get_photo_preview region', () => {
   ])('returns an error without an image for unusable plugin response %j', async (response) => {
     for (const region of [undefined, { x: 0, y: 0, width: 0.1, height: 0.1 }]) {
       const { handler } = makeHandler(response);
-      const result = await handler('get_photo_preview', { photo_id: 914, ...(region ? { region } : {}) });
+      const result = await handler('get_photo_preview', { photo_ids: [914], ...(region ? { region } : {}) });
       expect(result.isError).toBe(true);
       expect(result.content).toHaveLength(1);
     }

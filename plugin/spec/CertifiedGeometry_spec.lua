@@ -86,7 +86,7 @@ end
 local CERTIFIED_RADIAL = { center = point(0.5, 0.5), width = 0.4, height = 0.3, rotation = 30, feather = 0 }
 
 local function withRadial(fields)
-    local args = { photo_id = "1", shape = "radial" }
+    local args = { photo_ids = { "1" }, shape = "radial" }
     for key, value in pairs(CERTIFIED_RADIAL) do
         args[key] = value
     end
@@ -104,7 +104,7 @@ local CASES = {
         photos = { { id = "1" } },
         run = function(Handler)
             local created = Handler.createGradientMask(withRadial({ adjustments = { local_Exposure = 2 } }))
-            Handler.updateGradientMask({ photo_id = "1", tool_id = created.tool_id, rotation = -30 })
+            Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = created.tool_id, rotation = -30 })
         end,
     },
     {
@@ -114,13 +114,13 @@ local CASES = {
         photos = { { id = "1" } },
         run = function(Handler)
             local created = Handler.createGradientMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 shape = "linear",
                 start = point(0.2, 0.3),
                 ["end"] = point(0.6, 0.3),
                 adjustments = { local_Exposure = 1 },
             })
-            Handler.updateGradientMask({ photo_id = "1", tool_id = created.tool_id, ["end"] = point(0.7, 0.4) })
+            Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = created.tool_id, ["end"] = point(0.7, 0.4) })
         end,
     },
     {
@@ -130,14 +130,14 @@ local CASES = {
         photos = { { id = "1", orientation = "BC" } },
         run = function(Handler)
             local linear = Handler.createGradientMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 shape = "linear",
                 start = point(0.5, 0.9),
                 ["end"] = point(0.5, 0.7),
             })
             Handler.createGradientMask(withRadial({ name = "Ellipse" }))
             Handler.createGradientMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 shape = "radial",
                 center = point(0.3, 0.6),
                 width = 0.5,
@@ -147,7 +147,7 @@ local CASES = {
                 mask_id = linear.mask_id,
                 mode = "subtract",
             })
-            Handler.updateGradientMask({ photo_id = "1", tool_id = linear.tool_id, start = point(0.4, 0.95) })
+            Handler.updateGradientMask({ photo_ids = { "1" }, tool_id = linear.tool_id, start = point(0.4, 0.95) })
         end,
     },
     {
@@ -157,12 +157,12 @@ local CASES = {
         photos = { { id = "1" } },
         run = function(Handler)
             local created = Handler.createBrushMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 strokes = { { points = { point(0.1, 0.85), point(0.4, 0.85) }, radius = 0.05 } },
                 adjustments = { local_Exposure = 0.7 },
             })
             Handler.addBrushStrokes({
-                photo_id = "1",
+                photo_ids = { "1" },
                 tool_id = created.tool_id,
                 strokes = { { points = { point(0.3, 0.85) }, radius = 0.04, erase = true } },
             })
@@ -175,7 +175,7 @@ local CASES = {
         photos = { { id = "1", orientation = "BC" } },
         run = function(Handler)
             Handler.createBrushMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 name = "Face",
                 strokes = {
                     {
@@ -196,13 +196,13 @@ local CASES = {
         photos = { { id = "1", transformWrite = lightroomFillsDepthInfo } },
         run = function(Handler)
             Handler.createRangeMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 type = "luminance",
                 luminance = { min = 0.6, max = 1 },
                 adjustments = { local_Exposure = -1 },
             })
             Handler.createRangeMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 type = "color",
                 color = {
                     sample = { x = 0.048726, y = 0.060942, l = 0.570123, a = 0.961792, b = 0.817275 },
@@ -211,7 +211,7 @@ local CASES = {
                 adjustments = { local_Exposure = -1 },
             })
             Handler.createRangeMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 type = "depth",
                 depth = { min = 0.2, max = 0.5, falloff = 0 },
                 invert = true,
@@ -225,20 +225,20 @@ local CASES = {
         photos = { { id = "1", orientation = "BC" }, { id = "2", entries = { lightroomColorRange() } } },
         run = function(Handler)
             local luminance = Handler.createRangeMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 type = "luminance",
                 luminance = { min = 0, max = 0.25, falloff = 0.3 },
             })
             Handler.createRangeMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 type = "color",
                 name = "Copy",
                 invert = true,
                 color = { amount = 0.2 },
-                copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
+                copy_sample_from = { source_photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
             })
             Handler.createRangeMask({
-                photo_id = "1",
+                photo_ids = { "1" },
                 type = "color",
                 mask_id = luminance.mask_id,
                 mode = "subtract",

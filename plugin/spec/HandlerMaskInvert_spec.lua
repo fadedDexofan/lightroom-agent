@@ -119,7 +119,7 @@ local function subjectMasks()
 end
 
 local function args(overrides)
-    local base = { photo_id = "1", mask_id = "m-1", mode = "in_place" }
+    local base = { photo_ids = { "1" }, mask_id = "m-1", mode = "in_place" }
     for key, value in pairs(overrides or {}) do
         base[key] = value
     end
@@ -159,7 +159,7 @@ describe("HandlerMaskInvert.invertMask in place", function()
             photos = { { id = "1" }, { id = "2", masks = subjectMasks() } },
         })
 
-        Handler.invertMask(args({ photo_id = "2" }))
+        Handler.invertMask(args({ photo_ids = { "2" } }))
 
         assert.are.equal(1, calls.goToMasking)
         assert.are.same({ "develop", "library" }, calls.modules)
@@ -656,14 +656,14 @@ describe("HandlerMaskInvert.invertMask arguments", function()
     it("accepts a numeric photo id and a file path", function()
         local Handler = setup({ photos = { { id = "7", masks = subjectMasks() } } })
 
-        assert.are.equal("7", Handler.invertMask(args({ photo_id = 7 })).photo_id)
-        assert.are.equal("7", Handler.invertMask(args({ photo_id = "/7.jpg", mask_id = "m-2" })).photo_id)
+        assert.are.equal("7", Handler.invertMask(args({ photo_ids = { 7 } })).photo_id)
+        assert.are.equal("7", Handler.invertMask(args({ photo_ids = { "/7.jpg" }, mask_id = "m-2" })).photo_id)
     end)
 
     it("names the photo id when the photo is unknown and never touches Develop", function()
         local Handler, calls = setup({ photos = { { id = "1" } } })
 
-        assert.are.equal("404", helper.notFoundOf(function() Handler.invertMask(args({ photo_id = "404" })) end))
+        assert.are.equal("404", helper.notFoundOf(function() Handler.invertMask(args({ photo_ids = { "404" } })) end))
         assert.are.equal(0, #calls.modules)
     end)
 

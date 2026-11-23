@@ -513,6 +513,8 @@ const photoIdArray = (description: string): JSONObject => ({
   description,
 });
 
+const singlePhotoIds = (description: string): JSONObject => ({ ...photoIdArray(description), maxItems: 1 });
+
 const dateStringSchema = (description: string) => ({
   type: "string",
   pattern: "^\\d{4}-\\d{2}-\\d{2}$",
@@ -764,7 +766,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         size: previewSizeSchema(
           "Longest edge returned: cull is 864, review 1728, sizes Lightroom 16.0 renders itself for 3:2 raws, so they usually arrive without resampling; numeric 64-2048 means exactly that edge; default cull, the frequent call. The server scales a larger Lightroom image down to this edge, at most 2000px, within 3.5 MiB; a smaller image is returned as Lightroom made it. cull is for choosing among frames, review for a whole-frame look at rendering, tone and mask edges. Image tokens grow with pixel area (Claude: about width x height / 750) and repeat each turn in history.",
         ),
@@ -777,7 +779,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           required: ["x", "y", "width", "height"],
         },
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -799,7 +801,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         regions: {
           type: "array",
           minItems: 1,
@@ -820,7 +822,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: `Largest region edge in pixels (default ${DEFAULT_DETAIL_EDGE}). Keep it within what your model receives without downscaling; the server cannot know that limit.`,
         },
       },
-      required: ["photo_id", "regions"],
+      required: ["photo_ids", "regions"],
     },
   },
   {
@@ -834,12 +836,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         size: previewSizeSchema(
           "Long edge of the rendition: cull is 864, review 1728, the default; numeric 64-2048 means that edge. A photo whose cropped frame is smaller is rendered at its own size. Image tokens grow with pixel area (Claude: about width x height / 750) and repeat each turn in history.",
         ),
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -1632,7 +1634,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Source photo ID or file path"),
+        photo_ids: singlePhotoIds("The source photo: one ID or file path"),
         preset_name: {
           type: "string",
           minLength: 1,
@@ -1647,7 +1649,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Explicit SDK setting keys from set_develop_settings to capture from the source photo",
         },
       },
-      required: ["photo_id", "preset_name", "settings"],
+      required: ["photo_ids", "preset_name", "settings"],
     },
   },
   {
@@ -1724,8 +1726,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description:
             "Preview without writes or AI recomputation. Returns setting_totals across all targets and details for at most 5 targets within a 12,000-character detail budget; detail_truncated marks omitted detail. Missing path detail has a 4,000-character budget and is trimmed further to keep the reply within 20,000 characters: missing_count and one-based missing_indices identify all missing inputs, and missing_truncated flags an incomplete missing list. Tables are summarized by entry count and strings over 128 characters by length and prefix. In a full copy a target whose masks the write replaces or removes shows a MaskGroupBasedCorrections change with the entry counts before and after.",
         },
-        source_id: photoIdSchema("Source photo ID or file path"),
-        target_ids: photoIdArray("Target photo IDs or file paths"),
+        source_photo_id: photoIdSchema("Source photo ID or file path"),
+        photo_ids: photoIdArray("Target photo IDs or file paths"),
         settings: {
           type: "array",
           items: developSettingKeyItems,
@@ -1734,7 +1736,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Optional whitelist of SDK setting keys from set_develop_settings. Omit to copy all.",
         },
       },
-      required: ["source_id", "target_ids"],
+      required: ["source_photo_id", "photo_ids"],
     },
   },
   {
@@ -1750,10 +1752,10 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        reference_id: photoIdSchema("Reference photo ID or file path"),
-        target_ids: photoIdArray("Target photo IDs or file paths"),
+        reference_photo_id: photoIdSchema("Reference photo ID or file path"),
+        photo_ids: photoIdArray("Target photo IDs or file paths"),
       },
-      required: ["reference_id", "target_ids"],
+      required: ["reference_photo_id", "photo_ids"],
     },
   },
   {
@@ -1768,13 +1770,13 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         settings: {
           ...developSettingsProperty,
           description: 'SDK setting key/value pairs (e.g., {"Exposure2012": 0.5, "SaturationAdjustmentOrange": -10})',
         },
       },
-      required: ["photo_id", "settings"],
+      required: ["photo_ids", "settings"],
     },
     rules: developSettingsRules,
   },
@@ -1824,10 +1826,10 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         mask_id: maskIdSchema("Mask id from list_masks, to read the live ranges of the local sliders"),
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -1844,7 +1846,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         rectangle: {
           type: "object",
           additionalProperties: false,
@@ -1901,7 +1903,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
             "Frame the rectangle, centre and largest fit refer to: photo (default) is the photo as displayed before any crop; crop is the current crop as a preview shows it",
         },
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -1917,9 +1919,9 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -1934,8 +1936,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      properties: { photo_id: photoIdSchema("Photo ID or file path") },
-      required: ["photo_id"],
+      properties: { photo_ids: singlePhotoIds("One photo ID or file path") },
+      required: ["photo_ids"],
     },
   },
   {
@@ -1998,7 +2000,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       additionalProperties: false,
       minProperties: 2,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         active: { type: "boolean" },
         amount: { type: "number", minimum: 0, maximum: 100 },
         cat_eye: { type: "number", minimum: 0, maximum: 100 },
@@ -2014,7 +2016,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         bokeh: { type: "string", enum: ["Circle", "SoapBubble", "Blade", "Ring", "Anamorphic"] },
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -2095,9 +2097,9 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -2113,11 +2115,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         name: { type: "string", pattern: "\\S", description: "Snapshot name" },
         replace: { type: "boolean", description: "Replace the existing snapshot with this name (default false)" },
       },
-      required: ["photo_id", "name"],
+      required: ["photo_ids", "name"],
     },
   },
   {
@@ -2133,10 +2135,10 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         snapshot_id: { type: "string", minLength: 1, description: "Snapshot id returned for this photo" },
       },
-      required: ["photo_id", "snapshot_id"],
+      required: ["photo_ids", "snapshot_id"],
     },
   },
   {
@@ -2152,10 +2154,10 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         snapshot_id: { type: "string", minLength: 1, description: "Snapshot id returned for this photo" },
       },
-      required: ["photo_id", "snapshot_id"],
+      required: ["photo_ids", "snapshot_id"],
     },
   },
   {
@@ -2248,8 +2250,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      properties: { photo_id: photoIdSchema("Photo ID or file path") },
-      required: ["photo_id"],
+      properties: { photo_ids: singlePhotoIds("One photo ID or file path") },
+      required: ["photo_ids"],
     },
   },
   {
@@ -2265,7 +2267,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         index: { type: "integer", minimum: 1 },
         params: {
           type: "object",
@@ -2274,7 +2276,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           required: ["Opacity"],
         },
       },
-      required: ["photo_id", "index", "params"],
+      required: ["photo_ids", "index", "params"],
     },
   },
   {
@@ -2290,11 +2292,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         index: { type: "integer", minimum: 1 },
         confirm: { type: "boolean", const: true },
       },
-      required: ["photo_id", "index", "confirm"],
+      required: ["photo_ids", "index", "confirm"],
     },
   },
   {
@@ -2310,9 +2312,9 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -2323,12 +2325,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "reads",
     run: { plugin: "HandlerMaskAdmission.get" },
     description:
-      "Whether guarded mask writes are admitted here: running Lightroom version/build, certified build/time/checks, throwaway-catalog flag, refusal reason. photo_id adds process version, mask count and where the existing masks leave the tested format (reported only: a guarded write leaves those masks as Lightroom stored them). No Develop.",
+      "Whether guarded mask writes are admitted here: running Lightroom version/build, certified build/time/checks, throwaway-catalog flag, refusal reason. photo_ids (one photo) adds its process version, mask count and where the existing masks leave the tested format (reported only: a guarded write leaves those masks as Lightroom stored them). No Develop.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
       },
     },
   },
@@ -2353,7 +2355,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         adjustments: {
           ...localAdjustmentsSchema(),
           description:
@@ -2377,7 +2379,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Name of a new mask; not allowed together with mask_id",
         },
       },
-      required: ["photo_id", "shape"],
+      required: ["photo_ids", "shape"],
     },
   },
   {
@@ -2394,11 +2396,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         tool_id: { type: "string", minLength: 1, description: "Tool id of the gradient to change" },
         ...gradientGeometryProperties,
       },
-      required: ["photo_id", "tool_id"],
+      required: ["photo_ids", "tool_id"],
     },
   },
   {
@@ -2415,7 +2417,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         adjustments: {
           ...localAdjustmentsSchema(),
           description:
@@ -2433,7 +2435,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Name of a new mask; not allowed together with mask_id",
         },
       },
-      required: ["photo_id", "strokes"],
+      required: ["photo_ids", "strokes"],
     },
   },
   {
@@ -2450,11 +2452,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         tool_id: { type: "string", minLength: 1, description: "Tool id of the brush to add strokes to" },
         ...brushStrokeProperties,
       },
-      required: ["photo_id", "tool_id", "strokes"],
+      required: ["photo_ids", "tool_id", "strokes"],
     },
   },
   {
@@ -2465,7 +2467,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerRangeMasks.createRangeMask" },
     description:
-      "Create a luminance, color or depth range (needs mask-write admission; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC. Falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). copy_sample_from {mask_id, tool_id, optional photo_id} replaces color.sample: copies that sample verbatim, keeping its displayed pin and amount unless color.amount overrides it. Any other source fails unchanged. Cross-photo copies match rankings, so different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. New masks start neutral. Returns mask_id, tool_id, type and the range read back in list_masks' form (a color range as color.samples, one entry).",
+      "Create a luminance, color or depth range (needs mask-write admission; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC. Falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). copy_sample_from {mask_id, tool_id, optional source_photo_id} replaces color.sample: copies that sample verbatim, keeping its displayed pin and amount unless color.amount overrides it. Any other source fails unchanged. Cross-photo copies match rankings, so different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. New masks start neutral. Returns mask_id, tool_id, type and the range read back in list_masks' form (a color range as color.samples, one entry).",
     rules: [
       rangeNeedsItsValues,
       rangeValuesOfItsType,
@@ -2482,7 +2484,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         adjustments: {
           ...localAdjustmentsSchema(),
           description:
@@ -2596,7 +2598,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
               description: "Mask id from list_masks that holds the color range to copy",
             },
             tool_id: { type: "string", minLength: 1, description: "Tool id of the color range inside that mask" },
-            photo_id: photoIdSchema("Photo to copy from; defaults to photo_id"),
+            source_photo_id: photoIdSchema("Photo to copy from; defaults to the photo in photo_ids"),
           },
           required: ["mask_id", "tool_id"],
           description:
@@ -2619,7 +2621,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Name of a new mask; not allowed together with mask_id",
         },
       },
-      required: ["photo_id", "type"],
+      required: ["photo_ids", "type"],
     },
   },
   {
@@ -2630,7 +2632,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "settings",
     run: { plugin: "HandlerMaskDelete.deleteMasks" },
     description:
-      "Delete mask_ids, tool_ids (a mask's top-level components) or all=true on one photo_id by removing them from the photo's saved settings, without opening Develop or selecting anything. Ids come from list_masks; unknown ids fail unchanged, and removing a mask's last component removes the mask. Every other mask, and every other field and component of a mask that loses a component, must read back exactly, or the photo is put back and the call fails; one history step. Returns deleted mask/tool ids and the remaining mask count. To delete tool-less masks over many photos use delete_empty_masks.",
+      "Delete mask_ids, tool_ids (a mask's top-level components) or all=true on one photo by removing them from the photo's saved settings, without opening Develop or selecting anything. Ids come from list_masks; unknown ids fail unchanged, and removing a mask's last component removes the mask. Every other mask, and every other field and component of a mask that loses a component, must read back exactly, or the photo is put back and the call fails; one history step. Returns deleted mask/tool ids and the remaining mask count. To delete tool-less masks over many photos use delete_empty_masks.",
     rules: [
       {
         text: "give exactly one of mask_ids, tool_ids or all",
@@ -2641,7 +2643,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         mask_ids: {
           type: "array",
           items: { type: "string", minLength: 1 },
@@ -2662,7 +2664,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Delete every mask",
         },
       },
-      required: ["photo_id"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -2696,7 +2698,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         mask_id: maskIdSchema("Mask id from list_masks"),
         adjustments: {
           ...localAdjustmentsSchema(),
@@ -2704,7 +2706,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
             'Local slider names and the numbers to set (e.g., {"local_Exposure": 0.5, "local_Shadows": -20})',
         },
       },
-      required: ["photo_id", "mask_id", "adjustments"],
+      required: ["photo_ids", "mask_id", "adjustments"],
     },
   },
   {
@@ -2720,7 +2722,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         mask_id: maskIdSchema("Mask id from list_masks"),
         kinds: {
           type: "array",
@@ -2732,7 +2734,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
             "Kinds to read; omitted reads all. Omitted kinds have no result fields. Point Color swatches report SrcHue, SrcSat, SrcLum, HueShift, SatScale, LumScale, RangeAmount, Variance, HueRange, SatRange and LumRange; no swatches is an empty list.",
         },
       },
-      required: ["photo_id", "mask_id"],
+      required: ["photo_ids", "mask_id"],
     },
   },
   {
@@ -2748,7 +2750,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         mask_id: {
           type: "string",
           minLength: 1,
@@ -2760,7 +2762,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "in_place inverts the mask; copy keeps it and creates an inverted copy",
         },
       },
-      required: ["photo_id", "mask_id", "mode"],
+      required: ["photo_ids", "mask_id", "mode"],
     },
   },
   {
@@ -2792,7 +2794,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         type: {
           type: "string",
           enum: [...CREATE_MASK_TYPES],
@@ -2822,7 +2824,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
             "Landscape only: each category becomes its own mask, often in about 15 s. A missing region removes all new masks. Unknown/duplicate categories/parts fail before access.",
         },
       },
-      required: ["photo_id", "type"],
+      required: ["photo_ids", "type"],
     },
   },
   {
@@ -2870,7 +2872,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         mask_id: maskIdSchema("Mask id from list_masks"),
         curves: {
           type: "object",
@@ -2880,7 +2882,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: 'Channel names and the point arrays to set (e.g., {"main": [0, 0, 128, 140, 255, 255]})',
         },
       },
-      required: ["photo_id", "mask_id", "curves"],
+      required: ["photo_ids", "mask_id", "curves"],
     },
   },
   {
@@ -2921,7 +2923,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         mask_id: maskIdSchema("Mask id from list_masks"),
         action: {
           type: "string",
@@ -2942,7 +2944,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Swatch fields; add needs SrcHue, SrcSat and SrcLum, update takes any subset",
         },
       },
-      required: ["photo_id", "mask_id", "action"],
+      required: ["photo_ids", "mask_id", "action"],
     },
   },
   {
@@ -2958,7 +2960,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: singlePhotoIds("One photo ID or file path"),
         mask_id: maskIdSchema("ID of the mask to combine into, from list_masks"),
         operation: {
           type: "string",
@@ -2971,7 +2973,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "What Lightroom should select for the component: subject, sky or background",
         },
       },
-      required: ["photo_id", "mask_id", "operation", "type"],
+      required: ["photo_ids", "mask_id", "operation", "type"],
     },
   },
 ];

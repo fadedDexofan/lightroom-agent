@@ -18,7 +18,7 @@ local function stroke(overrides)
 end
 
 local function createRequest(overrides)
-    local args = { photo_id = "1", strokes = { stroke() } }
+    local args = { photo_ids = { "1" }, strokes = { stroke() } }
     for key, value in pairs(overrides or {}) do
         args[key] = value
     end
@@ -93,7 +93,7 @@ describe("HandlerBrushMasks.createBrushMask", function()
         local Handler, stores = setup({ photos = { { id = "1", orientation = "CD", entries = existingBrush() } } })
 
         Handler.addBrushStrokes({
-            photo_id = "1",
+            photo_ids = { "1" },
             tool_id = "C1T1",
             strokes = { stroke({ points = { point(0.25, 0.75) } }) },
         })
@@ -153,7 +153,8 @@ describe("HandlerBrushMasks.createBrushMask", function()
         local Handler, stores = setup()
 
         local created = Handler.createBrushMask(createRequest())
-        local added = Handler.addBrushStrokes({ photo_id = "1", tool_id = created.tool_id, strokes = { stroke() } })
+        local added =
+            Handler.addBrushStrokes({ photo_ids = { "1" }, tool_id = created.tool_id, strokes = { stroke() } })
 
         assert.are.equal(created.tool_id, added.tool_id)
         assert.are.equal(created.mask_id, added.mask_id)
@@ -183,7 +184,7 @@ describe("HandlerBrushMasks.createBrushMask", function()
     it("accepts a numeric photo id", function()
         local Handler = setup({ photos = { { id = "7" } } })
 
-        assert.are.equal("7", Handler.createBrushMask(createRequest({ photo_id = 7 })).photo_id)
+        assert.are.equal("7", Handler.createBrushMask(createRequest({ photo_ids = { 7 } })).photo_id)
     end)
 
     it("rejects a path that needs too many dabs in the stored frame before writing", function()
@@ -280,7 +281,7 @@ describe("HandlerBrushMasks.createBrushMask", function()
 
         assert.are.equal(
             "404",
-            helper.notFoundOf(function() Handler.createBrushMask(createRequest({ photo_id = "404" })) end)
+            helper.notFoundOf(function() Handler.createBrushMask(createRequest({ photo_ids = { "404" } })) end)
         )
     end)
 
@@ -375,7 +376,7 @@ end)
 
 describe("HandlerBrushMasks.addBrushStrokes", function()
     local function addRequest(overrides)
-        local args = { photo_id = "1", tool_id = "C1T1", strokes = { stroke({ points = { point(0.6, 0.6) } }) } }
+        local args = { photo_ids = { "1" }, tool_id = "C1T1", strokes = { stroke({ points = { point(0.6, 0.6) } }) } }
         for key, value in pairs(overrides or {}) do
             args[key] = value
         end
