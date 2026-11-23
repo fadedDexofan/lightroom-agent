@@ -113,6 +113,7 @@ local function setup(opts)
         },
         LrFileUtils = {
             exists = function(path) return files[path] or false end,
+            readFile = function(path) return (opts.fileTexts or {})[path] end,
             createAllDirectories = function(path)
                 files[path] = "directory"
                 return true
@@ -1118,6 +1119,270 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.equal(0, r.data.ai_updated)
         assert.are.same({ "ghost" }, r.not_found)
         assert.are.equal(0, catalog.getWriteAccessCount())
+    end)
+end)
+
+describe("HandlerDevelop.setProfile", function()
+    local COLOR =
+        { Name = "Adobe Color", UUID = "B952C231111CD8E0ECCF14B86BAA7077", Amount = 1, SupportsAmount = false }
+    local LANDSCAPE_UUID = "6F9C877E84273F4E8271E6B91BEB36A1"
+    local PRESET_FILE = "/CameraRaw/Settings/lightroom-agent Adobe Landscape.xmp"
+    local OURS = 'crs:UUID="6C1F3E0A9B2D4E7F8A5C0B1D2E3F4A52"'
+
+    local function landscapeLook(extraParameters)
+        local parameters = {
+            Version = "19.0.1",
+            ProcessVersion = "15.4",
+            CameraProfile = "Adobe Standard",
+            ConvertToGrayscale = false,
+            LookTable = "0B3BFB5CFB7DBF7FF175E98F24D316B0",
+            ToneCurveName2012 = "",
+            ToneCurvePV2012 = { 0, 0, 64, 60, 128, 128, 192, 196, 255, 255 },
+            ToneCurvePV2012Red = {},
+            ToneCurvePV2012Green = {},
+            ToneCurvePV2012Blue = {},
+            Highlights2012 = -12,
+            Shadows2012 = 12,
+            Clarity2012 = 10,
+            AILook = {},
+            FilterList = {},
+        }
+        for key, value in pairs(extraParameters or {}) do
+            parameters[key] = value
+        end
+        return {
+            UUID = LANDSCAPE_UUID,
+            Name = "Adobe Landscape",
+            Amount = 1,
+            Group = { ["x-default"] = "Profiles" },
+            Parameters = parameters,
+            SupportsAmount = false,
+            SupportsMonochrome = false,
+            SupportsOutputReferred = false,
+            Copyright = "© 2018 Adobe Systems, Inc.",
+        }
+    end
+
+    local function rawPhoto(settings, format)
+        return helper.fakePhoto({ id = "1", path = "/a.cr2", fileFormat = format or "RAW", developSettings = settings })
+    end
+
+    local function colorRaw(extra)
+        local settings = {
+            CameraProfile = "Adobe Standard",
+            ConvertToGrayscale = false,
+            Look = deepCopy(COLOR),
+            Exposure2012 = 0.3,
+        }
+        for key, value in pairs(extra or {}) do
+            settings[key] = value
+        end
+        return rawPhoto(settings)
+    end
+
+    local function landscapePreset(stored, opts)
+        opts = opts or {}
+        local preset = fakePreset("lightroom-agent Adobe Landscape", {
+            settings = opts.declared or { AILook = {}, FilterList = {}, Version = "19.0.1", Look = landscapeLook() },
+            file = opts.file or PRESET_FILE,
+            uuid = opts.uuid,
+        })
+        preset.stores = { CameraProfile = "Adobe Standard", Look = landscapeLook({ PointColors = {} }) }
+        for key, value in pairs(stored or {}) do
+            preset.stores[key] = value
+        end
+        return preset
+    end
+
+    local function setupProfile(photo, presets, texts)
+        return setup({
+            photos = { photo },
+            folders = { fakeFolder("lightroom-agent profiles", presets) },
+            fileTexts = texts or { [PRESET_FILE] = "<x:xmpmeta " .. OURS .. ">" },
+        })
+    end
+
+    local function named(Handler)
+        return Handler.setProfile({ photo_ids = { "1" }, profile = "Adobe Landscape" }, helper.requestContext())
+    end
+
+    it("applies lightroom-agent's profile preset and confirms the stored profile Lightroom shows", function()
+        for _, start in ipairs({
+            colorRaw(),
+            rawPhoto({ CameraProfile = "Camera Standard", ConvertToGrayscale = false, Exposure2012 = 0.3 }),
+        }) do
+            local preset = landscapePreset()
+            local _, Handler = setupProfile(start, { preset })
+
+            local reply = named(Handler)
+
+            assert.are.equal(preset, start:getRawMetadata("__appliedPreset"))
+            assert.are.same({ photo_id = "1", profile = "Adobe Landscape", amount = 100 }, reply)
+        end
+    end)
+
+    it("confirms a profile whose write bumped Lightroom's writer stamp Version on an older photo", function()
+        local photo = colorRaw({ Version = "15.0" })
+        local _, Handler = setupProfile(photo, { landscapePreset({ Version = "19.0.1" }) })
+
+        assert.are.same({ photo_id = "1", profile = "Adobe Landscape", amount = 100 }, named(Handler))
+    end)
+
+    it("confirms a profile whose write left an empty table where the photo had none", function()
+        local photo = colorRaw()
+        local _, Handler = setupProfile(photo, { landscapePreset({ MaskGroupBasedCorrections = {} }) })
+
+        assert.are.same({ photo_id = "1", profile = "Adobe Landscape", amount = 100 }, named(Handler))
+    end)
+
+    it("refuses before writing a black and white raw, a photo that is not raw and an Adaptive profile", function()
+        for _, case in ipairs({
+            { colorRaw({ ConvertToGrayscale = true }), "set_treatment" },
+            { rawPhoto({ Look = deepCopy(COLOR) }, "JPG"), "JPG" },
+            { rawPhoto({ Look = { Name = "Adaptive Color", isAdobeAdaptive = true, Amount = 1 } }), "Adaptive" },
+        }) do
+            local _, Handler = setupProfile(case[1], { landscapePreset() })
+
+            assert.matches(case[2], helper.failedOf(function() named(Handler) end))
+            assert.is_nil(case[1]:getRawMetadata("__appliedPreset"))
+        end
+    end)
+
+    it("decides the refusals inside the write gate, on the settings the preset is applied over", function()
+        local photo = colorRaw()
+        local catalog, Handler = setupProfile(photo, { landscapePreset() })
+        local gate = catalog.withWriteAccessDo
+        catalog.withWriteAccessDo = function(self, title, fn, timeout)
+            photo:getDevelopSettings().ConvertToGrayscale = true
+            return gate(self, title, fn, timeout)
+        end
+
+        assert.matches("set_treatment", helper.failedOf(function() named(Handler) end))
+        assert.is_nil(photo:getRawMetadata("__appliedPreset"))
+    end)
+
+    it("refuses a missing preset, two presets of that name and a preset that is not lightroom-agent's", function()
+        local other = landscapePreset(nil, { file = "/elsewhere.xmp", uuid = "another" })
+        for _, case in ipairs({
+            { {}, nil, "reinstall the plug%-in" },
+            { { landscapePreset(), other }, { [PRESET_FILE] = OURS, ["/elsewhere.xmp"] = OURS }, "two presets" },
+            { { landscapePreset() }, { [PRESET_FILE] = "someone else's" }, "not lightroom%-agent's" },
+            { { landscapePreset(nil, { declared = { Look = { UUID = "OTHER" } } }) }, nil, "not lightroom%-agent's" },
+        }) do
+            local photo = colorRaw()
+            local _, Handler = setupProfile(photo, case[1], case[2])
+
+            assert.matches(case[3], helper.failedOf(function() named(Handler) end))
+            assert.is_nil(photo:getRawMetadata("__appliedPreset"))
+        end
+    end)
+
+    it("answers unknown, naming what is wrong, when the stored result is not the preset's profile", function()
+        for _, case in ipairs({
+            { { Exposure2012 = 1 }, "Exposure2012" },
+            { { ConvertToGrayscale = true }, "treatment" },
+            { { CameraProfile = "Camera Standard" }, "CameraProfile" },
+            { { MissingCameraProfile = true }, "missing" },
+            { { Look = deepCopy(COLOR) }, "Adobe Color" },
+        }) do
+            local photo = colorRaw()
+            local _, Handler = setupProfile(photo, { landscapePreset(case[1]) })
+
+            assert.matches(case[2], helper.unknownOf(function() named(Handler) end))
+        end
+    end)
+
+    local CREATIVE = {
+        Name = "Artistic 03",
+        UUID = "5E446105ADA1B13B89A0B673FB16ABA1",
+        Amount = 0.5,
+        Group = { ["x-default"] = "Artistic" },
+        Parameters = { Version = "19.0.1", RGBTable = "F048", Saturation = 20 },
+    }
+
+    local function amount(Handler)
+        return Handler.setProfile({ photo_ids = { "1" }, amount = 70 }, helper.requestContext())
+    end
+
+    it("sets the amount of a creative Look, keeping the rest of the profile", function()
+        local photo = rawPhoto({ CameraProfile = "Adobe Standard", Look = deepCopy(CREATIVE), Exposure2012 = 0.3 })
+        local _, Handler = setup({ photos = { photo } })
+
+        local reply = amount(Handler)
+
+        local stored = photo:getDevelopSettings().Look
+        assert.are.equal(0.7, stored.Amount)
+        assert.are.same(CREATIVE.Parameters, stored.Parameters)
+        assert.are.same({ photo_id = "1", profile = "Artistic 03", amount = 70 }, reply)
+    end)
+
+    it("confirms an amount whose write bumped Lightroom's writer stamp Version", function()
+        local photo = helper.fakePhoto({
+            id = "1",
+            path = "/a.cr2",
+            fileFormat = "RAW",
+            applyAlso = { Version = "19.0.1" },
+            developSettings = { CameraProfile = "Adobe Standard", Look = deepCopy(CREATIVE), Version = "15.0" },
+        })
+        local _, Handler = setup({ photos = { photo } })
+
+        assert.are.same({ photo_id = "1", profile = "Artistic 03", amount = 70 }, amount(Handler))
+    end)
+
+    it("answers unknown when anything but the Look's amount changed with the write", function()
+        for _, also in ipairs({ { ToggleStyleAmount = 3 }, { Table_ABC = "x" }, { AILook = { 1 } } }) do
+            local photo = helper.fakePhoto({
+                id = "1",
+                path = "/a.cr2",
+                fileFormat = "RAW",
+                applyAlso = also,
+                developSettings = { CameraProfile = "Adobe Standard", Look = deepCopy(CREATIVE) },
+            })
+            local _, Handler = setup({ photos = { photo } })
+
+            assert.matches(next(also), helper.unknownOf(function() amount(Handler) end))
+        end
+    end)
+
+    it("refuses an amount for any Look but an active expanded one, and for a photo without a Look", function()
+        local function creative(change)
+            local look = deepCopy(CREATIVE)
+            for key, value in pairs(change) do
+                look[key] = value
+            end
+            if change.Parameters == false then look.Parameters = nil end
+            if change.Amount == false then look.Amount = nil end
+            return look
+        end
+        for _, settings in ipairs({
+            { Look = deepCopy(COLOR) },
+            {
+                Look = {
+                    Name = "Adaptive Color",
+                    UUID = "A",
+                    isAdobeAdaptive = true,
+                    Amount = 1,
+                    Parameters = { X = 1 },
+                },
+            },
+            { Look = creative({ Stubbed = true }) },
+            { Look = creative({ Stubbed = "true" }) },
+            { Look = creative({ Parameters = false }) },
+            { Look = creative({ Parameters = {} }) },
+            { Look = creative({ UUID = "" }) },
+            { Look = creative({ Name = "" }) },
+            { Look = creative({ Amount = false }) },
+            { Look = creative({ Amount = "0.5" }) },
+            { Look = creative({ Amount = -0.1 }) },
+            { Exposure2012 = 0.3 },
+        }) do
+            local photo = rawPhoto(settings)
+            local _, Handler = setup({ photos = { photo } })
+
+            helper.failedOf(function() amount(Handler) end)
+
+            assert.is_nil(photo:getRawMetadata("__appliedSettings"))
+        end
     end)
 end)
 

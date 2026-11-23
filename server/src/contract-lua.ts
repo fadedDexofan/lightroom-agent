@@ -17,12 +17,14 @@ import {
   STYLE_SUMMARY_PHOTO_LIMIT,
 } from "./tool-contracts.js";
 import {
+  ADOBE_RAW_PROFILES,
   COLOR_LABELS,
   LANDSCAPE_MASK_CATEGORIES,
   MASK_CURVE_CHANNELS,
   MASK_TYPES,
   PEOPLE_MASK_PARTS,
   PHOTO_FLAGS,
+  PROFILE_PRESET_GROUP,
   STORED_MASK_DECIMAL_PLACES,
 } from "./lightroom-tables.js";
 
@@ -77,6 +79,16 @@ function contractTable(): { readonly [key: string]: LuaValue } {
     MASK_CURVE_CHANNELS,
     PHOTO_FLAGS,
     COLOR_LABELS,
+    ADOBE_RAW_PROFILES: ADOBE_RAW_PROFILES.map(
+      ({ name, look_uuid, preset_name, preset_uuid, camera_profile }): LuaValue => ({
+        name,
+        look_uuid,
+        preset_name,
+        preset_uuid,
+        camera_profile,
+      }),
+    ),
+    PROFILE_PRESET_GROUP,
     PREVIEW_REPLY_RESERVE_SECONDS: PREVIEW_REPLY_RESERVE_MS / 1000,
     DETAIL_RENDER_FOLDER,
     RENDITION_JPEG_QUALITY,

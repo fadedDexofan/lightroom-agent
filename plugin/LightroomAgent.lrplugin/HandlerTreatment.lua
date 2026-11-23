@@ -4,6 +4,7 @@ local CatalogWrite = require "CatalogWrite"
 local DevelopBatch = require "DevelopBatch"
 local DevelopReadBack = require "DevelopReadBack"
 local DevelopSession = require "DevelopSession"
+local ProfileLook = require "ProfileLook"
 local Reply = require "Reply"
 
 local Handler = {}
@@ -14,12 +15,6 @@ local TREATMENTS = {
     color = { command = "color", grayscale = false },
     black_and_white = { command = "grayscale", grayscale = true },
 }
-
-local function profileOf(settings)
-    local look = settings.Look
-    if type(look) == "table" and type(look.Name) == "string" then return look.Name end
-    return settings.CameraProfile
-end
 
 local function readSettings(catalog, photo)
     local settings
@@ -39,7 +34,7 @@ end
 
 local function convert(context, catalog, photo, state, name)
     local wanted = TREATMENTS[name]
-    local before = profileOf(readSettings(catalog, photo))
+    local before = ProfileLook.nameOf(readSettings(catalog, photo))
     if not DevelopSession.selectAlone(catalog, photo, state) then
         Reply.refuse("Could not select photo " .. tostring(photo.localIdentifier) .. " alone")
     end
@@ -57,7 +52,7 @@ local function convert(context, catalog, photo, state, name)
     return {
         treatment = name,
         convert_to_grayscale = settings.ConvertToGrayscale,
-        profile = { before = before, after = profileOf(settings) },
+        profile = { before = before, after = ProfileLook.nameOf(settings) },
     }
 end
 

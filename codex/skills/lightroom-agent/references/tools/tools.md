@@ -44,7 +44,7 @@ The outcome table is in [SKILL.md](../../SKILL.md#read-every-replys-outcome). In
 - About a second after the write the tool reads the keys back. A value stored differently is listed in `adjusted` and the outcome is `partial`; a key the photo held and lost makes it `unknown`. A key the photo cannot store at all, such as a RAW's Temperature and Tint on a JPEG, is listed in `not_stored` with a warning.
 - Never write the raw `Crop*` keys: they are in the frame Lightroom stores, not as the photo is displayed. Use `set_crop`. Never invent key names: the schema lists every key the tool accepts.
 - Colour Grading's shadow and highlight hue and saturation, and Balance, are stored under the `SplitToning*` names (`SplitToningShadowHue`, `SplitToningHighlightSaturation`, `SplitToningBalance`); their luminance (`ColorGradeShadowLum`, `ColorGradeHighlightLum`), midtones, global and blending under `ColorGrade*`.
-- Keys that need their own tool: `ConvertToGrayscale` (`set_treatment`), Denoise (`apply_denoise`), Lens Blur (`set_lens_blur`), process version (`set_process_version`), crop (`set_crop`). Profile selection has no tool: use a preset that carries the profile, or Lightroom's UI.
+- Keys that need their own tool: `ConvertToGrayscale` (`set_treatment`), Denoise (`apply_denoise`), Lens Blur (`set_lens_blur`), process version (`set_process_version`), crop (`set_crop`). The profile has its own tool too: `set_profile`.
 
 Groups observed on Lightroom Classic 16.0 and 16.0.1 (range, read-back and a render that changed as expected, on test images):
 
@@ -61,7 +61,7 @@ Groups observed on Lightroom Classic 16.0 and 16.0.1 (range, read-back and a ren
 | Glow | `Glow`, `GlowRange`, `GlowSpread` 0..100, `GlowWarmth` −100..100, `GlowStyle` 0 diffusion, 1 bloom, 2 halation, 3 motion, 4 streak, `GlowDirection` −180..180 |
 | Projection | `ReshapeAmount` 0..100 |
 
-Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defringe` (they read back and render nothing), profile, Upright Guided.
+Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defringe` (they read back and render nothing), the profile keys `CameraProfile` and `Look` (use `set_profile`), Upright Guided.
 
 ## Crop
 
@@ -72,7 +72,9 @@ Not settable and not to be invented: legacy `ChromaticAberrationR/B` and `Defrin
 
 ## Black and white
 
-`set_treatment` switches between `color` and `black_and_white` through Lightroom's own conversion. On a RAW it swaps the profile (Adobe Color to Adobe Monochrome) and removes or restores the HSL keys (observed on Lightroom Classic 16.0: also Saturation and Vibrance, and Monochrome brings its own tone curve and a little Clarity); the reply reports `convert_to_grayscale` and `profile {before, after}`. No tool writes a profile back, so a profile the conversion lost cannot be restored through the tools: convert a virtual copy rather than a master whose profile matters. `match_photo_style` fails a target whose treatment differs from the reference; convert it first.
+`set_treatment` switches between `color` and `black_and_white` through Lightroom's own conversion. On a RAW it swaps the profile (Adobe Color to Adobe Monochrome) and removes or restores the HSL keys (observed on Lightroom Classic 16.0: also Saturation and Vibrance, and Monochrome brings its own tone curve and a little Clarity); the reply reports `convert_to_grayscale` and `profile {before, after}`. Only Adobe Color and Adobe Landscape can be set back with `set_profile`; another profile the conversion lost cannot be restored through the tools, so convert a virtual copy rather than a master whose profile matters. `match_photo_style` fails a target whose treatment differs from the reference; convert it first.
+
+`set_profile` sets a colour RAW's profile by name, Adobe Color or Adobe Landscape, or sets the amount (0-200, 100 as made) of the profile a photo has. By name it applies a preset the plug-in installs, so Lightroom resolves the profile for that camera itself, in one history step; it refuses a non-RAW, a black and white RAW (`set_treatment` first) and an Adaptive profile. The Adobe Raw profiles have no amount, so an amount needs a creative profile (Artistic, Modern, Vintage and the like). The read-back checks the profile and that nothing outside it changed; a difference is `unknown`.
 
 ## Snapshots, virtual copies, history
 

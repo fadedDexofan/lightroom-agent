@@ -27,12 +27,14 @@ import { TIMEOUT_MS_BY_DURATION } from "./tool-durations.js";
 import { getPhotoMetadata } from "./photo-metadata.js";
 import type { PluginReply } from "./tool-result.js";
 import {
+  ADOBE_RAW_PROFILE_NAMES,
   COLOR_LABEL_NAMES,
   LANDSCAPE_MASK_CATEGORY_NAMES,
   MASK_CURVE_CHANNEL_NAMES,
   MASK_TYPE_NAMES,
   PEOPLE_MASK_PART_NAMES,
   PHOTO_FLAG_NAMES,
+  PROFILE_PRESET_GROUP,
   STORED_MASK_DECIMAL_PLACES,
 } from "./lightroom-tables.js";
 
@@ -2065,6 +2067,37 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_profile",
+    toolset: "develop",
+    title: "Set profile",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    duration: "long",
+    develop: "settings",
+    run: { plugin: "HandlerDevelop.setProfile" },
+    description: `Set a colour raw photo's profile by name, or the amount of the profile it has. profile (${ADOBE_RAW_PROFILE_NAMES.join(", ")}) applies the matching preset that installing the plug-in places in Lightroom's "${PROFILE_PRESET_GROUP}" group, so Lightroom resolves the profile for the photo's camera itself; one history step. Refused before writing, decided inside the write, on the settings the preset is applied over: a photo that is not raw, a black and white raw (convert it with set_treatment first) and a photo on an Adaptive profile; refused before that: a missing preset (reinstall the plug-in, then restart Lightroom), two presets of that name, and one that is not the plug-in's. amount (0-200, 100 = as the profile was made) rewrites the photo's profile Look with that amount; refused when the photo has no active profile Look (a stub, or one without its id, name, parameters or a non-negative amount), when its profile has no amount (the Adobe Raw profiles) and on an Adaptive profile. About 2 s after the write the photo is read back: by name, CameraProfile Adobe Standard, no missing camera profile, the profile's name and id, the treatment unchanged and every setting outside the profile unchanged; for an amount, everything but the profile's amount unchanged; Lightroom's writer stamp Version is not compared. Any difference is unknown and names it. Returns photo_id, profile and amount.`,
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: singlePhotoIds("One photo ID or file path"),
+        profile: { type: "string", enum: ADOBE_RAW_PROFILE_NAMES, description: "Adobe Raw profile to set" },
+        amount: {
+          type: "integer",
+          minimum: 0,
+          maximum: 200,
+          description: "Amount of the photo's profile, 100 = as made",
+        },
+      },
+      required: ["photo_ids"],
+    },
+    rules: [
+      {
+        text: "give profile or amount, not both",
+        holds: (args) => (args.profile === undefined) !== (args.amount === undefined),
+      },
+    ],
+  },
+  {
     name: "set_treatment",
     toolset: "develop",
     title: "Set treatment",
@@ -2073,7 +2106,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerTreatment.set" },
     description:
-      "Switch photos to black_and_white or color through Lightroom's own conversion: on a raw it also swaps the profile (Adobe Color and Adobe Monochrome) and removes or restores the HSL keys. Lightroom's command acts on the selection, so the tool selects each photo alone while it runs and restores the selection afterwards; a dispatch Lightroom dropped (it can refuse one while Library is starting) is sent once more, and a photo still unchanged after that is unknown. Returns per photo convert_to_grayscale as read back and profile {before, after}; compare the two, since the conversion can change the profile and no tool writes a profile back. GrayMixer* keys act only on a black and white photo.",
+      "Switch photos to black_and_white or color through Lightroom's own conversion: on a raw it also swaps the profile (Adobe Color and Adobe Monochrome) and removes or restores the HSL keys. Lightroom's command acts on the selection, so the tool selects each photo alone while it runs and restores the selection afterwards; a dispatch Lightroom dropped (it can refuse one while Library is starting) is sent once more, and a photo still unchanged after that is unknown. Returns per photo convert_to_grayscale as read back and profile {before, after}; compare the two, since the conversion can change the profile: set_profile sets Adobe Color or Adobe Landscape back, and no tool sets any other profile back. GrayMixer* keys act only on a black and white photo.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

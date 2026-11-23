@@ -11,6 +11,7 @@ local CatalogWrite = require "CatalogWrite"
 local Contract = require "Contract"
 local PathForms = require "PathForms"
 local PhotoLookup = require "PhotoLookup"
+local ProfileLook = require "ProfileLook"
 local DevelopBatch = require "DevelopBatch"
 local DevelopCurves = require "DevelopCurves"
 local DevelopReadBack = require "DevelopReadBack"
@@ -592,6 +593,78 @@ function DevelopHandler.applyDevelopPreset(args, context)
         uuid = selectedPreset.uuid,
         ai_updated = aiUpdated,
     }, { not_found = missingIds, remaining = remaining })
+end
+
+local function isOurs(entry, profile)
+    local read, text = LrTasks.pcall(LrFileUtils.readFile, entry.file)
+    if not read or type(text) ~= "string" or not text:find('crs:UUID="' .. profile.preset_uuid .. '"', 1, true) then
+        return false
+    end
+    local declared = callPresetMethod(entry.preset, "getSetting")
+    local look = type(declared) == "table" and declared.Look
+    return type(look) == "table" and look.UUID == profile.look_uuid
+end
+
+local function profilePreset(profile)
+    local matches, seen = {}, {}
+    for _, entry in ipairs(allDevelopPresetEntries()) do
+        local alias = entry.uuid ~= nil and seen[entry.uuid]
+        if
+            not alias
+            and entry.scope == "lightroom"
+            and entry.folder == Contract.PROFILE_PRESET_GROUP
+            and entry.name == profile.preset_name
+        then
+            matches[#matches + 1] = entry
+            if entry.uuid ~= nil then seen[entry.uuid] = true end
+        end
+    end
+    local where = profile.preset_name .. " in " .. Contract.PROFILE_PRESET_GROUP
+    if #matches == 0 then
+        Reply.refuse("Lightroom lists no preset " .. where .. ": reinstall the plug-in, then restart Lightroom")
+    end
+    if #matches > 1 then
+        Reply.refuse(
+            "Lightroom lists two presets "
+                .. where
+                .. ": remove the one that is not lightroom-agent's, then restart Lightroom"
+        )
+    end
+    if not isOurs(matches[1], profile) then
+        Reply.refuse(
+            "The preset "
+                .. where
+                .. " is not lightroom-agent's: rename or remove it, then reinstall the plug-in and restart Lightroom"
+        )
+    end
+    return matches[1]
+end
+
+function DevelopHandler.setProfile(args, context)
+    local catalog = LrApplication.activeCatalog()
+    local photo = PhotoLookup.requireOne(catalog, args.photo_ids[1])
+    if args.profile ~= nil then
+        local profile = ProfileLook.adobeRaw(args.profile)
+        local preset = profilePreset(profile)
+        local before
+        CatalogWrite.run(context, catalog, "Set Profile", function()
+            before = JsonValue.of(DevelopReadBack.saved(photo))
+            ProfileLook.requireNamedTarget(photo:getRawMetadata("fileFormat"), before)
+            CatalogWrite.call(context, photo, "applyDevelopPreset", preset.preset)
+        end)
+        local after = DevelopReadBack.afterWrite(context, catalog, photo)
+        ProfileLook.requireNamed(before, after, profile)
+        return ProfileLook.answer(photo, after)
+    end
+    local amount = args.amount / 100
+    local before
+    CatalogWrite.developSettings(context, catalog, photo, "Set Profile Amount", function()
+        before = JsonValue.of(DevelopReadBack.saved(photo))
+        return { Look = ProfileLook.withAmount(ProfileLook.requireAmountTarget(before), amount) }
+    end)
+    local after = DevelopReadBack.afterWrite(context, catalog, photo)
+    ProfileLook.requireAmount(before, after, amount)
+    return ProfileLook.answer(photo, after)
 end
 
 local function copyMasks(context, catalog, photo, masks, aiMasks)

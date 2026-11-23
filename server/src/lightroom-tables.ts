@@ -73,3 +73,27 @@ export const COLOR_LABELS = [
 ] as const;
 
 export const COLOR_LABEL_NAMES = COLOR_LABELS.map((label) => label.name);
+
+export const PROFILE_PRESET_GROUP = "lightroom-agent profiles";
+
+const ADOBE_RAW_PROFILE_LOOKS = [
+  {
+    name: "Adobe Color",
+    look_uuid: "B952C231111CD8E0ECCF14B86BAA7077",
+    preset_uuid: "6C1F3E0A9B2D4E7F8A5C0B1D2E3F4A51",
+  },
+  {
+    name: "Adobe Landscape",
+    look_uuid: "6F9C877E84273F4E8271E6B91BEB36A1",
+    preset_uuid: "6C1F3E0A9B2D4E7F8A5C0B1D2E3F4A52",
+  },
+] as const;
+
+export const ADOBE_RAW_PROFILES = ADOBE_RAW_PROFILE_LOOKS.map((profile) => ({
+  ...profile,
+  preset_name: `lightroom-agent ${profile.name}`,
+  camera_profile: "Adobe Standard",
+  copyright: "© 2018 Adobe Systems, Inc.",
+}));
+
+export const ADOBE_RAW_PROFILE_NAMES = ADOBE_RAW_PROFILES.map((profile) => profile.name);

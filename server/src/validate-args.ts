@@ -33,9 +33,12 @@ const PLURAL_SIBLING: Readonly<Record<string, { name: string; takes: (args: Tool
   create_mask: { name: "create_mask_batch", takes: (args) => BATCH_MASK_TYPES?.includes(args.type) === true },
 };
 
+const PROFILE_KEYS = new Set(["CameraProfile", "CameraProfileDigest", "Look", "ProfileAmount"]);
+
 function renameHint(field: string, property: string, offered: Record<string, unknown>): string {
-  const path = [...field.split(".").filter((part) => part !== "" && !/^\d+$/.test(part)), property].join(".");
-  const renamed = RENAMED[path]?.find((name) => name in offered);
+  const parents = field.split(".").filter((part) => part !== "" && !/^\d+$/.test(part));
+  if (parents.at(-1) === "settings" && PROFILE_KEYS.has(property)) return ": use set_profile";
+  const renamed = RENAMED[[...parents, property].join(".")]?.find((name) => name in offered);
   return renamed ? `: use ${renamed}` : "";
 }
 

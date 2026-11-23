@@ -4,10 +4,12 @@ local Contract = require "Contract"
 local DevelopCurves = require "DevelopCurves"
 local JSON = require "JSON"
 local Reply = require "Reply"
+local ProfileLook = require "ProfileLook"
 
 local DevelopReadBack = {}
 
 local NORMALISE_SECONDS = 1
+local PROFILE_SETTLE_SECONDS = 2
 DevelopReadBack.REPLY_SECONDS = 2
 local NAMED_IN_PROBLEM = 10
 
@@ -65,11 +67,6 @@ local LISTED_EDITS = {
     },
 }
 
-local function profileOf(settings)
-    local look = type(settings.Look) == "table" and settings.Look or {}
-    return { settings.CameraProfile, look.Name, look.Amount }
-end
-
 function DevelopReadBack.changedEdits(before, after)
     local changed = {}
     for _, key in ipairs(Contract.DEVELOP_KEYS) do
@@ -79,8 +76,7 @@ function DevelopReadBack.changedEdits(before, after)
         local name, listOf = edit[1], edit[2]
         if #(listOf(after) or {}) < #(listOf(before) or {}) then changed[#changed + 1] = name end
     end
-    local was, now = profileOf(before), profileOf(after)
-    if was[1] ~= now[1] or was[2] ~= now[2] or was[3] ~= now[3] then changed[#changed + 1] = "profile" end
+    if not ProfileLook.sameProfile(before, after) then changed[#changed + 1] = "profile" end
     return changed
 end
 
@@ -89,6 +85,16 @@ function DevelopReadBack.saved(photo)
     if settings == nil then
         error("Lightroom returned no saved settings for photo " .. tostring(photo.localIdentifier), 0)
     end
+    return settings
+end
+
+function DevelopReadBack.afterWrite(context, catalog, photo)
+    LrTasks.sleep(PROFILE_SETTLE_SECONDS)
+    if context:timeLeft() < DevelopReadBack.REPLY_SECONDS then
+        error("written; not read back within the time budget", 0)
+    end
+    local settings
+    catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
     return settings
 end
 
