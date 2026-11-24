@@ -26,7 +26,7 @@ function RequestContext:stopping(reserveSeconds) return self:isCanceled() or sel
 
 function RequestContext:report(progress, total, message, title)
     if not self.scope then
-        self.scope = LrProgressScope { title = title or self.title, caption = "Starting" }
+        self.scope = LrProgressScope { title = title, caption = "Starting" }
         self.scope:setCancelable(true)
     end
     self.scope:setPortionComplete(progress, math.max(total, 1))

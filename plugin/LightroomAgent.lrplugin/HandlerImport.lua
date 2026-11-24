@@ -414,7 +414,7 @@ function ImportHandler.importPhotos(args, context)
             end
             break
         end
-        context:report(processed, #photosToImport, filePath)
+        context:report(processed, #photosToImport, filePath, "Importing photos")
         local imported, importError, written = context.ledger:attempt(function()
             local photoPath = filePath
             local rememberFolders
@@ -461,7 +461,7 @@ function ImportHandler.importPhotos(args, context)
         end
         processed = processed + 1
     end
-    if processed > 0 then context:report(processed, #photosToImport, photosToImport[processed]) end
+    if processed > 0 then context:report(processed, #photosToImport, photosToImport[processed], "Importing photos") end
 
     -- Add to collection if specified, in its own short write transaction.
     local addedToCollection = 0

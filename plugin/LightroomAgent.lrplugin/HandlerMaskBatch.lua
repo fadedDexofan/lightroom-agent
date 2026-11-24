@@ -14,6 +14,7 @@ function MaskBatchHandler.createMaskBatch(args, context)
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
+        progress = "Creating masks",
         restoreView = false,
         reserveSeconds = GATES_PER_PHOTO * CatalogWrite.WAIT_SECONDS + Contract.AI_MASK_COMPUTE_WAIT_SECONDS,
         each = function(photo)

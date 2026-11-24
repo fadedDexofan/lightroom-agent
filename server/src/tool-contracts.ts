@@ -2057,7 +2057,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerVirtualCopies.create" },
     description:
-      "Create one virtual copy per distinct photo (max 25), named copy_name if given. Returns copies (photo_id/master_photo_id/copy_photo_id); copies made before a failure stay in data. A photo whose new copy has another master, or whose copy cannot be read back, is unknown, and its reason names every copy Lightroom created for it. Edit via copy_photo_id; repeats add more.",
+      "Create one virtual copy per distinct photo (max 25), named copy_name if given. Returns copies (photo_id/master_photo_id/copy_photo_id); copies made before a failure stay in data. A photo whose new copy has another master, or whose copy cannot be read back, is unknown, and its reason names every copy Lightroom created for it. Edit via copy_photo_id; repeats add more. Stops starting photos when one more would not fit its time budget; resend remaining.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2108,7 +2108,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerTreatment.set" },
     description:
-      "Switch photos to black_and_white or color through Lightroom's own conversion: on a raw it also swaps the profile (Adobe Color and Adobe Monochrome) and removes or restores the HSL keys. Lightroom's command acts on the selection, so the tool selects each photo alone while it runs and restores the selection afterwards; a dispatch Lightroom dropped (it can refuse one while Library is starting) is sent once more, and a photo still unchanged after that is unknown. Returns per photo convert_to_grayscale as read back and profile {before, after}; compare the two, since the conversion can change the profile: set_profile sets Adobe Color or Adobe Landscape back, and no tool sets any other profile back. GrayMixer* keys act only on a black and white photo.",
+      "Switch photos to black_and_white or color through Lightroom's own conversion: on a raw it also swaps the profile (Adobe Color and Adobe Monochrome) and removes or restores the HSL keys. Lightroom's command acts on the selection, so the tool selects each photo alone while it runs and restores the selection afterwards; a dispatch Lightroom dropped (it can refuse one while Library is starting) is sent once more, and a photo still unchanged after that is unknown. Returns per photo convert_to_grayscale as read back and profile {before, after}; compare the two, since the conversion can change the profile: set_profile sets Adobe Color or Adobe Landscape back, and no tool sets any other profile back. GrayMixer* keys act only on a black and white photo. Stops starting photos when one more would not fit its time budget; resend remaining.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2229,7 +2229,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     duration: "long",
     develop: "drives",
     run: { plugin: "HandlerDevelop.resetDevelopAdjustments" },
-    description: `Reset all Develop edits, including crop/masks, on up to 100 photos (confirm:true); recover through Lightroom History. Opens each in Develop; shared restoration rules apply. Returns results per photo, status reset, only when a read of the saved settings ${RESET_LANDING_WAIT_SECONDS} s after the reset (none sooner: a read while Lightroom applies a reset can void it) shows at least one of the photo's edits changed: a develop slider, the crop, Upright, the camera profile or Look, or fewer masks, spots or Enhance filters. Otherwise the photo is unknown: it may have had nothing to reset, since an unedited photo reads the same before and after, or Lightroom may not have reset it; read it before retrying or writing to it. A photo that stopped being the active one in Develop before the reset is failed and nothing is reset. Stops starting photos when one more would not fit its time budget, or on cancel; resend remaining.`,
+    description: `Reset all Develop edits, including crop/masks, on up to 100 photos (confirm:true); recover through Lightroom History. Opens each in Develop; shared restoration rules apply. Returns results per photo, status reset, only when a read of the saved settings ${RESET_LANDING_WAIT_SECONDS} s after the reset (none sooner: a read while Lightroom applies a reset can void it) shows at least one of the photo's edits changed: a develop slider, the crop, Upright, the camera profile or Look, or fewer masks, spots or Enhance filters. Otherwise the photo is unknown: it may have had nothing to reset, since an unedited photo reads the same before and after, or Lightroom may not have reset it; read it before retrying or writing to it. A photo that stopped being the active one in Develop before the reset is failed and nothing is reset. Stops starting photos when one more would not fit its time budget; resend remaining.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,

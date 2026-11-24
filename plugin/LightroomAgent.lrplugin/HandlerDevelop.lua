@@ -542,7 +542,7 @@ function DevelopHandler.applyDevelopPreset(args, context)
     local batch = PhotoBatch.run(context, catalog, {
         inputs = args.photo_ids,
         reserveSeconds = batchReserve(aiPreset and 2 or 1, aiPreset),
-        progress = "Applying preset",
+        progress = "Applying develop preset",
         each = applyOne,
         confirm = DevelopReadBack.confirm(context, catalog),
     })
@@ -1073,6 +1073,7 @@ function DevelopHandler.setDevelopSettingsBatch(args, context)
     end
     return DevelopBatch.run(context, catalog, {
         inputs = inputs,
+        progress = "Writing develop settings",
         duplicates = "refuse",
         reserveSeconds = function(started) return batchReserve(1) + READ_BACK_PER_PHOTO_SECONDS * (started + 1) end,
         held = function(entry)
@@ -1199,6 +1200,7 @@ function DevelopHandler.applyDenoise(args, context)
     local catalog = LrApplication.activeCatalog()
     local reply = DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
+        progress = "Applying Denoise",
         restoreView = args.restore_selection ~= false,
         reserveSeconds = DENOISE_LAST_PHOTO_AND_RESTORE_SECONDS,
         prepare = function()
@@ -1259,6 +1261,7 @@ function DevelopHandler.setProcessVersion(args, context)
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
+        progress = "Setting process version",
         restoreView = args.restore_selection ~= false,
         reserveSeconds = PROCESS_VERSION_PHOTO_AND_RESTORE_SECONDS,
         each = function(photo, state) return changeProcessVersion(context, catalog, photo, args.version, state) end,
@@ -1337,6 +1340,7 @@ function DevelopHandler.applyAutoAdjustments(args, context)
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
+        progress = "Applying Auto settings",
         restoreView = true,
         reserveSeconds = AUTO_PHOTO_AND_RESTORE_SECONDS,
         each = function(photo, state)
@@ -1376,6 +1380,7 @@ function DevelopHandler.resetDevelopAdjustments(args, context)
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
+        progress = "Resetting develop settings",
         restoreView = true,
         reserveSeconds = RESET_PHOTO_AND_RESTORE_SECONDS,
         each = function(photo, state)

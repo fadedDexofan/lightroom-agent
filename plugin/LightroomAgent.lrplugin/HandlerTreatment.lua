@@ -60,6 +60,7 @@ function Handler.set(args, context)
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
+        progress = "Setting treatment",
         restoreView = true,
         reserveSeconds = RESERVE_SECONDS,
         each = function(photo, state) return convert(context, catalog, photo, state, args.treatment) end,

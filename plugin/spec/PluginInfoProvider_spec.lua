@@ -293,6 +293,106 @@ describe("PluginInfoProvider server task", function()
         assert.are.same({}, inside)
     end)
 
+    it("progress_titles_are_gerunds: names a gerund title at every progress report and batch call", function()
+        local OPENS = { ["("] = true, ["{"] = true, ["["] = true }
+        local CLOSES = { [")"] = true, ["}"] = true, ["]"] = true }
+        local function walk(text, from, visit)
+            local depth, index = 0, from
+            while index <= #text do
+                local char = text:sub(index, index)
+                if char == '"' or char == "'" then
+                    index = index + 1
+                    while index <= #text and text:sub(index, index) ~= char do
+                        if text:sub(index, index) == "\\" then index = index + 1 end
+                        index = index + 1
+                    end
+                elseif text:sub(index, index + 1) == "--" then
+                    index = text:find("\n", index, true) or #text
+                else
+                    if CLOSES[char] then depth = depth - 1 end
+                    if visit(index, char, depth) then return index end
+                    if OPENS[char] then depth = depth + 1 end
+                end
+                index = index + 1
+            end
+        end
+        local function argumentsAt(text, open)
+            local parts, start = {}, open + 1
+            local close = walk(text, open, function(index, char, depth)
+                if depth == 1 and (char == "," or char == ";") then
+                    parts[#parts + 1] = text:sub(start, index - 1)
+                    start = index + 1
+                end
+                return depth == 0 and CLOSES[char]
+            end)
+            parts[#parts + 1] = text:sub(start, (close or #text + 1) - 1)
+            return parts
+        end
+        local function gerund(expression)
+            local title = expression
+                and (expression:match('^%s*"([^"]*)"%s*$') or expression:match("^%s*'([^']*)'%s*$"))
+            local word = title and title:match("^(%a+)")
+            return word ~= nil and word:sub(-3) == "ing"
+        end
+
+        local photoBatchReports, problems, untitled = 0, {}, {}
+        local calls, references = { PhotoBatch = 0, DevelopBatch = 0 }, { PhotoBatch = 0, DevelopBatch = 0 }
+        for _, name in ipairs(pluginModules()) do
+            local file = name .. ".lua"
+            local source = assert(io.open("plugin/LightroomAgent.lrplugin/" .. file)):read("*a")
+            local function site(position) return file .. " " .. tostring(helper.functionAt(source, position)) end
+            for start, open in source:gmatch("()[%w_.]*:report%s*()%(") do
+                if not source:sub(1, start - 1):match("function%s*$") then
+                    if name == "PhotoBatch" then
+                        photoBatchReports = photoBatchReports + 1
+                    elseif not gerund(argumentsAt(source, open)[4]) then
+                        problems[#problems + 1] = site(start) .. ": report names no gerund title"
+                    end
+                end
+            end
+            if name ~= "PhotoBatch" and name ~= "DevelopBatch" then
+                for module in pairs(calls) do
+                    for _ in source:gmatch("%f[%w_]" .. module .. "%.run%f[^%w_]") do
+                        references[module] = references[module] + 1
+                    end
+                    for start, open in source:gmatch("()%f[%w_]" .. module .. "%.run%s*()%(") do
+                        calls[module] = calls[module] + 1
+                        local operation = argumentsAt(source, open)[3] or ""
+                        if not operation:match("^%s*{") then
+                            problems[#problems + 1] = site(start) .. ": " .. module .. ".run takes no operation table"
+                        else
+                            local progress
+                            for _, field in ipairs(argumentsAt(operation, operation:find("{", 1, true))) do
+                                progress = progress or field:match("^%s*progress%s*=%s*(.-)%s*$")
+                            end
+                            if progress == nil then
+                                untitled[#untitled + 1] = site(start)
+                            elseif not gerund(progress) then
+                                problems[#problems + 1] = site(start) .. ": progress is no gerund literal"
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(problems)
+        table.sort(untitled)
+
+        assert.are.same({
+            photoBatchReports = 2,
+            calls = { PhotoBatch = 5, DevelopBatch = 8 },
+            references = { PhotoBatch = 5, DevelopBatch = 8 },
+            untitled = { "HandlerRawDevelopSettings.lua DevelopSettingsRead.get" },
+            problems = {},
+        }, {
+            photoBatchReports = photoBatchReports,
+            calls = calls,
+            references = references,
+            untitled = untitled,
+            problems = problems,
+        })
+    end)
+
     describe("a handler module's load result", function()
         local binds, sends
         local function initialised(prefs)
