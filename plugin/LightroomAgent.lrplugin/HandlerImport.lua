@@ -37,15 +37,26 @@ local PACKAGE_EXTENSIONS = { lrdata = true, lrlibrary = true, photoslibrary = tr
 
 local function lowerExtension(path) return LrPathUtils.extension(path):lower() end
 
+local function stemKey(path) return PathForms.toNfd(LrPathUtils.removeExtension(path)) end
+
+local function isCompanion(file, rawStem, sidecarJpegs)
+    local extension = lowerExtension(file)
+    return (extension == "xmp" or (sidecarJpegs and JPEG_EXTENSIONS[extension] == true))
+        and PathForms.same(LrPathUtils.leafName(LrPathUtils.removeExtension(file)), LrPathUtils.leafName(rawStem))
+end
+
 local function withoutSidecarJpegs(files)
     local rawStems = {}
     for _, file in ipairs(files) do
-        if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(file)] then rawStems[LrPathUtils.removeExtension(file)] = true end
+        if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(file)] then
+            rawStems[stemKey(file)] = LrPathUtils.removeExtension(file)
+        end
     end
     local kept = {}
     local sidecars = {}
     for _, file in ipairs(files) do
-        if JPEG_EXTENSIONS[lowerExtension(file)] and rawStems[LrPathUtils.removeExtension(file)] then
+        local rawStem = rawStems[stemKey(file)]
+        if rawStem and isCompanion(file, rawStem, true) then
             sidecars[#sidecars + 1] = file
         else
             kept[#kept + 1] = file
@@ -84,19 +95,14 @@ local function copiedTarget(context, source, relativePath, folder, companions)
     return target
 end
 
-local function firstExistingBeside(stem, extensions)
-    for _, extension in ipairs(extensions) do
-        if LrFileUtils.exists(stem .. "." .. extension) == "file" then return stem .. "." .. extension end
-    end
-    return nil
-end
-
 local function companionsBeside(source, separateJpegs)
     local companions = {}
     local stem = LrPathUtils.removeExtension(source)
-    companions[#companions + 1] = firstExistingBeside(stem, { "xmp", "XMP" })
-    if not separateJpegs and JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(source)] then
-        companions[#companions + 1] = firstExistingBeside(stem, { "jpg", "JPG", "jpeg", "JPEG" })
+    local sidecarJpegs = not separateJpegs and JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(source)] == true
+    for entry in LrFileUtils.directoryEntries(LrPathUtils.parent(source)) do
+        if isCompanion(entry, stem, sidecarJpegs) and LrFileUtils.exists(entry) == "file" then
+            companions[#companions + 1] = entry
+        end
     end
     return companions
 end
@@ -285,7 +291,7 @@ local function prepareImport(args, catalog)
     local packageFileCount = 0
     local companionsOf = {}
     local function addCompanion(file)
-        local stem = LrPathUtils.removeExtension(file)
+        local stem = stemKey(file)
         companionsOf[stem] = companionsOf[stem] or {}
         table.insert(companionsOf[stem], file)
     end
@@ -299,7 +305,7 @@ local function prepareImport(args, catalog)
             elseif IMPORTABLE_EXTENSIONS[ext] then
                 table.insert(photosToImport, file)
             else
-                if ext == "xmp" then addCompanion(file) end
+                if isCompanion(file, LrPathUtils.removeExtension(file), false) then addCompanion(file) end
                 skippedByExtension[ext] = (skippedByExtension[ext] or 0) + 1
                 skippedCount = skippedCount + 1
             end
@@ -415,7 +421,7 @@ function ImportHandler.importPhotos(args, context)
             if args.copy_to then
                 local relativePath = sourceKind == "directory" and PathForms.relative(args.source_path, filePath)
                     or LrPathUtils.leafName(filePath)
-                local companions = companionsOf[LrPathUtils.removeExtension(filePath)]
+                local companions = companionsOf[stemKey(filePath)]
                     or (sourceKind ~= "directory" and companionsBeside(filePath, args.separate_jpegs))
                     or {}
                 local target = LrPathUtils.child(args.copy_to, relativePath)

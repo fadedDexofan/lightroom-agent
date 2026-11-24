@@ -33,7 +33,10 @@ local function fakeFileUtils(opts)
             local entries = {}
             for _, known in ipairs({ opts.exists or {}, opts.directories or {} }) do
                 for p in pairs(known) do
-                    if p:match("^(.*)/[^/]+$") == dir then entries[#entries + 1] = p end
+                    if p:match("^(.*)/[^/]+$") == dir then
+                        local listed = (opts.listedParent or {})[dir]
+                        entries[#entries + 1] = listed and listed .. p:sub(#dir + 1) or p
+                    end
                 end
             end
             table.sort(entries)
@@ -407,6 +410,39 @@ describe("HandlerImport.importPhotos", function()
             local _, SeparateHandler = setup({ fs = separate })
             SeparateHandler.importPhotos({ source_path = "/card/a.arw", copy_to = "/archive", separate_jpegs = true })
             assert.are.same({ { "/card/a.arw", "/archive/a.arw" } }, separate.copies)
+        end)
+
+        it(
+            "brings a single raw's companions by the folder import's rule, a .jpe and an upper-case .XMP included",
+            function()
+                local fs = { exists = { ["/card/a.arw"] = true, ["/card/a.jpe"] = true, ["/card/a.XMP"] = true } }
+                local _, Handler = setup({ fs = fs })
+                Handler.importPhotos({ source_path = "/card/a.arw", copy_to = "/archive" })
+                table.sort(fs.copies, function(left, right) return left[1] < right[1] end)
+                assert.are.same({
+                    { "/card/a.XMP", "/archive/a.XMP" },
+                    { "/card/a.arw", "/archive/a.arw" },
+                    { "/card/a.jpe", "/archive/a.jpe" },
+                }, fs.copies)
+            end
+        )
+
+        it("brings a single raw's companion when the folder lists its entries under another spelling of it", function()
+            local fs = {
+                exists = { ["/tmp/card/a.arw"] = true, ["/tmp/card/a.xmp"] = true, ["/private/tmp/card/a.xmp"] = true },
+                listedParent = { ["/tmp/card"] = "/private/tmp/card" },
+            }
+            local _, Handler = setup({ fs = fs })
+            Handler.importPhotos({ source_path = "/tmp/card/a.arw", copy_to = "/archive" })
+            assert.are.same({ "/private/tmp/card/a.xmp", "/archive/a.xmp" }, fs.copies[2])
+        end)
+
+        it("brings a single raw's companion whose name is in another Unicode form than the source path", function()
+            local nfc, nfd = "/card/caf\195\169", "/card/cafe\204\129"
+            local fs = { exists = { [nfc .. ".arw"] = true, [nfd .. ".xmp"] = true } }
+            local _, Handler = setup({ fs = fs })
+            Handler.importPhotos({ source_path = nfc .. ".arw", copy_to = "/archive" })
+            assert.are.same({ nfd .. ".xmp", "/archive/caf\195\169.xmp" }, fs.copies[2])
         end)
 
         it("answers unknown for a single import whose copy failed after it created the copy_to folder", function()
