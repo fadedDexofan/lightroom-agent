@@ -108,6 +108,21 @@ function DevelopReadBack.before(settings)
     return kept
 end
 
+function DevelopReadBack.entry(photo, settings, before, from, to)
+    return { photo = photo, settings = settings, before = before, from = from, to = to }
+end
+
+function DevelopReadBack.attempt(context, photo, settings, before, work)
+    local entry = DevelopReadBack.entry(photo, settings, before, context.ledger:mark())
+    local ok, value = LrTasks.pcall(work, entry)
+    entry.to = context.ledger:mark()
+    if not ok then
+        entry.error = Reply.messageOf(value)
+        return entry
+    end
+    return entry, value
+end
+
 function DevelopReadBack.check(context, catalog, written)
     if #written == 0 then return {} end
     LrTasks.sleep(NORMALISE_SECONDS)
@@ -126,6 +141,7 @@ function DevelopReadBack.check(context, catalog, written)
                 adjusted = {},
                 absent = {},
                 notStored = {},
+                kept = entry.kept,
             }
             if not read then
                 result.error = entry.error
@@ -184,6 +200,9 @@ function DevelopReadBack.classify(checked)
                 "unknown", "Lightroom shows no " .. table.concat(result.absent, ", ") .. " after the write"
             if result.error ~= nil then
                 class, reason = Reply.stopped(result.error, result.written)
+                if class == "unknown" and result.kept then
+                    class, reason = Reply.stopped(result.error .. "; " .. result.kept, result.written)
+                end
             end
             local list = class == "failed" and failed or unknown
             list[#list + 1] = { photo_id = result.photo_id, reason = reason }

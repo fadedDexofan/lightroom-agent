@@ -191,9 +191,59 @@ describe("reference style matching", function()
         local context =
             helper.requestContext(nil, { stopping = function() return false end, timeLeft = function() return 1 end })
         local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } }, context)
-        assert.equals(0, result.data.matched)
-        assert.same({}, result.data.results)
+        assert.is_nil(result.data)
         assert.same({ "2", "3" }, { result.unknown[1].photo_id, result.unknown[2].photo_id })
+        for index, id in ipairs({ "2", "3" }) do
+            local reason = result.unknown[index].reason
+            assert.truthy(reason:find("Create Develop Snapshot, Match Photo Style", 1, true), reason)
+            assert.truthy(
+                reason:find("recovery snapshot " .. snapshotState[id][1].name .. " was kept", 1, true),
+                reason
+            )
+        end
+    end)
+
+    it("match_no_data_unconfirmed: returns no data when the read-back confirms no target", function()
+        for index, dropped in ipairs({ "Exposure2012", "Contrast2012" }) do
+            local photo = targets[index]
+            photo.applyDevelopSettings = function(_, settings)
+                for key, value in pairs(settings) do
+                    photo:getDevelopSettings()[key] = value
+                end
+                photo:getDevelopSettings()[dropped] = nil
+            end
+        end
+        local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } })
+        assert.same({
+            { photo_id = "2", reason = "Lightroom shows no Exposure2012 after the write" },
+            { photo_id = "3", reason = "Lightroom shows no Contrast2012 after the write" },
+        }, result.unknown)
+        assert.is_nil(result.failed)
+        assert.is_nil(result.data)
+    end)
+
+    it("match_progress_per_target: reports progress for each target under its title, then Done", function()
+        for index, name in ipairs({ "b.raw", "c.raw" }) do
+            local read = targets[index].getFormattedMetadata
+            targets[index].getFormattedMetadata = function(photo, key)
+                if key == "fileName" then return name end
+                return read(photo, key)
+            end
+        end
+        local progress = {}
+        local context = helper.requestContext(nil, {
+            report = function(_, completed, total, message, title)
+                progress[#progress + 1] = { completed, total, message, title, events = #events }
+            end,
+        })
+
+        handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } }, context)
+
+        assert.same({
+            { 0, 2, "b.raw", "Matching photo style", events = 0 },
+            { 1, 2, "c.raw", "Matching photo style", events = 2 },
+            { 2, 2, "Done", "Matching photo style", events = 4 },
+        }, progress)
     end)
 
     it("fails a target whose saved settings Lightroom does not return, writes nothing to it and continues", function()
@@ -219,12 +269,36 @@ describe("reference style matching", function()
     it("answers unknown, without writing, when the snapshot it created cannot be read back", function()
         targets[1].getDevelopSnapshots = function() return {} end
         local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } })
-        assert.equals(0, result.data.matched)
+        assert.is_nil(result.data)
         assert.is_nil(applied["2"])
         assert.is_nil(result.failed)
         assert.matches("could not be read back", result.unknown[1].reason)
         assert.matches("written before this stopped: Create Develop Snapshot", result.unknown[1].reason)
     end)
+
+    it(
+        "match_names_snapshot_on_failed_read: names the recovery snapshot when the final read returns nothing",
+        function()
+            local read, apply, written = targets[1].getDevelopSettings, targets[1].applyDevelopSettings, false
+            targets[1].applyDevelopSettings = function(...)
+                apply(...)
+                written = true
+            end
+            targets[1].getDevelopSettings = function(...)
+                if written then return nil end
+                return read(...)
+            end
+            local result = handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2" } })
+            assert.is_nil(result.data)
+            assert.is_nil(result.failed)
+            local reason = result.unknown[1].reason
+            assert.truthy(reason:find("the read-back failed", 1, true), reason)
+            assert.truthy(
+                reason:find("recovery snapshot " .. snapshotState["2"][1].name .. " was kept", 1, true),
+                reason
+            )
+        end
+    )
 
     it("fails a target whose snapshot Lightroom refused, and writes nothing to it", function()
         targets[1].createDevelopSnapshot = function() return false end
@@ -246,6 +320,50 @@ describe("reference style matching", function()
         end
         assert.same({}, events)
     end)
+
+    it("match_alias_refused_first: refuses a target path naming an unreadable reference before reading it", function()
+        reference.getDevelopSettings = function() return nil end
+        assert.are.equal(
+            "Reference photo must not appear in photo_ids",
+            helper.failedOf(
+                function() handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "/reference.raw" } }) end
+            )
+        )
+        assert.same({}, events)
+    end)
+
+    it("match_unreadable_reference_wins: answers the reference's read error when no target is found", function()
+        reference.getDevelopSettings = function() return nil end
+        assert.are.equal(
+            "Lightroom returned no saved settings for photo 1",
+            helper.failedOf(
+                function() handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "404", "/missing.raw" } }) end
+            )
+        )
+        assert.same({}, events)
+    end)
+
+    it(
+        "match_resolves_once: reads each photo's identity in one batch for the reference and one for the targets",
+        function()
+            local batches = {}
+            local read = catalog.batchGetRawMetadata
+            catalog.batchGetRawMetadata = function(self, photos, keys)
+                if #keys == 1 and keys[1] == "uuid" then
+                    local ids = {}
+                    for index, photo in ipairs(photos) do
+                        ids[index] = tostring(photo.localIdentifier)
+                    end
+                    batches[#batches + 1] = ids
+                end
+                return read(self, photos, keys)
+            end
+
+            handler.matchPhotoStyle({ reference_photo_id = "1", photo_ids = { "2", "3" } })
+
+            assert.same({ { "1" }, { "2", "3" } }, batches)
+        end
+    )
 
     it("answers unknown for a target that throws after Lightroom stored part of the style", function()
         targets[1].applyDevelopSettings = function(photo, settings)

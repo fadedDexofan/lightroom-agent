@@ -4172,7 +4172,7 @@ describe("develop settings batches stop within their budget", function()
                 { name = "preset with AI masks", reserve = 60, source = {}, run = preset("Subject") },
                 { name = "style match", reserve = 30, source = { Exposure2012 = 1 }, run = match },
             }
-            package.loaded.HandlerSnapshots = { create = function() return { snapshot = { name = "s" } } end }
+            package.loaded.HandlerSnapshots = { createVerified = function() return { name = "s" } end }
             for _, case in ipairs(cases) do
                 for _, budget in ipairs({ case.reserve - 0.5, case.reserve + 0.5 }) do
                     local target =
@@ -4222,7 +4222,7 @@ describe("develop settings batches stop within their budget", function()
                 return Handler.copyDevelopSettings({ source_photo_id = "10", photo_ids = { "11", "12" } }, context)
             end,
         }
-        package.loaded.HandlerSnapshots = { create = function() return { snapshot = { name = "s" } } end }
+        package.loaded.HandlerSnapshots = { createVerified = function() return { name = "s" } end }
         for name, run in pairs(runs) do
             local reference = helper.fakePhoto({ id = "10", path = "/r.jpg", developSettings = { Exposure2012 = 1 } })
             local reads = { ["11"] = 0, ["12"] = 0 }
