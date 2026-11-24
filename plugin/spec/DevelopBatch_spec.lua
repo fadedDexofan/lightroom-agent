@@ -60,6 +60,33 @@ describe("DevelopBatch.run", function()
         end
     )
 
+    it("operation_title: shows progress under the operation's title", function()
+        local opened = {}
+        local DevelopBatch, catalog = setup({
+            LrProgressScope = function(args)
+                opened[#opened + 1] = args.title
+                return {
+                    setCancelable = function() end,
+                    setPortionComplete = function() end,
+                    setCaption = function() end,
+                    isCanceled = function() return false end,
+                    done = function() end,
+                }
+            end,
+        })
+        local context = helper.requestContext()
+        context.report = getmetatable(context).report
+
+        DevelopBatch.run(context, catalog, {
+            inputs = { "1", "2" },
+            reserveSeconds = 0,
+            progress = "Resetting develop settings",
+            each = function() return {} end,
+        })
+
+        assert.are.same({ "Resetting develop settings" }, opened)
+    end)
+
     it("results_as_data: replies with each photo's result under data.results", function()
         local DevelopBatch, catalog = setup()
 

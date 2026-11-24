@@ -46,6 +46,7 @@ function Handler.create(args, context)
     local catalog = LrApplication.activeCatalog()
     return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
+        progress = "Creating virtual copies",
         restoreView = true,
         reserveSeconds = RESERVE_SECONDS,
         each = function(photo, state) return createOne(context, catalog, photo, state, args.copy_name) end,

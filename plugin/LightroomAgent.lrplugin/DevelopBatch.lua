@@ -10,7 +10,7 @@ function DevelopBatch.run(context, catalog, operation)
         reserveSeconds = operation.reserveSeconds,
         duplicates = operation.duplicates,
         held = operation.held,
-        progress = context.title,
+        progress = operation.progress,
         prepare = operation.prepare and function(photo) operation.prepare(photo, state) end,
         each = function(photo, entry) return operation.each(photo, state, entry) end,
         around = function(loop)

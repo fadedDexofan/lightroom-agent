@@ -879,9 +879,9 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Vibrant" }, context)
 
         assert.are.same({
-            { 0, 2, "a.jpg", "Applying preset" },
-            { 1, 2, "b.jpg", "Applying preset" },
-            { 2, 2, "Done", "Applying preset" },
+            { 0, 2, "a.jpg", "Applying develop preset" },
+            { 1, 2, "b.jpg", "Applying develop preset" },
+            { 2, 2, "Done", "Applying develop preset" },
         }, progress)
     end)
 
