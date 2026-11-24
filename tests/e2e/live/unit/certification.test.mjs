@@ -9,7 +9,9 @@ import {
   certificationResult,
   clearMasks,
   evaluateStep,
+  fixtureBaselineProblems,
   fixtureStateProblems,
+  isRawFixture,
   fixturesNotProvenReset,
   uncertifiedFixtures,
   judgeRun,
@@ -663,6 +665,22 @@ const fixtureSettings = (overrides = {}) => ({
 test("a fixture in the certified state, read with its lists and keys or with them absent, has no problems", () => {
   assert.deepEqual(fixtureStateProblems(fixtureSettings()), []);
   assert.deepEqual(fixtureStateProblems({}), []);
+});
+
+test("a fixture's baseline adds its profile: a raw on Adobe Standard with the Adobe Color Look, a non-raw with no Look", () => {
+  const raw = fixtureSettings({ CameraProfile: "Adobe Standard", Look: { Name: "Adobe Color" } });
+  assert.deepEqual(fixtureBaselineProblems(raw, true), []);
+  assert.deepEqual(
+    fixtureBaselineProblems({ ...raw, ConvertToGrayscale: true, Look: { Name: "Adobe Monochrome" } }, true),
+    ["ConvertToGrayscale", "Look"],
+  );
+  assert.deepEqual(fixtureBaselineProblems({ ...raw, CameraProfile: "Camera Standard" }, true), ["CameraProfile"]);
+  assert.deepEqual(fixtureBaselineProblems(fixtureSettings({ CameraProfile: "Embedded" }), false), []);
+  assert.deepEqual(fixtureBaselineProblems(fixtureSettings({ Look: { Name: "Adobe Color" } }), false), ["Look"]);
+  assert.deepEqual(
+    [isRawFixture("_DSC0009.ARW"), isRawFixture("IMG_1.cr3"), isRawFixture("wide_plain.jpg"), isRawFixture(undefined)],
+    [true, true, false, false],
+  );
 });
 
 const editedFixtures = [
