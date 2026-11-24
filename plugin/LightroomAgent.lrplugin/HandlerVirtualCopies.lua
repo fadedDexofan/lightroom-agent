@@ -44,14 +44,13 @@ end
 
 function Handler.create(args, context)
     local catalog = LrApplication.activeCatalog()
-    local parts = DevelopBatch.run(context, catalog, {
+    return DevelopBatch.run(context, catalog, {
         inputs = args.photo_ids,
         restoreView = true,
         reserveSeconds = RESERVE_SECONDS,
         each = function(photo, state) return createOne(context, catalog, photo, state, args.copy_name) end,
+        dataOf = function(results) return { copies = results } end,
     })
-    if parts.data then parts.data = { copies = parts.data.results } end
-    return parts
 end
 
 return Handler

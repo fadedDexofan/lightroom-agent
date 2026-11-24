@@ -24,9 +24,9 @@ function RequestContext:timeLeft() return self.deadline - LrDate.currentTime() e
 
 function RequestContext:stopping(reserveSeconds) return self:isCanceled() or self:timeLeft() < reserveSeconds end
 
-function RequestContext:report(progress, total, message)
+function RequestContext:report(progress, total, message, title)
     if not self.scope then
-        self.scope = LrProgressScope { title = self.title, caption = "Starting" }
+        self.scope = LrProgressScope { title = title or self.title, caption = "Starting" }
         self.scope:setCancelable(true)
     end
     self.scope:setPortionComplete(progress, math.max(total, 1))

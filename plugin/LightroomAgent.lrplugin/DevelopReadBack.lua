@@ -176,12 +176,8 @@ end
 
 function DevelopReadBack.confirmed(result) return result.error == nil and #result.absent == 0 end
 
-function DevelopReadBack.parts(checked, data, lists)
-    local parts = lists or {}
-    parts.data = data
-    parts.unknown = parts.unknown or {}
-    local adjusted, notStored = {}, {}
-    parts.failed = parts.failed or {}
+function DevelopReadBack.classify(checked)
+    local failed, unknown = {}, {}
     for _, result in ipairs(checked) do
         if not DevelopReadBack.confirmed(result) then
             local class, reason =
@@ -189,16 +185,22 @@ function DevelopReadBack.parts(checked, data, lists)
             if result.error ~= nil then
                 class, reason = Reply.stopped(result.error, result.written)
             end
-            local list = class == "failed" and parts.failed or parts.unknown
+            local list = class == "failed" and failed or unknown
             list[#list + 1] = { photo_id = result.photo_id, reason = reason }
         end
+    end
+    return failed, unknown
+end
+
+function DevelopReadBack.report(checked, data)
+    local adjusted, notStored, warnings, problem = {}, {}, {}, nil
+    for _, result in ipairs(checked) do
         for _, item in ipairs(result.adjusted) do
             adjusted[#adjusted + 1] = item
         end
         if #result.notStored > 0 then
             notStored[#notStored + 1] = { photo_id = result.photo_id, keys = result.notStored }
-            parts.warnings = parts.warnings or {}
-            parts.warnings[#parts.warnings + 1] = string.format(
+            warnings[#warnings + 1] = string.format(
                 "Lightroom stores no %s for photo %s",
                 table.concat(result.notStored, ", "),
                 result.photo_id
@@ -220,8 +222,57 @@ function DevelopReadBack.parts(checked, data, lists)
             )
         end
         if #adjusted > shown then named[#named + 1] = string.format("%d more in adjusted", #adjusted - shown) end
-        local stored = "Lightroom stored other values than written: " .. table.concat(named, ", ")
-        parts.problem = parts.problem and parts.problem .. "; " .. stored or stored
+        problem = "Lightroom stored other values than written: " .. table.concat(named, ", ")
+    end
+    return { data = data, warnings = #warnings > 0 and warnings or nil, problem = problem }
+end
+
+function DevelopReadBack.confirm(context, catalog)
+    return function(results)
+        local written, writtenResults, confirmed = {}, {}, {}
+        for _, result in ipairs(results) do
+            if result.written then
+                written[#written + 1] = result.written
+                writtenResults[#writtenResults + 1] = result
+            else
+                confirmed[#confirmed + 1] = result
+            end
+        end
+        local checked = DevelopReadBack.check(context, catalog, written)
+        for index, record in ipairs(checked) do
+            if DevelopReadBack.confirmed(record) then
+                writtenResults[index].stored = record.stored
+                confirmed[#confirmed + 1] = writtenResults[index]
+            end
+        end
+        local failed, unknown = DevelopReadBack.classify(checked)
+        return {
+            confirmed = confirmed,
+            failed = failed,
+            unknown = unknown,
+            report = function(data) return DevelopReadBack.report(checked, data) end,
+        }
+    end
+end
+
+function DevelopReadBack.parts(checked, data, lists)
+    local parts = lists or {}
+    local report = DevelopReadBack.report(checked, data)
+    local failed, unknown = DevelopReadBack.classify(checked)
+    parts.failed, parts.unknown = parts.failed or {}, parts.unknown or {}
+    for _, item in ipairs(failed) do
+        parts.failed[#parts.failed + 1] = item
+    end
+    for _, item in ipairs(unknown) do
+        parts.unknown[#parts.unknown + 1] = item
+    end
+    parts.data = report.data
+    for _, warning in ipairs(report.warnings or {}) do
+        parts.warnings = parts.warnings or {}
+        parts.warnings[#parts.warnings + 1] = warning
+    end
+    if report.problem then
+        parts.problem = parts.problem and parts.problem .. "; " .. report.problem or report.problem
     end
     return Reply.parts(parts)
 end

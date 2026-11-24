@@ -1145,7 +1145,15 @@ function DevelopHandler.setDevelopSettings(args, context)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.requireOne(catalog, args.photo_id)
     local checked = DevelopReadBack.check(context, catalog, { writeSettings(context, catalog, photo, args.settings) })
-    return DevelopReadBack.parts(checked, { photo_id = checked[1].photo_id, settings = checked[1].stored })
+    local failed, unknown = DevelopReadBack.classify(checked)
+    local report = DevelopReadBack.report(checked, { photo_id = checked[1].photo_id, settings = checked[1].stored })
+    return Reply.parts({
+        data = report.data,
+        failed = failed,
+        unknown = unknown,
+        warnings = report.warnings,
+        problem = report.problem,
+    })
 end
 
 function DevelopHandler.setDevelopSettingsBatch(args, context)
@@ -1163,16 +1171,16 @@ function DevelopHandler.setDevelopSettingsBatch(args, context)
             if item.remaining then return { remaining = true } end
             if item.refused then return { reason = item.refused } end
         end,
-        each = function(photo, _, entry) return writeSettings(context, catalog, photo, items[entry.index].settings) end,
-        finish = function(written)
-            local checked = DevelopReadBack.check(context, catalog, written)
-            local results = {}
-            for _, result in ipairs(checked) do
-                if DevelopReadBack.confirmed(result) then
-                    results[#results + 1] = { photo_id = result.photo_id, settings = result.stored }
-                end
+        each = function(photo, _, entry)
+            return { written = writeSettings(context, catalog, photo, items[entry.index].settings) }
+        end,
+        confirm = DevelopReadBack.confirm(context, catalog),
+        dataOf = function(results)
+            local rows = {}
+            for index, result in ipairs(results) do
+                rows[index] = { photo_id = result.photo_id, settings = result.stored }
             end
-            return DevelopReadBack.parts(checked, #results > 0 and { results = results } or nil)
+            return { results = rows }
         end,
     })
 end
