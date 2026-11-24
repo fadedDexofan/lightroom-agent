@@ -146,10 +146,7 @@ function DevelopReadBack.check(context, catalog, written)
             if not read then
                 result.error = entry.error
                     or (reached and "the read-back failed: " .. Reply.messageOf(stored) or "written; " .. stored)
-                result.written = entry.from and context.ledger:since(entry.from, entry.to) or {}
-                if #result.written == 0 and entry.error == nil then
-                    result.written = { "the settings written before this read" }
-                end
+                result.written = context.ledger:since(entry.from, entry.to)
             elseif entry.error ~= nil then
                 result.error = entry.error
                 result.written = context.ledger:since(entry.from, entry.to)
@@ -163,7 +160,6 @@ function DevelopReadBack.check(context, catalog, written)
             elseif mismatch ~= nil then
                 result.error = mismatch
                 result.written = context.ledger:since(entry.from, entry.to)
-                if #result.written == 0 then result.written = { "the settings written before this read" } end
             else
                 for _, key in ipairs(sortedKeys(entry.settings)) do
                     local requested, value = entry.settings[key], DevelopCurves.read(stored, key)
@@ -272,28 +268,6 @@ function DevelopReadBack.confirm(context, catalog)
             report = function(data) return DevelopReadBack.report(checked, data) end,
         }
     end
-end
-
-function DevelopReadBack.parts(checked, data, lists)
-    local parts = lists or {}
-    local report = DevelopReadBack.report(checked, data)
-    local failed, unknown = DevelopReadBack.classify(checked)
-    parts.failed, parts.unknown = parts.failed or {}, parts.unknown or {}
-    for _, item in ipairs(failed) do
-        parts.failed[#parts.failed + 1] = item
-    end
-    for _, item in ipairs(unknown) do
-        parts.unknown[#parts.unknown + 1] = item
-    end
-    parts.data = report.data
-    for _, warning in ipairs(report.warnings or {}) do
-        parts.warnings = parts.warnings or {}
-        parts.warnings[#parts.warnings + 1] = warning
-    end
-    if report.problem then
-        parts.problem = parts.problem and parts.problem .. "; " .. report.problem or report.problem
-    end
-    return Reply.parts(parts)
 end
 
 return DevelopReadBack
