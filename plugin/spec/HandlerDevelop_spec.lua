@@ -2169,6 +2169,31 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.is_nil(source:getRawMetadata("__appliedHistoryName"))
     end)
 
+    it("copy_progress_per_target: reports progress for each target under its title, then Done", function()
+        local source = helper.fakePhoto({ id = "10", fileName = "source.jpg", developSettings = { Exposure2012 = 1 } })
+        local first = helper.fakePhoto({ id = "11", fileName = "first.jpg" })
+        local second = helper.fakePhoto({ id = "12", fileName = "second.jpg" })
+        local _, Handler = setup({ photos = { source, first, second } })
+        local progress = {}
+        local context = helper.requestContext(nil, {
+            report = function(_, completed, total, message, title)
+                progress[#progress + 1] = { completed, total, message, title }
+            end,
+        })
+
+        local r = Handler.copyDevelopSettings(
+            { source_photo_id = "10", photo_ids = { "11", "12" }, settings = { "Exposure2012" } },
+            context
+        )
+
+        assert.are.equal(2, r.data.copied)
+        assert.are.same({
+            { 0, 2, "first.jpg", "Copying develop settings" },
+            { 1, 2, "second.jpg", "Copying develop settings" },
+            { 2, 2, "Done", "Copying develop settings" },
+        }, progress)
+    end)
+
     it("resolves targets OUTSIDE the write-access gate", function()
         local source = helper.fakePhoto({
             id = "10",
@@ -4295,6 +4320,34 @@ describe("copy replies carry data only for the copies their read-back confirmed"
             reply.result.problem
         )
         assert.is_nil(reply.result.problem:find("more in adjusted", 1, true))
+    end)
+
+    it("copy_problem_without_data: names a setting the source lacks when no target is confirmed", function()
+        local target = storingPhoto("11", { Exposure2012 = 0 })
+        local write, read = target.applyDevelopSettings, target.getDevelopSettings
+        local written = false
+        target.applyDevelopSettings = function(...)
+            written = true
+            return write(...)
+        end
+        target.getDevelopSettings = function(...)
+            if written then return nil end
+            return read(...)
+        end
+
+        local reply = wire(
+            { source(), target },
+            { source_photo_id = "10", photo_ids = { "11" }, settings = { "Exposure2012", "Texture" } }
+        )
+
+        assert.is_nil(reply.result.data)
+        assert.are.equal(1, #reply.result.unknown)
+        assert.are.equal("11", reply.result.unknown[1].photo_id)
+        assert.truthy(
+            reply.result.unknown[1].reason:find("the read-back failed", 1, true),
+            reply.result.unknown[1].reason
+        )
+        assert.truthy(reply.result.problem:find("the source has no Texture", 1, true), reply.result.problem)
     end)
 
     it("covers every case of the shared fixture", function()

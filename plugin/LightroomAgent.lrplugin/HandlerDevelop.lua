@@ -678,49 +678,21 @@ local function identitiesOf(catalog, photos)
     end
 end
 
-local function copyKeys(context, catalog, photo, settings, before, from, rest, masks, aiMasks)
+local function copyKeys(context, catalog, photo, settings, rest, masks, aiMasks)
     local existing = settings.MaskGroupBasedCorrections
     local target = {
         processVersion = settings.ProcessVersion,
         maskCount = type(existing) == "table" and #existing or 0,
     }
-    local masked, previous, refreshed = true, nil, nil
+    local previous, refreshed
     if masks and (#masks > 0 or target.maskCount > 0) then
+        local masked
         masked, previous, refreshed =
             LrTasks.pcall(replaceMasks, context, catalog, photo, target, masks, aiMasks, rest.ProcessVersion)
+        if not masked then error("the masks could not be copied: " .. Reply.messageOf(previous), 0) end
     end
-    if not masked then
-        return {
-            photo = photo,
-            settings = rest,
-            before = before,
-            from = from,
-            to = context.ledger:mark(),
-            error = "the masks could not be copied: " .. Reply.messageOf(previous),
-        }
-    end
-    local ok, reason = LrTasks.pcall(function()
-        CatalogWrite.developSettings(context, catalog, photo, "Copy Develop Settings", function() return rest end)
-    end)
-    if not ok then
-        return {
-            photo = photo,
-            settings = rest,
-            before = before,
-            from = from,
-            to = context.ledger:mark(),
-            error = Reply.messageOf(reason),
-        }
-    end
-    return {
-        photo = photo,
-        settings = rest,
-        before = before,
-        from = from,
-        to = context.ledger:mark(),
-        masksRemoved = masks and #masks == 0 and previous and #previous > 0 and #previous or nil,
-        refreshed = refreshed or {},
-    }
+    CatalogWrite.developSettings(context, catalog, photo, "Copy Develop Settings", function() return rest end)
+    return masks and #masks == 0 and previous and #previous > 0 and #previous or nil, refreshed or {}
 end
 
 local function pasteProfile(context, catalog, source, sourceSettings, photo, before, clipboard)
@@ -802,13 +774,15 @@ function DevelopHandler.copyDevelopSettings(args, context)
     if not args.settings then
         masks = type(toApply.MaskGroupBasedCorrections) == "table" and toApply.MaskGroupBasedCorrections or {}
     end
-    local entries, missingIds, resolved = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
-    local photos = { source }
-    for _, entry in ipairs(entries) do
-        photos[#photos + 1] = entry.photo
+    local identityOf, sourceIdentity
+    local function readIdentities(entries)
+        local photos = { source }
+        for _, entry in ipairs(entries) do
+            photos[#photos + 1] = entry.photo
+        end
+        identityOf = identitiesOf(catalog, photos)
+        sourceIdentity = identityOf(source, sourceSettings)
     end
-    local identityOf = identitiesOf(catalog, photos)
-    local sourceIdentity = identityOf(source, sourceSettings)
     local function leftReason(photo, settings)
         return profileUnit and ProfileLook.leftReason(sourceIdentity, identityOf(photo, settings)) or nil
     end
@@ -817,6 +791,8 @@ function DevelopHandler.copyDevelopSettings(args, context)
         or nil
     if args.dry_run then
         if absentProblem then context:warn(absentProblem) end
+        local entries, _, resolved = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
+        readIdentities(entries)
         local preview = previewDevelopSettings(catalog, resolved, toApply, false, masks, function(photo, current)
             local reason = leftReason(photo, current)
             if reason then
@@ -833,7 +809,7 @@ function DevelopHandler.copyDevelopSettings(args, context)
         return preview
     end
     local onlyProfile = next(toApply) == nil and masks == nil
-    local written, unchanged, clipboard = {}, {}, {}
+    local clipboard = {}
     if masks then
         rest = {}
         for key, value in pairs(toApply) do
@@ -850,134 +826,95 @@ function DevelopHandler.copyDevelopSettings(args, context)
     if masks then requested.MaskGroupBasedCorrections = true end
 
     local aiMasks = masks ~= nil and containsAIMasks({ MaskGroupBasedCorrections = masks })
-    local reserveSeconds = batchReserve(masks == nil and 1 or aiMasks and 4 or 3, aiMasks)
 
-    local remaining, failed = {}, {}
-    for _, entry in ipairs(entries) do
-        if #remaining > 0 or context:stopping(reserveSeconds) then
-            remaining[#remaining + 1] = entry.id
-        else
-            local read, settings = LrTasks.pcall(savedOf, catalog, entry.photo)
-            if not read then
-                failed[#failed + 1] =
-                    { photo_id = tostring(entry.photo.localIdentifier), reason = Reply.messageOf(settings) }
-            else
-                local photoId = tostring(entry.photo.localIdentifier)
-                local before = DevelopReadBack.before(settings)
-                local snapshot = JsonValue.of(settings)
-                local from = context.ledger:mark()
-                local left = leftReason(entry.photo, settings)
-                local pastes = profileUnit and not left and not ProfileLook.sameProfile(sourceSettings, settings)
-                local refusal
-                if pastes and masks and (#masks > 0 or maskCountOf(settings) > 0) then
-                    local admitted, problem = LrTasks.pcall(
-                        GuardedMaskWrite.precheck,
-                        catalog,
-                        entry.photo,
-                        masks,
-                        rest.ProcessVersion or settings.ProcessVersion
-                    )
-                    if not admitted then refusal = "the masks could not be copied: " .. Reply.messageOf(problem) end
-                end
-                local pasted, outcome = true, "kept"
-                if pastes and not refusal then
-                    pasted, outcome = LrTasks.pcall(
-                        pasteProfile,
-                        context,
-                        catalog,
-                        source,
-                        sourceSettings,
-                        entry.photo,
-                        snapshot,
-                        clipboard
-                    )
-                end
-                if outcome == "not copied" then
-                    refusal = "Lightroom did not copy the source's profile, so nothing was written to the photo"
-                end
-                if refusal then
-                    failed[#failed + 1] = { photo_id = photoId, reason = refusal }
-                elseif not pasted then
-                    written[#written + 1] = {
-                        photo = entry.photo,
-                        settings = {},
-                        before = before,
-                        from = from,
-                        to = context.ledger:mark(),
-                        error = "the profile could not be copied: " .. Reply.messageOf(outcome),
-                    }
-                else
-                    local profileLeft = left
-                        or (outcome == "not pasted" and "Lightroom did not paste the profile")
-                        or nil
-                    if profileLeft then
-                        profilesLeft[#profilesLeft + 1] = { photo_id = photoId, reason = profileLeft }
-                    end
-                    local expected = outcome == "pasted" and sourceSettings or snapshot
-                    local function finalCheck(stored)
-                        return ProfileLook.finalProblem(snapshot, stored, expected, requested)
-                    end
-                    if onlyProfile and profileLeft then
-                        failed[#failed + 1] = { photo_id = photoId, reason = "the profile was left: " .. profileLeft }
-                    elseif onlyProfile and outcome == "kept" then
-                        unchanged[#unchanged + 1] = photoId
-                    elseif onlyProfile then
-                        written[#written + 1] = {
-                            photo = entry.photo,
-                            settings = {},
-                            before = before,
-                            from = from,
-                            to = context.ledger:mark(),
-                            compare = finalCheck,
-                        }
-                    else
-                        if profileLeft and args.settings then
-                            leftWithKeys[#leftWithKeys + 1] = "photo " .. photoId .. ": " .. profileLeft
-                        elseif profileLeft then
-                            context:warn("A full copy left the profile of photo " .. photoId .. ": " .. profileLeft)
-                        end
-                        local copied =
-                            copyKeys(context, catalog, entry.photo, settings, before, from, rest, masks, aiMasks)
-                        local refreshed, skipped = {}, {}
-                        for key in pairs(requested) do
-                            skipped[key] = true
-                        end
-                        for _, change in ipairs(copied.refreshed or {}) do
-                            if not requested[change.key] then
-                                refreshed[#refreshed + 1] = change
-                                skipped[change.key] = true
-                            end
-                        end
-                        copied.compare = function(stored)
-                            local problem = ProfileLook.finalProblem(snapshot, stored, expected, skipped)
-                            if #refreshed == 0 then return problem end
-                            local refresh = AIMaskCompute.changedMoreText(refreshed)
-                            return problem and problem .. "; " .. refresh or refresh
-                        end
-                        written[#written + 1] = copied
-                    end
+    local function copyOne(photo)
+        local photoId = tostring(photo.localIdentifier)
+        local settings = savedOf(catalog, photo)
+        local before = DevelopReadBack.before(settings)
+        local snapshot = JsonValue.of(settings)
+        local left = leftReason(photo, settings)
+        local pastes = profileUnit and not left and not ProfileLook.sameProfile(sourceSettings, settings)
+        if pastes and masks and (#masks > 0 or maskCountOf(settings) > 0) then
+            local admitted, problem = LrTasks.pcall(
+                GuardedMaskWrite.precheck,
+                catalog,
+                photo,
+                masks,
+                rest.ProcessVersion or settings.ProcessVersion
+            )
+            if not admitted then Reply.refuse("the masks could not be copied: " .. Reply.messageOf(problem)) end
+        end
+        local written, decided = DevelopReadBack.attempt(context, photo, {}, before, function(entry)
+            local outcome = "kept"
+            if pastes then
+                local pasted, result =
+                    LrTasks.pcall(pasteProfile, context, catalog, source, sourceSettings, photo, snapshot, clipboard)
+                if not pasted then error("the profile could not be copied: " .. Reply.messageOf(result), 0) end
+                outcome = result
+            end
+            if outcome == "not copied" then
+                return { refused = "Lightroom did not copy the source's profile, so nothing was written to the photo" }
+            end
+            local profileLeft = left or (outcome == "not pasted" and "Lightroom did not paste the profile") or nil
+            if profileLeft then profilesLeft[#profilesLeft + 1] = { photo_id = photoId, reason = profileLeft } end
+            local expected = outcome == "pasted" and sourceSettings or snapshot
+            if onlyProfile and profileLeft then return { refused = "the profile was left: " .. profileLeft } end
+            if onlyProfile and outcome == "kept" then return { unchanged = true } end
+            if onlyProfile then
+                entry.compare = function(stored) return ProfileLook.finalProblem(snapshot, stored, expected, requested) end
+                return {}
+            end
+            if profileLeft and args.settings then
+                leftWithKeys[#leftWithKeys + 1] = "photo " .. photoId .. ": " .. profileLeft
+            elseif profileLeft then
+                context:warn("A full copy left the profile of photo " .. photoId .. ": " .. profileLeft)
+            end
+            entry.settings = rest
+            local masksRemoved, changes = copyKeys(context, catalog, photo, settings, rest, masks, aiMasks)
+            entry.masksRemoved = masksRemoved
+            local refreshed, skipped = {}, {}
+            for key in pairs(requested) do
+                skipped[key] = true
+            end
+            for _, change in ipairs(changes) do
+                if not requested[change.key] then
+                    refreshed[#refreshed + 1] = change
+                    skipped[change.key] = true
                 end
             end
-        end
+            entry.compare = function(stored)
+                local problem = ProfileLook.finalProblem(snapshot, stored, expected, skipped)
+                if #refreshed == 0 then return problem end
+                local refresh = AIMaskCompute.changedMoreText(refreshed)
+                return problem and problem .. "; " .. refresh or refresh
+            end
+            return {}
+        end)
+        if decided and decided.refused then Reply.refuse(decided.refused) end
+        if decided and decided.unchanged then return { unchanged = true } end
+        return { written = written }
     end
 
-    local checked = DevelopReadBack.check(context, catalog, written)
-    local copied, computed, masksRemoved = 0, {}, {}
-    for index, result in ipairs(checked) do
-        if DevelopReadBack.confirmed(result) then
-            copied = copied + 1
-            computed[#computed + 1] = result.photo_id
-            if written[index].masksRemoved then
-                masksRemoved[#masksRemoved + 1] = { photo_id = result.photo_id, count = written[index].masksRemoved }
-            end
+    local function problemText()
+        local problems = {}
+        if #leftWithKeys > 0 then
+            problems[#problems + 1] = "the profile was left on " .. table.concat(leftWithKeys, "; ")
         end
+        problems[#problems + 1] = absentProblem
+        return #problems > 0 and table.concat(problems, "; ") or nil
     end
-    Log.info(string.format("Copied develop settings from %s to %d photos", args.source_photo_id, copied))
-    local problems = {}
-    if #leftWithKeys > 0 then
-        problems[#problems + 1] = "the profile was left on " .. table.concat(leftWithKeys, "; ")
-    end
-    problems[#problems + 1] = absentProblem
+
+    local batch = PhotoBatch.run(context, catalog, {
+        inputs = args.photo_ids,
+        reserveSeconds = batchReserve(masks == nil and 1 or aiMasks and 4 or 3, aiMasks),
+        progress = "Copying develop settings",
+        around = function(body, entries)
+            readIdentities(entries)
+            return body()
+        end,
+        each = copyOne,
+        confirm = DevelopReadBack.confirm(context, catalog),
+    })
     if clipboard.taken then
         context:warn(
             "Lightroom's Develop clipboard now holds the profile of photo "
@@ -986,18 +923,32 @@ function DevelopHandler.copyDevelopSettings(args, context)
         )
     end
 
-    return DevelopReadBack.parts(checked, (copied > 0 or #unchanged > 0) and {
-        copied = copied,
-        unchanged = #unchanged > 0 and unchanged or nil,
-        computed = aiMasks and computed or nil,
-        masks_removed = #masksRemoved > 0 and masksRemoved or nil,
-        profiles_left = #profilesLeft > 0 and profilesLeft or nil,
-    } or nil, {
-        failed = failed,
-        not_found = missingIds,
-        remaining = remaining,
-        problem = #problems > 0 and table.concat(problems, "; ") or nil,
-    })
+    local copied, unchanged, computed, masksRemoved = 0, {}, {}, {}
+    for _, result in ipairs(batch.results) do
+        if result.unchanged then
+            unchanged[#unchanged + 1] = result.photo_id
+        else
+            copied = copied + 1
+            computed[#computed + 1] = result.photo_id
+            if result.written.masksRemoved then
+                masksRemoved[#masksRemoved + 1] = { photo_id = result.photo_id, count = result.written.masksRemoved }
+            end
+        end
+    end
+    Log.info(string.format("Copied develop settings from %s to %d photos", args.source_photo_id, copied))
+    return PhotoBatch.reply(
+        batch,
+        function()
+            return {
+                copied = copied,
+                unchanged = #unchanged > 0 and unchanged or nil,
+                computed = aiMasks and computed or nil,
+                masks_removed = #masksRemoved > 0 and masksRemoved or nil,
+                profiles_left = #profilesLeft > 0 and profilesLeft or nil,
+            }
+        end,
+        { problem = problemText() }
+    )
 end
 
 local styleMatchSerial = 0

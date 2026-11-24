@@ -121,8 +121,16 @@ describe("DevelopBatch.run", function()
                 inputs = { "1", "2" },
                 reserveSeconds = 0,
                 each = function(photo)
+                    local from = context.ledger:mark()
+                    context.ledger:record("Set Develop Settings")
                     return {
-                        written = { photo = photo, settings = { Exposure2012 = 0.5 }, before = { Exposure2012 = 0 } },
+                        written = {
+                            photo = photo,
+                            settings = { Exposure2012 = 0.5 },
+                            before = { Exposure2012 = 0 },
+                            from = from,
+                            to = context.ledger:mark(),
+                        },
                     }
                 end,
                 confirm = DevelopReadBack.confirm(context, catalog),
