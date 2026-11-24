@@ -151,6 +151,18 @@ function M.withFixtureSlider(fn)
     if not ok then error(err, 0) end
 end
 
+function M.functionAt(source, position)
+    local text, nearest, name = "\n" .. source, 0, nil
+    for _, pattern in ipairs({ "()\nfunction ([%w_.:]+)", "()\nlocal function ([%w_]+)" }) do
+        for start, found in text:gmatch(pattern) do
+            if start <= position and start > nearest then
+                nearest, name = start, found
+            end
+        end
+    end
+    return name
+end
+
 -- Default LrLogger stub used by every handler.
 function M.defaultLrLogger()
     return setmetatable({}, {

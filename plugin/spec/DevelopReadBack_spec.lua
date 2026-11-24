@@ -50,11 +50,11 @@ describe("DevelopReadBack.check", function()
             local checked = DevelopReadBack.check(context, catalog, {
                 { photo = photoReading("7", nil), settings = { Exposure2012 = 1 }, before = {} },
             })
-            local parts = DevelopReadBack.parts(checked, {})
+            local _, unknown = DevelopReadBack.classify(checked)
 
             assert.are.same({}, checked[1].notStored)
-            assert.are.equal("7", parts.unknown[1].photo_id)
-            assert.truthy(parts.unknown[1].reason:find("Lightroom returned no saved settings for photo 7", 1, true))
+            assert.are.equal("7", unknown[1].photo_id)
+            assert.truthy(unknown[1].reason:find("Lightroom returned no saved settings for photo 7", 1, true))
         end
     )
 end)
@@ -85,8 +85,8 @@ describe("DevelopReadBack.check within the time budget", function()
         local entries, reads = written(context, 2, true)
         context.timeLeft = function() return reads.count >= 1 and DevelopReadBack.REPLY_SECONDS - 0.1 or 60 end
 
-        local parts =
-            DevelopReadBack.parts(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries), {})
+        local _, unknown =
+            DevelopReadBack.classify(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries))
 
         assert.are.equal(1, reads.count)
         assert.are.same({
@@ -94,7 +94,7 @@ describe("DevelopReadBack.check within the time budget", function()
                 photo_id = "2",
                 reason = "written; not read back within the time budget; written before this stopped: Set Develop Settings",
             },
-        }, parts.unknown)
+        }, unknown)
     end)
 
     it("answers a written photo it did not reach unknown even when its entry carries no ledger marks", function()
@@ -102,12 +102,12 @@ describe("DevelopReadBack.check within the time budget", function()
         local context = helper.requestContext(nil, { timeLeft = function() return 1 end })
         local entries = written(context, 1, false)
 
-        local parts =
-            DevelopReadBack.parts(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries), {})
+        local failed, unknown =
+            DevelopReadBack.classify(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries))
 
-        assert.is_nil(parts.failed)
-        assert.are.equal("1", parts.unknown[1].photo_id)
-        assert.matches("not read back within the time budget", parts.unknown[1].reason)
+        assert.are.same({}, failed)
+        assert.are.equal("1", unknown[1].photo_id)
+        assert.matches("not read back within the time budget", unknown[1].reason)
     end)
 
     it("still reads back every written photo after a cancel when time is left", function()
@@ -115,11 +115,11 @@ describe("DevelopReadBack.check within the time budget", function()
         local context = helper.requestContext(nil, { isCanceled = function() return true end })
         local entries, reads = written(context, 2, true)
 
-        local parts =
-            DevelopReadBack.parts(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries), {})
+        local _, unknown =
+            DevelopReadBack.classify(DevelopReadBack.check(context, helper.fakeCatalog({ photos = {} }), entries))
 
         assert.are.equal(2, reads.count)
-        assert.is_nil(parts.unknown)
+        assert.are.same({}, unknown)
     end)
 end)
 
