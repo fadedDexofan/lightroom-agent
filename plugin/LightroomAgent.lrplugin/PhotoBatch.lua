@@ -72,14 +72,19 @@ function PhotoBatch.run(context, catalog, operation)
     local function attempt(entry)
         local photoId = tostring(entry.photo.localIdentifier)
         local ok, value, written = context.ledger:attempt(operation.each, entry.photo, entry)
+        if ok and operation.fits and not operation.fits(value) then
+            batch.remaining[#batch.remaining + 1] = entry.id
+            return false
+        end
         if ok then
             value.photo_id = photoId
             batch.results[#batch.results + 1] = value
-            return
+            return true
         end
         local class, reason = Reply.stopped(value, written)
         local list = class == "failed" and batch.failed or batch.unknown
         list[#list + 1] = { photo_id = photoId, reason = reason }
+        return true
     end
 
     local function loop()
@@ -102,7 +107,7 @@ function PhotoBatch.run(context, catalog, operation)
             else
                 if title then context:report(started, #entries, captions[entry.photo], title) end
                 if operation.prepare and started == 0 then operation.prepare(entry.photo) end
-                attempt(entry)
+                stopped = not attempt(entry)
                 started = started + 1
             end
         end

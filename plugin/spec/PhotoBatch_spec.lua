@@ -62,6 +62,34 @@ describe("PhotoBatch.run", function()
         assert.are.same({ { status = "done", photo_id = "1" } }, batch.results)
     end)
 
+    it("stops_when_result_does_not_fit: lists the photo that does not fit and every later one as remaining", function()
+        local events, portions = {}, {}
+        local PhotoBatch, catalog = setup(watchingProgress(events, portions))
+
+        local batch = PhotoBatch.run(showingProgress(), catalog, {
+            inputs = { "1", "/2.jpg", 3 },
+            reserveSeconds = 0,
+            progress = "Reading settings",
+            each = function(photo)
+                events[#events + 1] = "work " .. tostring(photo.localIdentifier)
+                return { photo = tostring(photo.localIdentifier) }
+            end,
+            fits = function(result) return result.photo ~= "2" end,
+        })
+
+        assert.are.same({ "/2.jpg", 3 }, batch.remaining)
+        assert.are.same({ { photo = "1", photo_id = "1" } }, batch.results)
+        assert.are.same({
+            "opened Reading settings",
+            "caption one.jpg",
+            "work 1",
+            "caption two.jpg",
+            "work 2",
+            "caption Done",
+        }, events)
+        assert.are.same({ { 0, 3 }, { 1, 3 }, { 2, 3 } }, portions)
+    end)
+
     it("duplicates_drop: acts once on a photo named by id and by path and names an unknown input once", function()
         local PhotoBatch, catalog = setup()
         local seen = {}
