@@ -230,6 +230,25 @@ describe("HandlerRawDevelopSettings.get", function()
         assert.is_nil(reply.data)
         assert.are.same({ "7", "8" }, reply.remaining)
     end)
+
+    it("read_shows_no_progress: reports no progress and decides the budget with no read gate open", function()
+        local Handler = setup({ ["7"] = { A = 1 }, ["8"] = { A = 2 } })
+        local catalog = import("LrApplication").activeCatalog()
+        local reports, gateAtStopping = 0, {}
+        local context = helper.requestContext(nil, {
+            report = function() reports = reports + 1 end,
+            stopping = function()
+                gateAtStopping[#gateAtStopping + 1] = catalog.isInsideReadAccess()
+                return false
+            end,
+        })
+
+        local reply = Handler.get({ photo_ids = { "7", "8" }, keys = { "A" } }, context)
+
+        assert.are.same({ "7", "8" }, { reply.data.photos[1].photo_id, reply.data.photos[2].photo_id })
+        assert.are.equal(0, reports)
+        assert.are.same({ false, false }, gateAtStopping)
+    end)
 end)
 
 describe("HandlerRawDevelopSettings.byInput", function()
