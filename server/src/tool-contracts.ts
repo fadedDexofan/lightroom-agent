@@ -1952,7 +1952,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "reads",
     run: { plugin: "HandlerRawDevelopSettings.get" },
     description:
-      "Read develop settings as stored, from the catalog (no Develop or selection change), by the same SDK names set_develop_settings writes. One photo without keys: its top-level names, types and table sizes. With keys: photos[{photo_id, settings by name, absent: names the photo does not carry}] (MaskGroupBasedCorrections whole). A ToneCurvePV2012 channel answers the curve Lightroom renders: its extended (HDR) curve when the photo has one; name ExtendedToneCurvePV2012 and its channel keys to read that field as stored. The only develop read. Photos past the time or 1 MB reply limit are remaining; a photo whose own reply exceeds 1 MB is failed.",
+      "Read develop settings as stored, from the catalog (no Develop or selection change), by the same SDK names set_develop_settings writes. One photo without keys: its top-level names, types and table sizes. With keys: photos[{photo_id, settings by name, absent: names the photo does not carry}] (MaskGroupBasedCorrections whole). A ToneCurvePV2012 channel answers the curve Lightroom renders: its extended (HDR) curve when the photo has one; name ExtendedToneCurvePV2012 and its channel keys to read that field as stored. The only develop read. Photos past the time limit or 1 MB of settings data are remaining; a photo whose own settings data exceeds 1 MB is failed.",
     rules: [
       {
         text: "keys is required when photo_ids names more than one photo",
