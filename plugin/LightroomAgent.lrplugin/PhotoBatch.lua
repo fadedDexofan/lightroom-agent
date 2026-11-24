@@ -42,6 +42,18 @@ local function captionsOf(catalog, entries)
     return captions
 end
 
+local function inInputOrder(items, positionOf)
+    local arrival = {}
+    for index, item in ipairs(items) do
+        arrival[item] = index
+    end
+    table.sort(items, function(left, right)
+        local leftAt, rightAt = positionOf[left.photo_id], positionOf[right.photo_id]
+        if leftAt ~= rightAt then return leftAt < rightAt end
+        return arrival[left] < arrival[right]
+    end)
+end
+
 local function reserveFor(operation, started)
     if type(operation.reserveSeconds) == "function" then return operation.reserveSeconds(started) end
     return operation.reserveSeconds
@@ -115,6 +127,12 @@ function PhotoBatch.run(context, catalog, operation)
         end
         batch.report = verdict.report
     end
+    local positionOf = {}
+    for _, entry in ipairs(entries) do
+        positionOf[tostring(entry.photo.localIdentifier)] = entry.index
+    end
+    inInputOrder(batch.failed, positionOf)
+    inInputOrder(batch.unknown, positionOf)
     return batch
 end
 

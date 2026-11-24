@@ -10,6 +10,7 @@ local AIMaskData = require "AIMaskData"
 local CatalogWrite = require "CatalogWrite"
 local Contract = require "Contract"
 local PathForms = require "PathForms"
+local PhotoBatch = require "PhotoBatch"
 local PhotoLookup = require "PhotoLookup"
 local ProfileLook = require "ProfileLook"
 local SettingsChanges = require "SettingsChanges"
@@ -1036,96 +1037,85 @@ local styleMatchSerial = 0
 function DevelopHandler.matchPhotoStyle(args, context)
     local catalog = LrApplication.activeCatalog()
     local source = PhotoLookup.requireOne(catalog, args.reference_photo_id)
-    local targets, missing = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
-    for _, entry in ipairs(targets) do
-        if entry.photo.localIdentifier == source.localIdentifier then
-            Reply.refuse("Reference photo must not appear in photo_ids")
-        end
+    local settings, grayscale
+
+    local function readReference()
+        if settings then return end
+        local style = {}
+        catalog:withReadAccessDo(function()
+            local reference = DevelopReadBack.saved(source)
+            grayscale = reference.ConvertToGrayscale == true
+            for key in pairs(STYLE_KEYS) do
+                style[key] = DevelopCurves.read(reference, key)
+            end
+        end)
+        settings = style
     end
 
-    local settings, grayscale = {}, nil
-    catalog:withReadAccessDo(function()
-        local reference = DevelopReadBack.saved(source)
-        grayscale = reference.ConvertToGrayscale == true
-        for key in pairs(STYLE_KEYS) do
-            settings[key] = DevelopCurves.read(reference, key)
+    local function matchOne(photo)
+        local current = savedOf(catalog, photo)
+        if (current.ConvertToGrayscale == true) ~= grayscale then
+            Reply.refuse("treatment differs from the reference; convert it with set_treatment, then match")
         end
-    end)
-    local results, failures, written, remaining = {}, {}, {}, {}
-    for _, entry in ipairs(targets) do
-        if #remaining > 0 or context:stopping(batchReserve(2, false)) then
-            remaining[#remaining + 1] = entry.id
-        else
-            local photoId = tostring(entry.photo.localIdentifier)
-            local read, current = LrTasks.pcall(savedOf, catalog, entry.photo)
-            if not read then
-                failures[#failures + 1] = { photo_id = photoId, reason = Reply.messageOf(current) }
-            elseif (current.ConvertToGrayscale == true) ~= grayscale then
-                failures[#failures + 1] = {
-                    photo_id = photoId,
-                    reason = "treatment differs from the reference; convert it with set_treatment, then match",
-                }
-            else
-                local before = DevelopReadBack.before(current)
-                local changed = 0
-                for key, value in pairs(settings) do
-                    if not JsonValue.equal(value, DevelopCurves.read(current, key)) then changed = changed + 1 end
-                end
-                styleMatchSerial = styleMatchSerial + 1
-                local name = string.format(
-                    "Style match from %s at %.3f #%d",
-                    tostring(source.localIdentifier),
-                    LrDate.currentTime(),
-                    styleMatchSerial
+        local photoId = tostring(photo.localIdentifier)
+        local changed = 0
+        for key, value in pairs(settings) do
+            if not JsonValue.equal(value, DevelopCurves.read(current, key)) then changed = changed + 1 end
+        end
+        styleMatchSerial = styleMatchSerial + 1
+        local name = string.format(
+            "Style match from %s at %.3f #%d",
+            tostring(source.localIdentifier),
+            LrDate.currentTime(),
+            styleMatchSerial
+        )
+        local snapshot
+        local written = DevelopReadBack.attempt(
+            context,
+            photo,
+            settings,
+            DevelopReadBack.before(current),
+            function(entry)
+                snapshot = HandlerSnapshots.createVerified(context, catalog, photo, name, false)
+                entry.kept = "the style was not confirmed stored and recovery snapshot "
+                    .. tostring(snapshot.name)
+                    .. " was kept"
+                CatalogWrite.developSettings(
+                    context,
+                    catalog,
+                    photo,
+                    "Match Photo Style",
+                    function() return DevelopCurves.forWrite(settings) end
                 )
-                local snapshot
-                local from = context.ledger:mark()
-                local ok, reason = LrTasks.pcall(function()
-                    snapshot = HandlerSnapshots.create({ photo_ids = { photoId }, name = name }, context).snapshot
-                    CatalogWrite.developSettings(
-                        context,
-                        catalog,
-                        entry.photo,
-                        "Match Photo Style",
-                        function() return DevelopCurves.forWrite(settings) end
-                    )
-                    written[#written + 1] = { photo = entry.photo, settings = settings, before = before }
-                    results[#results + 1] = { photo_id = photoId, snapshot = snapshot, settings_changed = changed }
-                end)
-                if not ok then
-                    written[#written + 1] = {
-                        photo = entry.photo,
-                        settings = settings,
-                        before = before,
-                        from = from,
-                        to = context.ledger:mark(),
-                        error = Reply.messageOf(reason)
-                            .. (
-                                snapshot
-                                    and "; the style was not confirmed stored and" .. " recovery snapshot " .. tostring(
-                                        snapshot.name
-                                    ) .. " was kept"
-                                or ""
-                            ),
-                    }
+            end
+        )
+        return { written = written, match = { photo_id = photoId, snapshot = snapshot, settings_changed = changed } }
+    end
+
+    local batch = PhotoBatch.run(context, catalog, {
+        inputs = args.photo_ids,
+        reserveSeconds = batchReserve(2, false),
+        progress = "Matching photo style",
+        around = function(body, entries)
+            for _, entry in ipairs(entries) do
+                if entry.photo.localIdentifier == source.localIdentifier then
+                    Reply.refuse("Reference photo must not appear in photo_ids")
                 end
             end
+            readReference()
+            return body()
+        end,
+        each = matchOne,
+        confirm = DevelopReadBack.confirm(context, catalog),
+    })
+    readReference()
+    return PhotoBatch.reply(batch, function(results)
+        local matched = {}
+        for index, result in ipairs(results) do
+            matched[index] = result.match
         end
-    end
-    local checked = DevelopReadBack.check(context, catalog, written)
-    local verified = {}
-    for _, id in ipairs(verifiedIds(checked)) do
-        verified[id] = true
-    end
-    local matched = {}
-    for _, result in ipairs(results) do
-        if verified[result.photo_id] then matched[#matched + 1] = result end
-    end
-    return DevelopReadBack.parts(
-        checked,
-        { reference_id = tostring(source.localIdentifier), matched = #matched, results = matched },
-        { failed = failures, not_found = missing, remaining = remaining }
-    )
+        return { reference_id = tostring(source.localIdentifier), matched = #matched, results = matched }
+    end)
 end
 
 local READ_BACK_PER_PHOTO_SECONDS = 0.1
@@ -1138,7 +1128,7 @@ local function writeSettings(context, catalog, photo, settings)
         return DevelopCurves.forWrite(settings)
     end)
     Log.info(string.format("Set develop settings on photo %s", tostring(photo.localIdentifier)))
-    return { photo = photo, settings = settings, before = before, from = from, to = context.ledger:mark() }
+    return DevelopReadBack.entry(photo, settings, before, from, context.ledger:mark())
 end
 
 function DevelopHandler.setDevelopSettings(args, context)

@@ -37,18 +37,25 @@ function Handler.list(args)
     return { photo_id = photoId, snapshots = snapshots(photo) }
 end
 
-function Handler.create(args, context)
-    local catalog, photo, photoId = resolve(args)
+function Handler.createVerified(context, catalog, photo, name, replace)
     CatalogWrite.run(context, catalog, "Create Develop Snapshot", function()
-        if not CatalogWrite.call(context, photo, "createDevelopSnapshot", args.name, args.replace == true) then
-            Reply.refuse("Snapshot name already exists: " .. args.name)
+        if not CatalogWrite.call(context, photo, "createDevelopSnapshot", name, replace) then
+            Reply.refuse("Snapshot name already exists: " .. name)
         end
     end)
     -- Lightroom publishes the new snapshot only after the write gate returns.
     for _, snapshot in ipairs(snapshots(photo)) do
-        if snapshot.name == args.name then return { photo_id = photoId, snapshot = snapshot } end
+        if snapshot.name == name then return snapshot end
     end
     error("Created snapshot could not be read back")
+end
+
+function Handler.create(args, context)
+    local catalog, photo, photoId = resolve(args)
+    return {
+        photo_id = photoId,
+        snapshot = Handler.createVerified(context, catalog, photo, args.name, args.replace == true),
+    }
 end
 
 function Handler.apply(args, context)

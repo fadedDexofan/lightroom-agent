@@ -333,6 +333,71 @@ describe("PhotoBatch.run", function()
         end
     )
 
+    it(
+        "failures_in_input_order: lists failed and unknown photos by their first input, loop and confirm alike",
+        function()
+            local PhotoBatch, catalog = setup()
+            local Reply = require "Reply"
+            local function classing(class, reason)
+                return function(results)
+                    local verdict = { confirmed = {}, [class] = {} }
+                    for _, result in ipairs(results) do
+                        if result.photo_id == "3" then
+                            verdict[class][#verdict[class] + 1] = { photo_id = "3", reason = reason }
+                        else
+                            verdict.confirmed[#verdict.confirmed + 1] = result
+                        end
+                    end
+                    return verdict
+                end
+            end
+
+            local failed = PhotoBatch.run(helper.requestContext(), catalog, {
+                inputs = { "3", "/1.jpg", "2" },
+                reserveSeconds = 0,
+                each = function(photo)
+                    if photo.localIdentifier == "1" then Reply.refuse("nothing to change") end
+                    return { status = "written" }
+                end,
+                confirm = classing("failed", "read-back refused"),
+            })
+            local context = helper.requestContext()
+            local unknown = PhotoBatch.run(context, catalog, {
+                inputs = { "3", "/1.jpg", "2" },
+                reserveSeconds = 0,
+                each = function(photo)
+                    if photo.localIdentifier == "1" then
+                        context.ledger:record("rating of 1")
+                        error("write rejected")
+                    end
+                    return { status = "written" }
+                end,
+                confirm = classing("unknown", "read-back differs"),
+            })
+            local listedTwice = PhotoBatch.run(helper.requestContext(), catalog, {
+                inputs = { "3", "2", "1", "/2.jpg" },
+                duplicates = "refuse",
+                reserveSeconds = 0,
+                each = function() return { status = "written" } end,
+                confirm = classing("failed", "read-back refused"),
+            })
+
+            assert.are.same({
+                { photo_id = "3", reason = "read-back refused" },
+                { photo_id = "1", reason = "nothing to change" },
+            }, failed.failed)
+            assert.are.same({
+                { photo_id = "3", reason = "read-back differs" },
+                { photo_id = "1", reason = "write rejected; written before this stopped: rating of 1" },
+            }, unknown.unknown)
+            assert.are.same({
+                { photo_id = "3", reason = "read-back refused" },
+                { photo_id = "2", reason = "listed twice, as 2 and /2.jpg; this is 2" },
+                { photo_id = "2", reason = "listed twice, as 2 and /2.jpg; this is /2.jpg" },
+            }, listedTwice.failed)
+        end
+    )
+
     it("confirm_counts_confirmed: counts only the results the confirm step confirms", function()
         local PhotoBatch, catalog = setup()
         local function confirmingPhoto(confirmedId)
