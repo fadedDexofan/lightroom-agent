@@ -10,6 +10,7 @@ local Contract = require "Contract"
 local JSON = require "JSON"
 local CatalogFolders = require "CatalogFolders"
 local PathForms = require "PathForms"
+local PhotoBatch = require "PhotoBatch"
 local PhotoLookup = require "PhotoLookup"
 local Log = require "Log"
 local ExportPresets = require "ExportPresets"
@@ -183,7 +184,7 @@ end
 
 local EXPORT_PHOTO_RESERVE_SECONDS = 60
 
-local function prepareExport(context, args, catalog)
+local function prepareExport(args)
     local preset
     if args.export_preset ~= nil then preset = ExportPresets.resolve(args.export_preset, args.export_preset_folder) end
 
@@ -215,23 +216,17 @@ local function prepareExport(context, args, catalog)
 
     applySizeLimit(exportSettings, args)
 
-    -- Resolved without read access: the lookup runs catalog queries, which
-    -- must not nest inside withReadAccessDo. Never hold read access across
-    -- the export either: doExportOnCurrentTask() can run for minutes on a
-    -- large batch, and holding it for that span blocks every other handler
-    -- (list_collections, get_selected_photos, ...) and on macOS wedged the
-    -- bridge until a manual restart (issue #128). LrExportSession acquires
-    -- its own catalog access during rendering.
-    local entries, notFound = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
-    local plan = {
-        entries = entries,
-        notFound = notFound,
+    return {
+        requestedDestination = destination,
         preset = preset,
         exportSettings = exportSettings,
         collisionHandling = collisionHandling,
     }
-    if #entries == 0 then return plan end
+end
 
+local function prepareDestination(context, catalog, plan, entries)
+    local exportSettings, collisionHandling, destination =
+        plan.exportSettings, plan.collisionHandling, plan.requestedDestination
     local photos = {}
     for index, entry in ipairs(entries) do
         photos[index] = entry.photo
@@ -276,28 +271,26 @@ local function prepareExport(context, args, catalog)
         destination = presetFolder or exportSettings.LR_export_destinationType
     end
     plan.destination = destination
-    return plan
 end
 
 local EXPORT_LEAVES = { "one Export history step", "the exported mark" }
 
-local function renderSession(context, exportSession, plan, photoId)
+local function renderSession(context, exportSession, plan, photoId, files)
     CatalogWrite.invoke(
         context,
         "Export photo " .. photoId .. " (" .. table.concat(EXPORT_LEAVES, " and ") .. ")",
         function() exportSession:doExportOnCurrentTask() end
     )
-    local outcome = { files = {}, failures = {} }
+    local outcome = { failures = {} }
     local renditionCount = 0
     for _, rendition in exportSession:renditions() do
         renditionCount = renditionCount + 1
         local rendered, pathOrMessage = rendition:waitForRender()
         if rendered and LrFileUtils.exists(pathOrMessage) then
+            local file = { photo_id = photoId, path = pathOrMessage }
+            files[#files + 1] = file
             local relative = plan.destination and PathForms.relative(plan.destination, pathOrMessage)
-            outcome.files[#outcome.files + 1] = {
-                photo_id = photoId,
-                path = relative and LrPathUtils.child(plan.destination, relative) or pathOrMessage,
-            }
+            if relative then file.path = LrPathUtils.child(plan.destination, relative) end
         else
             outcome.failures[#outcome.failures + 1] = rendered and "Lightroom wrote no file" or tostring(pathOrMessage)
         end
@@ -312,72 +305,59 @@ local function renderSession(context, exportSession, plan, photoId)
     return outcome
 end
 
-local function exportOne(context, plan, photo, index, total)
+local function exportOne(context, plan, photo, index, total, files)
     local photoId = tostring(photo.localIdentifier)
     local photoSettings, settingsError = plan.exportSettings, nil
     if plan.preset then
         photoSettings, settingsError = settingsForPhoto(plan.exportSettings, photo, index, total)
     end
-    if not photoSettings then return { failed = settingsError } end
+    if not photoSettings then error(settingsError, 0) end
     local exportSession = LrExportSession {
         photosToExport = { photo },
         exportSettings = photoSettings,
     }
-    local ran, outcome = LrTasks.pcall(renderSession, context, exportSession, plan, photoId)
-    if not ran then return { files = {}, failures = { Reply.messageOf(outcome) } } end
-    return outcome
+    return renderSession(context, exportSession, plan, photoId, files)
 end
 
 local function runExport(args, context, run)
     local catalog = LrApplication.activeCatalog()
-    local prepared, plan = LrTasks.pcall(prepareExport, context, args, catalog)
+    local prepared, plan = LrTasks.pcall(prepareExport, args)
     if not prepared then Reply.refuse(Reply.messageOf(plan)) end
-    if #plan.entries == 0 then return Reply.parts({ not_found = plan.notFound }) end
 
-    local files, skipped, failed, unknown, remaining = {}, {}, {}, {}, {}
-    local lastName
-    for index, entry in ipairs(plan.entries) do
-        local photo = entry.photo
-        if #remaining > 0 or context:stopping(EXPORT_PHOTO_RESERVE_SECONDS) then
-            remaining[#remaining + 1] = entry.id
-        else
+    -- Never hold read access across the export: doExportOnCurrentTask() can
+    -- run for minutes on a large batch, and holding it for that span blocks
+    -- every other handler (list_collections, get_selected_photos, ...) and on
+    -- macOS wedged the bridge until a manual restart (issue #128).
+    -- LrExportSession acquires its own catalog access during rendering.
+    local files, skipped, started, total = {}, {}, 0, 0
+    local batch = PhotoBatch.run(context, catalog, {
+        inputs = args.photo_ids,
+        reserveSeconds = EXPORT_PHOTO_RESERVE_SECONDS,
+        progress = "Exporting photos",
+        around = function(body, entries)
+            local ready, problem = LrTasks.pcall(prepareDestination, context, catalog, plan, entries)
+            if not ready then Reply.refuse(Reply.messageOf(problem)) end
+            total = #entries
+            return body()
+        end,
+        each = function(photo)
             run.lastPhotoAt = LrDate.currentTime()
-            local photoId = tostring(photo.localIdentifier)
-            local name = photo:getFormattedMetadata("fileName") or photoId
-            context:report(#files, #plan.entries, name)
-            local mark = context.ledger:mark()
-            local function stopped(problem)
-                local class, reason = Reply.stopped(problem, context.ledger:since(mark))
-                local list = class == "failed" and failed or unknown
-                list[#list + 1] = { photo_id = photoId, reason = reason }
-            end
-            local exported, outcome = LrTasks.pcall(exportOne, context, plan, photo, index, #plan.entries)
-            if not exported then
-                stopped(outcome)
-            elseif outcome.failed then
-                stopped(outcome.failed)
-            else
-                for _, file in ipairs(outcome.files) do
-                    files[#files + 1] = file
-                end
-                for _, reason in ipairs(outcome.failures) do
-                    stopped(reason)
-                end
-                if outcome.skipped then skipped[#skipped + 1] = photoId end
-            end
-            lastName = name
-        end
-    end
-    if lastName then context:report(#files, #plan.entries, lastName) end
+            started = started + 1
+            local outcome = exportOne(context, plan, photo, started, total, files)
+            if outcome.skipped then skipped[#skipped + 1] = tostring(photo.localIdentifier) end
+            if #outcome.failures > 0 then error(table.concat(outcome.failures, "; "), 0) end
+            return {}
+        end,
+    })
 
     Log.info(
         string.format(
             "Exported %d photos to: %s (skipped %d, failed %d, unknown %d)",
             #files,
-            plan.destination,
+            tostring(plan.destination),
             #skipped,
-            #failed,
-            #unknown
+            #batch.failed,
+            #batch.unknown
         )
     )
 
@@ -394,10 +374,10 @@ local function runExport(args, context, run)
                 file = preset.file,
             } or nil,
         } or nil,
-        failed = #failed > 0 and failed or nil,
-        unknown = #unknown > 0 and unknown or nil,
-        not_found = #plan.notFound > 0 and plan.notFound or nil,
-        remaining = #remaining > 0 and remaining or nil,
+        failed = #batch.failed > 0 and batch.failed or nil,
+        unknown = #batch.unknown > 0 and batch.unknown or nil,
+        not_found = #batch.not_found > 0 and batch.not_found or nil,
+        remaining = #batch.remaining > 0 and batch.remaining or nil,
     })
 end
 
@@ -491,8 +471,9 @@ local function renderToFile(context, photo, run, settingsOf)
     render.afterFolder = context.ledger:mark()
     run.lastPhotoAt = LrDate.currentTime()
     local plan = { exportSettings = settingsOf(render.directory), collisionHandling = "overwrite" }
-    local rendered, outcome = LrTasks.pcall(exportOne, context, plan, photo, 1, 1)
-    if rendered and #outcome.files == 1 and #outcome.failures == 0 then return outcome.files[1].path end
+    local files = {}
+    local rendered, outcome = LrTasks.pcall(exportOne, context, plan, photo, 1, 1, files)
+    if rendered and #files == 1 and #outcome.failures == 0 then return files[1].path end
     discardRender(context, render)
     return nil, not rendered and outcome or outcome.failures[1] or "Lightroom rendered no file", render.beforeFolder
 end

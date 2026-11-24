@@ -99,7 +99,7 @@ function PhotoBatch.run(context, catalog, operation)
     end
 
     if operation.around then
-        operation.around(loop)
+        operation.around(loop, entries)
     else
         loop()
     end

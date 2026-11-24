@@ -138,7 +138,7 @@ describe("HandlerExport.exportPhotos", function()
     end)
 
     describe("rendition results", function()
-        local function exportWith(renditions, args, writtenFiles)
+        local function exportWith(renditions, args, writtenFiles, child)
             local p = helper.fakePhoto({ localIdentifier = 1, path = "/a.jpg" })
             local catalog = helper.fakeCatalog({ photos = { p } })
             local written = {}
@@ -154,7 +154,7 @@ describe("HandlerExport.exportPhotos", function()
                         return written[path] or false
                     end,
                 },
-                LrPathUtils = { child = function(dir, name) return dir .. "/" .. name end },
+                LrPathUtils = { child = child or function(dir, name) return dir .. "/" .. name end },
                 LrExportSession = function()
                     return {
                         doExportOnCurrentTask = function() end,
@@ -186,6 +186,32 @@ describe("HandlerExport.exportPhotos", function()
             assert.is_nil(r.failed)
             assert.are.same({ { photo_id = "1", path = "/out/a-2.jpg" } }, r.data.files)
         end)
+
+        for _, case in ipairs({
+            {
+                name = "a later rendition raises",
+                reason = "render engine failed",
+                renditions = {
+                    { waitForRender = function() return true, "/out/a.jpg" end },
+                    { waitForRender = function() error("render engine failed", 0) end },
+                },
+            },
+            {
+                name = "naming the file raises after Lightroom confirmed it",
+                reason = "path join failed",
+                renditions = { { waitForRender = function() return true, "/out/a.jpg" end } },
+                child = function() error("path join failed", 0) end,
+            },
+        }) do
+            it("export_keeps_confirmed_file: lists a file Lightroom confirmed when " .. case.name, function()
+                local r = exportWith(case.renditions, nil, { "/out/a.jpg" }, case.child)
+                assert.are.same({ { photo_id = "1", path = "/out/a.jpg" } }, r.data.files)
+                assert.is_nil(r.failed)
+                assert.are.equal("1", r.unknown[1].photo_id)
+                assert.truthy(r.unknown[1].reason:find(case.reason, 1, true))
+                assert.truthy(r.unknown[1].reason:find("written before this stopped: Export photo 1", 1, true))
+            end)
+        end
 
         it("names a written file under the destination as the caller spelled it", function()
             local r = exportWith({
@@ -231,6 +257,26 @@ describe("HandlerExport.exportPhotos", function()
                 }, r.unknown)
             end)
         end
+
+        it(
+            "export_one_entry_per_photo: lists a photo whose renditions failed twice once, joining its reasons",
+            function()
+                local r = exportWith({
+                    { waitForRender = function() return false, "could not be written" end },
+                    { waitForRender = function() return true, "/out/a.jpg" end },
+                })
+                assert.is_nil(r.data)
+                assert.is_nil(r.failed)
+                assert.are.same({
+                    {
+                        photo_id = "1",
+                        reason = "could not be written; Lightroom wrote no file"
+                            .. "; written before this stopped: Export photo 1"
+                            .. " (one Export history step and the exported mark)",
+                    },
+                }, r.unknown)
+            end
+        )
 
         for _, case in ipairs({ { raises = "export", outcome = "unknown" }, { raises = "session", outcome = "failed" } }) do
             it(
@@ -310,17 +356,17 @@ describe("HandlerExport.exportPhotos", function()
         local _, Handler, calls = setup({ photos = photos })
         local progress = {}
         local context = helper.requestContext(nil, {
-            report = function(_, completed, total, message)
-                progress[#progress + 1] = { completed, total, message, exported = #calls }
+            report = function(_, completed, total, message, title)
+                progress[#progress + 1] = { completed, total, message, title, exported = #calls }
             end,
         })
 
         Handler.exportPhotos({ photo_ids = { "1", "2" }, destination = "/out" }, context)
 
         assert.are.same({
-            { 0, 2, "a.jpg", exported = 0 },
-            { 1, 2, "b.jpg", exported = 1 },
-            { 2, 2, "b.jpg", exported = 2 },
+            { 0, 2, "a.jpg", "Exporting photos", exported = 0 },
+            { 1, 2, "b.jpg", "Exporting photos", exported = 1 },
+            { 2, 2, "Done", "Exporting photos", exported = 2 },
         }, progress)
     end)
 
