@@ -64,6 +64,18 @@ export function fixtureStateProblems(settings) {
   return [...listed, ...valued];
 }
 
+const RAW_FILE = /\.(arw|cr2|cr3|nef|nrw|dng|raf|orf|rw2|pef|srw)$/i;
+export const FIXTURE_BASELINE_KEYS = [...FIXTURE_STATE_KEYS, "CameraProfile", "Look"];
+
+export const isRawFixture = (file) => RAW_FILE.test(file ?? "");
+
+export function fixtureBaselineProblems(settings, raw) {
+  const profile = raw
+    ? [settings.CameraProfile !== "Adobe Standard" && "CameraProfile", settings.Look?.Name !== "Adobe Color" && "Look"]
+    : [settings.Look !== undefined && "Look"];
+  return [...fixtureStateProblems(settings), ...profile.filter(Boolean)];
+}
+
 export function uncertifiedFixtures(read, photoIds) {
   const settingsOf = new Map((read.photos ?? []).map((photo) => [String(photo.photo_id), photo.settings ?? {}]));
   return photoIds.flatMap((photoId) => {
