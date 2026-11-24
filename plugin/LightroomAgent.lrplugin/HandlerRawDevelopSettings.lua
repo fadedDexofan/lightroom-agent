@@ -11,7 +11,8 @@ local Reply = require "Reply"
 
 local DevelopSettingsRead = {}
 
-local MAX_REPLY_BYTES = 1000000
+local MAX_DATA_BYTES = 1000000
+local DATA_WRAPPER_BYTES = #JSON:encode({ photos = { 0 } }) - 1
 local REPLY_RESERVE_SECONDS = 5
 
 local function keyList(settings)
@@ -41,6 +42,8 @@ function DevelopSettingsRead.values(settings, keys)
     return values, absent
 end
 
+local function dataBytes(rowBytes, rowCount) return DATA_WRAPPER_BYTES + rowBytes + rowCount - 1 end
+
 local function photoReply(photo, settings, keys)
     local reply = { photo_id = tostring(photo.localIdentifier) }
     if keys == nil then
@@ -53,7 +56,7 @@ end
 
 function DevelopSettingsRead.get(args, context)
     local catalog = LrApplication.activeCatalog()
-    local sizes, bytes = {}, 0
+    local sizes, bytes, rows = {}, 0, 0
     local batch = PhotoBatch.run(context, catalog, {
         inputs = args.photo_ids,
         reserveSeconds = REPLY_RESERVE_SECONDS,
@@ -62,12 +65,12 @@ function DevelopSettingsRead.get(args, context)
             catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
             local reply = photoReply(photo, settings, args.keys)
             local size = #JSON:encode(reply)
-            if size > MAX_REPLY_BYTES then
+            if dataBytes(size, 1) > MAX_DATA_BYTES then
                 Reply.refuse(
                     string.format(
                         "The requested settings take %d bytes, over the %d-byte limit; request fewer keys",
-                        size,
-                        MAX_REPLY_BYTES
+                        dataBytes(size, 1),
+                        MAX_DATA_BYTES
                     )
                 )
             end
@@ -75,8 +78,8 @@ function DevelopSettingsRead.get(args, context)
             return reply
         end,
         fits = function(reply)
-            if bytes + sizes[reply] > MAX_REPLY_BYTES then return false end
-            bytes = bytes + sizes[reply]
+            if dataBytes(bytes + sizes[reply], rows + 1) > MAX_DATA_BYTES then return false end
+            bytes, rows = bytes + sizes[reply], rows + 1
             return true
         end,
     })

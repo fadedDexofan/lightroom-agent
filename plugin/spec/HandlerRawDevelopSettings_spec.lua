@@ -221,6 +221,48 @@ describe("HandlerRawDevelopSettings.get", function()
         assert.truthy(alone.failed[1].reason:find("request fewer keys", 1, true))
     end)
 
+    describe("budget on 1 MB of settings data", function()
+        local LIMIT = 1000000
+        local function dataSize(reply) return #require("JSON"):encode(reply.data) end
+        local function get(settingsById, ids)
+            local Handler = setup(settingsById)
+            return Handler.get({ photo_ids = ids, keys = { "Big" } }, helper.requestContext())
+        end
+        local function pairAt(extra)
+            local pair = dataSize(get({ ["7"] = { Big = "x" }, ["8"] = { Big = "x" } }, { "7", "8" }))
+            local first = 600000
+            return get({
+                ["7"] = { Big = string.rep("x", first) },
+                ["8"] = { Big = string.rep("x", LIMIT - pair - first + 2 + extra) },
+            }, { "7", "8" })
+        end
+
+        it("fits_counts_settings_data: returns two photos whose encoded data is exactly 1 MB", function()
+            local reply = pairAt(0)
+            assert.are.equal(LIMIT, dataSize(reply))
+            assert.are.same({ "7", "8" }, { reply.data.photos[1].photo_id, reply.data.photos[2].photo_id })
+            assert.is_nil(reply.remaining)
+        end)
+
+        it("fits_counts_settings_data: lists the photo one byte past 1 MB of data as remaining", function()
+            local reply = pairAt(1)
+            assert.are.same({ "7" }, { reply.data.photos[1].photo_id })
+            assert.are.equal(1, #reply.data.photos)
+            assert.are.same({ "8" }, reply.remaining)
+        end)
+
+        it("fits_counts_settings_data: fails a photo whose own data passes 1 MB and returns the next", function()
+            local single = dataSize(get({ ["7"] = { Big = "x" } }, { "7" }))
+            local reply = get({ ["7"] = { Big = string.rep("x", LIMIT - single + 2) }, ["8"] = { Big = "small" } }, {
+                "7",
+                "8",
+            })
+            assert.are.equal("7", reply.failed[1].photo_id)
+            assert.truthy(reply.failed[1].reason:find("request fewer keys", 1, true))
+            assert.are.same({ { photo_id = "8", settings = { Big = "small" }, absent = {} } }, reply.data.photos)
+        end)
+    end)
+
     it("leaves the photos past the request's time remaining", function()
         local Handler = setup({ ["7"] = { A = 1 }, ["8"] = { A = 2 } })
         local reply = Handler.get(
