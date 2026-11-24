@@ -23,6 +23,23 @@ const cases: Array<[string, boolean, PluginReply, ToolResult['outcome']]> = [
   ['only not found inputs', false, { result: { not_found: ['x'] } }, 'failed'],
   ['only remaining inputs', false, { result: { remaining: ['1'] } }, 'failed'],
   ['an unknown item with data', false, { result: { data: [1], unknown: [photo('2')] } }, 'unknown'],
+  [
+    'a preset reply with one photo read back changed after a refused apply',
+    false,
+    {
+      result: {
+        data: { applied: 1, preset: 'Bright', ai_updated: 0 },
+        unknown: [
+          {
+            photo_id: '1',
+            reason:
+              'The catalog stayed busy with another write for 10 s, so Lightroom did not run Apply Develop Preset; written before this stopped: settings Lightroom now shows changed',
+          },
+        ],
+      },
+    },
+    'unknown',
+  ],
   ['an unknown item alone', false, { result: { unknown: [photo('2')], failed: [photo('3')] } }, 'unknown'],
   [
     'a write left by the call with only remaining inputs',

@@ -751,6 +751,15 @@ describe('set_develop_settings rules on stored values', () => {
     };
   }
 
+  it('answers a write the plug-in refused with nothing written failed, with no data', async () => {
+    const busy = 'The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Develop Settings';
+    const result = await makeHandler({
+      call: async () => ({ id: '1', error: busy, effect: 'none' }),
+    })('set_develop_settings', { photo_ids: [914], settings: { Exposure2012: 0.5 } });
+
+    expect(envelopeOf(result)).toEqual({ outcome: 'failed', error: busy });
+  });
+
   it('answers an input that is not in the catalog not_found, reading it and writing nothing', async () => {
     const calls: string[] = [];
     const result = await makeHandler({
@@ -1248,6 +1257,18 @@ describe('set_crop', () => {
       not_found: [914],
     });
     expect(calls).toEqual(['plan_crop']);
+  });
+
+  it('answers a write the plug-in refused with nothing written failed, with no data and no frame', async () => {
+    const busy = 'The catalog stayed busy with another write for 10 s, so Lightroom did not run Set Develop Settings';
+    const handler = makeHandler({
+      call: async (action) =>
+        action === 'plan_crop' ? { id: '1', result: { data: planned } } : { id: '1', error: busy, effect: 'none' },
+    });
+
+    const result = envelopeOf(await handler('set_crop', { photo_ids: [914], aspect: { width: 2, height: 1 } }));
+
+    expect(result).toEqual({ outcome: 'failed', error: busy });
   });
 
   it('plans in the frame module, writes the planned keys at Lightroom precision, reads them back and answers the frame', async () => {

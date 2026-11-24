@@ -37,14 +37,6 @@ local function batchReserve(gates, computesAIMasks)
         + (computesAIMasks and Contract.AI_MASK_COMPUTE_WAIT_SECONDS or 0)
 end
 
-local function verifiedIds(checked)
-    local ids = {}
-    for _, result in ipairs(checked) do
-        if DevelopReadBack.confirmed(result) then ids[#ids + 1] = result.photo_id end
-    end
-    return ids
-end
-
 local function savedOf(catalog, photo)
     local settings
     catalog:withReadAccessDo(function() settings = DevelopReadBack.saved(photo) end)
@@ -519,88 +511,64 @@ end
 
 function DevelopHandler.applyDevelopPreset(args, context)
     local selectedPreset = findPreset(args)
-
     local catalog = LrApplication.activeCatalog()
-
-    -- Resolve outside the write gate: the lookup scans the catalog and does
-    -- not write, so holding the exclusive gate across it only serializes
-    -- every other handler behind it.
-    local entries, missingIds, resolved = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
-    if args.dry_run then
-        return previewDevelopSettings(catalog, resolved, normalizedPresetSettings(selectedPreset.preset), true)
-    end
-    local written = {}
     local presetSettings = normalizedPresetSettings(selectedPreset.preset)
+    if args.dry_run then
+        local _, _, resolved = PhotoLookup.resolveDistinct(catalog, args.photo_ids)
+        return previewDevelopSettings(catalog, resolved, presetSettings, true)
+    end
     local aiPreset = presetContainsAIMasks(selectedPreset.preset)
-    local reserveSeconds = batchReserve(aiPreset and 2 or 1, aiPreset)
 
-    local remaining = {}
-    local stopped = false
-    local aiUpdated = 0
-    for _, resolvedEntry in ipairs(entries) do
-        local photo = resolvedEntry.photo
-        if stopped or #remaining > 0 or context:stopping(reserveSeconds) then
-            remaining[#remaining + 1] = resolvedEntry.id
-        else
-            local from = context.ledger:mark()
-            local entriesBefore, before
-            local applied, problem = LrTasks.pcall(function()
-                before = DevelopReadBack.before(savedOf(catalog, photo))
-                entriesBefore = aiPreset and GuardedMaskWrite.readEntries(catalog, photo)
-                applyPreset(context, catalog, selectedPreset, photo)
-            end)
-            local computed = applied
-            if applied and aiPreset then
-                local notComputed
-                computed, notComputed = LrTasks.pcall(
-                    AIMaskCompute.run,
-                    context,
-                    catalog,
-                    photo,
-                    { subject = PRESET_AI_MASKS, before = entriesBefore }
-                )
-                if computed then
-                    aiUpdated = aiUpdated + 1
-                else
-                    problem = Reply.messageOf(notComputed)
-                        .. "; check the photo's AI masks in Develop before writing to it"
-                end
+    local function applyOne(photo)
+        local before = DevelopReadBack.before(savedOf(catalog, photo))
+        local written = DevelopReadBack.attempt(context, photo, presetSettings, before, function()
+            local entriesBefore = aiPreset and GuardedMaskWrite.readEntries(catalog, photo)
+            applyPreset(context, catalog, selectedPreset, photo)
+            if not aiPreset then return end
+            local computed, notComputed = LrTasks.pcall(
+                AIMaskCompute.run,
+                context,
+                catalog,
+                photo,
+                { subject = PRESET_AI_MASKS, before = entriesBefore }
+            )
+            if not computed then
+                error(Reply.messageOf(notComputed) .. "; check the photo's AI masks in Develop before writing to it", 0)
             end
-            if computed then
-                written[#written + 1] = { photo = photo, settings = presetSettings, before = before }
-            else
-                written[#written + 1] = {
-                    photo = photo,
-                    settings = presetSettings,
-                    before = before,
-                    error = Reply.messageOf(problem),
-                    from = from,
-                    to = context.ledger:mark(),
-                }
-                stopped = not applied
-            end
-        end
+        end)
+        return { written = written }
     end
 
-    local checked = DevelopReadBack.check(context, catalog, written)
-    local appliedCount = #verifiedIds(checked)
+    local batch = PhotoBatch.run(context, catalog, {
+        inputs = args.photo_ids,
+        reserveSeconds = batchReserve(aiPreset and 2 or 1, aiPreset),
+        progress = "Applying preset",
+        each = applyOne,
+        confirm = DevelopReadBack.confirm(context, catalog),
+    })
+    local applied = #batch.results
+    local aiUpdated = aiPreset and applied or 0
     Log.info(
         string.format(
             "Applied preset %s to %d photos (AI masks recomputed: %d)",
             selectedPreset.name,
-            appliedCount,
+            applied,
             aiUpdated
         )
     )
-
-    return DevelopReadBack.parts(checked, {
-        applied = appliedCount,
-        preset = selectedPreset.name,
-        folder = selectedPreset.folder,
-        scope = selectedPreset.scope,
-        uuid = selectedPreset.uuid,
-        ai_updated = aiUpdated,
-    }, { not_found = missingIds, remaining = remaining })
+    return PhotoBatch.reply(
+        batch,
+        function()
+            return {
+                applied = applied,
+                preset = selectedPreset.name,
+                folder = selectedPreset.folder,
+                scope = selectedPreset.scope,
+                uuid = selectedPreset.uuid,
+                ai_updated = aiUpdated,
+            }
+        end
+    )
 end
 
 local function isOurs(entry, profile)

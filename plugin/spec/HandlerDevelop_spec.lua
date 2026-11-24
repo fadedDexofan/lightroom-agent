@@ -740,6 +740,15 @@ describe("HandlerDevelop.exportDevelopPreset", function()
 end)
 
 describe("HandlerDevelop.applyDevelopPreset", function()
+    local function droppingAfterApply(photo, key)
+        local apply = photo.applyDevelopPreset
+        photo.applyDevelopPreset = function(...)
+            apply(...)
+            photo:getDevelopSettings()[key] = nil
+        end
+        return photo
+    end
+
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local preset = fakePreset("Vibrant")
@@ -768,7 +777,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.equal(preset, p2.getRawMetadata(p2, "__appliedPreset"))
     end)
 
-    it("counts as applied only the photos the read-back verified", function()
+    it("answers unknown, with no data, for the photos the read-back did not reach within the budget", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
         local _, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { fakePreset("Vibrant") }) } })
@@ -777,21 +786,22 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Vibrant" }, context)
 
-        assert.are.equal(0, r.data.applied)
         assert.are.same({ "1", "2" }, { r.unknown[1].photo_id, r.unknown[2].photo_id })
+        assert.is_nil(r.data)
     end)
 
     it(
-        "fails the photo the catalog stayed busy for, keeps the photos before it and lists the rest as remaining",
+        "preset_continues_after_failed_apply: fails the photo the catalog stayed busy for, keeps the photo before it and applies the photo after it",
         function()
             local photos = {}
             for _, id in ipairs({ "1", "2", "3" }) do
                 photos[#photos + 1] = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg" })
             end
+            local preset = fakePreset("Vibrant", { settings = { Exposure2012 = 0.5 } })
             local applies = 0
             local _, Handler = setup({
                 photos = photos,
-                folders = { fakeFolder("User", { fakePreset("Vibrant") }) },
+                folders = { fakeFolder("User", { preset }) },
                 writeAccessAborts = function(name)
                     if name ~= "Apply Develop Preset" then return false end
                     applies = applies + 1
@@ -801,33 +811,79 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
             local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Vibrant" })
 
-            assert.are.equal(1, r.data.applied)
+            assert.are.equal(preset, photos[1]:getRawMetadata("__appliedPreset"))
+            assert.are.equal(preset, photos[3]:getRawMetadata("__appliedPreset"))
+            assert.are.equal(2, r.data.applied)
             assert.are.same({ { photo_id = "2", reason = helper.catalogBusy("Apply Develop Preset") } }, r.failed)
             assert.is_nil(r.unknown)
-            assert.are.same({ "3" }, r.remaining)
+            assert.is_nil(r.remaining)
         end
     )
 
-    it(
-        "answers unknown for a photo whose apply raised, keeps the photos before it and lists the rest as remaining",
-        function()
-            local photos = {}
-            for _, id in ipairs({ "1", "2", "3" }) do
-                photos[#photos + 1] = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg" })
-            end
-            photos[2].applyDevelopPreset = function() error("preset file vanished", 0) end
-            local _, Handler = setup({ photos = photos, folders = { fakeFolder("User", { fakePreset("Vibrant") }) } })
-
-            local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Vibrant" })
-
-            assert.are.equal(1, r.data.applied)
-            assert.is_nil(r.failed)
-            assert.are.equal(1, #r.unknown)
-            assert.are.equal("2", r.unknown[1].photo_id)
-            assert.truthy(r.unknown[1].reason:find("preset file vanished", 1, true))
-            assert.are.same({ "3" }, r.remaining)
+    it("answers unknown for a photo whose apply raised and applies the photos after it", function()
+        local photos = {}
+        for _, id in ipairs({ "1", "2", "3" }) do
+            photos[#photos + 1] = helper.fakePhoto({ id = id, path = "/" .. id .. ".jpg" })
         end
-    )
+        photos[2].applyDevelopPreset = function() error("preset file vanished", 0) end
+        local preset = fakePreset("Vibrant")
+        local _, Handler = setup({ photos = photos, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Vibrant" })
+
+        assert.are.equal(preset, photos[3]:getRawMetadata("__appliedPreset"))
+        assert.are.equal(2, r.data.applied)
+        assert.is_nil(r.failed)
+        assert.are.equal(1, #r.unknown)
+        assert.are.equal("2", r.unknown[1].photo_id)
+        assert.truthy(r.unknown[1].reason:find("preset file vanished", 1, true))
+        assert.is_nil(r.remaining)
+    end)
+
+    it("preset_no_data_unconfirmed: returns no data when the read-back confirms no photo", function()
+        local before = { Exposure2012 = 0, Contrast2012 = 0 }
+        local p1 = droppingAfterApply(
+            helper.fakePhoto({ id = "1", path = "/a.jpg", developSettings = deepCopy(before) }),
+            "Exposure2012"
+        )
+        local p2 = droppingAfterApply(
+            helper.fakePhoto({ id = "2", path = "/b.jpg", developSettings = deepCopy(before) }),
+            "Contrast2012"
+        )
+        local preset = fakePreset("Vibrant", { settings = { Exposure2012 = 0.5, Contrast2012 = 10 } })
+        local _, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Vibrant" })
+
+        assert.are.same({
+            { photo_id = "1", reason = "Lightroom shows no Exposure2012 after the write" },
+            { photo_id = "2", reason = "Lightroom shows no Contrast2012 after the write" },
+        }, r.unknown)
+        assert.is_nil(r.failed)
+        assert.is_nil(r.data)
+    end)
+
+    it("preset_progress_per_photo: reports progress for each photo under its title, then Done", function()
+        local photos = {
+            helper.fakePhoto({ id = "1", path = "/a.jpg", fileName = "a.jpg" }),
+            helper.fakePhoto({ id = "2", path = "/b.jpg", fileName = "b.jpg" }),
+        }
+        local _, Handler = setup({ photos = photos, folders = { fakeFolder("User", { fakePreset("Vibrant") }) } })
+        local progress = {}
+        local context = helper.requestContext(nil, {
+            report = function(_, completed, total, message, title)
+                progress[#progress + 1] = { completed, total, message, title }
+            end,
+        })
+
+        Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Vibrant" }, context)
+
+        assert.are.same({
+            { 0, 2, "a.jpg", "Applying preset" },
+            { 1, 2, "b.jpg", "Applying preset" },
+            { 2, 2, "Done", "Applying preset" },
+        }, progress)
+    end)
 
     it("skips unresolved photos", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
@@ -887,6 +943,140 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.equal(1, p2.getRawMetadata(p2, "__aiUpdateCalls"))
         assert.are.equal(4, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    local function busyOnce(opts)
+        local preset = fakePreset("Bright", { settings = { Exposure2012 = 1 } })
+        local pending, busy = opts.pendingEdit, true
+        local _, Handler = setup({
+            photos = opts.photos,
+            folders = { fakeFolder("User", { preset }) },
+            applicationView = {
+                getCurrentModuleName = function() return "develop" end,
+                switchToModule = function() end,
+            },
+            developController = {
+                stopTracking = function(commit)
+                    if commit and pending then
+                        pending = false
+                        opts.photos[1]:getDevelopSettings().Exposure2012 = 0.5
+                    end
+                end,
+            },
+            writeAccessAborts = function(title)
+                if title ~= "Apply Develop Preset" or not busy then return false end
+                busy = false
+                return true
+            end,
+        })
+        local ids = {}
+        for index, photo in ipairs(opts.photos) do
+            ids[index] = tostring(photo.localIdentifier)
+        end
+        return Handler.applyDevelopPreset({ photo_ids = ids, preset_name = "Bright" }), preset
+    end
+
+    it("preset_raise_reads_back: reads back a photo whose apply the catalog refused after an edit landed", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", developSettings = { Exposure2012 = 0 } })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", developSettings = { Exposure2012 = 0 } })
+
+        local r, preset = busyOnce({ photos = { p1, p2 }, pendingEdit = true })
+
+        assert.are.equal(0.5, p1:getDevelopSettings().Exposure2012)
+        assert.is_nil(r.failed)
+        assert.are.equal(1, #r.unknown)
+        assert.are.equal("1", r.unknown[1].photo_id)
+        assert.truthy(
+            r.unknown[1].reason:find(helper.catalogBusy("Apply Develop Preset"), 1, true),
+            r.unknown[1].reason
+        )
+        assert.truthy(r.unknown[1].reason:find("settings Lightroom now shows changed", 1, true), r.unknown[1].reason)
+        assert.is_nil(p1:getRawMetadata("__appliedPreset"))
+        assert.are.equal(preset, p2:getRawMetadata("__appliedPreset"))
+        assert.are.equal(1, r.data.applied)
+    end)
+
+    it("preset_busy_unchanged_failed: fails a photo whose apply the catalog refused with nothing changed", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", developSettings = { Exposure2012 = 0 } })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", developSettings = { Exposure2012 = 0 } })
+
+        local r, preset = busyOnce({ photos = { p1, p2 }, pendingEdit = false })
+
+        assert.is_nil(r.unknown)
+        assert.are.same({ { photo_id = "1", reason = helper.catalogBusy("Apply Develop Preset") } }, r.failed)
+        assert.are.equal(preset, p2:getRawMetadata("__appliedPreset"))
+        assert.are.equal(1, r.data.applied)
+    end)
+
+    it(
+        "preset_failures_in_input_order: lists a refused apply and an unreadable photo as failed, in input order",
+        function()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", developSettings = { Exposure2012 = 0 } })
+            local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
+            p2.getDevelopSettings = function() return nil end
+
+            local r = busyOnce({ photos = { p1, p2 }, pendingEdit = false })
+
+            assert.is_nil(r.data)
+            assert.is_nil(r.unknown)
+            assert.are.same({
+                { photo_id = "1", reason = helper.catalogBusy("Apply Develop Preset") },
+                { photo_id = "2", reason = "Lightroom returned no saved settings for photo 2" },
+            }, r.failed)
+        end
+    )
+
+    it("preset_cancel_with_ai_masks: applies no photo after a cancel during one photo's AI compute", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
+        local p3 = helper.fakePhoto({ id = "3", path = "/c.jpg", aiUpdate = "ok" })
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local _, Handler = setup({ photos = { p1, p2, p3 }, folders = { fakeFolder("User", { preset }) } })
+        local cancelled = false
+        local compute = p1.updateAISettings
+        p1.updateAISettings = function(...)
+            cancelled = true
+            return compute(...)
+        end
+        local context = helper.requestContext()
+        context.report = getmetatable(context).report
+        context.scope = {
+            setCancelable = function() end,
+            setPortionComplete = function() end,
+            setCaption = function() end,
+            isCanceled = function() return cancelled end,
+            done = function() end,
+        }
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Subject" }, context)
+
+        assert.are.equal(1, r.data.applied)
+        assert.are.equal(1, r.data.ai_updated)
+        assert.are.equal(preset, p1:getRawMetadata("__appliedPreset"))
+        assert.are.equal(1, p1:getRawMetadata("__aiUpdateCalls"))
+        assert.are.same({ "2", "3" }, r.remaining)
+        assert.is_nil(r.failed)
+        assert.is_nil(r.unknown)
+        assert.is_nil(p2:getRawMetadata("__appliedPreset"))
+        assert.is_nil(p3:getRawMetadata("__appliedPreset"))
+    end)
+
+    it("preset_ai_updated_confirmed: counts in ai_updated only the photos the read-back confirmed", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
+        local p2 = droppingAfterApply(
+            helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok", developSettings = { Exposure2012 = 0 } }),
+            "Exposure2012"
+        )
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local _, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Subject" })
+
+        assert.are.equal(1, p1.getRawMetadata(p1, "__aiUpdateCalls"))
+        assert.are.equal(1, p2.getRawMetadata(p2, "__aiUpdateCalls"))
+        assert.are.same({ { photo_id = "2", reason = "Lightroom shows no Exposure2012 after the write" } }, r.unknown)
+        assert.are.equal(1, r.data.applied)
+        assert.are.equal(1, r.data.ai_updated)
     end)
 
     local pendingText = "Lightroom has not finished computing the AI masks of photo 1 within "
@@ -956,7 +1146,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
     end)
 
     it(
-        "answers a photo whose masks cannot be read before the preset as failed and keeps the photos before it",
+        "answers a photo whose masks cannot be read before the preset as failed and applies the photos after it",
         function()
             local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
             local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
@@ -972,13 +1162,14 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
             local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2", "3" }, preset_name = "Subject" })
 
-            assert.are.equal(1, r.data.applied)
+            assert.are.equal(1, p3.getRawMetadata(p3, "__aiUpdateCalls"))
+            assert.are.equal(2, r.data.applied)
             assert.are.same(
                 { { photo_id = "2", reason = "Lightroom returned mask data that is not a list" } },
                 r.failed
             )
             assert.is_nil(r.unknown)
-            assert.are.same({ "3" }, r.remaining)
+            assert.is_nil(r.remaining)
         end
     )
 
@@ -1022,7 +1213,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" }, context)
 
-        assert.are.equal(0, r.data.applied)
+        assert.is_nil(r.data)
         assert.are.same({
             {
                 photo_id = "1",
@@ -1117,8 +1308,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         local r = Handler.applyDevelopPreset({ photo_ids = { "ghost" }, preset_name = "Subject" })
 
-        assert.are.equal(0, r.data.applied)
-        assert.are.equal(0, r.data.ai_updated)
+        assert.is_nil(r.data)
         assert.are.same({ "ghost" }, r.not_found)
         assert.are.equal(0, catalog.getWriteAccessCount())
     end)
@@ -2495,6 +2685,42 @@ describe("HandlerDevelop.setDevelopSettings", function()
         assert.are.equal("Set Develop Settings", photo:getRawMetadata("__appliedHistoryName"))
         assert.is_nil(photo:getRawMetadata("__appliedFlattenAutoNow"))
     end)
+
+    for _, case in ipairs({
+        {
+            what = "the catalog stays busy for the write",
+            arrange = function(photo)
+                return {
+                    writeAccessAborts = function(title) return title == "Set Develop Settings" end,
+                    reason = function() return helper.catalogBusy("Set Develop Settings") end,
+                },
+                    photo
+            end,
+        },
+        {
+            what = "the write raises after the baseline read in its gate",
+            arrange = function(photo)
+                photo.applyDevelopSettings = function() error("write interrupted", 0) end
+                return { reason = function() return "write interrupted" end }, photo
+            end,
+        },
+    }) do
+        it("set_error_envelope: answers a call error with no effect when " .. case.what, function()
+            local Reply = require "Reply"
+            local arranged, photo =
+                case.arrange(helper.fakePhoto({ id = "1", path = "/a.jpg", developSettings = { Exposure2012 = 0 } }))
+            local _, Handler = setup({ photos = { photo }, writeAccessAborts = arranged.writeAccessAborts })
+            local context = helper.requestContext()
+
+            local ok, value =
+                pcall(Handler.setDevelopSettings, { photo_id = "1", settings = { Exposure2012 = 0.5 } }, context)
+            local answer = Reply.outcome(ok, value, context)
+
+            assert.is_false(ok)
+            assert.is_nil(answer.result)
+            assert.are.same({ error = arranged.reason(), effect = "none" }, answer)
+        end)
+    end
 
     it("resolves the photo OUTSIDE the write-access gate", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
