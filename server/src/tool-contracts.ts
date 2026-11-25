@@ -35,6 +35,7 @@ import {
   MASK_TYPE_NAMES,
   PEOPLE_MASK_PART_NAMES,
   PHOTO_FLAG_NAMES,
+  POINT_COLOR,
   PROCESS_VERSIONS,
   PROFILE_PRESET_GROUP,
   PROFILE_UNIT,
@@ -450,32 +451,39 @@ const swatchNumber = (description: string, minimum: number, maximum: number) => 
   description,
 });
 
+const SWATCH_RANGE_EDGE_DESCRIPTIONS: Record<(typeof POINT_COLOR.range_edges)[number], string> = {
+  LowerNone: "Outer left limit",
+  LowerFull: "Inner left limit",
+  UpperFull: "Inner right limit",
+  UpperNone: "Outer right limit",
+};
+
+const SWATCH_RANGE_DESCRIPTIONS: Record<(typeof POINT_COLOR.ranges)[number], string> = {
+  HueRange: "Hue range limits, each 0 to 1",
+  SatRange: "Saturation range limits, each 0 to 1",
+  LumRange: "Luminance range limits, each 0 to 1",
+};
+
 const swatchRange = (description: string) => ({
   type: "object",
   additionalProperties: false,
-  properties: {
-    LowerNone: swatchNumber("Outer left limit", 0, 1),
-    LowerFull: swatchNumber("Inner left limit", 0, 1),
-    UpperFull: swatchNumber("Inner right limit", 0, 1),
-    UpperNone: swatchNumber("Outer right limit", 0, 1),
-  },
-  required: ["LowerNone", "LowerFull", "UpperFull", "UpperNone"],
+  properties: Object.fromEntries(
+    POINT_COLOR.range_edges.map((edge) => [edge, swatchNumber(SWATCH_RANGE_EDGE_DESCRIPTIONS[edge], 0, 1)]),
+  ),
+  required: [...POINT_COLOR.range_edges],
   description,
 });
 
-const SWATCH_RANGES = ["HueRange", "SatRange", "LumRange"] as const;
-const SWATCH_RANGE_EDGES = ["LowerNone", "LowerFull", "UpperFull", "UpperNone"] as const;
-
 const swatchRangesOrderedRule: ArgumentRule = {
-  text: `each swatch range orders ${SWATCH_RANGE_EDGES.join(" <= ")} (Lightroom drops every swatch of the mask otherwise)`,
+  text: `each swatch range orders ${POINT_COLOR.range_edges.join(" <= ")} (Lightroom drops every swatch of the mask otherwise)`,
   holds: (args) => {
     const swatch = (args.swatch ?? {}) as Record<string, Record<string, number> | undefined>;
-    return SWATCH_RANGES.every((name) => {
+    return POINT_COLOR.ranges.every((name) => {
       const range = swatch[name];
       return (
         range === undefined ||
-        SWATCH_RANGE_EDGES.every(
-          (edge, position) => position === 0 || range[SWATCH_RANGE_EDGES[position - 1]] <= range[edge],
+        POINT_COLOR.range_edges.every(
+          (edge, position) => position === 0 || range[POINT_COLOR.range_edges[position - 1]] <= range[edge],
         )
       );
     });
@@ -491,10 +499,12 @@ const pointColorSwatchProperties = {
   LumScale: swatchNumber("Luminance shift, -1 to 1 (default 0)", -1, 1),
   RangeAmount: swatchNumber("Range amount, 0 to 1 (default 0.5)", 0, 1),
   Variance: swatchNumber("Variance, -1 to 1 (default 0)", -1, 1),
-  HueRange: swatchRange("Hue range limits, each 0 to 1"),
-  SatRange: swatchRange("Saturation range limits, each 0 to 1"),
-  LumRange: swatchRange("Luminance range limits, each 0 to 1"),
+  ...Object.fromEntries(POINT_COLOR.ranges.map((name) => [name, swatchRange(SWATCH_RANGE_DESCRIPTIONS[name])])),
 };
+
+const POINT_COLOR_SWATCH_FIELDS = Object.keys(pointColorSwatchProperties)
+  .join(", ")
+  .replace(/, (\w+)$/, " and $1");
 
 const stringArray = (description: string, maxItems?: number) => ({
   type: "array",
@@ -2766,8 +2776,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           minItems: 1,
           maxItems: 3,
           uniqueItems: true,
-          description:
-            "Kinds to read; omitted reads all. Omitted kinds have no result fields. Point Color swatches report SrcHue, SrcSat, SrcLum, HueShift, SatScale, LumScale, RangeAmount, Variance, HueRange, SatRange and LumRange; no swatches is an empty list.",
+          description: `Kinds to read; omitted reads all. Omitted kinds have no result fields. Point Color swatches report ${POINT_COLOR_SWATCH_FIELDS}; no swatches is an empty list.`,
         },
       },
       required: ["photo_ids", "mask_id"],
@@ -2928,8 +2937,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     develop: "settings",
     run: { plugin: "HandlerMaskPointColors.editMaskPointColors" },
-    description:
-      "Edit local Point Color swatches by mask_id from list_masks in the photo's saved settings, without opening Develop or selecting the mask; shared mask slider rules apply. Up to 8 swatches, indexed from 1 as in get_mask swatches. add needs swatch SrcHue (0..6), SrcSat and SrcLum (0..1) and appends a swatch; like Lightroom's own add it stores the source rounded to two decimals; the fields it omits take Lightroom's defaults (shifts, scales and Variance 0, RangeAmount 0.5, Hue range 0/0.333333/0.666667/1, Saturation and Luminance ranges centred on the rounded source as Lightroom's own add centres them); a ninth swatch or a source color the mask already holds (after that rounding) is refused. update needs index and changed swatch fields and writes them to that swatch; delete needs index and removes that swatch, the later ones moving up by one; clear removes every swatch, and a mask without swatches is left unchanged. Values are stored with six decimals. Optional shift/scale/range/Variance fields and limits are in the schema. Preserves mask sliders and other/global settings. Returns action, affected index (for add, the new swatch's), changed flag and resulting swatches; when a swatch Lightroom stored cannot be read, delete and clear still write and return swatch_count with a warning instead of swatches.",
+    description: `Edit local Point Color swatches by mask_id from list_masks in the photo's saved settings, without opening Develop or selecting the mask; shared mask slider rules apply. Up to ${POINT_COLOR.max_swatches} swatches, indexed from 1 as in get_mask swatches. add needs swatch SrcHue (0..6), SrcSat and SrcLum (0..1) and appends a swatch; like Lightroom's own add it stores the source rounded to two decimals; the fields it omits take Lightroom's defaults (shifts, scales and Variance 0, RangeAmount 0.5, Hue range 0/0.333333/0.666667/1, Saturation and Luminance ranges centred on the rounded source as Lightroom's own add centres them); an add to a mask already holding ${POINT_COLOR.max_swatches} swatches, or of a source color the mask already holds (after that rounding), is refused. update needs index and changed swatch fields and writes them to that swatch; delete needs index and removes that swatch, the later ones moving up by one; clear removes every swatch, and a mask without swatches is left unchanged. Values are stored with six decimals. Optional shift/scale/range/Variance fields and limits are in the schema. Preserves mask sliders and other/global settings. Returns action, affected index (for add, the new swatch's), changed flag and resulting swatches; when a swatch Lightroom stored cannot be read, delete and clear still write and return swatch_count with a warning instead of swatches.`,
     rules: [
       {
         text: "add needs a swatch with SrcHue, SrcSat and SrcLum and no index",
@@ -2969,7 +2977,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         index: {
           type: "integer",
           minimum: 1,
-          maximum: 8,
+          maximum: POINT_COLOR.max_swatches,
           description: "Swatch number, from 1; required for update and delete",
         },
         swatch: {

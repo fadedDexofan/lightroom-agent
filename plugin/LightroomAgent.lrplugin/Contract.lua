@@ -340,6 +340,11 @@ return {
         { name = "none", labelColor = "none" },
     },
     PROCESS_VERSIONS = { "Version 1", "Version 2", "Version 3", "Version 4", "Version 5", "Version 6" },
+    POINT_COLOR = {
+        ranges = { "HueRange", "SatRange", "LumRange" },
+        range_edges = { "LowerNone", "LowerFull", "UpperFull", "UpperNone" },
+        max_swatches = 8,
+    },
     ADOBE_RAW_PROFILES = {
         { name = "Adobe Color", look_uuid = "B952C231111CD8E0ECCF14B86BAA7077", preset_name = "lightroom-agent Adobe Color", preset_uuid = "6C1F3E0A9B2D4E7F8A5C0B1D2E3F4A51", camera_profile = "Adobe Standard" },
         { name = "Adobe Landscape", look_uuid = "6F9C877E84273F4E8271E6B91BEB36A1", preset_name = "lightroom-agent Adobe Landscape", preset_uuid = "6C1F3E0A9B2D4E7F8A5C0B1D2E3F4A52", camera_profile = "Adobe Standard" },
@@ -360,5 +365,5 @@ return {
     STYLE_SUMMARY_PHOTO_LIMIT = 200,
     HEARTBEAT_INTERVAL_SECONDS = 30,
     VERSION = "0.2.0",
-    BUILD = "9ff826b271857adf",
+    BUILD = "40f6ee02b04c835b",
 }

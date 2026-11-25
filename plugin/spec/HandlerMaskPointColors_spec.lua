@@ -178,6 +178,39 @@ describe("HandlerMaskPointColors.editMaskPointColors add in the saved settings",
     end
 end)
 
+describe("HandlerMaskPointColors.editMaskPointColors add under the contract's swatch cap", function()
+    local contract
+    before_each(function()
+        contract = require "Contract"
+        package.loaded.Contract = setmetatable({
+            POINT_COLOR = {
+                ranges = { "HueRange", "SatRange", "LumRange" },
+                range_edges = { "LowerNone", "LowerFull", "UpperFull", "UpperNone" },
+                max_swatches = 2,
+            },
+        }, { __index = contract })
+    end)
+    after_each(function() package.loaded.Contract = contract end)
+
+    it("refuses a swatch past the cap before any gate", function()
+        local Handler, store = savedSetup()
+
+        local err = helper.failedOf(
+            function()
+                Handler.editMaskPointColors({
+                    photo_ids = { "1" },
+                    mask_id = "mask-a",
+                    action = "add",
+                    swatch = { SrcHue = 5, SrcSat = 0.5, SrcLum = 0.5 },
+                })
+            end
+        )
+
+        assert.matches("Mask mask-a already holds 2 Point Color swatches", err, 1, true)
+        assert.are.equal(0, store.attempts)
+    end)
+end)
+
 describe("HandlerMaskPointColors.editMaskPointColors add beside a held source colour", function()
     it("adds a swatch with the held swatch's hue at another saturation", function()
         local Handler, store = savedSetup()
