@@ -15,6 +15,7 @@ local Reply = require "Reply"
 local RequestContext = require "RequestContext"
 local Log = require "Log"
 local HandlerLoads = require "HandlerLoads"
+local PluginServerPolicy = require "PluginServerPolicy"
 
 local DEFAULT_REQUEST_PORT = 58763
 local DEFAULT_RESPONSE_PORT = 58764
@@ -79,7 +80,6 @@ local function shutdownRequested() return pluginState.shuttingDown == true end
 -- connects to that listener, requests or responses vanish, and the log shows
 -- nothing (issue #225). Both instances share the log file, so each line
 -- carries its instance's load time.
-local BIND_FAILURE_LOG_INTERVAL_SECONDS = 10
 local LOADED_AT = os.date("%H:%M:%S")
 local lastBindFailureLog = {}
 
@@ -91,10 +91,9 @@ local function addLog(msg)
     Log.info(msg)
 end
 
-local function logBindFailure(side, port, errStr, now)
-    now = now or os.time()
-    local last = lastBindFailureLog[side]
-    if last and now - last < BIND_FAILURE_LOG_INTERVAL_SECONDS then return false end
+local function logBindFailure(side, port, errStr)
+    local now = os.time()
+    if not PluginServerPolicy.bindFailureLogDue(lastBindFailureLog[side], now) then return end
     lastBindFailureLog[side] = now
     addLog(
         side
@@ -107,7 +106,6 @@ local function logBindFailure(side, port, errStr, now)
             .. "); if this repeats, another process"
             .. " or a leftover pre-reload instance holds it"
     )
-    return true
 end
 
 local function generateToken()
@@ -143,16 +141,6 @@ local function readTokenFile()
     return content
 end
 
--- Reload Plug-in loads a fresh Lua state and does NOT reliably cancel the
--- previous instance's server task (observed on LrC 15.5.1 macOS: the old
--- loop kept running and held a port until Lightroom quit). The two instances
--- share nothing but the disk, and every start rewrites the token file, so a
--- token that is no longer ours means a newer instance took over. An absent
--- or unreadable file proves nothing and must not stop a live server.
-local function isSuperseded(myToken, fileToken)
-    return myToken ~= nil and fileToken ~= nil and fileToken ~= "" and fileToken ~= myToken
-end
-
 local SUPERSEDED_CHECK_TICKS = 5
 
 local function ping(_params) return { pong = true, version = Contract.VERSION, build = Contract.BUILD } end
@@ -178,36 +166,6 @@ local SEND_WAIT_SECONDS = 25
 -- fires but sendConnected is later false by the time sendResponse runs
 -- and no event sets the rebind flag again.
 local SEND_REBIND_TRIGGER_SECONDS = 5
--- The MCP server pings every HEARTBEAT_INTERVAL_SECONDS.
--- Treat the connection as stale only after missing roughly three pings in a
--- row, rather than the old fixed 300s idle window. This is what lets a
--- healthy-but-quiet interactive session run indefinitely without tripping a
--- full restart (Automaat review, PR #151: "idle and stale connections are
--- indistinguishable") while still detecting a genuinely dead peer (Windows
--- onClosed unreliability, issue #134) in under two minutes.
-local HEARTBEAT_INTERVAL_SECONDS = Contract.HEARTBEAT_INTERVAL_SECONDS
-local STALE_RECONNECT_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
--- If a request is in flight when the soft threshold above is hit, give it a
--- chance to finish rather than yanking the socket out from under it — but
--- only up to this hard cap past the soft threshold. If the peer is truly
--- dead the in-flight request was already unrecoverable, so the hard cap
--- guarantees we still restart instead of waiting forever on a hung handler.
--- Bounds the blast radius of a stale-triggered restart (Automaat review,
--- PR #151: "a tool call landing in the restart window loses its response").
-local STALE_RESTART_HARD_CAP_SECONDS = STALE_RECONNECT_SECONDS + 30
-
--- Pure decision extracted from the monitor loop so it can be unit tested
--- without driving the full async LrTasks loop (see PluginInfoProvider_spec.lua).
--- Returns whether to restart and, if so, a log-suffix noting whether the
--- hard cap (not just the soft threshold) is what triggered it.
-local function shouldRestartForStaleConnection(idle, inFlightRequests, softSeconds, hardCapSeconds)
-    local inFlight = (inFlightRequests or 0) > 0
-    local pastSoft = idle > softSeconds
-    local pastHard = idle > hardCapSeconds
-    local restart = pastSoft and (not inFlight or pastHard)
-    local suffix = (inFlight and pastHard) and " [hard cap, request still in flight]" or ""
-    return restart, suffix
-end
 
 local TOKEN_MISMATCH_MESSAGE = "The Lightroom Agent token does not match the running plug-in. "
     .. "Click Stop Server, then Start Server in Plug-in Manager, and check LIGHTROOM_AGENT_TOKEN_PATH if it is set."
@@ -559,7 +517,7 @@ local function startServer()
         local ticks = 0
         while pluginState.running and pluginState.instanceId == instanceId and not shutdownRequested() do
             ticks = ticks + 1
-            if ticks % SUPERSEDED_CHECK_TICKS == 0 and isSuperseded(myToken, readTokenFile()) then
+            if ticks % SUPERSEDED_CHECK_TICKS == 0 and PluginServerPolicy.isSuperseded(myToken, readTokenFile()) then
                 addLog("Superseded by a newer plugin instance (token file changed), releasing ports")
                 pluginState.running = false
                 break
@@ -641,12 +599,7 @@ local function startServer()
                 local ref = pluginState.lastRequestTime or pluginState.lastConnectedTime
                 if ref then
                     local idle = os.time() - ref
-                    local restart, suffix = shouldRestartForStaleConnection(
-                        idle,
-                        pluginState.inFlightRequests,
-                        STALE_RECONNECT_SECONDS,
-                        STALE_RESTART_HARD_CAP_SECONDS
-                    )
+                    local restart, suffix = PluginServerPolicy.staleRestart(idle, pluginState.inFlightRequests)
                     if restart then
                         addLog("Stale connection: " .. idle .. "s since last heartbeat, scheduling restart" .. suffix)
                         pluginState.lastRequestTime = nil
@@ -740,19 +693,8 @@ addLog("PluginInfoProvider loaded")
 
 local PluginInfoProvider = {
     startServer = startServer,
-    startServerFromPanel = startServerFromPanel,
-    stopServer = stopServer,
     shutdown = shutdown,
     resetForReload = resetForReload,
-    -- Exposed for PluginInfoProvider_spec.lua only; not used elsewhere in the plugin.
-    shouldRestartForStaleConnection = shouldRestartForStaleConnection,
-    logBindFailure = logBindFailure,
-    isSuperseded = isSuperseded,
-    BIND_FAILURE_LOG_INTERVAL_SECONDS = BIND_FAILURE_LOG_INTERVAL_SECONDS,
-    handlePing = ping,
-    HEARTBEAT_INTERVAL_SECONDS = HEARTBEAT_INTERVAL_SECONDS,
-    STALE_RECONNECT_SECONDS = STALE_RECONNECT_SECONDS,
-    STALE_RESTART_HARD_CAP_SECONDS = STALE_RESTART_HARD_CAP_SECONDS,
 }
 
 function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
