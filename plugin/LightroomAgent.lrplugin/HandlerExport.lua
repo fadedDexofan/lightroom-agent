@@ -507,10 +507,6 @@ function ExportHandler.listExportPresets(args)
     }
 end
 
--- Same cap as an explicit photo_ids list. The selection has none of its own:
--- with nothing selected getTargetPhotos() is the whole filmstrip, which can
--- outlast the server timeout and hold the read gate throughout.
-local MAX_METADATA_PHOTOS = 1000
 local RECORD_RAW_KEYS = PhotoRecord.rawKeys({
     "uuid",
     "path",
@@ -554,13 +550,16 @@ local function prepareMetadataExport(args, catalog)
         end
     else
         photos = catalog:getTargetPhotos() or {}
-        if #photos > MAX_METADATA_PHOTOS then
+        -- Same cap as an explicit photo_ids list. The selection has none of its own:
+        -- with nothing selected getTargetPhotos() is the whole filmstrip, which can
+        -- outlast the server timeout and hold the read gate throughout.
+        if #photos > Contract.MAX_BULK_PHOTO_IDS then
             error(
                 string.format(
                     "%d photos are selected (or in the filmstrip); export at most %d "
                         .. "at a time by selecting fewer or passing photo_ids",
                     #photos,
-                    MAX_METADATA_PHOTOS
+                    Contract.MAX_BULK_PHOTO_IDS
                 )
             )
         end

@@ -240,7 +240,7 @@ const cropRules: readonly ArgumentRule[] = [
   },
 ];
 
-const MAX_BULK_PHOTO_IDS = 1000;
+export const MAX_BULK_PHOTO_IDS = 1000;
 const MAX_METADATA_PHOTO_IDS = 100;
 const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
@@ -1049,8 +1049,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Get AI metadata",
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: { plugin: "HandlerAiMetadata.getAiMetadata" },
-    description:
-      "Read private per-photo AI scores and reasons in one batch (up to 1000 IDs or paths). Returns photos with photo_id, numeric score and reason, one per distinct photo; unset fields are omitted. Unknown IDs are not_found.",
+    description: `Read private per-photo AI scores and reasons in one batch (up to ${MAX_BULK_PHOTO_IDS} IDs or paths). Returns photos with photo_id, numeric score and reason, one per distinct photo; unset fields are omitted. Unknown IDs are not_found.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1561,8 +1560,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     duration: "long",
     run: { plugin: "HandlerExport.exportPhotoMetadata" },
-    description:
-      "Export up to 1000 photos to disk JSON: file/capture time/dimensions/rating/flag/color_label/title/caption/GPS/location/keywords/keyword_paths (version 2 file, snake_case keys, string photo_id), no develop settings. Omitted photo_ids uses selection, or filmstrip if none. Prefer over per-photo get_photo_metadata. Returns exported count and destination; unknown IDs are not_found.",
+    description: `Export up to ${MAX_BULK_PHOTO_IDS} photos to disk JSON: file/capture time/dimensions/rating/flag/color_label/title/caption/GPS/location/keywords/keyword_paths (version 2 file, snake_case keys, string photo_id), no develop settings. Omitted photo_ids uses selection, or filmstrip if none. Prefer over per-photo get_photo_metadata. Returns exported count and destination; unknown IDs are not_found.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2720,8 +2718,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     develop: "settings",
     run: { plugin: "HandlerMaskDelete.deleteEmptyMasks" },
-    description:
-      "Delete masks that have no tools on up to 1000 photos, without opening Develop; module and selection stay. Masks with a component are kept whether adjusted or not (observed on 16.0); what else Lightroom counts as empty was not observed. Returns photos_checked and changed[{photo_id, masks_removed}]; unknown IDs are not_found.",
+    description: `Delete masks that have no tools on up to ${MAX_BULK_PHOTO_IDS} photos, without opening Develop; module and selection stay. Masks with a component are kept whether adjusted or not (observed on 16.0); what else Lightroom counts as empty was not observed. Returns photos_checked and changed[{photo_id, masks_removed}]; unknown IDs are not_found.`,
     inputSchema: {
       type: "object",
       additionalProperties: false,

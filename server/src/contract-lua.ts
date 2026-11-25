@@ -3,6 +3,7 @@ import { DEVELOP_KEYS, LOCAL_KEYS, transfersStyle } from "./develop-keys.js";
 import { DETAIL_RENDER_FOLDER } from "./photo-detail.js";
 import { RENDITION_JPEG_QUALITY } from "./photo-render.js";
 import { HEARTBEAT_INTERVAL_SECONDS } from "./plugin-liveness.js";
+import { DEFAULT_REQUEST_PORT, DEFAULT_RESPONSE_PORT } from "./ports.js";
 import { PREVIEW_REPLY_RESERVE_MS } from "./preview-item.js";
 import { VERSION } from "./version.js";
 import {
@@ -11,6 +12,7 @@ import {
   CATALOG_WRITE_WAIT_SECONDS,
   DEFAULT_PAGE_LIMIT,
   DISPATCHED_ACTIONS,
+  MAX_BULK_PHOTO_IDS,
   NEW_MASK_SAVE_WAIT_SECONDS,
   RESET_LANDING_WAIT_SECONDS,
   STYLE_SUMMARY_MIN_RATING,
@@ -109,6 +111,9 @@ function contractTable(): { readonly [key: string]: LuaValue } {
     STYLE_SUMMARY_MIN_RATING,
     STYLE_SUMMARY_PHOTO_LIMIT,
     HEARTBEAT_INTERVAL_SECONDS,
+    DEFAULT_REQUEST_PORT,
+    DEFAULT_RESPONSE_PORT,
+    MAX_BULK_PHOTO_IDS,
     VERSION,
   };
 }

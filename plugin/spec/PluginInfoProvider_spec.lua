@@ -307,6 +307,19 @@ describe("PluginInfoProvider server task", function()
         assert.are.same({}, inside)
     end)
 
+    it("binds the contract's default ports when the Plug-in Manager sets none", function()
+        local contract = require "Contract"
+        finally(function() package.loaded.Contract = contract end)
+        package.loaded.Contract = setmetatable(
+            { DEFAULT_REQUEST_PORT = 50001, DEFAULT_RESPONSE_PORT = 50002 },
+            { __index = contract }
+        )
+
+        local binds = serving()
+
+        assert.are.same({ 50001, 50002 }, { binds[1].port, binds[2].port })
+    end)
+
     it("exports only what Lightroom and the plug-in's own scripts read", function()
         local entrypoints = { "resetForReload", "sectionsForTopOfDialog", "shutdown", "startServer" }
         local allowed = {}
