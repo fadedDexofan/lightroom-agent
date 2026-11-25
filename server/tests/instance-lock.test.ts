@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -116,7 +116,7 @@ describe('instance lock', () => {
   });
 
   describe('live owner liveness', () => {
-    // The parent of the Jest worker is alive for the whole test but is not us.
+    // The parent of the Vitest worker is alive for the whole test but is not us.
     const livePid = process.ppid;
     const old = () => new Date(Date.now() - 120_000);
 
@@ -185,7 +185,7 @@ describe('instance lock', () => {
       fs.writeFileSync(`${lockFile}.alive`, '999999999\n');
       const removed: string[] = [];
       const rmSync = fs.rmSync.bind(fs);
-      const spy = jest.spyOn(fs, 'rmSync').mockImplementation((target, opts) => {
+      const spy = vi.spyOn(fs, 'rmSync').mockImplementation((target, opts) => {
         removed.push(path.basename(String(target)));
         rmSync(target, opts);
       });
@@ -201,7 +201,7 @@ describe('instance lock', () => {
 
     describe('owner', () => {
       afterEach(() => {
-        jest.useRealTimers();
+        vi.useRealTimers();
       });
 
       function own(dir: string): { lockFile: string; lost: () => number } {
@@ -214,35 +214,35 @@ describe('instance lock', () => {
       }
 
       it('stops beating and reports the loss once another bridge reclaims the lock', () => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         const { lockFile, lost } = own(baseDir());
         fs.writeFileSync(lockFile, `${livePid}\n`);
         fs.writeFileSync(`${lockFile}.alive`, `${livePid}\n`);
 
-        jest.advanceTimersByTime(20_000);
+        vi.advanceTimersByTime(20_000);
 
         expect(fs.readFileSync(`${lockFile}.alive`, 'utf8')).toBe(`${livePid}\n`);
         expect(lost()).toBe(1);
       });
 
       it('reports the loss when its lock is removed', () => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         const { lockFile, lost } = own(baseDir());
         fs.rmSync(lockFile);
 
-        jest.advanceTimersByTime(5_000);
+        vi.advanceTimersByTime(5_000);
 
         expect(lost()).toBe(1);
       });
 
       it('reports a loss to a listener that subscribes late', () => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         const dir = baseDir();
         const lockFile = path.join(dir, 'bridge-58763-58764.lock');
         const lock = acquireInstanceLock(58763, 58764, dir);
         locks.push(lock);
         fs.writeFileSync(lockFile, `${livePid}\n`);
-        jest.advanceTimersByTime(5_000);
+        vi.advanceTimersByTime(5_000);
         let lost = false;
 
         lock.onLost(() => (lost = true));
@@ -251,16 +251,16 @@ describe('instance lock', () => {
       });
 
       it('keeps beating through a lock it cannot read', () => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         const { lockFile, lost } = own(baseDir());
         fs.writeFileSync(lockFile, 'garbage\n');
-        jest.advanceTimersByTime(10_000);
+        vi.advanceTimersByTime(10_000);
         fs.writeFileSync(lockFile, `${process.pid}\n`);
         const heartbeat = `${lockFile}.alive`;
         const stale = old();
         fs.utimesSync(heartbeat, stale, stale);
 
-        jest.advanceTimersByTime(5_000);
+        vi.advanceTimersByTime(5_000);
 
         expect(lost()).toBe(0);
         expect(fs.statSync(heartbeat).mtimeMs).toBeGreaterThan(stale.getTime() + 60_000);
@@ -306,7 +306,7 @@ describe('instance lock', () => {
   it.each(['EPERM', 'ENOTSUP'])('falls back to exclusive create when hard links fail with %s', (code) => {
     const dir = baseDir();
     const lockFile = path.join(dir, 'bridge-58763-58764.lock');
-    const spy = jest.spyOn(fs, 'linkSync').mockImplementation(() => {
+    const spy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       throw Object.assign(new Error(code), { code });
     });
     try {
@@ -319,7 +319,7 @@ describe('instance lock', () => {
   });
 
   it('rethrows unexpected link failures', () => {
-    const spy = jest.spyOn(fs, 'linkSync').mockImplementation(() => {
+    const spy = vi.spyOn(fs, 'linkSync').mockImplementation(() => {
       throw Object.assign(new Error('EIO'), { code: 'EIO' });
     });
     try {

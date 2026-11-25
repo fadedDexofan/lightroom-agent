@@ -1,10 +1,11 @@
-import { describe, expect, it, jest } from '@jest/globals';
+import { describe, expect, it, vi } from 'vitest';
 import { dataOf, envelopeOf } from './helpers/envelope.js';
 import jpeg from 'jpeg-js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
 import type { PluginResponse } from '../src/dispatcher.js';
-import { areaAverage } from '../src/rendered-image.js';
+import { areaAverage, encodeWithin } from '../src/rendered-image.js';
+import { paddedJpeg } from './helpers/jpeg.js';
 
 const MAX_BYTES = 3.5 * 1024 * 1024;
 
@@ -30,6 +31,8 @@ function noise(width: number, height: number): string {
   return jpeg.encode({ width, height, data }, 100).data.toString('base64');
 }
 
+const THREE_MIB_PREVIEW = paddedJpeg(Buffer.from(halves(32, 16), 'base64'), 3 * 1024 * 1024).toString('base64');
+
 function rendered(image: string, photoId: number | string = 914): PluginResponse {
   return { id: 'preview', result: { data: { photo_id: photoId, image: { mime_type: 'image/jpeg', data: image } } } };
 }
@@ -48,7 +51,7 @@ function blockedInDevelop(id: number | string): PluginResponse {
 }
 
 function makeHandler(response: PluginResponse = rendered(halves(32, 16))) {
-  const call = jest.fn(async (_action: string, _args: unknown, _timeout?: number, _options?: unknown) => response);
+  const call = vi.fn(async (_action: string, _args: unknown, _timeout?: number, _options?: unknown) => response);
   return { handler: createCallToolHandler({ admitted: () => 0, dispatcher: { call } }), call };
 }
 
@@ -96,14 +99,22 @@ describe('get_photo_preview', () => {
   });
 
   it('brings a full-size JPEG over the byte limit within the edge and byte limits', async () => {
-    const source = noise(2400, 1600);
+    const source = paddedJpeg(Buffer.from(halves(2400, 160), 'base64'), MAX_BYTES + 1).toString('base64');
     expect(Buffer.from(source, 'base64').length).toBeGreaterThan(MAX_BYTES);
     const { handler } = makeHandler(rendered(source));
     const result = await handler('get_photo_preview', { photo_ids: [914], size: 2048 });
     const { encoded, decoded } = returnedImage(result);
-    expect([decoded.width, decoded.height]).toEqual([2000, 1333]);
+    expect([decoded.width, decoded.height]).toEqual([2000, 133]);
     expect(encoded.length).toBeLessThanOrEqual(MAX_BYTES);
-    expect(dataOf(result)).toMatchObject({ requested_size: 2048, width: 2000, height: 1333, scaled_by_server: true });
+    expect(dataOf(result)).toMatchObject({ requested_size: 2048, width: 2000, height: 133, scaled_by_server: true });
+  });
+
+  it('lowers the JPEG quality until an image fits the byte limit, and gives up past quality 30', () => {
+    const image = jpeg.decode(Buffer.from(noise(64, 64), 'base64'), { useTArray: true, formatAsRGBA: true });
+    const bytesAt = (quality: number) => jpeg.encode(image, quality).data.length;
+    expect(bytesAt(80)).toBeGreaterThan(bytesAt(70));
+    expect(encodeWithin(image, bytesAt(70))).toEqual(jpeg.encode(image, 70).data);
+    expect(encodeWithin(image, bytesAt(30) - 1)).toBeUndefined();
   });
 
   it('asks Lightroom for the cull edge of 864 by default and rounds a fractional size down', async () => {
@@ -165,14 +176,14 @@ describe('get_photo_preview region', () => {
   });
 
   it('crops a source over 2000 pixels after scaling it to a 2000 pixel edge', async () => {
-    const { handler } = makeHandler(rendered(halves(2400, 1600)));
+    const { handler } = makeHandler(rendered(halves(2400, 160)));
     const result = await handler('get_photo_preview', {
       photo_ids: [914],
       region: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
     });
     const { decoded } = returnedImage(result);
-    expect([decoded.width, decoded.height]).toEqual([1000, 667]);
-    expect(dataOf(result)).toMatchObject({ requested_size: 1728, width: 1000, height: 667, scaled_by_server: true });
+    expect([decoded.width, decoded.height]).toEqual([1000, 67]);
+    expect(dataOf(result)).toMatchObject({ requested_size: 1728, width: 1000, height: 67, scaled_by_server: true });
   });
 
   it.each([
@@ -276,7 +287,7 @@ describe('get_photo_preview region', () => {
 describe('get_photo_previews', () => {
   type Answer = (id: unknown) => PluginResponse;
   function batch(answer: Answer) {
-    const call = jest.fn(async (_action: string, params: unknown, _timeout?: number, _options?: unknown) =>
+    const call = vi.fn(async (_action: string, params: unknown, _timeout?: number, _options?: unknown) =>
       answer((params as { photo_ids: unknown[] }).photo_ids[0]),
     );
     return { handler: createCallToolHandler({ admitted: () => 0, dispatcher: { call } }), call };
@@ -340,13 +351,13 @@ describe('get_photo_previews', () => {
     expect(envelope.not_found).toEqual([2]);
     expect(envelope.failed).toEqual([
       { photo_id: '3', reason: 'Preview failed: file is offline' },
-      { photo_id: '4', reason: expect.any(String) },
+      { photo_id: '4', reason: expect.any(String) as unknown },
     ]);
     expect(images(result)).toHaveLength(2);
   });
 
   it('leaves the photo that no longer fits the 8 MiB budget, and those after it, remaining', async () => {
-    const source = noise(1000, 800);
+    const source = THREE_MIB_PREVIEW;
     const bytes = Buffer.from(source, 'base64').length;
     expect(bytes).toBeLessThanOrEqual(MAX_BYTES);
     expect(3 * bytes).toBeGreaterThan(8 * 1024 * 1024);
@@ -363,10 +374,10 @@ describe('get_photo_previews', () => {
   });
 
   it('keeps a photo rendered across the 20 s deadline and leaves the unreached ones remaining', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const { handler, call } = batch((id) => {
-        if (id === 2) jest.advanceTimersByTime(20_001);
+        if (id === 2) vi.advanceTimersByTime(20_001);
         return rendered(halves(32, 16), id as number);
       });
       const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [1, 2, 3, 4] }));
@@ -376,16 +387,16 @@ describe('get_photo_previews', () => {
       expect(envelope.remaining).toEqual([3, 4]);
       expect(call).toHaveBeenCalledTimes(2);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('lists a photo whose failure arrives at the deadline as remaining rather than failed', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const { handler, call } = batch((id) => {
         if (id !== 2) return rendered(halves(32, 16), id as number);
-        jest.advanceTimersByTime(20_001);
+        vi.advanceTimersByTime(20_001);
         return {
           id: 'preview',
           result: { failed: [{ photo_id: '2', reason: "Preview not ready before the request's time ran out" }] },
@@ -396,21 +407,21 @@ describe('get_photo_previews', () => {
       expect(envelope.failed).toBeUndefined();
       expect(call).toHaveBeenCalledTimes(2);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('hands each plug-in call only the time the batch has left', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const { handler, call } = batch((id) => {
-        if (id === 1) jest.advanceTimersByTime(5_000);
+        if (id === 1) vi.advanceTimersByTime(5_000);
         return rendered(halves(32, 16), id as number);
       });
       await handler('get_photo_previews', { photo_ids: [1, 2] });
       expect(call.mock.calls.map(([, , timeout]) => timeout)).toEqual([30_000, 25_000]);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
@@ -434,7 +445,7 @@ describe('get_photo_previews', () => {
   });
 
   it('answers the photo open in Develop failed in input order and leaves remaining only what the byte budget stopped', async () => {
-    const source = noise(1000, 800);
+    const source = THREE_MIB_PREVIEW;
     const { handler } = batch((id) => (id === 7 ? blockedInDevelop(7) : rendered(source, id as number)));
     const envelope = envelopeOf(await handler('get_photo_previews', { photo_ids: [1, 7, 2, 3, 4], size: 2048 }));
     expect((envelope.data as { previews: { photo_id: string }[] }).previews.map((preview) => preview.photo_id)).toEqual(
@@ -465,10 +476,10 @@ describe('the batch preview tools', () => {
       const description = TOOL_CONTRACTS.find((tool) => tool.name === name)?.description ?? '';
       const stated = [...description.matchAll(/(\d+) s\b/g)].map((match) => Number(match[1]));
       expect(stated).toHaveLength(1);
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       try {
-        const call = jest.fn(async (_action: string, params: unknown): Promise<PluginResponse> => {
-          jest.advanceTimersByTime(2_000);
+        const call = vi.fn(async (_action: string, params: unknown): Promise<PluginResponse> => {
+          vi.advanceTimersByTime(2_000);
           const id = (params as { photo_ids: unknown[] }).photo_ids[0];
           return { id: 'p', result: { failed: [{ photo_id: String(id), reason: 'file is offline' }] } };
         });
@@ -477,7 +488,7 @@ describe('the batch preview tools', () => {
         });
         expect(call).toHaveBeenCalledTimes(Math.ceil(stated[0] / 2));
       } finally {
-        jest.useRealTimers();
+        vi.useRealTimers();
       }
     },
   );
@@ -489,7 +500,7 @@ describe('the batch preview tools', () => {
   ])(
     '%s answers the photo open in Develop failed with the way out, in input order, and asks for nothing more',
     async (name, action) => {
-      const call = jest.fn(async (_action: string, params: unknown): Promise<PluginResponse> => {
+      const call = vi.fn(async (_action: string, params: unknown): Promise<PluginResponse> => {
         const id = (params as { photo_ids: number[] }).photo_ids[0];
         return id === 7 ? blockedInDevelop(7) : rendered(halves(32, 16), id);
       });

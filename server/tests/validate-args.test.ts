@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { Ajv } from 'ajv';
 import { validateToolArgs } from './helpers/validate.js';
 import { PHOTO_ID_PATTERN, TOOL_CONTRACTS } from '../src/tool-contracts.js';
@@ -270,7 +270,7 @@ describe('validateToolArgs', () => {
       { local_Exposure: '1' },
       { exposure: 1 },
       { unknown: 1 },
-    ])('rejects invalid adjustments: %p', (adjustments) => {
+    ])('rejects invalid adjustments: %o', (adjustments) => {
       expect(validateToolArgs(name, { ...base, adjustments })).toContain(`Invalid arguments for ${name}`);
     });
 
@@ -301,7 +301,7 @@ describe('validateToolArgs', () => {
       { photo_ids: [1], sections: ['developSettings'] },
       { photo_ids: [1], extra: true },
       false,
-    ])('rejects invalid selectors: %p', (args) => {
+    ])('rejects invalid selectors: %o', (args) => {
       expect(validateToolArgs('get_photo_metadata', args)).toContain('Invalid arguments for get_photo_metadata');
     });
   });
@@ -331,14 +331,14 @@ describe('validateToolArgs', () => {
   });
 
   it.each([{}, { limit: 0 }, { limit: 10, offset: 2, query: 'vi', folder: 'User Presets' }])(
-    'list_develop_presets accepts paging and filters %p',
+    'list_develop_presets accepts paging and filters %o',
     (args) => {
       expect(validateToolArgs('list_develop_presets', args)).toBeNull();
     },
   );
 
   it.each([{ limit: -1 }, { offset: -1 }, { query: '' }, { folder: '' }, { scope: 'plugin' }, { extra: true }])(
-    'list_develop_presets rejects invalid arguments %p',
+    'list_develop_presets rejects invalid arguments %o',
     (args) => {
       expect(validateToolArgs('list_develop_presets', args)).not.toBeNull();
     },
@@ -358,7 +358,7 @@ describe('validateToolArgs', () => {
     { active: 1 },
     { focal_range: { near: 0, far: 101 } },
     { focal_range: { near: 0 } },
-  ])('set_lens_blur rejects invalid controls %p', (controls) => {
+  ])('set_lens_blur rejects invalid controls %o', (controls) => {
     expect(validateToolArgs('set_lens_blur', { photo_ids: [914], ...controls })).not.toBeNull();
   });
 
@@ -1585,7 +1585,7 @@ describe('argument rules the contract decides', () => {
   const sample = { x: 0.5, y: 0.5, l: 0.5, a: 0.5, b: 0.5 };
   const linear = { photo_ids: [1], shape: 'linear', start: { x: 0.5, y: 0.2 }, end: { x: 0.5, y: 0.6 } };
   const band = { min: 0.2, max: 0.6 };
-  it.each([
+  it.each<readonly [string, unknown, string]>([
     [
       'set_gps',
       { photo_ids: [1], latitude: 1, longitude: 2, altitude: 10, clear_altitude: true },

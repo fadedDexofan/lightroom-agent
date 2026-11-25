@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -690,7 +690,7 @@ describe('CLI process', () => {
       const paired = await run(['call', 'list_collections'], env, undefined, { dist: checkout(), home });
       expect(paired.code).toBe(0);
       expect(JSON.parse(paired.stdout)).toMatchObject({
-        content: [{ text: expect.stringContaining('"outcome":"done"') }],
+        content: [{ text: expect.stringContaining('"outcome":"done"') as unknown }],
       });
     },
     CLI_TEST_MS,

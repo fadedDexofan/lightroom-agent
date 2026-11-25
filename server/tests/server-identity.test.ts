@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,7 +12,11 @@ describe('serverIdentity', () => {
       fs.writeFileSync(path.join(dist, 'index.js'), 'export {};\n');
       fs.writeFileSync(path.join(dist, 'notes.txt'), 'a');
       const base = serverIdentity(dist, 'p1');
-      expect(base).toEqual({ version: VERSION, build: expect.stringMatching(/^[0-9a-f]{16}$/), plugin: 'p1' });
+      expect(base).toEqual({
+        version: VERSION,
+        build: expect.stringMatching(/^[0-9a-f]{16}$/) as unknown,
+        plugin: 'p1',
+      });
 
       fs.writeFileSync(path.join(dist, 'notes.txt'), 'b');
       expect(serverIdentity(dist, 'p1')).toEqual(base);

@@ -21,9 +21,9 @@
     "format": "cd .. && oxfmt",
     "format:check": "cd .. && oxfmt --check",
     "watch": "tsc -p tsconfig.build.json --watch",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "prepare": "npm run build",
     "prepack": "npm run build && node scripts/stage-package.mjs",
     "postpack": "node scripts/stage-package.mjs --remove"
@@ -63,15 +63,14 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.4.0",
-    "@types/jest": "^30.0.0",
     "@types/node": "^26.0.0",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "jest": "^30.0.0",
+    "@vitest/coverage-v8": "5.1.0",
     "oxfmt": "0.79.0",
     "oxlint": "^1.94.0",
     "oxlint-tsgolint": "^7.0.2008",
-    "ts-jest": "^29.2.5",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "5.1.0"
   },
   "overrides": {
     "minimatch": "^11.0.1"

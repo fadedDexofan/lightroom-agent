@@ -7,7 +7,7 @@
 // run the test unmodified on ubuntu/macos/windows in CI so any Windows-only
 // race shows up as a deterministic test failure rather than a user report.
 
-import { describe, it, expect, afterEach } from '@jest/globals';
+import { describe, it, expect, afterEach } from 'vitest';
 import { PluginSocket } from '../src/plugin-socket.js';
 import { Dispatcher } from '../src/dispatcher.js';
 import { FakePlugin } from './helpers/fake-plugin.js';

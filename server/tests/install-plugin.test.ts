@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,7 +17,7 @@ import { PairingLost, type Paired } from '../src/plugin-pairing.js';
 import { VERSION } from '../src/version.js';
 
 const realPlatform = process.platform;
-const WROTE_PRESETS = expect.arrayContaining([expect.stringContaining('lightroom-agent Adobe Color.xmp')]);
+const WROTE_PRESETS: unknown = expect.arrayContaining([expect.stringContaining('lightroom-agent Adobe Color.xmp')]);
 const PRESETS_LINE =
   '; wrote the profile presets lightroom-agent Adobe Color, lightroom-agent Adobe Landscape, which Lightroom registers when it starts';
 const realAppData = process.env.APPDATA;
@@ -30,7 +30,7 @@ function restoreEnv(): void {
   Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
   if (realAppData === undefined) delete process.env.APPDATA;
   else process.env.APPDATA = realAppData;
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 }
 
 describe('lightroomModulesDir', () => {
@@ -132,7 +132,7 @@ describe('installPlugin', () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-install-'));
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-home-'));
     setPlatform('linux');
-    jest.spyOn(os, 'homedir').mockReturnValue(home);
+    vi.spyOn(os, 'homedir').mockReturnValue(home);
     installed = path.join(lightroomModulesDir(), 'LightroomAgent.lrplugin');
   });
 
@@ -145,7 +145,7 @@ describe('installPlugin', () => {
   it("copies the plugin into Lightroom's Modules folder on first install", () => {
     const result = installPlugin(bundled(tmp));
 
-    expect(result).toEqual({ status: 'installed', destination: installed, presets: expect.any(Array) });
+    expect(result).toEqual({ status: 'installed', destination: installed, presets: expect.any(Array) as unknown });
     expect(fs.existsSync(path.join(installed, 'Info.lua'))).toBe(true);
     expect(fs.existsSync(path.join(installed, 'Handler.lua'))).toBe(true);
   });
@@ -188,7 +188,7 @@ describe('installPlugin', () => {
 
     const result = installPlugin(bundled(tmp));
 
-    expect(result).toMatchObject({ status: 'installed', presetsError: expect.any(String) });
+    expect(result).toMatchObject({ status: 'installed', presetsError: expect.any(String) as unknown });
     expect(result).not.toHaveProperty('presets');
     expect(describeInstall(result)).toMatch(
       /^installed .*; restart Lightroom to load it; could not write the profile presets: /,
@@ -198,7 +198,7 @@ describe('installPlugin', () => {
   it('reports the presets it completed when a later one fails, leaving no staged file', () => {
     const presets = ADOBE_RAW_PROFILES.map((profile) => path.join(profilePresetsDir(), `${profile.preset_name}.xmp`));
     const rename = fs.renameSync;
-    const failing = jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+    const failing = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
       if (to === presets[1]) throw new Error('disk full');
       rename(from, to);
     });
@@ -271,7 +271,7 @@ describe('installPlugin', () => {
     const pairing = bundled(tmp);
     const copy = fs.copyFileSync;
     let copies = 0;
-    jest.spyOn(fs, 'copyFileSync').mockImplementation((from, to, mode) => {
+    vi.spyOn(fs, 'copyFileSync').mockImplementation((from, to, mode) => {
       copies += 1;
       if (copies === 2) throw new Error('disk full');
       copy(from, to, mode);
@@ -293,7 +293,7 @@ describe('installPlugin', () => {
       status: 'replaced',
       destination: installed,
       from: { version: '0.0.1', build: 'b1' },
-      to: { version: VERSION, build: expect.stringMatching(/^[0-9a-f]{16}$/) },
+      to: { version: VERSION, build: expect.stringMatching(/^[0-9a-f]{16}$/) as unknown },
       presets: WROTE_PRESETS,
     });
   });
@@ -302,7 +302,7 @@ describe('installPlugin', () => {
     placeBundle(installed);
     const pairing = bundled(tmp);
     const remove = fs.rmSync;
-    const interrupted = jest.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
+    const interrupted = vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
       const info = path.join(String(target), 'Info.lua');
       if (fs.existsSync(info)) {
         fs.unlinkSync(info);
@@ -323,7 +323,7 @@ describe('installPlugin', () => {
     placeBundle(installed);
     const pairing = bundled(tmp);
     const rename = fs.renameSync;
-    const interrupted = jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+    const interrupted = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
       if (String(from).includes('.installing')) throw new Error('locked');
       rename(from, to);
     });
@@ -346,7 +346,7 @@ describe('installPlugin', () => {
     placeBundle(installed);
     const pairing = bundled(tmp);
     const rename = fs.renameSync;
-    jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+    vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
       if (String(from).includes('.installing') || String(from).endsWith('.replaced')) throw new Error('locked');
       rename(from, to);
     });
@@ -480,7 +480,7 @@ describe.each([
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-home-'));
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-start-'));
     setPlatform('linux');
-    jest.spyOn(os, 'homedir').mockReturnValue(home);
+    vi.spyOn(os, 'homedir').mockReturnValue(home);
     const upstream = path.join(dirOf(), 'LightroomMCP.lrplugin');
     fs.mkdirSync(upstream, { recursive: true });
     fs.writeFileSync(path.join(upstream, 'Info.lua'), '-- upstream');
@@ -500,7 +500,7 @@ describe.each([
   });
 
   it("makes the leader's install log the conflict instead of installing", () => {
-    const log = jest.fn();
+    const log = vi.fn();
 
     admitLeader(bundled(tmp), true, log);
 
@@ -520,7 +520,7 @@ describe('admitLeader', () => {
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-home-'));
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lragent-start-'));
     setPlatform('linux');
-    jest.spyOn(os, 'homedir').mockReturnValue(home);
+    vi.spyOn(os, 'homedir').mockReturnValue(home);
   });
 
   afterEach(() => {
@@ -534,14 +534,14 @@ describe('admitLeader', () => {
   it("leaves a bundle with this build's files alone without logging", () => {
     const pairing = bundled(tmp);
     installPlugin(pairing);
-    const log = jest.fn();
+    const log = vi.fn();
     admitLeader(pairing, true, log);
     expect(log).not.toHaveBeenCalled();
   });
 
   it('replaces an outdated bundle of this plug-in and logs both versions', () => {
     placeBundle(destination(), { version: '0.1.0-rc.0' });
-    const log = jest.fn();
+    const log = vi.fn();
     admitLeader(bundled(tmp), true, log);
     expect(log).toHaveBeenCalledWith(
       `[install-plugin] replaced ${destination()} (version 0.1.0-rc.0 → ${VERSION}); restart Lightroom to load it${PRESETS_LINE}`,
@@ -549,7 +549,7 @@ describe('admitLeader', () => {
   });
 
   it('installs the bundled plugin and logs progress', () => {
-    const log = jest.fn();
+    const log = vi.fn();
     admitLeader(bundled(tmp), true, log);
     expect(log).toHaveBeenCalledWith(
       `[install-plugin] installed ${destination()}; restart Lightroom to load it${PRESETS_LINE}`,
@@ -584,7 +584,7 @@ describe('admitLeader', () => {
         .readdirSync(destination())
         .map((file) => fs.readFileSync(path.join(destination(), file), 'utf8'));
       const pairing = bundled(tmp);
-      const log = jest.fn();
+      const log = vi.fn();
 
       for (const install of [true, false]) {
         expect(() => admitLeader(pairing, install, log)).toThrow(new PairingLost(refusal(pairing.plugin)));
@@ -599,7 +599,7 @@ describe('admitLeader', () => {
 
   it('admits the leader over an older bundle that carries no build, as 0.1.0-rc.0 did, and replaces it', () => {
     placeBundle(destination(), { version: '0.1.0-rc.0', build: null });
-    const log = jest.fn();
+    const log = vi.fn();
 
     admitLeader(bundled(tmp), true, log);
 
@@ -612,7 +612,7 @@ describe('admitLeader', () => {
   it('repairs an installed bundle of this build whose version cannot be read', () => {
     const pairing = bundled(tmp);
     placeBundle(destination(), { version: 'not a version', build: pairing.plugin.build });
-    const log = jest.fn();
+    const log = vi.fn();
 
     admitLeader(pairing, true, log);
 
@@ -623,7 +623,7 @@ describe('admitLeader', () => {
 
   it('checks without installing when it is not to install', () => {
     placeBundle(destination(), { version: '0.0.1' });
-    const log = jest.fn();
+    const log = vi.fn();
 
     admitLeader(bundled(tmp), false, log);
 
@@ -634,11 +634,11 @@ describe('admitLeader', () => {
   it('logs a failure to read the plug-in folders and admits the leader without installing', () => {
     placeBundle(destination(), { version: '0.0.1' });
     const read = fs.readdirSync;
-    jest.spyOn(fs, 'readdirSync').mockImplementation(((dir: fs.PathLike, ...rest: never[]) => {
+    vi.spyOn(fs, 'readdirSync').mockImplementation(((dir: fs.PathLike, ...rest: never[]) => {
       if (String(dir) === lightroomModulesDir()) throw new Error('EACCES: permission denied');
       return (read as (...args: unknown[]) => unknown)(dir, ...rest);
     }) as typeof fs.readdirSync);
-    const log = jest.fn();
+    const log = vi.fn();
 
     admitLeader(bundled(tmp), true, log);
 
@@ -648,10 +648,10 @@ describe('admitLeader', () => {
 
   it('logs a failure message when the install throws', () => {
     const pairing = bundled(tmp);
-    jest.spyOn(fs, 'mkdirSync').mockImplementation(() => {
+    vi.spyOn(fs, 'mkdirSync').mockImplementation(() => {
       throw new Error('disk full');
     });
-    const log = jest.fn();
+    const log = vi.fn();
     admitLeader(pairing, true, log);
     expect(log).toHaveBeenCalledWith(expect.stringContaining('failed: disk full'));
   });

@@ -1,8 +1,9 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 import { dataOf, envelopeOf } from './helpers/envelope.js';
 import jpeg from 'jpeg-js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import type { PluginResponse } from '../src/dispatcher.js';
+import { midGreyJpeg } from './helpers/jpeg.js';
 
 function image(reverse = false) {
   const data = Buffer.alloc(90 * 80 * 4);
@@ -35,9 +36,8 @@ interface Result {
 }
 
 describe('duplicate groups', () => {
-  it('hashes a full-size 20 MP preview', async () => {
-    const data = Buffer.alloc(5000 * 4000 * 4, 128);
-    const full = jpeg.encode({ width: 5000, height: 4000, data }, 90).data.toString('base64');
+  it('hashes a preview far larger than its 9 by 8 cells', async () => {
+    const full = midGreyJpeg(2400, 1600).toString('base64');
     const call = handler(async (_action, args) => preview((args as { photo_ids: number[] }).photo_ids[0], 1, full));
     const response = await call('find_duplicate_groups', { photo_ids: [1] });
     expect(envelopeOf(response).failed).toBeUndefined();
@@ -71,14 +71,14 @@ describe('duplicate groups', () => {
     expect((envelope.data as Result).groups).toEqual([{ photo_ids: ['1', '5'] }]);
     expect(envelope.failed).toEqual([
       { photo_id: '2', reason: 'Preview failed' },
-      { photo_id: '4', reason: expect.any(String) },
+      { photo_id: '4', reason: expect.any(String) as unknown },
     ]);
     expect(envelope.not_found).toEqual(['/missing.jpg']);
     expect(envelope.remaining).toBeUndefined();
   });
 
   it('limits reject more than 100 ids before dispatch', async () => {
-    const dispatch = jest.fn(async () => preview(1));
+    const dispatch = vi.fn(async () => preview(1));
     const response = await handler(dispatch)('find_duplicate_groups', { photo_ids: Array<number>(101).fill(1) });
     expect(response.isError).toBe(true);
     expect(response.content[0].text).toMatch(/100/);

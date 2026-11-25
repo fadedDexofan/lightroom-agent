@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from '@jest/globals';
+import { describe, expect, it, vi } from 'vitest';
 import { envelopeOf } from './helpers/envelope.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import type { PluginResponse } from '../src/dispatcher.js';
@@ -36,9 +36,7 @@ const lens = {
 };
 
 function handlerWith(answer: (action: string) => PluginResponse) {
-  const call = jest.fn(async (action: string, _params: unknown, _timeout?: number, _options?: unknown) =>
-    answer(action),
-  );
+  const call = vi.fn(async (action: string, _params: unknown, _timeout?: number, _options?: unknown) => answer(action));
   return { handler: createCallToolHandler({ admitted: () => 0, dispatcher: { call } }), call };
 }
 

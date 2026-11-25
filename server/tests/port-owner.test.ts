@@ -1,5 +1,5 @@
 import net from 'node:net';
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 import {
   classifyUnresponsive,
   diagnoseUnresponsive,
@@ -273,7 +273,7 @@ describe('UnresponsiveReporter', () => {
       listener: () => Promise.resolve(FOREIGN),
       otherClients: () => Promise.resolve([]),
     });
-    const log = jest.fn<(msg: string) => void>();
+    const log = vi.fn<(msg: string) => void>();
     const reporter = new UnresponsiveReporter({ diagnose: () => Promise.resolve(diagnosis), log });
     reporter.report();
     await reporter.settled();
@@ -288,13 +288,13 @@ describe('UnresponsiveReporter', () => {
 
   function setup() {
     let clock = 0;
-    const diagnose = jest.fn(() =>
+    const diagnose = vi.fn(() =>
       Promise.resolve({
         message: `verdict ${diagnose.mock.calls.length}`,
         details: `verdict ${diagnose.mock.calls.length}`,
       }),
     );
-    const log = jest.fn<(msg: string) => void>();
+    const log = vi.fn<(msg: string) => void>();
     const reporter = new UnresponsiveReporter({ diagnose, log, refreshMs: 1000, now: () => clock });
     return {
       reporter,
@@ -402,8 +402,8 @@ describe('system inspection', () => {
       expect(listener === null || listener.pid === process.pid).toBe(true);
       expect(clients === null || clients.length === 0).toBe(true);
       await expect(diagnoseUnresponsive([port])).resolves.toEqual({
-        message: expect.any(String),
-        details: expect.any(String),
+        message: expect.any(String) as unknown,
+        details: expect.any(String) as unknown,
       });
     } finally {
       server.close();

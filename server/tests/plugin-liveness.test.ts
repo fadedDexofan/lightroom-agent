@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { envelopeOf } from './helpers/envelope.js';
 import { PluginLiveness } from '../src/plugin-liveness.js';
 import type { Dispatcher } from '../src/dispatcher.js';
@@ -31,7 +31,7 @@ function setup(opts: { connected?: () => boolean } = {}) {
       });
     },
   };
-  const reporter = { report: jest.fn(), clear: jest.fn() };
+  const reporter = { report: vi.fn(), clear: vi.fn() };
   const liveness = new PluginLiveness({
     dispatcher,
     connected: opts.connected ?? (() => true),
@@ -51,11 +51,11 @@ const flush = async () => {
 
 describe('PluginLiveness', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('admits no call on a connection before a ping settles', () => {
@@ -73,14 +73,14 @@ describe('PluginLiveness', () => {
     expect(liveness.admitted()).toBeNull();
     expect(reporter.report).toHaveBeenCalledTimes(1);
 
-    jest.advanceTimersByTime(5_000);
+    vi.advanceTimersByTime(5_000);
     expect(pings).toHaveLength(2);
     pings[1].answer();
     await flush();
     expect(liveness.admitted()).not.toBeNull();
     expect(reporter.clear).toHaveBeenCalled();
 
-    jest.advanceTimersByTime(20_000);
+    vi.advanceTimersByTime(20_000);
     expect(pings).toHaveLength(2);
   });
 
@@ -88,14 +88,14 @@ describe('PluginLiveness', () => {
     const { liveness, pings, reporter } = setup();
     liveness.start();
 
-    jest.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(30_000);
     expect(pings.map((ping) => ping.timeoutMs)).toEqual([10_000]);
     pings[0].fail();
     await flush();
     expect(liveness.admitted()).toBeNull();
     expect(reporter.report).toHaveBeenCalledTimes(1);
 
-    jest.advanceTimersByTime(5_000);
+    vi.advanceTimersByTime(5_000);
     expect(pings.map((ping) => ping.timeoutMs)).toEqual([10_000, 5_000]);
     pings[1].answer();
     await flush();
@@ -108,7 +108,7 @@ describe('PluginLiveness', () => {
     liveness.start();
 
     liveness.check();
-    jest.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(30_000);
     expect(pings).toHaveLength(1);
     pings[0].answer();
     await flush();
@@ -122,7 +122,7 @@ describe('PluginLiveness', () => {
     const { liveness, pings } = setup({ connected: () => connected });
     liveness.start();
 
-    jest.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(30_000);
     expect(pings).toHaveLength(0);
 
     connected = true;
@@ -170,7 +170,7 @@ describe('PluginLiveness', () => {
     const { liveness, pings, reporter } = setup({ connected: () => connected });
     liveness.start();
 
-    jest.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(30_000);
     connected = false;
     pings[0].fail();
     await flush();
@@ -193,7 +193,7 @@ describe('PluginLiveness', () => {
   it.each([
     ['1.2.2', 'version 1.2.2, build 0123456789abcdef'],
     [null, 'an older build that reports no version'],
-  ])('refuses a plug-in that answers with version %p, naming both and the fix', async (version, loaded) => {
+  ])('refuses a plug-in that answers with version %o, naming both and the fix', async (version, loaded) => {
     const { liveness, pings, reporter } = setup();
     liveness.check();
     pings[0].answer(version);
@@ -225,7 +225,7 @@ describe('PluginLiveness', () => {
     pings[0].answer('1.2.2');
     await flush();
 
-    jest.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(30_000);
     pings[1].answer();
     await flush();
 
@@ -246,7 +246,7 @@ describe('PluginLiveness', () => {
     await flush();
 
     liveness.reset();
-    jest.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(60_000);
 
     expect(liveness.admitted()).toBeNull();
     expect(pings).toHaveLength(1);
@@ -257,14 +257,14 @@ describe('PluginLiveness', () => {
     liveness.start();
 
     liveness.stop();
-    jest.advanceTimersByTime(90_000);
+    vi.advanceTimersByTime(90_000);
 
     expect(pings).toHaveLength(0);
   });
 });
 
 describe('tool handler readiness message', () => {
-  const dispatcher = { call: jest.fn(() => Promise.resolve({ id: 'req_1', result: {} })) };
+  const dispatcher = { call: vi.fn(() => Promise.resolve({ id: 'req_1', result: {} })) };
 
   it('explains that another bridge owns the plugin when sockets are up but silent', async () => {
     const handler = createCallToolHandler({
@@ -283,7 +283,7 @@ describe('tool handler readiness message', () => {
   it('waits for readiness to settle before dispatching a call', async () => {
     const { liveness, pings } = setup();
     liveness.check();
-    const call = jest.fn(() => Promise.resolve({ id: 'req_1', result: {} }));
+    const call = vi.fn(() => Promise.resolve({ id: 'req_1', result: {} }));
     const handler = createCallToolHandler({
       dispatcher: { call },
       admitted: () => liveness.admitted(),

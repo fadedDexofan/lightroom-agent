@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, jest } from '@jest/globals';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -247,14 +247,14 @@ describe('get_photo_detail', () => {
   });
 
   it("hands the render only the time get_crop left of the tool's budget", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const path = renderedFile(render(64, 48));
       const timeouts: [string, number | undefined][] = [];
       const call = async (action: string, _params: unknown, timeoutMs?: number): Promise<PluginResponse> => {
         timeouts.push([action, timeoutMs]);
         if (action !== 'get_crop') return { id: 'r', result: { data: { photo_id: '7', path, ...EXPORT_SOURCE } } };
-        jest.advanceTimersByTime(5_000);
+        vi.advanceTimersByTime(5_000);
         return cropOf(64, 48);
       };
       await createCallToolHandler({ admitted: () => 0, dispatcher: { call } })('get_photo_detail', {
@@ -266,7 +266,7 @@ describe('get_photo_detail', () => {
         ['render_source', 295_000],
       ]);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 

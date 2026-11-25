@@ -1,4 +1,4 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { finishLost, finishReply, toolResponse, type PluginReply, type ToolResult } from '../src/tool-result.js';
 
@@ -126,7 +126,7 @@ describe('copy_develop_settings replies the plug-in produces', () => {
     expect(result.outcome).toBe(expected[name]);
     if (name === 'unknown and adjusted on one target') {
       expect(result).toMatchObject({
-        error: expect.stringContaining('Lightroom stored other values than written: Exposure2012'),
+        error: expect.stringContaining('Lightroom stored other values than written: Exposure2012') as unknown,
       });
     }
   });
