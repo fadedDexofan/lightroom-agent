@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
+import { parse, type AnyNode, type CallExpression, type Identifier, type ObjectExpression, type Pattern } from 'acorn';
 import { PHOTO_ID_PATTERN, type ToolArgs } from '../src/tool-contracts.js';
 import { CHECKED_CONTRACTS, validateToolArgs } from '../src/validate-args.js';
 
@@ -32,7 +32,7 @@ type Schema = {
 class Unreadable extends Error {}
 
 interface Hole {
-  [HOLE]: ts.Expression;
+  [HOLE]: AnyNode;
 }
 
 type Value = unknown;
@@ -57,23 +57,114 @@ interface Scan {
   otherCallers: string[];
 }
 
-const hole = (expression: ts.Expression): Hole => ({ [HOLE]: expression });
+type FunctionNode = Extract<
+  AnyNode,
+  { type: 'FunctionDeclaration' | 'FunctionExpression' | 'ArrowFunctionExpression' }
+>;
+
+const EXPRESSIONS = new Set([
+  'Identifier',
+  'Literal',
+  'ThisExpression',
+  'ArrayExpression',
+  'ObjectExpression',
+  'FunctionExpression',
+  'UnaryExpression',
+  'UpdateExpression',
+  'BinaryExpression',
+  'AssignmentExpression',
+  'LogicalExpression',
+  'MemberExpression',
+  'ConditionalExpression',
+  'CallExpression',
+  'NewExpression',
+  'SequenceExpression',
+  'ArrowFunctionExpression',
+  'YieldExpression',
+  'TemplateLiteral',
+  'TaggedTemplateExpression',
+  'ClassExpression',
+  'MetaProperty',
+  'AwaitExpression',
+  'ChainExpression',
+  'ImportExpression',
+  'ParenthesizedExpression',
+]);
+
+const hole = (expression: AnyNode): Hole => ({ [HOLE]: expression });
 const isHole = (value: unknown): value is Hole => typeof value === 'object' && value !== null && HOLE in value;
 
-function declaredIn(statements: readonly ts.Statement[], name: string): ts.Node | undefined {
-  for (const statement of statements) {
-    if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) return statement;
-    if (!ts.isVariableStatement(statement)) continue;
-    for (const declaration of statement.declarationList.declarations) {
-      if (ts.isIdentifier(declaration.name) && declaration.name.text === name) {
-        const constant = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0;
-        return constant && declaration.initializer ? declaration.initializer : declaration;
+const parents = new WeakMap<AnyNode, AnyNode>();
+
+function childrenOf(node: AnyNode): AnyNode[] {
+  const children = new Set<AnyNode>();
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'loc') continue;
+    for (const item of Array.isArray(value) ? (value as unknown[]) : [value]) {
+      if (typeof item === 'object' && item !== null && typeof (item as { type?: unknown }).type === 'string') {
+        children.add(item as AnyNode);
+      }
+    }
+  }
+  return [...children].sort((a, b) => a.start - b.start);
+}
+
+function linkParents(node: AnyNode): void {
+  for (const child of childrenOf(node)) {
+    parents.set(child, node);
+    linkParents(child);
+  }
+}
+
+function rootOf(node: AnyNode): AnyNode {
+  let root = node;
+  for (let parent = parents.get(root); parent; parent = parents.get(root)) root = parent;
+  return root;
+}
+
+const isIdentifier = (node: AnyNode | null | undefined): node is Identifier => node?.type === 'Identifier';
+const isExpression = (node: AnyNode) => EXPRESSIONS.has(node.type);
+const isFunction = (node: AnyNode | undefined): node is FunctionNode =>
+  node?.type === 'FunctionDeclaration' ||
+  node?.type === 'FunctionExpression' ||
+  node?.type === 'ArrowFunctionExpression';
+
+function stringText(node: AnyNode): string | undefined {
+  if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) return node.quasis[0].value.cooked ?? undefined;
+  return undefined;
+}
+
+function boundName(pattern: Pattern | null): Identifier | undefined {
+  if (!pattern) return undefined;
+  if (pattern.type === 'Identifier') return pattern;
+  if (pattern.type === 'AssignmentPattern') return boundName(pattern.left);
+  if (pattern.type === 'RestElement') return boundName(pattern.argument);
+  return undefined;
+}
+
+function elementsOf(pattern: Pattern): Pattern[] {
+  if (pattern.type === 'ObjectPattern') {
+    return pattern.properties.map((property) => (property.type === 'RestElement' ? property : property.value));
+  }
+  if (pattern.type === 'ArrayPattern') return pattern.elements.filter((element) => element !== null);
+  return [];
+}
+
+function declaredIn(statements: readonly AnyNode[], name: string): AnyNode | undefined {
+  for (const item of statements) {
+    const statement =
+      item.type === 'ExportNamedDeclaration' || item.type === 'ExportDefaultDeclaration' ? item.declaration : item;
+    if (!statement) continue;
+    if (statement.type === 'FunctionDeclaration' && statement.id?.name === name) return statement;
+    if (statement.type !== 'VariableDeclaration') continue;
+    for (const declaration of statement.declarations) {
+      if (isIdentifier(declaration.id) && declaration.id.name === name) {
+        return statement.kind === 'const' && declaration.init ? declaration.init : declaration;
       }
       if (
-        !ts.isIdentifier(declaration.name) &&
-        declaration.name.elements.some(
-          (element) => ts.isBindingElement(element) && ts.isIdentifier(element.name) && element.name.text === name,
-        )
+        !isIdentifier(declaration.id) &&
+        elementsOf(declaration.id).some((element) => boundName(element)?.name === name)
       ) {
         return declaration;
       }
@@ -82,69 +173,74 @@ function declaredIn(statements: readonly ts.Statement[], name: string): ts.Node 
   return undefined;
 }
 
-function patternHolds(pattern: ts.BindingName, name: string): boolean {
-  if (ts.isIdentifier(pattern)) return pattern.text === name;
-  return pattern.elements.some((element) => ts.isBindingElement(element) && patternHolds(element.name, name));
+function patternHolds(pattern: Pattern, name: string): boolean {
+  if (pattern.type === 'Identifier') return pattern.name === name;
+  if (pattern.type === 'AssignmentPattern') return patternHolds(pattern.left, name);
+  if (pattern.type === 'RestElement') return patternHolds(pattern.argument, name);
+  return elementsOf(pattern).some((element) => patternHolds(element, name));
 }
 
-function binding(identifier: ts.Identifier): ts.Node | undefined {
-  const name = identifier.text;
-  for (let scope: ts.Node | undefined = identifier.parent; scope; scope = scope.parent) {
-    if (ts.isBlock(scope) || ts.isSourceFile(scope) || ts.isCaseClause(scope) || ts.isDefaultClause(scope)) {
-      const found = declaredIn(scope.statements, name);
+function binding(identifier: Identifier): AnyNode | undefined {
+  const name = identifier.name;
+  for (let scope = parents.get(identifier); scope; scope = parents.get(scope)) {
+    const statements =
+      scope.type === 'BlockStatement' || scope.type === 'Program'
+        ? scope.body
+        : scope.type === 'SwitchCase'
+          ? scope.consequent
+          : undefined;
+    if (statements) {
+      const found = declaredIn(statements, name);
       if (found) return found;
     }
-    if (ts.isFunctionLike(scope)) {
-      const parameter = scope.parameters.find((item) => ts.isIdentifier(item.name) && item.name.text === name);
+    if (isFunction(scope)) {
+      const parameter = scope.params.find((item) => boundName(item)?.name === name);
       if (parameter) return parameter;
     }
-    if (
-      (ts.isForOfStatement(scope) || ts.isForInStatement(scope) || ts.isForStatement(scope)) &&
-      scope.initializer &&
-      ts.isVariableDeclarationList(scope.initializer)
-    ) {
-      const declared = scope.initializer.declarations.find((item) => patternHolds(item.name, name));
+    const initializer =
+      scope.type === 'ForStatement'
+        ? scope.init
+        : scope.type === 'ForInStatement' || scope.type === 'ForOfStatement'
+          ? scope.left
+          : undefined;
+    if (initializer?.type === 'VariableDeclaration') {
+      const declared = initializer.declarations.find((item) => patternHolds(item.id, name));
       if (declared) return declared;
     }
-    if (
-      ts.isCatchClause(scope) &&
-      scope.variableDeclaration &&
-      ts.isIdentifier(scope.variableDeclaration.name) &&
-      scope.variableDeclaration.name.text === name
-    ) {
-      return scope.variableDeclaration;
-    }
+    if (scope.type === 'CatchClause' && isIdentifier(scope.param) && scope.param.name === name) return scope;
   }
   return undefined;
 }
 
-function returnedObject(node: ts.Node): ts.Expression | undefined {
-  const body =
-    ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node) ? node.body : undefined;
-  if (!body) return undefined;
-  if (!ts.isBlock(body)) return body;
-  const returns = body.statements.filter(ts.isReturnStatement);
-  return body.statements.length === 1 && returns.length === 1 ? returns[0].expression : undefined;
+function isParameter(node: AnyNode): boolean {
+  const parent = parents.get(node);
+  return isFunction(parent) && (parent.params as AnyNode[]).includes(node);
 }
 
-function functionName(fn: ts.SignatureDeclaration): ts.Identifier | undefined {
-  if (ts.isFunctionDeclaration(fn)) return fn.name;
-  if ((ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && ts.isVariableDeclaration(fn.parent)) {
-    return ts.isIdentifier(fn.parent.name) ? fn.parent.name : undefined;
-  }
+function returnedObject(node: AnyNode): AnyNode | undefined {
+  if (!isFunction(node)) return undefined;
+  const body = node.body;
+  if (body.type !== 'BlockStatement') return body;
+  const returns = body.body.filter((statement) => statement.type === 'ReturnStatement');
+  return body.body.length === 1 && returns.length === 1 ? (returns[0].argument ?? undefined) : undefined;
+}
+
+function functionName(fn: FunctionNode): Identifier | undefined {
+  if (fn.type === 'FunctionDeclaration') return fn.id ?? undefined;
+  const parent = parents.get(fn);
+  if (parent?.type === 'VariableDeclarator') return isIdentifier(parent.id) ? parent.id : undefined;
   return undefined;
 }
 
-function callsOf(fn: ts.SignatureDeclaration, name: ts.Identifier): ts.CallExpression[] {
-  const calls: ts.CallExpression[] = [];
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === name.text) {
-      const bound = binding(node.expression);
-      if (bound === fn) calls.push(node);
+function callsOf(fn: FunctionNode, name: Identifier): CallExpression[] {
+  const calls: CallExpression[] = [];
+  const visit = (node: AnyNode): void => {
+    if (node.type === 'CallExpression' && isIdentifier(node.callee) && node.callee.name === name.name) {
+      if (binding(node.callee) === fn) calls.push(node);
     }
-    ts.forEachChild(node, visit);
+    for (const child of childrenOf(node)) visit(child);
   };
-  visit(fn.getSourceFile());
+  visit(rootOf(fn));
   return calls;
 }
 
@@ -156,162 +252,216 @@ function capped<T>(variants: T[]): T[] {
   return variants;
 }
 
+const readableProperty = (property: AnyNode) =>
+  property.type === 'SpreadElement' ||
+  (property.type === 'Property' && property.kind === 'init' && !property.method && !property.computed);
+
+function propertyName(key: AnyNode): string {
+  if (isIdentifier(key)) return key.name;
+  return String((key as { value?: unknown }).value);
+}
+
 class Reader {
-  objects(expression: ts.Expression, depth = 0): ArgObject[] {
+  constructor(private readonly text: string) {}
+
+  objects(expression: AnyNode, depth = 0): ArgObject[] {
     if (depth > 12) throw new Unreadable('nested too deep');
-    if (ts.isParenthesizedExpression(expression)) return this.objects(expression.expression, depth + 1);
-    if (ts.isObjectLiteralExpression(expression)) return this.objectLiteral(expression, depth);
-    if (ts.isIdentifier(expression)) return this.bound(expression, depth);
-    if (ts.isCallExpression(expression) && ts.isIdentifier(expression.expression)) {
-      const bound = binding(expression.expression);
+    if (expression.type === 'ParenthesizedExpression') return this.objects(expression.expression, depth + 1);
+    if (expression.type === 'ObjectExpression') return this.objectLiteral(expression, depth);
+    if (isIdentifier(expression)) return this.bound(expression, depth);
+    if (expression.type === 'CallExpression' && isIdentifier(expression.callee)) {
+      const bound = binding(expression.callee);
       const returned = bound && returnedObject(bound);
       if (returned) return this.objects(returned, depth + 1);
-      throw new Unreadable(`${expression.expression.text}(…) does not return an object literal`);
+      throw new Unreadable(`${expression.callee.name}(…) does not return an object literal`);
     }
-    if (ts.isConditionalExpression(expression)) {
+    if (expression.type === 'ConditionalExpression') {
       return capped([
-        ...this.objects(expression.whenTrue, depth + 1),
-        ...this.objects(expression.whenFalse, depth + 1),
+        ...this.objects(expression.consequent, depth + 1),
+        ...this.objects(expression.alternate, depth + 1),
       ]);
     }
-    throw new Unreadable(`an argument object built by ${ts.SyntaxKind[expression.kind]}`);
+    throw new Unreadable(`an argument object built by ${expression.type}`);
   }
 
-  private bound(identifier: ts.Identifier, depth: number): ArgObject[] {
+  private bound(identifier: Identifier, depth: number): ArgObject[] {
     const bound = binding(identifier);
-    if (bound && ts.isParameter(bound)) return this.parameter(bound, depth);
-    if (bound && ts.isExpression(bound) && !ts.isArrowFunction(bound) && !ts.isFunctionExpression(bound)) {
+    if (bound && isParameter(bound)) return this.parameter(bound as Pattern, depth);
+    if (
+      bound &&
+      isExpression(bound) &&
+      bound.type !== 'ArrowFunctionExpression' &&
+      bound.type !== 'FunctionExpression'
+    ) {
       return this.objects(bound, depth + 1);
     }
-    const elements = bound && this.loopElements(identifier.text, bound);
+    const elements = bound && this.loopElements(identifier.name, bound);
     if (elements) return capped(elements.flatMap((element) => this.objects(element, depth + 1)));
-    throw new Unreadable(`${identifier.text} is not a same-file constant object`);
+    throw new Unreadable(`${identifier.name} is not a same-file constant object`);
   }
 
-  private parameter(parameter: ts.ParameterDeclaration, depth: number): ArgObject[] {
-    const fn = parameter.parent;
+  private parameter(parameter: Pattern, depth: number): ArgObject[] {
+    const fn = parents.get(parameter) as FunctionNode;
     const name = functionName(fn);
     const calls = name ? callsOf(fn, name) : [];
+    const named =
+      parameter.type === 'AssignmentPattern'
+        ? parameter.left
+        : parameter.type === 'RestElement'
+          ? parameter.argument
+          : parameter;
     if (calls.length === 0)
-      throw new Unreadable(`${parameter.name.getText()} is a parameter of a function never called in this file`);
-    const index = fn.parameters.indexOf(parameter);
+      throw new Unreadable(
+        `${this.text.slice(named.start, named.end)} is a parameter of a function never called in this file`,
+      );
+    const index = fn.params.indexOf(parameter);
     return capped(
       calls.flatMap((call) => {
         const argument = call.arguments[index];
         if (argument) return this.objects(argument, depth + 1);
-        return parameter.initializer ? this.objects(parameter.initializer, depth + 1) : [{}];
+        return parameter.type === 'AssignmentPattern' ? this.objects(parameter.right, depth + 1) : [{}];
       }),
     );
   }
 
-  loopElements(name: string, bound: ts.Node): ts.Expression[] | undefined {
-    if (!ts.isVariableDeclaration(bound) || !ts.isVariableDeclarationList(bound.parent)) return undefined;
-    const loop = bound.parent.parent;
-    if (!ts.isForOfStatement(loop)) return undefined;
-    let iterated: ts.Expression | undefined = loop.expression;
-    if (ts.isIdentifier(iterated)) {
+  loopElements(name: string, bound: AnyNode): AnyNode[] | undefined {
+    if (bound.type !== 'VariableDeclarator') return undefined;
+    const declaration = parents.get(bound);
+    if (declaration?.type !== 'VariableDeclaration') return undefined;
+    const loop = parents.get(declaration);
+    if (loop?.type !== 'ForOfStatement') return undefined;
+    let iterated: AnyNode | undefined = loop.right;
+    if (isIdentifier(iterated)) {
       const declared = binding(iterated);
-      iterated = declared && ts.isExpression(declared) ? declared : undefined;
+      iterated = declared && isExpression(declared) ? declared : undefined;
     }
-    if (!iterated || !ts.isArrayLiteralExpression(iterated)) return undefined;
-    if (ts.isIdentifier(bound.name)) return [...iterated.elements];
-    const element = (bound.name.elements as readonly ts.ArrayBindingElement[])
-      .filter(ts.isBindingElement)
-      .find((item) => ts.isIdentifier(item.name) && item.name.text === name);
-    if (!element) return undefined;
-    const property = element.propertyName && ts.isIdentifier(element.propertyName) ? element.propertyName.text : name;
-    return iterated.elements.map((item) => {
-      if (!ts.isObjectLiteralExpression(item)) throw new Unreadable(`${name} comes from a loop over non-objects`);
+    if (iterated?.type !== 'ArrayExpression') return undefined;
+    const items = iterated.elements.map((item) => {
+      if (item === null) throw new Unreadable(`${name} comes from a loop over an array with a hole`);
+      return item;
+    });
+    if (isIdentifier(bound.id)) return items;
+    let property: string | undefined;
+    if (bound.id.type === 'ObjectPattern') {
+      for (const item of bound.id.properties) {
+        if (item.type === 'RestElement') {
+          if (boundName(item)?.name === name) property = name;
+        } else if (boundName(item.value)?.name === name) {
+          property = !item.computed && !item.shorthand && isIdentifier(item.key) ? item.key.name : name;
+        }
+        if (property !== undefined) break;
+      }
+    } else if (bound.id.type === 'ArrayPattern') {
+      if (bound.id.elements.some((element) => boundName(element)?.name === name)) property = name;
+    }
+    if (property === undefined) return undefined;
+    return items.map((item) => {
+      if (item.type !== 'ObjectExpression') throw new Unreadable(`${name} comes from a loop over non-objects`);
       const found = item.properties.find(
-        (candidate) => candidate.name && ts.isIdentifier(candidate.name) && candidate.name.text === property,
+        (candidate) =>
+          candidate.type === 'Property' &&
+          !candidate.computed &&
+          isIdentifier(candidate.key) &&
+          candidate.key.name === property,
       );
-      if (found && ts.isPropertyAssignment(found)) return found.initializer;
-      if (found && ts.isShorthandPropertyAssignment(found)) return found.name;
+      if (found?.type === 'Property' && found.kind === 'init' && !found.method) return found.value;
       throw new Unreadable(`${name} is missing from a loop element`);
     });
   }
 
-  private objectLiteral(expression: ts.ObjectLiteralExpression, depth: number): ArgObject[] {
+  private objectLiteral(expression: ObjectExpression, depth: number): ArgObject[] {
     let variants: ArgObject[] = [{}];
     for (const property of expression.properties) {
-      if (ts.isSpreadAssignment(property)) {
-        const spread = this.objects(property.expression, depth + 1);
+      if (property.type === 'SpreadElement') {
+        const spread = this.objects(property.argument, depth + 1);
         variants = capped(variants.flatMap((left) => spread.map((right) => ({ ...left, ...right }))));
-      } else if (ts.isShorthandPropertyAssignment(property)) {
-        variants = variants.map((variant) => ({ ...variant, [property.name.text]: hole(property.name) }));
-      } else if (ts.isPropertyAssignment(property) && !ts.isComputedPropertyName(property.name)) {
-        const value = this.value(property.initializer, depth + 1);
-        variants = variants.map((variant) => ({ ...variant, [(property.name as ts.Identifier).text]: value }));
+      } else if (property.shorthand && readableProperty(property)) {
+        variants = variants.map((variant) => ({ ...variant, [propertyName(property.key)]: hole(property.value) }));
+      } else if (readableProperty(property)) {
+        const value = this.value(property.value, depth + 1);
+        variants = variants.map((variant) => ({ ...variant, [propertyName(property.key)]: value }));
       } else throw new Unreadable('a computed or method property');
     }
     return variants;
   }
 
-  value(expression: ts.Expression, depth = 0): Value {
-    if (ts.isParenthesizedExpression(expression)) return this.value(expression.expression, depth);
-    if (ts.isNumericLiteral(expression)) return Number(expression.text);
-    if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) return expression.text;
-    if (expression.kind === ts.SyntaxKind.TrueKeyword) return true;
-    if (expression.kind === ts.SyntaxKind.FalseKeyword) return false;
-    if (expression.kind === ts.SyntaxKind.NullKeyword) return null;
-    if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.MinusToken) {
-      const operand = this.value(expression.operand, depth);
+  value(expression: AnyNode, depth = 0): Value {
+    if (expression.type === 'ParenthesizedExpression') return this.value(expression.expression, depth);
+    if (expression.type === 'Literal' && expression.regex === undefined && expression.bigint === undefined) {
+      return expression.value;
+    }
+    const text = stringText(expression);
+    if (text !== undefined) return text;
+    if (expression.type === 'UnaryExpression' && expression.operator === '-') {
+      const operand = this.value(expression.argument, depth);
       return typeof operand === 'number' ? -operand : hole(expression);
     }
-    if (ts.isArrayLiteralExpression(expression) && !expression.elements.some(ts.isSpreadElement)) {
-      return expression.elements.map((element) => this.value(element, depth + 1));
-    }
-    if (ts.isObjectLiteralExpression(expression)) {
-      const readable = expression.properties.every(
-        (property) =>
-          ts.isSpreadAssignment(property) ||
-          ts.isShorthandPropertyAssignment(property) ||
-          (ts.isPropertyAssignment(property) && !ts.isComputedPropertyName(property.name)),
+    if (
+      expression.type === 'ArrayExpression' &&
+      !expression.elements.some((element) => element?.type === 'SpreadElement')
+    ) {
+      return expression.elements.map((element) =>
+        element === null ? hole(expression) : this.value(element, depth + 1),
       );
-      if (!readable) return hole(expression);
+    }
+    if (expression.type === 'ObjectExpression') {
+      if (!expression.properties.every(readableProperty)) return hole(expression);
       const [only, ...more] = this.objectLiteral(expression, depth);
       return more.length === 0 ? only : hole(expression);
     }
     return hole(expression);
   }
 
-  toolNames(expression: ts.Expression): string[] | undefined {
-    if (ts.isStringLiteralLike(expression)) return [expression.text];
-    if (ts.isIdentifier(expression)) {
+  toolNames(expression: AnyNode): string[] | undefined {
+    const text = stringText(expression);
+    if (text !== undefined) return [text];
+    if (isIdentifier(expression)) {
       const bound = binding(expression);
-      const elements = bound && this.loopElements(expression.text, bound);
-      if (!elements || !elements.every(ts.isStringLiteralLike)) return undefined;
-      return elements.map((element) => (element as ts.StringLiteralLike).text);
+      const elements = bound && this.loopElements(expression.name, bound);
+      const names = elements?.map(stringText);
+      if (!names || names.some((name) => name === undefined)) return undefined;
+      return names as string[];
     }
-    if (ts.isTemplateExpression(expression) && expression.templateSpans.length === 1) {
-      const [span] = expression.templateSpans;
-      const inner = this.toolNames(span.expression);
-      return inner?.map((part) => `${expression.head.text}${part}${span.literal.text}`);
+    if (expression.type === 'TemplateLiteral' && expression.expressions.length === 1) {
+      const [head, tail] = expression.quasis;
+      const inner = this.toolNames(expression.expressions[0]);
+      return inner?.map((part) => `${head.value.cooked}${part}${tail.value.cooked}`);
     }
     return undefined;
   }
 }
 
-function callerName(call: ts.CallExpression): string | undefined {
-  const callee = call.expression;
-  if (ts.isIdentifier(callee)) return callee.text;
-  if (ts.isPropertyAccessExpression(callee)) return callee.name.text;
+function callerName(call: CallExpression): string | undefined {
+  const callee = call.callee;
+  if (isIdentifier(callee)) return callee.name;
+  if (callee.type === 'MemberExpression' && !callee.computed) {
+    if (callee.property.type === 'Identifier' || callee.property.type === 'PrivateIdentifier')
+      return callee.property.name;
+  }
   return undefined;
 }
 
-function isPassThrough(expression: ts.Expression): boolean {
-  if (!ts.isIdentifier(expression)) return false;
+function isPassThrough(expression: AnyNode): boolean {
+  if (!isIdentifier(expression)) return false;
   const bound = binding(expression);
-  return bound !== undefined && ts.isParameter(bound);
+  return bound !== undefined && isParameter(bound);
 }
 
 export function scanSource(file: string, text: string): Scan {
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-  const reader = new Reader();
+  const source = parse(text, {
+    ecmaVersion: 'latest',
+    sourceType: 'module',
+    locations: true,
+    preserveParens: true,
+    allowHashBang: true,
+    allowReturnOutsideFunction: true,
+  });
+  linkParents(source);
+  const reader = new Reader(text);
   const scan: Scan = { calls: [], unread: [], unknownTools: [], otherCallers: [] };
-  const where = (node: ts.Node) => `${file}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}`;
+  const where = (node: AnyNode) => `${file}:${node.loc!.start.line}`;
 
-  const add = (call: ts.Node, tools: string[], variants: () => ArgObject[], label: string) => {
+  const add = (call: AnyNode, tools: string[], variants: () => ArgObject[], label: string) => {
     const unknown = tools.filter((tool) => !CHECKED_CONTRACTS.has(tool));
     for (const tool of unknown) scan.unknownTools.push(`${where(call)} ${tool}`);
     if (unknown.length > 0) return;
@@ -324,20 +474,21 @@ export function scanSource(file: string, text: string): Scan {
     }
   };
 
-  const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node)) {
+  const visit = (node: AnyNode): void => {
+    if (node.type === 'CallExpression') {
       const name = callerName(node);
       const [first, second] = node.arguments;
-      if (name === 'rpc' && first && ts.isStringLiteralLike(first) && first.text === 'tools/call') {
+      if (name === 'rpc' && first && stringText(first) === 'tools/call') {
         const passed =
-          second &&
-          ts.isObjectLiteralExpression(second) &&
+          second?.type === 'ObjectExpression' &&
           second.properties.some(
             (property) =>
-              property.name?.getText() === 'name' &&
-              (ts.isShorthandPropertyAssignment(property)
-                ? isPassThrough(property.name)
-                : ts.isPropertyAssignment(property) && isPassThrough(property.initializer)),
+              property.type === 'Property' &&
+              !property.computed &&
+              isIdentifier(property.key) &&
+              property.key.name === 'name' &&
+              readableProperty(property) &&
+              isPassThrough(property.value),
           );
         if (!passed) {
           try {
@@ -353,7 +504,7 @@ export function scanSource(file: string, text: string): Scan {
         }
       } else if (
         !(name && CALLERS.has(name)) &&
-        node.arguments.some((argument) => ts.isStringLiteralLike(argument) && CHECKED_CONTRACTS.has(argument.text))
+        node.arguments.some((argument) => CHECKED_CONTRACTS.has(stringText(argument) ?? ''))
       ) {
         scan.otherCallers.push(name ?? '<anonymous>');
       } else if (name && CALLERS.has(name) && first && !isPassThrough(first)) {
@@ -362,7 +513,7 @@ export function scanSource(file: string, text: string): Scan {
         else add(node, tools, () => (second ? reader.objects(second) : [{}]), tools.join('|'));
       }
     }
-    ts.forEachChild(node, visit);
+    for (const child of childrenOf(node)) visit(child);
   };
   visit(source);
   return scan;
@@ -405,12 +556,12 @@ function sample(schema: Schema | undefined): unknown {
 }
 
 const isPhotoId = (schema: Schema | undefined) => schema?.pattern === PHOTO_ID_PATTERN;
-const scalarExpression = (expression: ts.Expression) =>
-  ts.isIdentifier(expression) ||
-  ts.isPropertyAccessExpression(expression) ||
-  ts.isElementAccessExpression(expression) ||
-  ts.isCallExpression(expression) ||
-  ts.isTemplateExpression(expression);
+const scalarExpression = (expression: AnyNode): boolean =>
+  expression.type === 'Identifier' ||
+  expression.type === 'MemberExpression' ||
+  expression.type === 'CallExpression' ||
+  (expression.type === 'ChainExpression' && scalarExpression(expression.expression)) ||
+  (expression.type === 'TemplateLiteral' && expression.expressions.length > 0);
 
 interface Completed {
   args: unknown;
