@@ -367,6 +367,6 @@ return {
     DEFAULT_REQUEST_PORT = 58763,
     DEFAULT_RESPONSE_PORT = 58764,
     MAX_BULK_PHOTO_IDS = 1000,
-    VERSION = "0.2.0",
-    BUILD = "c846ddf6bc1c69f9",
+    VERSION = "0.2.1",
+    BUILD = "705b8a3ec1fb47c1",
 }

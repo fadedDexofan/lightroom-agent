@@ -1,6 +1,6 @@
 {
   "name": "lightroom-agent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Let an AI agent cull, develop, mask and export your photos in Adobe Lightroom Classic, and check every change on Lightroom's own render.",
   "author": {
     "name": "fadedDexofan"
@@ -20,7 +20,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "lightroom-agent@0.2.0"
+        "lightroom-agent@0.2.1"
       ],
       "env": {
         "LIGHTROOM_AGENT_TOOLSETS": "all"
