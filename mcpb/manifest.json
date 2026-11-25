@@ -247,7 +247,7 @@
     },
     {
       "name": "set_process_version",
-      "description": "Set Version 1–6 (confirm:true; appearance can change)."
+      "description": "Set the process version (confirm:true; appearance can change)."
     },
     {
       "name": "create_virtual_copies",

@@ -3569,7 +3569,7 @@ local function processVersionSetup(opts)
         helper.fakePhoto({ id = "2", path = "/2.raw", developSettings = opts.settings2 }),
     }
     local active, selected, module, sources = photos[1], { photos[1] }, "library", { "folder" }
-    local versions, calls, now = { [photos[1]] = "Version 5", [photos[2]] = "Version 6" }, {}, 0
+    local versions, calls, now = { [photos[1]] = opts.version1 or "Version 5", [photos[2]] = "Version 6" }, {}, 0
     local catalog, Handler = setup({
         photos = photos,
         applicationView = {
@@ -3688,6 +3688,43 @@ describe("HandlerDevelop.setProcessVersion", function()
             assert.are.equal("library", view())
         end
     )
+end)
+
+describe("HandlerDevelop.setProcessVersion over the contract's process versions", function()
+    local contract
+    before_each(function()
+        contract = require "Contract"
+        package.loaded.Contract = setmetatable({
+            PROCESS_VERSIONS = {
+                "Version 1",
+                "Version 2",
+                "Version 3",
+                "Version 4",
+                "Version 5",
+                "Version 6",
+                "Version 7",
+            },
+        }, { __index = contract })
+    end)
+    after_each(function() package.loaded.Contract = contract end)
+
+    it("leaves a photo already on a version the contract adds unchanged", function()
+        local Handler, calls = processVersionSetup({ version1 = "Version 7" })
+        local reply = Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 7" })
+        assert.is_nil(reply.failed and reply.failed[1].reason)
+        assert.are.same({ "1:unchanged" }, statuses(reply))
+        assert.are.equal(0, #calls)
+    end)
+
+    it("ranks a version the contract adds above the ones before it", function()
+        local Handler, calls = processVersionSetup({
+            version1 = "Version 7",
+            settings1 = { MaskGroupBasedCorrections = { { CorrectionMasks = {} } } },
+        })
+        local reply = Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6" })
+        assert.matches("downgrades are refused", reply.failed[1].reason, 1, true)
+        assert.are.equal(0, #calls)
+    end)
 end)
 
 describe("HandlerDevelop.applyAutoAdjustments", function()

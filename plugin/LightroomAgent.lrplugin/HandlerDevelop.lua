@@ -1219,14 +1219,10 @@ end
 
 local PROCESS_VERSION_PHOTO_AND_RESTORE_SECONDS = 60
 
-local PROCESS_VERSIONS = {
-    ["Version 1"] = 1,
-    ["Version 2"] = 2,
-    ["Version 3"] = 3,
-    ["Version 4"] = 4,
-    ["Version 5"] = 5,
-    ["Version 6"] = 6,
-}
+local PROCESS_VERSION_RANKS = {}
+for rank, version in ipairs(Contract.PROCESS_VERSIONS) do
+    PROCESS_VERSION_RANKS[version] = rank
+end
 
 local function refuseMaskedDowngrade(catalog, photo)
     local masks = savedOf(catalog, photo).MaskGroupBasedCorrections
@@ -1241,9 +1237,9 @@ end
 local function changeProcessVersion(context, catalog, photo, version, state)
     DevelopSession.openPhoto(catalog, photo, state)
     local previous = LrDevelopController.getProcessVersion()
-    if not PROCESS_VERSIONS[previous] then Reply.refuse("Lightroom returned an unknown process version") end
+    if not PROCESS_VERSION_RANKS[previous] then Reply.refuse("Lightroom returned an unknown process version") end
     if previous == version then return { status = "unchanged", previous_version = previous, new_version = previous } end
-    if PROCESS_VERSIONS[version] < PROCESS_VERSIONS[previous] then refuseMaskedDowngrade(catalog, photo) end
+    if PROCESS_VERSION_RANKS[version] < PROCESS_VERSION_RANKS[previous] then refuseMaskedDowngrade(catalog, photo) end
     if catalog:getTargetPhoto() ~= photo then Reply.refuse("another photo became active before the version change") end
     CatalogWrite.develop(context, "setProcessVersion", version)
     local confirmed = DevelopSession.waitFor(
