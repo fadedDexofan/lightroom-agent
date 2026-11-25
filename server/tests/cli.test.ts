@@ -111,7 +111,7 @@ describe('CLI process', () => {
     build = path.join(directory, 'package', 'dist');
     await promisify(execFile)(
       process.execPath,
-      [path.resolve('node_modules/@typescript/native/bin/tsc'), '-p', 'tsconfig.build.json', '--outDir', build],
+      [path.resolve('node_modules/typescript/bin/tsc'), '-p', 'tsconfig.build.json', '--outDir', build],
       { cwd: process.cwd() },
     );
     fs.writeFileSync(path.join(build, 'package.json'), '{"type":"module"}');
