@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { requestPort, responsePort } from '../src/ports.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { requestPort, responsePort, writePortDefaults } from '../src/ports.js';
 
 describe('ports', () => {
   const originalReq = process.env.LIGHTROOM_AGENT_REQUEST_PORT;
@@ -75,5 +77,31 @@ describe('ports', () => {
     expect(requestPort()).toBe(1);
     process.env.LIGHTROOM_AGENT_REQUEST_PORT = '65535';
     expect(requestPort()).toBe(65535);
+  });
+
+  it('carries changed defaults into the desktop bundle and the registry, and the bundle hands them to the server', () => {
+    type Manifest = Parameters<typeof writePortDefaults>[0];
+    type Registry = Parameters<typeof writePortDefaults>[1];
+    const read = <T>(file: string): T =>
+      JSON.parse(fs.readFileSync(path.resolve(process.cwd(), '..', file), 'utf8')) as T;
+    const manifest = read<Manifest>('mcpb/manifest.json');
+    const registry = read<Registry>('server.json');
+
+    writePortDefaults(manifest, registry, { request: 50001, response: 50002 });
+
+    const env = manifest.server.mcp_config.env;
+    for (const name of ['LIGHTROOM_AGENT_REQUEST_PORT', 'LIGHTROOM_AGENT_RESPONSE_PORT']) {
+      process.env[name] = env[name].replace(/^\$\{user_config\.(\w+)\}$/, (_, key: string) =>
+        String(manifest.user_config[key].default),
+      );
+    }
+    expect([requestPort(), responsePort()]).toEqual([50001, 50002]);
+    const variables = registry.packages
+      .flatMap((entry) => entry.environmentVariables ?? [])
+      .filter((variable) => variable.name.endsWith('_PORT'));
+    expect(variables.map((variable) => [variable.name, variable.default])).toEqual([
+      ['LIGHTROOM_AGENT_REQUEST_PORT', '50001'],
+      ['LIGHTROOM_AGENT_RESPONSE_PORT', '50002'],
+    ]);
   });
 });

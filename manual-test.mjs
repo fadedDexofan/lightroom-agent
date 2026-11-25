@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // DEV-ONLY: Direct TCP probe for validating plugin dispatch without a full MCP
-// client. Connects raw sockets to the plugin's request (:58763) and response
-// (:58764) ports, sends one action, prints the reply, then exits.
+// client. Connects raw sockets to the plugin's request and response ports,
+// sends one action, prints the reply, then exits.
 //
 // This script bypasses the MCP server entirely — it does NOT exercise MCP
 // transport, tool schemas, or server-side validation. Use it to confirm the
@@ -12,8 +12,8 @@
 //   - Plugin token written to TOKEN_PATH (created when Start Server is clicked)
 //
 // Env overrides (must match plugin Plug-in Manager settings):
-//   LIGHTROOM_AGENT_REQUEST_PORT   default 58763
-//   LIGHTROOM_AGENT_RESPONSE_PORT  default 58764
+//   LIGHTROOM_AGENT_REQUEST_PORT   default DEFAULT_REQUEST_PORT in Contract.lua
+//   LIGHTROOM_AGENT_RESPONSE_PORT  default DEFAULT_RESPONSE_PORT in Contract.lua
 //
 // Env overrides (probe/server reader only — no matching Plug-in Manager setting):
 //   LIGHTROOM_AGENT_TOKEN_PATH     default ~/.config/lightroom-agent/token
@@ -27,8 +27,15 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-const REQUEST_PORT = Number(process.env.LIGHTROOM_AGENT_REQUEST_PORT ?? 58763);
-const RESPONSE_PORT = Number(process.env.LIGHTROOM_AGENT_RESPONSE_PORT ?? 58764);
+function contractPort(name) {
+  const contract = fs.readFileSync(new URL("./plugin/LightroomAgent.lrplugin/Contract.lua", import.meta.url), "utf8");
+  const port = new RegExp(`\\n    ${name} = (\\d+),\\r?\\n`).exec(contract)?.[1];
+  if (port === undefined) throw new Error(`Contract.lua has no ${name}; run npm run build in server/`);
+  return Number(port);
+}
+
+const REQUEST_PORT = Number(process.env.LIGHTROOM_AGENT_REQUEST_PORT ?? contractPort("DEFAULT_REQUEST_PORT"));
+const RESPONSE_PORT = Number(process.env.LIGHTROOM_AGENT_RESPONSE_PORT ?? contractPort("DEFAULT_RESPONSE_PORT"));
 const TOKEN_PATH =
   process.env.LIGHTROOM_AGENT_TOKEN_PATH ?? path.join(os.homedir(), ".config", "lightroom-agent", "token");
 const TIMEOUT_MS = 30_000;

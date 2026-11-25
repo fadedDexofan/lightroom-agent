@@ -1,3 +1,5 @@
+import { DEFAULT_REQUEST_PORT, DEFAULT_RESPONSE_PORT } from "./ports.js";
+
 export type ParsedCli =
   | { command: "stdio" | "install-plugin" | "help" | "version" }
   | { command: "tools"; name?: string }
@@ -13,8 +15,8 @@ USAGE
   lightroom-agent --help | --version
 
 ENV
-  LIGHTROOM_AGENT_REQUEST_PORT   plugin request port  (default 58763)
-  LIGHTROOM_AGENT_RESPONSE_PORT  plugin response port (default 58764)
+  LIGHTROOM_AGENT_REQUEST_PORT   plugin request port  (default ${DEFAULT_REQUEST_PORT})
+  LIGHTROOM_AGENT_RESPONSE_PORT  plugin response port (default ${DEFAULT_RESPONSE_PORT})
   LIGHTROOM_AGENT_TOOLSETS       core plus develop, masks, or all (default core)
   LIGHTROOM_AGENT_READ_ONLY      hide and refuse writes: true/1 or false/0 (default false)
   LIGHTROOM_AGENT_TOKEN_PATH     auth token file      (default ~/.config/lightroom-agent/token)

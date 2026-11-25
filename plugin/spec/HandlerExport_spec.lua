@@ -1066,6 +1066,25 @@ describe("HandlerExport.exportPhotoMetadata", function()
         )
         assert.are.equal(0, catalog.getReadAccessCount())
     end)
+
+    it("refuses a selection larger than the contract's cap before reading it", function()
+        local contract = require "Contract"
+        finally(function() package.loaded.Contract = contract end)
+        package.loaded.Contract = setmetatable({ MAX_BULK_PHOTO_IDS = 2 }, { __index = contract })
+        local selected = {}
+        for i = 1, 3 do
+            selected[i] = helper.fakePhoto({ id = i, path = "/p/" .. i .. ".jpg" })
+        end
+        local catalog, Handler = setupMetadata({ photos = {}, targetPhotos = selected })
+
+        assert.matches(
+            "3 photos are selected (or in the filmstrip); export at most 2 at a time",
+            helper.failedOf(function() Handler.exportPhotoMetadata({ destination = tempJson() }) end),
+            1,
+            true
+        )
+        assert.are.equal(0, catalog.getReadAccessCount())
+    end)
 end)
 
 describe("HandlerExport.renderSource", function()

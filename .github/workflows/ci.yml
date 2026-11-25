@@ -114,7 +114,7 @@ jobs:
         if: needs.changes.outputs.code != 'false' && matrix.os == 'ubuntu-latest'
         working-directory: .
         run: |
-          git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server/src/skill-content.ts codex/skills
+          git diff --exit-code -- plugin/LightroomAgent.lrplugin/Contract.lua mcpb/manifest.json server.json server/src/skill-content.ts codex/skills
           test -z "$(git ls-files --others --exclude-standard -- codex/skills)"
 
       - name: Live kit scripts parse

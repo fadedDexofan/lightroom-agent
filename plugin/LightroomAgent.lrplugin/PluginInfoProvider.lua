@@ -17,9 +17,6 @@ local Log = require "Log"
 local HandlerLoads = require "HandlerLoads"
 local PluginServerPolicy = require "PluginServerPolicy"
 
-local DEFAULT_REQUEST_PORT = 58763
-local DEFAULT_RESPONSE_PORT = 58764
-
 -- LrSocket fires these on its accept-loop when no client is attached yet.
 -- Both are benign listen-side states, not real failures.
 local function isNoClientError(errStr)
@@ -34,8 +31,8 @@ local function readPortPrefs()
     local prefs = LrPrefs.prefsForPlugin()
     local req = tonumber(prefs.requestPort)
     local res = tonumber(prefs.responsePort)
-    if not validPort(req) then req = DEFAULT_REQUEST_PORT end
-    if not validPort(res) then res = DEFAULT_RESPONSE_PORT end
+    if not validPort(req) then req = Contract.DEFAULT_REQUEST_PORT end
+    if not validPort(res) then res = Contract.DEFAULT_RESPONSE_PORT end
     return req, res
 end
 
@@ -755,7 +752,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                     min = 1,
                     max = 65535,
                 },
-                f:static_text { title = "(default 58763)" },
+                f:static_text { title = "(default " .. Contract.DEFAULT_REQUEST_PORT .. ")" },
             },
             f:row {
                 f:static_text { title = "Response port:", width = 110 },
@@ -766,7 +763,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                     min = 1,
                     max = 65535,
                 },
-                f:static_text { title = "(default 58764)" },
+                f:static_text { title = "(default " .. Contract.DEFAULT_RESPONSE_PORT .. ")" },
             },
             f:static_text {
                 title = "Port changes apply on next Start. Server env vars must match: LIGHTROOM_AGENT_REQUEST_PORT / LIGHTROOM_AGENT_RESPONSE_PORT.",
