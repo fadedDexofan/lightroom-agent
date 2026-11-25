@@ -288,8 +288,12 @@ function startLeader(pairing: Paired, REQUEST_PORT: number, RESPONSE_PORT: numbe
       return NOT_CONNECTED_MESSAGE;
     },
     settleReadiness: async () => {
-      await waitUntil(socketsConnected, STARTUP_GRACE_MS, CONNECT_POLL_MS);
-      await liveness.settled();
+      const deadline = Date.now() + STARTUP_GRACE_MS;
+      while (await waitUntil(socketsConnected, deadline - Date.now(), CONNECT_POLL_MS)) {
+        const generation = liveness.connectionGeneration();
+        await liveness.settled();
+        if (liveness.connectionGeneration() === generation || Date.now() >= deadline) break;
+      }
       await unresponsive.settled();
     },
   });
