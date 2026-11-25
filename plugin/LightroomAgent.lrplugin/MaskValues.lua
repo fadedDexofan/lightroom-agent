@@ -270,12 +270,12 @@ local function swatchAdd(maskId, swatch)
     local added = MaskPointColors.newSwatch(swatch.fields)
     local function existing(entry)
         local swatches = MaskPointColors.fromStored(entry[COLORS_KEY], entry[VARIANCE_KEY])
-        if #swatches >= MaskPointColors.MAX_SWATCHES then
+        if #swatches >= Contract.POINT_COLOR.max_swatches then
             Reply.refuse(
                 string.format(
                     "Mask %s already holds %d Point Color swatches, the most Lightroom allows",
                     tostring(maskId),
-                    MaskPointColors.MAX_SWATCHES
+                    Contract.POINT_COLOR.max_swatches
                 )
             )
         end

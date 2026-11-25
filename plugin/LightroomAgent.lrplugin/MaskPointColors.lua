@@ -1,8 +1,7 @@
+local Contract = require "Contract"
 local Reply = require "Reply"
 
 local MaskPointColors = {}
-
-MaskPointColors.MAX_SWATCHES = 8
 
 local STORED_SCALARS = { "SrcHue", "SrcSat", "SrcLum", "HueShift", "SatScale", "LumScale", "RangeAmount" }
 local VARIANCE = "Variance"
@@ -17,8 +16,8 @@ local SCALARS = {
     { name = VARIANCE },
 }
 
-local RANGES = { "HueRange", "SatRange", "LumRange" }
-local RANGE_EDGES = { "LowerNone", "LowerFull", "UpperFull", "UpperNone" }
+local RANGES = Contract.POINT_COLOR.ranges
+local RANGE_EDGES = Contract.POINT_COLOR.range_edges
 
 local STORED_FORMAT = "%f"
 local STORED_SEPARATOR = ", "
