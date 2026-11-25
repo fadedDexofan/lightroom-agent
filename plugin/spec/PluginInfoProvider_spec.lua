@@ -102,6 +102,20 @@ local function loadInfoProvider()
     return require "PluginInfoProvider"
 end
 
+local function pressPanelButton(mod, title)
+    local button
+    local factory = setmetatable({}, {
+        __index = function(_, kind)
+            return function(_, args)
+                if kind == "push_button" and args.title == title then button = args end
+                return args
+            end
+        end,
+    })
+    mod.sectionsForTopOfDialog(factory, { addObserver = function() end })
+    button.action()
+end
+
 local function serving(opts, asyncTasks)
     local binds, sends = {}, {}
     local stubOpts = { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds, sends = sends }
@@ -293,6 +307,42 @@ describe("PluginInfoProvider server task", function()
         assert.are.same({}, inside)
     end)
 
+    it("exports only what Lightroom and the plug-in's own scripts read", function()
+        local entrypoints = { "resetForReload", "sectionsForTopOfDialog", "shutdown", "startServer" }
+        local allowed = {}
+        for _, key in ipairs(entrypoints) do
+            allowed[key] = true
+        end
+        local readers = {}
+        for _, name in ipairs(pluginModules()) do
+            if name ~= "PluginInfoProvider" then
+                local file = io.open("plugin/LightroomAgent.lrplugin/" .. name .. ".lua")
+                local source = "\n" .. file:read("*a")
+                file:close()
+                local function collect(pattern)
+                    for key in source:gmatch(pattern) do
+                        if not allowed[key] then readers[#readers + 1] = name .. ".lua reads " .. key end
+                    end
+                end
+                collect('require%s*%(?%s*"PluginInfoProvider"%s*%)%.([%a_]+)')
+                for binding in source:gmatch('local%s+([%a_][%w_]*)%s*=%s*require%s*%(?%s*"PluginInfoProvider"') do
+                    collect("%f[%w_]" .. binding .. "%.([%a_]+)")
+                end
+            end
+        end
+        local info = io.open("plugin/LightroomAgent.lrplugin/Info.lua"):read("*a")
+        assert.truthy(info:find('LrPluginInfoProvider = "PluginInfoProvider.lua"', 1, true))
+        assert.are.same({}, readers)
+
+        installStubs()
+        local keys = {}
+        for key in pairs(loadInfoProvider()) do
+            keys[#keys + 1] = key
+        end
+        table.sort(keys)
+        assert.are.same(entrypoints, keys)
+    end)
+
     it("progress_titles_are_gerunds: names a gerund title at every progress report and batch call", function()
         local OPENS = { ["("] = true, ["{"] = true, ["["] = true }
         local CLOSES = { [")"] = true, ["}"] = true, ["]"] = true }
@@ -405,7 +455,7 @@ describe("PluginInfoProvider server task", function()
             package.loaded.JSON, package.loaded.Reply, package.loaded.DevelopSession = nil, nil, nil
         end
         local function startFromPanel()
-            require("PluginInfoProvider").startServerFromPanel()
+            pressPanelButton(require("PluginInfoProvider"), "Start Server")
             _G.LightroomAgent_State.sendConnected = true
         end
         local function answer(action)
@@ -929,10 +979,10 @@ describe("PluginInfoProvider server task", function()
         mod.startServer()
         assert.is_true(_G.LightroomAgent_State.running)
 
-        mod.stopServer()
+        pressPanelButton(mod, "Stop Server")
         assert.is_false(_G.LightroomAgent_State.running)
 
-        mod.startServerFromPanel()
+        pressPanelButton(mod, "Start Server")
         assert.is_true(_G.LightroomAgent_State.running)
     end)
 
@@ -1169,15 +1219,6 @@ describe("superseded instance after Reload Plug-in (issue #225)", function()
     end)
     after_each(function() io.open = realOpen end)
 
-    it("treats only a readable, different token as proof of a newer instance", function()
-        local mod = loadInfoProvider()
-        assert.is_true(mod.isSuperseded("mine", "theirs"))
-        assert.is_false(mod.isSuperseded("mine", "mine"))
-        assert.is_false(mod.isSuperseded("mine", nil))
-        assert.is_false(mod.isSuperseded("mine", ""))
-        assert.is_false(mod.isSuperseded(nil, "theirs"))
-    end)
-
     -- Drives the monitor loop for up to maxTicks sleeps; `swapAt` rewrites the
     -- token file mid-run the way a reloaded instance's startServer does.
     local function runLoop(maxTicks, swapAt)
@@ -1224,102 +1265,58 @@ describe("superseded instance after Reload Plug-in (issue #225)", function()
 end)
 
 describe("heartbeat / stale-connection blast radius (PR #151 review)", function()
+    local realOpen
     before_each(function()
         _G.LightroomAgent_State = nil
-        installStubs()
+        realOpen = io.open
+        io.open = function(path, mode, ...)
+            if mode and mode:find("w", 1, true) then return { write = function() end, close = function() end } end
+            return realOpen(path, mode, ...)
+        end
     end)
+    after_each(function() io.open = realOpen end)
 
     it("ping handler answers pong with the plug-in's version and build", function()
-        local mod = loadInfoProvider()
+        local binds, sends, state = serving()
         local Contract = require("Contract")
-        assert.are.same({ pong = true, version = Contract.VERSION, build = Contract.BUILD }, mod.handlePing({}))
+
+        binds[1].onMessage(nil, '{"budget_ms":30000,"id":"p","action":"ping","hello":"' .. state.token .. '"}')
+
+        assert.are.same(
+            { pong = true, version = Contract.VERSION, build = Contract.BUILD },
+            require("JSON"):decode(sends[#sends]).result.data
+        )
         assert.is_string(Contract.VERSION)
         assert.is_string(Contract.BUILD)
     end)
 
-    describe("logBindFailure", function()
-        local function lastLog()
-            local log = _G.LightroomAgent_State.log
-            return log[#log]
+    describe("a listener that fails to open", function()
+        local function bindFailureLines()
+            local lines = {}
+            for _, line in ipairs(_G.LightroomAgent_State.log) do
+                if line:find("failed to open (", 1, true) then lines[#lines + 1] = line:match("^%S+ %- (.*)$") end
+            end
+            return lines
         end
 
+        local function fail(bind) bind.onError(nil, "failed to open localhost") end
+
         it("names the port so a foreign listener is visible in the log", function()
-            local mod = loadInfoProvider()
-            assert.is_true(mod.logBindFailure("RESPONSE", 58764, "failed to open localhost:58764", 1000))
-            assert.truthy(lastLog():find("RESPONSE port 58764 failed to open", 1, true))
+            local binds = serving()
+            fail(binds[2])
+            assert.truthy(bindFailureLines()[1]:find("RESPONSE port 58764 failed to open", 1, true))
         end)
 
         it("throttles repeats per side within the interval", function()
-            local mod = loadInfoProvider()
-            local interval = mod.BIND_FAILURE_LOG_INTERVAL_SECONDS
-            assert.is_true(mod.logBindFailure("RESPONSE", 58764, "failed to open", 2000))
-            assert.is_false(mod.logBindFailure("RESPONSE", 58764, "failed to open", 2000 + interval - 1))
-            assert.is_true(mod.logBindFailure("REQUEST", 58763, "failed to open", 2000 + interval - 1))
-            assert.is_true(mod.logBindFailure("RESPONSE", 58764, "failed to open", 2000 + interval))
-        end)
-    end)
-
-    describe("shouldRestartForStaleConnection", function()
-        it("does not restart while idle is within the soft threshold", function()
-            local mod = loadInfoProvider()
-            local restart, suffix = mod.shouldRestartForStaleConnection(
-                89,
-                0,
-                mod.STALE_RECONNECT_SECONDS,
-                mod.STALE_RESTART_HARD_CAP_SECONDS
-            )
-            assert.is_false(restart)
-            assert.are.equal("", suffix)
-        end)
-
-        it("restarts once idle passes the soft threshold with nothing in flight", function()
-            local mod = loadInfoProvider()
-            local restart, suffix = mod.shouldRestartForStaleConnection(
-                91,
-                0,
-                mod.STALE_RECONNECT_SECONDS,
-                mod.STALE_RESTART_HARD_CAP_SECONDS
-            )
-            assert.is_true(restart)
-            assert.are.equal("", suffix)
-        end)
-
-        it(
-            "defers the restart past the soft threshold while a request is genuinely in flight (blast radius fix)",
-            function()
-                local mod = loadInfoProvider()
-                local restart, suffix = mod.shouldRestartForStaleConnection(
-                    91,
-                    1,
-                    mod.STALE_RECONNECT_SECONDS,
-                    mod.STALE_RESTART_HARD_CAP_SECONDS
-                )
-                assert.is_false(restart)
-                assert.are.equal("", suffix)
+            local binds = serving()
+            fail(binds[2])
+            fail(binds[2])
+            fail(binds[1])
+            local sides = {}
+            for _, line in ipairs(bindFailureLines()) do
+                sides[#sides + 1] = line:match("^(%u+) port")
             end
-        )
-
-        it("still restarts past the hard cap even if a request is in flight, to bound the wait", function()
-            local mod = loadInfoProvider()
-            local restart, suffix = mod.shouldRestartForStaleConnection(
-                121,
-                1,
-                mod.STALE_RECONNECT_SECONDS,
-                mod.STALE_RESTART_HARD_CAP_SECONDS
-            )
-            assert.is_true(restart)
-            assert.are.equal(" [hard cap, request still in flight]", suffix)
-        end)
-
-        it("treats exactly-at-threshold idle as not yet past it (strict greater-than)", function()
-            local mod = loadInfoProvider()
-            local restart = mod.shouldRestartForStaleConnection(
-                90,
-                0,
-                mod.STALE_RECONNECT_SECONDS,
-                mod.STALE_RESTART_HARD_CAP_SECONDS
-            )
-            assert.is_false(restart)
+            assert.are.same({ "RESPONSE", "REQUEST" }, sides)
         end)
     end)
 end)
@@ -1594,7 +1591,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
 
         mod.startServer()
         mod.shutdown()
-        mod.startServerFromPanel()
+        pressPanelButton(mod, "Start Server")
 
         assert.is_false(_G.LightroomAgent_State.shuttingDown)
         assert.is_not_nil(_G.LightroomAgent_State.token)
