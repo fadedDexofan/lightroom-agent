@@ -1,3 +1,32 @@
+# lightroom-agent 0.2.1
+
+A maintenance release. A tool call made while the server is still connecting to the plug-in no longer fails at once when the plug-in's first connection drops: it waits for the reconnect while the connect wait lasts. And the plug-in now takes its tables from the server instead of keeping its own copies. The tools are the same 83 as in 0.2.0.
+
+## Install
+
+- Claude Code: `/plugin marketplace add fadedDexofan/lightroom-agent`, then `/plugin install lightroom-agent@lightroom-agent`; to update, `claude plugin marketplace update lightroom-agent`, then `claude plugin update lightroom-agent@lightroom-agent`.
+- Codex CLI: `codex plugin marketplace add fadedDexofan/lightroom-agent`, then `codex plugin add lightroom-agent@lightroom-agent`; to update, `codex plugin marketplace upgrade lightroom-agent`, then start a new session.
+- Claude Desktop: open the `.mcpb` attached to this release; to update, open a newer release's `.mcpb`.
+- Any MCP client: `npx -y lightroom-agent@0.2.1` over stdio. The default toolset, `core`, leaves out the develop and mask tools; set `LIGHTROOM_AGENT_TOOLSETS=all` to load every tool.
+- From a checkout: run `npm --prefix server run build`, quit every client, run `node server/dist/index.js install-plugin`, restart Lightroom, then start the clients.
+
+After updating, restart every client, then restart Lightroom Classic and bring its window to the front once. The plug-in has a new file, and Reload Plug-in does not load files added after Lightroom started.
+
+## Fixes
+
+- **A call made during the connect no longer fails on a dropped first connection.** A call polls up to 3 s for the plug-in's connection. The plug-in's first check then has its own 5 s, and a diagnosis of the ports can add a wait after that. When the connection dropped before the plug-in answered that first check, the call was refused with "Lightroom plugin not connected" at once, with most of the 3 s left. It now polls for the reconnect with whatever remains of the 3 s, and a reconnect in time gets a new check with its own 5 s. This is one race that produces the intermittent failure seen in the CLI tests; the cause of the reported failure itself was never observed.
+- **The plug-in takes its tables from the server.** The process versions, the Point Color format and its eight-swatch limit, the default ports and the 1000-photo limit of `export_photo_metadata` on the selection now reach the plug-in only through the generated contract. The values have not changed. The default ports in the Claude Desktop bundle and the MCP registry entry are generated from the same place, so the bundle can no longer override the server's default with a stale one.
+- The descriptions of `set_process_version` and `edit_mask_point_colors` were reworded: the first no longer repeats the version list its schema gives, and the second states the swatch limit as a count.
+
+## For contributors
+
+- The server tests run on Vitest 5 with v8 coverage instead of Jest and ts-jest. The test transform no longer type-checks each file; `npm run check` remains the type check of the sources and the tests. TypeScript 7 is the only TypeScript left in the dev dependencies. Coverage is enforced over the same 50 source files; the floors are 95% statements, 89% branches, 90% functions and 95% lines, with `src/index.ts` apart.
+- The plug-in's server loop takes its restart, takeover and log-throttling decisions from a new module, `PluginServerPolicy.lua`, and `PluginInfoProvider.lua` exports only what Lightroom and the plug-in's own scripts call.
+
+## Known issues
+
+The known issues of 0.2.0 still apply.
+
 # lightroom-agent 0.2.0
 
 This release adds `set_profile` for a raw photo's base profile, makes `copy_develop_settings` copy the profile the way Lightroom does, and names the photos every tool acts on `photo_ids`. It ships 83 tools.
