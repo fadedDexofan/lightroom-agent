@@ -96,7 +96,7 @@ jobs:
           npm run check
           npm run lint
           npm run build
-          npm run test:coverage -- --ci --reporters=default
+          npm run test:coverage
 
       - name: Generated files are up to date
         run: |

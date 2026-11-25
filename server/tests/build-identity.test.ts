@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { compareVersions } from '../src/build-identity.js';
 
 describe('compareVersions', () => {

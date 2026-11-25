@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Dispatcher, PluginNotSentError, PluginTimeoutError } from '../src/dispatcher.js';
 
 interface SentRequest {
@@ -165,7 +165,7 @@ describe('Dispatcher', () => {
   });
 
   it('settles a timed-out request after the late-reply grace when no reply comes', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const graced = new Dispatcher({
         send: () => true,
@@ -176,29 +176,29 @@ describe('Dispatcher', () => {
       });
       const pending = graced.call('slow', {}, 1000);
       const caught = pending.catch((error: unknown) => error);
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
       const error = (await caught) as PluginTimeoutError;
       let settled = false;
       void error.settled.then(() => {
         settled = true;
       });
-      jest.advanceTimersByTime(49);
+      vi.advanceTimersByTime(49);
       await Promise.resolve();
       expect(settled).toBe(false);
-      jest.advanceTimersByTime(1);
+      vi.advanceTimersByTime(1);
       await error.settled;
       expect(settled).toBe(true);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('settles a timed-out request when the connection is lost before its late reply', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const pending = dispatcher.call('slow', {}, 1000);
       const caught = pending.catch((error: unknown) => error);
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
       const error = (await caught) as PluginTimeoutError;
       let settled = false;
       void error.settled.then(() => {
@@ -210,7 +210,7 @@ describe('Dispatcher', () => {
       await error.settled;
       expect(settled).toBe(true);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
@@ -239,20 +239,20 @@ describe('Dispatcher', () => {
   });
 
   it('waits for the timeout the call names', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const pending = dispatcher.call('export_photos', {}, 60_000);
       let settled = false;
       void pending.catch(() => {
         settled = true;
       });
-      jest.advanceTimersByTime(59_999);
+      vi.advanceTimersByTime(59_999);
       await Promise.resolve();
       expect(settled).toBe(false);
-      jest.advanceTimersByTime(1);
+      vi.advanceTimersByTime(1);
       await expect(pending).rejects.toThrow(/timeout \(60s\)/);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 });
@@ -295,17 +295,17 @@ describe('Dispatcher cancels', () => {
   });
 
   it("writes no timeout cancel, a ping's included, to a newer connection", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const { dispatcher, sent, reconnect } = dispatcherOn();
       const ping = dispatcher.call('ping', {}, 1_000).catch((error: unknown) => error);
       reconnect();
-      jest.advanceTimersByTime(1_000);
+      vi.advanceTimersByTime(1_000);
 
       expect(await ping).toBeInstanceOf(PluginTimeoutError);
       expect(sent.map((frame) => frame.action)).toEqual(['ping']);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 });

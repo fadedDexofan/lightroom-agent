@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { dataOf } from './helpers/envelope.js';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import jpeg from 'jpeg-js';
@@ -130,7 +130,7 @@ describe('read-only mode', () => {
   });
 
   it.each([undefined, 'core', 'develop', 'masks', 'all'])(
-    'lists exactly enabled read tools for %p',
+    'lists exactly enabled read tools for %o',
     async (toolsets) => {
       pair = await connect({ toolsets, readOnly: true });
       const listed = await pair.client.listTools();
@@ -144,7 +144,7 @@ describe('read-only mode', () => {
   );
 
   it('rejects every write, hidden read, unknown and test-only call before dispatch', async () => {
-    const call = jest.fn<CallFn>();
+    const call = vi.fn<CallFn>();
     pair = await connect({ readOnly: true, call });
     const names = TOOL_CONTRACTS.filter((tool) => !tool.annotations.readOnlyHint || tool.toolset !== 'core').map(
       (tool) => tool.name,
@@ -178,7 +178,7 @@ describe('read-only mode', () => {
   });
 
   it('refuses open_in_develop as an unknown property before dispatch', async () => {
-    const call = jest.fn<CallFn>();
+    const call = vi.fn<CallFn>();
     pair = await connect({ readOnly: true, call });
     const refused = asToolResult(
       await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_id: 914, open_in_develop: 'fail' } }),
@@ -189,7 +189,7 @@ describe('read-only mode', () => {
   });
 
   it('enforces before the broker follower call and fixes the list at startup', async () => {
-    const callTool = jest.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
+    const callTool = vi.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
     const options = { readOnly: true, toolsets: parseToolsets('all') };
     const server = createMcpServer(callTool, createToolAccess(options));
     const client = new Client({ name: 'follower-test', version: '1.0.0' });
@@ -209,8 +209,8 @@ describe('read-only mode', () => {
     expect(await client.listTools()).toEqual(before);
   });
 
-  it.each([undefined, 'all'])('preserves listing bytes and write dispatch when off for %p', async (toolsets) => {
-    const call = jest.fn<CallFn>().mockResolvedValue({ id: 'x', result: { data: { success: true } } });
+  it.each([undefined, 'all'])('preserves listing bytes and write dispatch when off for %o', async (toolsets) => {
+    const call = vi.fn<CallFn>().mockResolvedValue({ id: 'x', result: { data: { success: true } } });
     pair = await connect({ toolsets, readOnly: false, call });
     const listed = await pair.client.listTools();
     const enabled = new Set(parseToolsets(toolsets));
@@ -249,7 +249,7 @@ describe('createMcpServer', () => {
   it.each(['set_selection', 'cancel', 'ping', 'not_a_tool'])(
     'refuses unpublished tool %s before forwarding to a broker',
     async (name) => {
-      const callTool = jest.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
+      const callTool = vi.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
       const server = createMcpServer(callTool, createToolAccess({ toolsets: parseToolsets('all'), readOnly: false }));
       const client = new Client({ name: 'unpublished-tool-test', version: '1.0.0' });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -425,7 +425,7 @@ describe('createMcpServer', () => {
       [undefined, false, 'Toolsets: core; read-only mode: off'],
       ['all', false, 'Toolsets: core, develop, masks; read-only mode: off'],
       ['develop', true, 'Toolsets: core, develop; read-only mode: on'],
-    ])('summarises toolsets %p with read-only %p for the start-up log', (toolsets, readOnly, line) => {
+    ])('summarises toolsets %o with read-only %o for the start-up log', (toolsets, readOnly, line) => {
       expect(createToolAccess({ toolsets: parseToolsets(toolsets), readOnly }).summary).toBe(line);
     });
 
@@ -467,7 +467,7 @@ describe('createMcpServer', () => {
       'list_export_presets',
     ];
 
-    it.each([undefined, '', '   ', 'core'])('toolset %p lists only approved core tools', async (toolsets) => {
+    it.each([undefined, '', '   ', 'core'])('toolset %o lists only approved core tools', async (toolsets) => {
       pair = await connect({ toolsets });
       expect((await pair.client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([...coreNames].sort());
     });
@@ -690,7 +690,7 @@ describe('createMcpServer', () => {
         const classification = TOOL_CLASSES[tool.name];
         expect({ name: tool.name, title: tool.title }).toEqual({
           name: tool.name,
-          title: expect.stringMatching(/\S/),
+          title: expect.stringMatching(/\S/) as unknown,
         });
         expect({ name: tool.name, annotations: tool.annotations }).toEqual({
           name: tool.name,
@@ -790,7 +790,10 @@ describe('createMcpServer', () => {
     expect(result.messages).toEqual([
       {
         role: 'user',
-        content: { type: 'text', text: expect.stringContaining('# SKILL.md\n\n---\nname: lightroom-agent\n') },
+        content: {
+          type: 'text',
+          text: expect.stringContaining('# SKILL.md\n\n---\nname: lightroom-agent\n') as unknown,
+        },
       },
     ]);
     const text = (result.messages[0].content as { text: string }).text;

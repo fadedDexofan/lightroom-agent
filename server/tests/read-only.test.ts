@@ -1,11 +1,11 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it } from 'vitest';
 import { parseReadOnly } from '../src/read-only.js';
 
 describe('read-only parser', () => {
-  it.each([undefined, '', '   ', '\t\n', 'false', '0', ' false '])('disables for %p', (raw) => {
+  it.each([undefined, '', '   ', '\t\n', 'false', '0', ' false '])('disables for %o', (raw) => {
     expect(parseReadOnly(raw)).toBe(false);
   });
-  it.each(['true', '1', ' true ', '\t1\n'])('enables for %p', (raw) => {
+  it.each(['true', '1', ' true ', '\t1\n'])('enables for %o', (raw) => {
     expect(parseReadOnly(raw)).toBe(true);
   });
   it.each(['TRUE', 'False', 'yes', '2', 'true,false', '${user_config.read_only}'])(

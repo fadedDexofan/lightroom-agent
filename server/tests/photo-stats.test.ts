@@ -1,9 +1,10 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { dataOf, envelopeOf } from './helpers/envelope.js';
 import jpeg from 'jpeg-js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import { photoStats } from '../src/photo-stats.js';
 import type { PluginResponse } from '../src/dispatcher.js';
+import { midGreyJpeg } from './helpers/jpeg.js';
 
 function image(width: number, height: number, value: (x: number, y: number) => number) {
   const data = Buffer.alloc(width * height * 4);
@@ -42,11 +43,11 @@ describe('photo stats', () => {
     expect(envelope.warnings).toEqual([expect.stringContaining('Plugin request timed out')]);
   });
 
-  it('measures a full-size 20 MP preview', async () => {
-    const full = image(5000, 4000, () => 128);
+  it('measures a preview larger than the 512 pixels it asks for at its own size', async () => {
+    const full = midGreyJpeg(2400, 1600).toString('base64');
     const response = await handler(async () => preview(full))('get_photo_stats', { photo_ids: [1] });
     const [result] = (dataOf(response) as { results: ReturnType<typeof photoStats>[] }).results;
-    expect([result.width, result.height]).toEqual([5000, 4000]);
+    expect([result.width, result.height]).toEqual([2400, 1600]);
     expect(result.mean_luminance).toBeCloseTo(128, 0);
   });
 
@@ -154,7 +155,7 @@ describe('photo stats', () => {
 
     expect(envelope.data).toEqual({ results: [expect.objectContaining({ photo_id: '1', mean_luminance: 110 })] });
     expect(envelope.failed).toEqual([
-      { photo_id: '2', reason: expect.any(String) },
+      { photo_id: '2', reason: expect.any(String) as unknown },
       { photo_id: '3', reason: 'Preview failed' },
     ]);
   });

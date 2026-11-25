@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from '@jest/globals';
+import { describe, it, expect, afterEach } from 'vitest';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import type { PluginResponse } from '../src/dispatcher.js';
 import { envelopeOf } from './helpers/envelope.js';

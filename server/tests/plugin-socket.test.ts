@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from '@jest/globals';
+import { describe, it, expect, afterEach } from 'vitest';
 import net from 'node:net';
 import { PluginSocket } from '../src/plugin-socket.js';
 

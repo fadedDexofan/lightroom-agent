@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, vi } from 'vitest';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import path from 'node:path';
 import { DISPATCHED_ACTIONS, TOOL_CONTRACTS } from '../src/tool-contracts.js';
@@ -73,7 +73,7 @@ describe('createCallToolHandler', () => {
 
     expect(envelopeOf(result)).toEqual({
       outcome: 'failed',
-      error: expect.stringContaining('Invalid arguments for set_rating_and_flag: rating'),
+      error: expect.stringContaining('Invalid arguments for set_rating_and_flag: rating') as unknown,
     });
     expect(calls).toBe(0);
   });
@@ -118,7 +118,7 @@ describe('createCallToolHandler', () => {
     expect(sent).toEqual([{}]);
     expect(envelopeOf(await handler('set_rating_and_flag', undefined))).toEqual({
       outcome: 'failed',
-      error: expect.stringContaining('required property'),
+      error: expect.stringContaining('required property') as unknown,
     });
   });
 
@@ -254,14 +254,14 @@ describe('time budget', () => {
     ['set_develop_settings', 'read_settings_by_input', { photo_ids: [914], settings: { GlowStyle: 2 } }],
     ['set_crop', 'plan_crop', { photo_ids: [914], aspect: { width: 1, height: 1 } }],
   ])('hands the write of %s the budget left after its pre-read', async (tool, preRead, args) => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const budgets: [string, number | undefined][] = [];
       const handler = makeHandler({
         call: async (action, _params, budget) => {
           budgets.push([action, budget]);
           if (action !== preRead) return { id: '2', result: { data: { photo_id: '914' } } };
-          jest.advanceTimersByTime(5_000);
+          vi.advanceTimersByTime(5_000);
           if (action === 'plan_crop') {
             return {
               id: '1',
@@ -286,7 +286,7 @@ describe('time budget', () => {
         ['write_develop_settings', 25_000],
       ]);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 });
@@ -389,7 +389,7 @@ describe('Develop call queue', () => {
 
       expect(envelopeOf(await second)).toMatchObject({
         outcome: 'failed',
-        error: expect.stringContaining('was lost or replaced'),
+        error: expect.stringContaining('was lost or replaced') as unknown,
       });
       expect(pending).toHaveLength(1);
     },
@@ -499,7 +499,7 @@ describe('Develop call queue', () => {
 
       expect(envelopeOf(first)).toMatchObject({
         outcome: 'failed',
-        error: expect.stringContaining('nothing was written'),
+        error: expect.stringContaining('nothing was written') as unknown,
       });
       expect(calls).toEqual([action]);
       finishLate();
@@ -511,28 +511,28 @@ describe('Develop call queue', () => {
   it.each(queuedKinds)(
     'gives up on %s without sending anything when its turn does not come within the budget',
     async (_kind, queued) => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       try {
         const { pending, handler, settle } = gatedDispatcher();
         void handler(...develop(1));
         const waiting = handler(queued[0], queued[1]);
         await settle();
-        jest.advanceTimersByTime(30_000);
+        vi.advanceTimersByTime(30_000);
         const result = await waiting;
         expect(result.isError).toBe(true);
         expect(envelopeOf(result)).toMatchObject({
           outcome: 'failed',
-          error: expect.stringContaining('busy with set_develop_settings'),
+          error: expect.stringContaining('busy with set_develop_settings') as unknown,
         });
         expect(pending).toHaveLength(1);
       } finally {
-        jest.useRealTimers();
+        vi.useRealTimers();
       }
     },
   );
 
   it('gives up without sending anything when the turn comes with under a second of the budget left', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const sent: string[] = [];
       const dispatcher = new Dispatcher({
@@ -548,7 +548,7 @@ describe('Develop call queue', () => {
       const first = handler(...develop(1));
       const waiting = handler(...develop(2));
       for (let i = 0; i < 5; i++) await Promise.resolve();
-      jest.advanceTimersByTime(29_500);
+      vi.advanceTimersByTime(29_500);
       dispatcher.handleResponseLine(JSON.stringify(done((JSON.parse(sent[0]) as { id: string }).id)));
       await first;
       const result = await waiting;
@@ -556,16 +556,16 @@ describe('Develop call queue', () => {
         outcome: 'failed',
         error: expect.stringContaining(
           'Only 500 ms of the time budget were left, so write_develop_settings was not sent',
-        ),
+        ) as unknown,
       });
       expect(sent).toHaveLength(1);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('names the timed-out call still finishing when the next call gives up waiting for it', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const calls: string[] = [];
       const call = async (action: string) => {
@@ -576,16 +576,16 @@ describe('Develop call queue', () => {
       await handler(...develop(1));
       const waiting = handler(...develop(2));
       for (let i = 0; i < 10; i++) await Promise.resolve();
-      jest.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(30_000);
       expect(envelopeOf(await waiting)).toMatchObject({
         outcome: 'failed',
         error: expect.stringContaining(
           'busy with set_develop_settings, still finishing in Lightroom after it timed out',
-        ),
+        ) as unknown,
       });
       expect(calls).toEqual(['write_develop_settings']);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
@@ -600,24 +600,27 @@ describe('Develop call queue', () => {
     );
     await settle();
     controller.abort();
-    expect(envelopeOf(await waiting)).toMatchObject({ outcome: 'failed', error: expect.stringContaining('cancelled') });
+    expect(envelopeOf(await waiting)).toMatchObject({
+      outcome: 'failed',
+      error: expect.stringContaining('cancelled') as unknown,
+    });
     expect(pending).toHaveLength(1);
   });
 
   it('hands the plug-in the budget left after the wait', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const { pending, handler, settle } = gatedDispatcher();
       const first = handler(...develop(1));
       void handler(...develop(2));
       await settle();
-      jest.advanceTimersByTime(10_000);
+      vi.advanceTimersByTime(10_000);
       pending[0].resolve(done('1'));
       await first;
       await settle();
       expect(pending[1].budget).toBe(20_000);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 });
@@ -804,7 +807,7 @@ describe('set_develop_settings rules on stored values', () => {
     const result = await write({ GlowStyle: 2 });
     expect(envelopeOf(result)).toEqual({
       outcome: 'failed',
-      error: expect.stringContaining('GlowStyle needs Glow above 0'),
+      error: expect.stringContaining('GlowStyle needs Glow above 0') as unknown,
     });
     expect(calls).toEqual([['read_settings_by_input', { photo_ids: [914], keys: ['Glow'] }]]);
   });
@@ -834,7 +837,7 @@ describe('set_develop_settings rules on stored values', () => {
         outcome: 'failed',
         error: expect.stringContaining(
           'a ToneCurvePV2012 curve must start at input 0, end at input 255 and have strictly increasing inputs',
-        ),
+        ) as unknown,
       });
       expect(calls).toEqual([]);
     },
@@ -910,7 +913,7 @@ describe('a read before the write that does not come back', () => {
     ]) {
       expect(envelopeOf(result)).toMatchObject({
         outcome: 'failed',
-        error: expect.stringContaining('nothing was written'),
+        error: expect.stringContaining('nothing was written') as unknown,
       });
     }
   });
@@ -964,7 +967,10 @@ describe('set_develop_settings_batch', () => {
       'write_develop_settings_batch',
       {
         photos: [
-          { photo_id: 1, refused: expect.stringContaining('Refused before writing: GlowStyle needs Glow above 0') },
+          {
+            photo_id: 1,
+            refused: expect.stringContaining('Refused before writing: GlowStyle needs Glow above 0') as unknown,
+          },
           { photo_id: 2, settings: { GlowStyle: 2 } },
         ],
       },
@@ -989,7 +995,7 @@ describe('set_develop_settings_batch', () => {
       },
       'unknown',
       {
-        failed: [{ photo_id: '1', reason: expect.stringContaining('Refused before writing') }],
+        failed: [{ photo_id: '1', reason: expect.stringContaining('Refused before writing') as unknown }],
         unknown: [
           {
             photo_id: '2',
@@ -1034,7 +1040,7 @@ describe('set_develop_settings_batch', () => {
     expect(written(calls)).toEqual([
       { photo_id: 1, settings: STYLE },
       { photo_id: '/1.arw', settings: STYLE },
-      { photo_id: 2, refused: expect.stringContaining('GlowStyle needs Glow above 0') },
+      { photo_id: 2, refused: expect.stringContaining('GlowStyle needs Glow above 0') as unknown },
       { photo_id: 3, settings: STYLE },
     ]);
   });
@@ -1095,7 +1101,7 @@ describe('set_develop_settings_batch', () => {
     );
     expect(envelope).toMatchObject({
       outcome: 'unknown',
-      failed: [{ photo_id: '1', reason: expect.stringContaining('GlowStyle needs Glow above 0') }],
+      failed: [{ photo_id: '1', reason: expect.stringContaining('GlowStyle needs Glow above 0') as unknown }],
       unknown: [{ photo_id: '2', reason: 'the write was sent and its reply was lost (Lost link)' }],
     });
   });
@@ -1111,7 +1117,7 @@ describe('set_develop_settings_batch', () => {
       ]),
     );
     expect(envelope).toMatchObject({
-      failed: [{ photo_id: '1', reason: expect.stringContaining('GlowStyle needs Glow above 0') }],
+      failed: [{ photo_id: '1', reason: expect.stringContaining('GlowStyle needs Glow above 0') as unknown }],
       unknown: [{ path: '/2.arw', reason: 'the write was sent and its reply was lost (Lost link)' }],
     });
   });
@@ -1195,7 +1201,7 @@ describe('set_develop_settings and keys another tool writes', () => {
     })('set_develop_settings', { photo_ids: [914], settings: { ConvertToGrayscale: true, Exposure2012: 1 } });
     expect(envelopeOf(result)).toEqual({
       outcome: 'failed',
-      error: expect.stringContaining('ConvertToGrayscale is written by set_treatment'),
+      error: expect.stringContaining('ConvertToGrayscale is written by set_treatment') as unknown,
     });
     expect(calls).toEqual([]);
   });
@@ -1348,7 +1354,10 @@ describe('set_crop', () => {
 
     const result = envelopeOf(await crop({ aspect: { width: 2, height: 1 } }));
 
-    expect(result).toMatchObject({ outcome: 'partial', error: expect.stringContaining('stored other values') });
+    expect(result).toMatchObject({
+      outcome: 'partial',
+      error: expect.stringContaining('stored other values') as unknown,
+    });
     expect(result.data).toMatchObject({ adjusted, settings: { CropLeft: 0 } });
   });
 
@@ -1677,14 +1686,14 @@ describe('a call bound to the connection admitted on its arrival', () => {
   });
 
   it('answers a timed-out call unknown and holds its turn until its late reply settles it', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const c = connection();
       await c.connect();
       const late = c.handler(...develop(1));
       await flush();
       const lateFrame = c.frames.at(-1)!;
-      jest.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(30_000);
       expect(envelopeOf(await late).outcome).toBe('unknown');
 
       const next = c.handler(...develop(2));
@@ -1697,7 +1706,7 @@ describe('a call bound to the connection admitted on its arrival', () => {
       c.answer(c.frames.at(-1)!, { data: {} });
       expect((await next).isError).toBeUndefined();
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 

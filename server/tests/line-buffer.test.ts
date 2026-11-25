@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { LineBuffer } from '../src/line-buffer.js';
 
 function feed(chunks: string[]): { lines: string[]; pending: number } {

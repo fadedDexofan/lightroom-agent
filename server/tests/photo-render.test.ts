@@ -1,9 +1,10 @@
-import { afterAll, describe, expect, it } from '@jest/globals';
+import { afterAll, describe, expect, it } from 'vitest';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import jpeg from 'jpeg-js';
 import { envelopeOf } from './helpers/envelope.js';
+import { paddedJpeg } from './helpers/jpeg.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 import { DETAIL_RENDER_FOLDER } from '../src/photo-detail.js';
 import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
@@ -65,7 +66,7 @@ describe('render_photo', () => {
     ['cull', 864],
     [640.5, 640],
   ])(
-    'asks the plug-in for one export rendition of size %p at a long edge of %p, naming itself for the lock',
+    'asks the plug-in for one export rendition of size %o at a long edge of %o, naming itself for the lock',
     async (size, edge) => {
       const path = renderedFile(jpegOf(48, 32));
       const { handler, calls } = handlerFor(async () => source(path));
@@ -160,7 +161,7 @@ describe('render_photo', () => {
   });
 
   it('answers a rendition over the 3.5 MiB image limit as unknown, naming what the render left, without re-encoding it', async () => {
-    const file = jpegOf(1600, 1200, 100);
+    const file = paddedJpeg(jpegOf(16, 16), 3.5 * 1024 * 1024 + 1);
     expect(file.length).toBeGreaterThan(3.5 * 1024 * 1024);
     const path = renderedFile(file);
     const { handler } = handlerFor(async () => source(path));
