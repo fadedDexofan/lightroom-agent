@@ -34,6 +34,22 @@ describe('waitUntil', () => {
     expect(ticks).toBe(3);
   });
 
+  it('accepts a predicate its final poll sees after the deadline, at most one poll late', async () => {
+    let now = 2_999;
+    const held = await waitUntil(
+      () => now >= 3_001,
+      1,
+      50,
+      () => now,
+      async (ms) => {
+        now += ms;
+      },
+    );
+
+    expect(held).toBe(true);
+    expect(now).toBe(3_049);
+  });
+
   it('polls with real timers when no clock is injected', async () => {
     let ready = false;
     setTimeout(() => {

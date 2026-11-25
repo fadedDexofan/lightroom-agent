@@ -517,6 +517,41 @@ describe('CLI process', () => {
   );
 
   it(
+    'waits for the plug-in again when the connection it was probing drops before answering, and sends the call once',
+    async () => {
+      const called: string[] = [];
+      let firstPingArrived!: () => void;
+      const firstPing = new Promise<void>((resolve) => {
+        firstPingArrived = resolve;
+      });
+      const env = await startPlugin((action) => {
+        called.push(action);
+        if (action !== 'ping') return { collections: [] };
+        if (called.filter((name) => name === 'ping').length === 1) {
+          firstPingArrived();
+          return new Promise(() => {});
+        }
+        return { pong: true, version: VERSION, build: BUILD };
+      });
+      const leader = await stdio(build, newState(), env);
+      await firstPing;
+
+      const call = leader.client.request({
+        method: 'tools/call',
+        params: { name: 'list_collections', arguments: {} },
+      });
+      await leader.client.request({ method: 'tools/list' });
+      await plugin!.triggerRebind();
+
+      const result = (await call) as ToolResponse;
+      expect(JSON.parse(result.content[0].text)).toEqual({ outcome: 'done', data: { collections: [] } });
+      expect(called.filter((name) => name === 'list_collections')).toEqual(['list_collections']);
+      expect(leader.stderr()).toContain('[response] disconnected');
+    },
+    CLI_TEST_MS,
+  );
+
+  it(
     'returns the backend error as JSON with a failing exit status',
     async () => {
       const env = await startPlugin((action) => {
