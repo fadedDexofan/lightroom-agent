@@ -10,24 +10,21 @@ export default {
       'ts-jest',
       {
         useESM: true,
-        tsconfig: { verbatimModuleSyntax: false, isolatedModules: false },
-        // 151002 recommends `isolatedModules: true`, which is incompatible
-        // with ts-jest's ESM transform (breaks `import` emit). `npm run check`
-        // (tsc) is the real type gate for tests; this warning is noise here.
-        diagnostics: { ignoreCodes: [151002] },
+        tsconfig: { module: 'CommonJS', verbatimModuleSyntax: false },
       },
     ],
   },
   testMatch: ['**/tests/**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts'],
+  coverageProvider: 'v8',
   // Ratchet: raise these as coverage climbs. `index.ts` is the bin entrypoint
   // (socket + stdio wiring) and is not unit-tested yet — issue #97 step 4
   // tracks covering it before its threshold is lifted off the floor. A path
   // entry is subtracted from `global`, so `global` covers every other file.
   coverageThreshold: {
     global: {
-      statements: 94,
-      branches: 87,
+      statements: 95,
+      branches: 89,
       functions: 90,
       lines: 95,
     },
