@@ -24,6 +24,7 @@ import {
   MASK_TYPES,
   PEOPLE_MASK_PARTS,
   PHOTO_FLAGS,
+  PROCESS_VERSIONS,
   PROFILE_PRESET_GROUP,
   PROFILE_UNIT,
   STORED_MASK_DECIMAL_PLACES,
@@ -81,6 +82,7 @@ function contractTable(): { readonly [key: string]: LuaValue } {
     MASK_CURVE_CHANNELS,
     PHOTO_FLAGS,
     COLOR_LABELS,
+    PROCESS_VERSIONS,
     ADOBE_RAW_PROFILES: ADOBE_RAW_PROFILES.map(
       ({ name, look_uuid, preset_name, preset_uuid, camera_profile }): LuaValue => ({
         name,

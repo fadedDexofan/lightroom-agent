@@ -35,6 +35,7 @@ import {
   MASK_TYPE_NAMES,
   PEOPLE_MASK_PART_NAMES,
   PHOTO_FLAG_NAMES,
+  PROCESS_VERSIONS,
   PROFILE_PRESET_GROUP,
   PROFILE_UNIT,
   STORED_MASK_DECIMAL_PLACES,
@@ -2032,7 +2033,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     develop: "drives",
     run: { plugin: "HandlerDevelop.setProcessVersion" },
     description:
-      "Set Version 1–6 (confirm:true; appearance can change). Downgrades of photos with masks fail to preserve guarded editing. Opens each in Develop; restore_selection defaults true. Returns results per photo, status changed or unchanged with previous_version and new_version. Max 100; stops starting photos when one more would not fit its time budget; resend remaining.",
+      "Set the process version (confirm:true; appearance can change). Downgrades of photos with masks fail to preserve guarded editing. Opens each in Develop; restore_selection defaults true. Returns results per photo, status changed or unchanged with previous_version and new_version. Max 100; stops starting photos when one more would not fit its time budget; resend remaining.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2040,7 +2041,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 100 },
         version: {
           type: "string",
-          enum: ["Version 1", "Version 2", "Version 3", "Version 4", "Version 5", "Version 6"],
+          enum: [...PROCESS_VERSIONS],
         },
         confirm: { type: "boolean", const: true },
         restore_selection: { type: "boolean", description: "Restore module, view source and selection (default true)" },

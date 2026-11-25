@@ -1,3 +1,5 @@
+export const PROCESS_VERSIONS = ["Version 1", "Version 2", "Version 3", "Version 4", "Version 5", "Version 6"] as const;
+
 export const MASK_TYPES = [
   { name: "subject", label: "Subject", stored: { MaskSubType: 1 } },
   { name: "sky", label: "Sky", stored: { MaskSubType: 2 } },
